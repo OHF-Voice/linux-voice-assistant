@@ -6,8 +6,11 @@ from typing import Callable, List, Optional, Union
 from aioesphomeapi.api_pb2 import (  # type: ignore[attr-defined]
     ListEntitiesMediaPlayerResponse,
     ListEntitiesRequest,
+    ListEntitiesSwitchResponse,
     MediaPlayerCommandRequest,
     MediaPlayerStateResponse,
+    SwitchCommandRequest,
+    SwitchStateResponse,
     SubscribeHomeAssistantStatesRequest,
 )
 from aioesphomeapi.model import MediaPlayerCommand, MediaPlayerState
@@ -131,3 +134,49 @@ class MediaPlayerEntity(ESPHomeEntity):
             volume=self.volume,
             muted=self.muted,
         )
+
+
+# -----------------------------------------------------------------------------
+
+
+class MuteSwitchEntity(ESPHomeEntity):
+    """Mute switch entity that behaves like ESPHome Voice PE mute switch.
+    
+    This switch maintains its own state and triggers voice_assistant.stop/start_continuous actions.
+    """
+    
+    def __init__(
+        self,
+        server: APIServer,
+        key: int,
+        name: str,
+        object_id: str,
+        get_muted: Callable[[], bool],
+        set_muted: Callable[[bool], None],
+    ) -> None:
+        ESPHomeEntity.__init__(self, server)
+
+        self.key = key
+        self.name = name
+        self.object_id = object_id
+        self._get_muted = get_muted
+        self._set_muted = set_muted
+        self._switch_state = False  # Internal switch state
+
+    def handle_message(self, msg: message.Message) -> Iterable[message.Message]:
+        if isinstance(msg, SwitchCommandRequest) and (msg.key == self.key):
+            # User toggled the switch - update our internal state and trigger actions
+            new_state = bool(msg.state)
+            self._switch_state = new_state
+            self._set_muted(new_state)
+            # Return the new state immediately
+            yield SwitchStateResponse(key=self.key, state=self._switch_state)
+        elif isinstance(msg, ListEntitiesRequest):
+            yield ListEntitiesSwitchResponse(
+                object_id=self.object_id,
+                key=self.key,
+                name=self.name,
+            )
+        elif isinstance(msg, SubscribeHomeAssistantStatesRequest):
+            # Always return our internal switch state
+            yield SwitchStateResponse(key=self.key, state=self._switch_state)
