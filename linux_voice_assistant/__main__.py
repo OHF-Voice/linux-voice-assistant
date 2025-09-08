@@ -45,6 +45,9 @@ from .microwakeword import MicroWakeWord
 from .mpv_player import MpvMediaPlayer
 from .util import call_all, get_mac, is_arm
 
+from .event_bus import EventBus
+from .event_led import LedEvent
+
 _LOGGER = logging.getLogger(__name__)
 _MODULE_DIR = Path(__file__).parent
 _REPO_DIR = _MODULE_DIR.parent
@@ -78,6 +81,8 @@ class ServerState:
     tts_player: MpvMediaPlayer
     wakeup_sound: str
     timer_finished_sound: str
+    loop: asyncio.AbstractEventLoop
+    event_bus: EventBus
     media_player_entity: Optional[MediaPlayerEntity] = None
     satellite: "Optional[VoiceSatelliteProtocol]" = None
 
@@ -110,10 +115,15 @@ class VoiceSatelliteProtocol(APIServer):
         self._continue_conversation = False
         self._timer_finished = False
 
+        self.state.event_bus.publish('ready', {})
+        _LOGGER.info('System is ready!')
+
     def handle_voice_event(
         self, event_type: VoiceAssistantEventType, data: Dict[str, str]
     ) -> None:
         _LOGGER.debug("Voice event: type=%s, data=%s", event_type.name, data)
+
+        self.state.event_bus.publish(f'voice_{event_type.name}', data)
 
         if event_type == VoiceAssistantEventType.VOICE_ASSISTANT_RUN_START:
             self._tts_url = data.get("url")
@@ -157,6 +167,7 @@ class VoiceSatelliteProtocol(APIServer):
                 self._play_timer_finished()
 
     def handle_message(self, msg: message.Message) -> Iterable[message.Message]:
+        _LOGGER.debug(f'message {msg.__name__}')
         if isinstance(msg, VoiceAssistantEventResponse):
             # Pipeline event
             data: Dict[str, str] = {}
@@ -197,14 +208,11 @@ class VoiceSatelliteProtocol(APIServer):
                     | VoiceAssistantFeature.TIMERS
                 ),
             )
-        elif isinstance(
-            msg,
-            (
-                ListEntitiesRequest,
-                SubscribeHomeAssistantStatesRequest,
-                MediaPlayerCommandRequest,
-            ),
-        ):
+        elif isinstance(msg, (
+            ListEntitiesRequest,
+            SubscribeHomeAssistantStatesRequest,
+            MediaPlayerCommandRequest,
+        ),):
             for entity in self.state.entities:
                 yield from entity.handle_message(msg)
 
@@ -245,13 +253,13 @@ class VoiceSatelliteProtocol(APIServer):
                 break
 
     def handle_audio(self, audio_chunk: bytes) -> None:
-
         if not self._is_streaming_audio:
             return
 
         self.send_messages([VoiceAssistantAudio(data=audio_chunk)])
 
     def wakeup(self) -> None:
+        # Why are we stopping the timer? Wouldn't it be better to delay it?
         if self._timer_finished:
             # Stop timer instead
             self._timer_finished = False
@@ -264,6 +272,10 @@ class VoiceSatelliteProtocol(APIServer):
         self.send_messages(
             [VoiceAssistantRequest(start=True, wake_word_phrase=wake_word_phrase)]
         )
+
+        self.state.event_bus.publish('voice_wakeword', {'wake_word_phrase': wake_word_phrase})
+
+
         self.duck()
         self._is_streaming_audio = True
         self.state.tts_player.play(self.state.wakeup_sound)
@@ -286,6 +298,8 @@ class VoiceSatelliteProtocol(APIServer):
         self._tts_played = True
         _LOGGER.debug("Playing TTS response: %s", self._tts_url)
 
+        self.state.event_bus.publish('voice_play_tts', {})
+
         self.state.stop_word.is_active = True
         self.state.tts_player.play(self._tts_url, done_callback=self._tts_finished)
 
@@ -300,6 +314,9 @@ class VoiceSatelliteProtocol(APIServer):
     def _tts_finished(self) -> None:
         self.state.stop_word.is_active = False
         self.send_messages([VoiceAssistantAnnounceFinished()])
+
+        # Actual time the TTS stops speaking
+        self.state.event_bus.publish('voice__tts_finished', {})
 
         if self._continue_conversation:
             self.send_messages([VoiceAssistantRequest(start=True)])
@@ -432,6 +449,8 @@ async def main() -> None:
     stop_config_path = wake_word_dir / f"{args.stop_model}.json"
     _LOGGER.debug("Loading stop model: %s", stop_config_path)
     stop_model = MicroWakeWord.from_config(stop_config_path, libtensorflowlite_c_path)
+    
+    loop = asyncio.get_running_loop()
 
     state = ServerState(
         name=args.name,
@@ -441,11 +460,15 @@ async def main() -> None:
         available_wake_words=available_wake_words,
         wake_word=wake_model,
         stop_word=stop_model,
+        event_bus=EventBus(),
+        loop=loop,
         music_player=MpvMediaPlayer(device=args.audio_output_device),
         tts_player=MpvMediaPlayer(device=args.audio_output_device),
         wakeup_sound=args.wakeup_sound,
         timer_finished_sound=args.timer_finished_sound,
     )
+
+    LedEvent(state)
 
     process_audio_thread = threading.Thread(
         target=process_audio, args=(state,), daemon=True
@@ -455,7 +478,6 @@ async def main() -> None:
     def sd_callback(indata, _frames, _time, _status):
         state.audio_queue.put_nowait(bytes(indata))
 
-    loop = asyncio.get_running_loop()
     server = await loop.create_server(
         lambda: VoiceSatelliteProtocol(state), host=args.host, port=args.port
     )
