@@ -9,7 +9,7 @@ Supports announcments, start/continue conversation, and timers.
 
 Install system dependencies (`apt-get`):
 
-* `libportaudio2` (for `sounddevice`)
+* `libportaudio2` or `portaudio19-dev` (for `sounddevice`)
 * `build-essential` (for `pymicro-features`)
 * `libmpv-dev` (for `python-mpv`)
 
@@ -25,7 +25,24 @@ script/setup
 
 Use `script/run` or `python3 -m linux_voice_assistant`
 
+You must specify `--name <NAME>` with a name that will be available in Home Assistant.
+
 See `--help` for more options.
+
+### Microphone
+
+Use `--audio-input-device` to change the microphone device. Use `python3 -m sounddevice` to see the available PortAudio devices. 
+
+The microphone device **must** support 16Khz mono audio.
+
+### Speaker
+
+Use `--audio-output-device` to change the speaker device. Use `mpv --audio-device=help` to see the available MPV devices.
+
+## Wake Word
+
+Change the default wake word with `--wake-model <id>` where `<id>` is the name of a model in the `wakewords` directory. For example, `--wake-model hey_jarvis` will load `wakewords/hey_jarvis.tflite` by default.
+
 
 ## Connecting to Home Assistant
 

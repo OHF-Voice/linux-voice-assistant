@@ -29,6 +29,7 @@ dependencies = [
     "sounddevice<1",
     "numpy>=2,<3",
     "pymicro-features==1.0.0",
+    "python-mpv=>1,<2",
 ]
 
 [project.optional-dependencies]
