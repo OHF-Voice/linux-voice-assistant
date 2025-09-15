@@ -1,0 +1,73 @@
+Metadata-Version: 2.4
+Name: linux-voice-assistant
+Version: 1.0.0
+Summary: Linux voice assistant for Home Assistant using the ESPHome protocol
+Author-email: The Home Assistant Authors <hello@home-assistant.io>
+License: Apache-2.0
+Project-URL: Source Code, http://github.com/OHF-Voice/linux-voice-assistant
+Keywords: home,assistant,voice,esphome,linux
+Platform: any
+Classifier: Development Status :: 3 - Alpha
+Classifier: Intended Audience :: Developers
+Classifier: Topic :: Text Processing :: Linguistic
+Classifier: License :: OSI Approved :: Apache Software License
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Programming Language :: Python :: 3.13
+Requires-Python: >=3.9.0
+Description-Content-Type: text/markdown
+License-File: LICENSE.md
+Requires-Dist: aioesphomeapi==37.2.1
+Requires-Dist: sounddevice<1
+Requires-Dist: numpy<3,>=2
+Requires-Dist: pymicro-features==1.0.0
+Provides-Extra: dev
+Requires-Dist: black==24.8.0; extra == "dev"
+Requires-Dist: flake8==7.2.0; extra == "dev"
+Requires-Dist: mypy==1.14.0; extra == "dev"
+Requires-Dist: pylint==3.2.7; extra == "dev"
+Requires-Dist: pytest==8.3.5; extra == "dev"
+Dynamic: license-file
+
+# Linux Voice Assistant
+
+Experimental Linux voice assistant for [Home Assistant][homeassistant] that uses the [ESPHome][esphome] protocol.
+
+Runs on Linux `aarch64` and `x86_64` platforms. Tested with Python 3.13 and Python 3.11.
+Supports announcments, start/continue conversation, and timers.
+
+## Installation
+
+Install system dependencies (`apt-get`):
+
+* `libportaudio2` (for `sounddevice`)
+* `build-essential` (for `pymicro-features`)
+* `libmpv-dev` (for `python-mpv`)
+
+Clone and install project:
+
+``` sh
+git clone https://github.com/OHF-Voice/linux-voice-assistant.git
+cd linux-voice-assistant
+script/setup
+```
+
+## Running
+
+Use `script/run` or `python3 -m linux_voice_assistant`
+
+See `--help` for more options.
+
+## Connecting to Home Assistant
+
+1. In Home Assistant, go to "Settings" -> "Device & services"
+2. Click the "Add integration" button
+3. Choose "ESPHome" and then "Set up another instance of ESPHome"
+4. Enter the IP address of your voice satellite with port 6053
+5. Click "Submit"
+
+<!-- Links -->
+[homeassistant]: https://www.home-assistant.io/
+[esphome]: https://esphome.io/

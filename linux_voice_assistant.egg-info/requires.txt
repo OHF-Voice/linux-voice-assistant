@@ -1,0 +1,11 @@
+aioesphomeapi==37.2.1
+sounddevice<1
+numpy<3,>=2
+pymicro-features==1.0.0
+
+[dev]
+black==24.8.0
+flake8==7.2.0
+mypy==1.14.0
+pylint==3.2.7
+pytest==8.3.5

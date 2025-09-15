@@ -1,2 +1,4 @@
 aioesphomeapi
 sounddevice
+gpiozero
+spidev

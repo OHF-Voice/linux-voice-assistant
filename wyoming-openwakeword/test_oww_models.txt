@@ -1,0 +1,19 @@
+cd wyoming-openwakeword/
+source .venv/bin/activate
+python3 ~/linux-voice-assistant/wyoming-openwakeword/test_oww_models.py --skip-non-detection --models-dir /home/pi/wyoming-openwakeword/wyoming_openwakeword/models 
+deactivate
+
+
+
+# basic
+python3 test_oww_models.py
+
+# skip non-detection models
+python3 test_oww_models.py --skip-non-detection
+
+# specify a custom folder
+python3 test_oww_models.py --models-dir /home/pi/wyoming-openwakeword/wyoming_openwakeword/models
+
+# quiet mode + CSV
+python3 test_oww_models.py --quiet --csv /home/pi/model_check.csv
+

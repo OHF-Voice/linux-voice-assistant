@@ -1,0 +1,3 @@
+tflite-runtime-nightly
+wyoming==1.7.2
+numpy<2

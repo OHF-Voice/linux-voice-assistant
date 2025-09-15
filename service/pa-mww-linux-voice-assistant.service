@@ -1,0 +1,36 @@
+[Unit]
+Description=Linux Voice Assistant (PulseAudio - Headphone Jack)
+After=network-online.target pulseaudio.service wyoming-openwakeword.service
+Wants=network-online.target
+Requires=pulseaudio.service wyoming-openwakeword.service
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+WorkingDirectory=/home/pi/linux-voice-assistant
+
+# Environment
+Environment=PYTHONUNBUFFERED=1
+Environment="PULSE_SERVER=unix:/var/run/pulse/native"
+Environment="PULSE_LATENCY_MSEC=60"
+Environment="MPV_DEFAULT_DEVICE=pulse/alsa_output.platform-soc_sound.stereo-fallback"
+
+# Wait briefly for the Pulse native socket to be ready
+ExecStartPre=/bin/sh -c 'for i in $(seq 1 40); do [ -S /var/run/pulse/native ] && exit 0; sleep 0.5; done; echo "PulseAudio socket not found" >&2; exit 1'
+
+# Launch the assistant
+ExecStart=/home/pi/linux-voice-assistant/script/run   \
+	--name 'Linux Satellite PA MWW'   \
+	--audio-input-device default   \
+	--audio-output-device ${MPV_DEFAULT_DEVICE}   \
+#	--wake-uri 'tcp://127.0.0.1:10400'   \
+#	--wake-word-name 'alexa'   \
+#	--wake-models-dir '/home/pi/wyoming-openwakeword/wyoming_openwakeword/models'   \
+	--debug
+
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

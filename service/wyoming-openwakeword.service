@@ -1,0 +1,27 @@
+# /etc/systemd/system/wyoming-openwakeword.service
+[Unit]
+Description=Wyoming openWakeWord
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/wyoming-openwakeword
+ExecStart=/usr/bin/env bash -lc '\
+  cd /home/pi/wyoming-openwakeword && \
+  exec ./script/run \
+    --uri tcp://0.0.0.0:10400 \
+    --models-dir /home/pi/wyoming-openwakeword/wyoming_openwakeword/models \
+    \
+    --preload-model alexa_v0.1       --threshold 0.5 --trigger-level 3 \
+    --preload-model hey_jarvis_v0.1  --threshold 0.5 --trigger-level 3 \
+    --preload-model hey_mycroft_v0.1 --threshold 0.5 --trigger-level 3 \
+    --preload-model hey_rhasspy_v0.1 --threshold 0.5 --trigger-level 3 \
+    --preload-model ok_nabu_v0.1     --threshold 0.5 --trigger-level 3 \
+'
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

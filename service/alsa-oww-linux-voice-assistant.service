@@ -1,0 +1,31 @@
+[Unit]
+Description=Linux Voice Assistant (ALSA - ReSpeaker 2mic HAT)
+After=network-online.target wyoming-openwakeword.service
+Wants=network-online.target
+Requires=wyoming-openwakeword.service
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+WorkingDirectory=/home/pi/linux-voice-assistant
+
+Environment=PYTHONUNBUFFERED=1
+
+# Use ALSA ReSpeaker 2mic HAT hardware device
+Environment="MPV_DEFAULT_DEVICE=alsa/plughw:CARD=seeed2micvoicec,DEV=0"
+
+ExecStart=/home/pi/linux-voice-assistant/script/run   \
+	--name 'Linux Satellite ALSA OWW'   \
+	--audio-input-device default   \
+	--audio-output-device ${MPV_DEFAULT_DEVICE}   \
+	--wake-uri 'tcp://127.0.0.1:10400'   \
+	--wake-word-name 'alexa'   \
+	--wake-models-dir '/home/pi/wyoming-openwakeword/wyoming_openwakeword/models'   
+	--debug
+
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
