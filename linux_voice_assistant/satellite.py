@@ -65,6 +65,7 @@ class VoiceSatelliteProtocol(APIServer):
         self._tts_played = False
         self._continue_conversation = False
         self._timer_finished = False
+        self._processing = False
 
     def handle_voice_event(
         self, event_type: VoiceAssistantEventType, data: Dict[str, str]
@@ -75,6 +76,15 @@ class VoiceSatelliteProtocol(APIServer):
             self._tts_url = data.get("url")
             self._tts_played = False
             self._continue_conversation = False
+        elif event_type == VoiceAssistantEventType.VOICE_ASSISTANT_INTENT_START:
+            # Play short "thinking/processing" sound if configured
+            processing = getattr(self.state, "processing_sound", None)
+            if processing:
+                _LOGGER.debug("Playing processing sound: %s", processing)
+                self.state.stop_word.is_active = True
+                self._processing = True
+                self.duck()
+                self.state.tts_player.play(self.state.processing_sound)            
         elif event_type in (
             VoiceAssistantEventType.VOICE_ASSISTANT_STT_VAD_END,
             VoiceAssistantEventType.VOICE_ASSISTANT_STT_END,

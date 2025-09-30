@@ -1,0 +1,32 @@
+version: "3.8"
+services:
+  linux-voice-assistant:
+    build: .
+    image: ohf/linux-voice-assistant:local
+    container_name: linux-voice-assistant
+    restart: unless-stopped
+    devices:
+      - "/dev/snd:/dev/snd"
+    group_add:
+      - audio
+    environment:
+      - FIXED_MAC_ADDRESS=device_mac_address
+      # - XDG_RUNTIME_DIR=/run/user/1000
+      # - PULSE_SERVER=unix:/run/user/1000/pulse/native
+      - AUDIO_OUTPUT_DEVICE=default
+    volumes:
+      - ./config:/app/.config
+      - ./wakewords:/app/wakewords
+      - ./sounds:/app/sounds
+      # - /var/run/pulse/native:/var/run/pulse/native
+      # - /run/user/1000:/run/user/1000
+    ports:
+      - "6053:6053"
+    tty: true
+    command:
+      - "--name"
+      - "voice-satellite"
+      - "--audio-input-device"
+      - "default"
+      - "--wake-model"
+      - "hey_jarvis"

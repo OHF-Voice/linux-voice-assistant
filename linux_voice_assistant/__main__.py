@@ -80,6 +80,10 @@ async def main() -> None:
     parser.add_argument(
         "--timer-finished-sound", default=str(_SOUNDS_DIR / "timer_finished.flac")
     )
+    parser.add_argument(
+        "--processing-sound", default=str(_SOUNDS_DIR / "processing.wav"),
+        help="Short sound to play while assistant is processing (thinking)"
+    )
     #
     parser.add_argument("--preferences-file", default=_REPO_DIR / "preferences.json")
     #
@@ -184,6 +188,7 @@ async def main() -> None:
         tts_player=MpvMediaPlayer(device=args.audio_output_device),
         wakeup_sound=args.wakeup_sound,
         timer_finished_sound=args.timer_finished_sound,
+        processing_sound=args.processing_sound,
         preferences=preferences,
         preferences_path=preferences_path,
         libtensorflowlite_c_path=libtensorflowlite_c_path,
