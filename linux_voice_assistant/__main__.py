@@ -302,7 +302,7 @@ def process_audio(state: ServerState):
                                 if prob > 0.5:
                                     activated = True
 
-                    if activated:
+                    if activated and not state.muted:
                         # Check refractory
                         now = time.monotonic()
                         if (last_active is None) or (
@@ -317,7 +317,7 @@ def process_audio(state: ServerState):
                     if state.stop_word.process_streaming(micro_input):
                         stopped = True
 
-                if stopped and state.stop_word.is_active:
+                if stopped and state.stop_word.is_active and not state.muted:
                     state.satellite.stop()
             except Exception:
                 _LOGGER.exception("Unexpected error handling audio")

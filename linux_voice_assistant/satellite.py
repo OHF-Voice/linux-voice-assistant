@@ -1,6 +1,8 @@
 """Voice satellite protocol."""
 
+import asyncio
 import logging
+import re
 import time
 from collections.abc import Iterable
 from typing import Dict, Optional, Set, Union
@@ -13,6 +15,8 @@ from aioesphomeapi.api_pb2 import (  # type: ignore[attr-defined]
     ListEntitiesRequest,
     MediaPlayerCommandRequest,
     SubscribeHomeAssistantStatesRequest,
+    DisconnectRequest,
+    SwitchCommandRequest,
     VoiceAssistantAnnounceFinished,
     VoiceAssistantAnnounceRequest,
     VoiceAssistantAudio,
@@ -23,7 +27,10 @@ from aioesphomeapi.api_pb2 import (  # type: ignore[attr-defined]
     VoiceAssistantSetConfiguration,
     VoiceAssistantTimerEventResponse,
     VoiceAssistantWakeWord,
+    ConnectRequest,
 )
+from aioesphomeapi.core import MESSAGE_TYPE_TO_PROTO
+
 from aioesphomeapi.model import (
     VoiceAssistantEventType,
     VoiceAssistantFeature,
@@ -32,7 +39,7 @@ from aioesphomeapi.model import (
 from google.protobuf import message
 
 from .api_server import APIServer
-from .entity import MediaPlayerEntity
+from .entity import MediaPlayerEntity, MuteSwitchEntity
 from .microwakeword import MicroWakeWord
 from .models import ServerState
 from .openwakeword import OpenWakeWord
@@ -40,6 +47,7 @@ from .util import call_all
 
 _LOGGER = logging.getLogger(__name__)
 
+PROTO_TO_MESSAGE_TYPE = {v: k for k, v in MESSAGE_TYPE_TO_PROTO.items()}
 
 class VoiceSatelliteProtocol(APIServer):
 
@@ -48,6 +56,28 @@ class VoiceSatelliteProtocol(APIServer):
 
         self.state = state
         self.state.satellite = self
+        self.state.connected = False
+
+        existing_media_players = [
+            entity
+            for entity in self.state.entities
+            if isinstance(entity, MediaPlayerEntity)
+        ]
+        if existing_media_players:
+            # Keep the first instance and remove any extras.
+            self.state.media_player_entity = existing_media_players[0]
+            for extra in existing_media_players[1:]:
+                self.state.entities.remove(extra)
+
+        existing_mute_switches = [
+            entity
+            for entity in self.state.entities
+            if isinstance(entity, MuteSwitchEntity)
+        ]
+        if existing_mute_switches:
+            self.state.mute_switch_entity = existing_mute_switches[0]
+            for extra in existing_mute_switches[1:]:
+                self.state.entities.remove(extra)
 
         if self.state.media_player_entity is None:
             self.state.media_player_entity = MediaPlayerEntity(
@@ -59,12 +89,86 @@ class VoiceSatelliteProtocol(APIServer):
                 announce_player=state.tts_player,
             )
             self.state.entities.append(self.state.media_player_entity)
+        elif self.state.media_player_entity not in self.state.entities:
+            self.state.entities.append(self.state.media_player_entity)
+
+        self.state.media_player_entity.server = self
+
+        # Add/update mute switch entity (like ESPHome Voice PE)
+        mute_switch = self.state.mute_switch_entity
+        if mute_switch is None:
+            mute_switch = MuteSwitchEntity(
+                server=self,
+                key=len(state.entities),
+                name="Mute",
+                object_id="mute",
+                get_muted=lambda: self.state.muted,
+                set_muted=self._set_muted,
+            )
+            self.state.entities.append(mute_switch)
+            self.state.mute_switch_entity = mute_switch
+        elif mute_switch not in self.state.entities:
+            self.state.entities.append(mute_switch)
+
+        mute_switch.server = self
+        mute_switch.update_get_muted(lambda: self.state.muted)
+        mute_switch.update_set_muted(self._set_muted)
+        mute_switch.sync_with_state()
 
         self._is_streaming_audio = False
         self._tts_url: Optional[str] = None
         self._tts_played = False
         self._continue_conversation = False
         self._timer_finished = False
+
+        self._disconnect_event = asyncio.Event()
+
+    async def request_disconnect(self) -> None:
+        # Request Home Assistant to disconnect cleanly before shutdown.
+        transport = getattr(self, "_transport", None)
+        if transport is None or transport.is_closing():
+            return
+
+        _LOGGER.debug("Requesting Home Assistant disconnect before shutdown")
+
+        # Make sure helpers pause any background work immediately.
+        self.state.connected = False
+
+        if self.state.mute_switch_entity is not None:
+            self.state.mute_switch_entity.sync_with_state()
+
+        try:
+            self.send_messages([DisconnectRequest()])
+        except Exception:  # pragma: no cover - defensive
+            _LOGGER.exception("Failed to send disconnect request to Home Assistant")
+
+        try:
+            await asyncio.wait_for(self._disconnect_event.wait(), timeout=5.0)
+            _LOGGER.debug("Home Assistant acknowledged disconnect request")
+        except asyncio.TimeoutError:
+            _LOGGER.debug(
+                "Timeout waiting for Home Assistant to close connection; closing transport"
+            )
+            try:
+                transport.close()
+            except Exception:  # pragma: no cover - defensive
+                _LOGGER.exception("Failed to close transport after disconnect timeout")
+
+    def _set_muted(self, new_state: bool) -> None:
+        self.state.muted = bool(new_state)
+
+        if self.state.muted:
+            # voice_assistant.stop behavior
+            _LOGGER.debug("Muting voice assistant (voice_assistant.stop)")
+            self._is_streaming_audio = False
+            self.state.tts_player.stop()
+            # Stop any ongoing voice processing
+            self.state.stop_word.is_active = False
+        else:
+            # voice_assistant.start_continuous behavior
+            _LOGGER.debug("Unmuting voice assistant (voice_assistant.start_continuous)")
+            # Resume normal operation - wake word detection will be active again
+            pass
 
     def handle_voice_event(
         self, event_type: VoiceAssistantEventType, data: Dict[str, str]
@@ -141,10 +245,18 @@ class VoiceSatelliteProtocol(APIServer):
         elif isinstance(msg, VoiceAssistantTimerEventResponse):
             self.handle_timer_event(VoiceAssistantTimerEventType(msg.event_type), msg)
         elif isinstance(msg, DeviceInfoRequest):
+            # Compute dynamic device name
+            base_name = re.sub(r'[\s-]+', '-', self.state.name.lower()).strip('-')
+            mac_no_colon = self.state.mac_address.replace(":", "").lower()
+            mac_last6 = mac_no_colon[-6:]
+            device_name = f"{base_name}-{mac_last6}"
+
             yield DeviceInfoResponse(
                 uses_password=False,
-                name=self.state.name,
+                name=device_name,
                 mac_address=self.state.mac_address,
+                manufacturer="Open Home Foundation",
+                model="Linux Voice Assistant",
                 voice_assistant_feature_flags=(
                     VoiceAssistantFeature.VOICE_ASSISTANT
                     | VoiceAssistantFeature.API_AUDIO
@@ -159,6 +271,7 @@ class VoiceSatelliteProtocol(APIServer):
                 ListEntitiesRequest,
                 SubscribeHomeAssistantStatesRequest,
                 MediaPlayerCommandRequest,
+                SwitchCommandRequest,
             ),
         ):
             for entity in self.state.entities:
@@ -216,7 +329,7 @@ class VoiceSatelliteProtocol(APIServer):
 
     def handle_audio(self, audio_chunk: bytes) -> None:
 
-        if not self._is_streaming_audio:
+        if not self._is_streaming_audio or self.state.muted:
             return
 
         self.send_messages([VoiceAssistantAudio(data=audio_chunk)])
@@ -227,6 +340,10 @@ class VoiceSatelliteProtocol(APIServer):
             self._timer_finished = False
             self.state.tts_player.stop()
             _LOGGER.debug("Stopping timer finished sound")
+            return
+
+        if self.state.muted:
+            # Don't respond to wake words when muted (voice_assistant.stop behavior)
             return
 
         wake_word_phrase = wake_word.wake_word
@@ -294,4 +411,43 @@ class VoiceSatelliteProtocol(APIServer):
 
     def connection_lost(self, exc):
         super().connection_lost(exc)
-        _LOGGER.info("Disconnected from Home Assistant")
+
+        self._disconnect_event.set()
+        self._is_streaming_audio = False
+        self._tts_url = None
+        self._tts_played = False
+        self._continue_conversation = False
+        self._timer_finished = False
+
+        # Stop any ongoing audio playback and wake/stop word processing.
+        try:
+            self.state.music_player.stop()
+        except Exception:  # pragma: no cover - defensive safety net
+            _LOGGER.exception("Failed to stop music player during disconnect")
+
+        try:
+            self.state.tts_player.stop()
+        except Exception:  # pragma: no cover - defensive safety net
+            _LOGGER.exception("Failed to stop TTS player during disconnect")
+
+        self.state.stop_word.is_active = False
+        self.state.connected = False
+        if self.state.satellite is self:
+            self.state.satellite = None
+
+        if self.state.mute_switch_entity is not None:
+            self.state.mute_switch_entity.sync_with_state()
+
+        _LOGGER.info("Disconnected from Home Assistant; waiting for reconnection")
+
+    def process_packet(self, msg_type: int, packet_data: bytes) -> None:
+        super().process_packet(msg_type, packet_data)
+
+        if msg_type == PROTO_TO_MESSAGE_TYPE[ConnectRequest]:
+            self.state.connected = True
+            # Send states after connect
+            states = []
+            for entity in self.state.entities:
+                states.extend(entity.handle_message(SubscribeHomeAssistantStatesRequest()))
+            self.send_messages(states)
+            _LOGGER.debug("Sent entity states after connect")

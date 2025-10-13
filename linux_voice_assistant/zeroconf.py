@@ -33,10 +33,11 @@ class HomeAssistantZeroconf:
         assert host
         self.host = host
         self._aiozc = AsyncZeroconf()
+        self.service_info = None
 
     async def register_server(self) -> None:
 
-        service_info = AsyncServiceInfo(
+        self.service_info = AsyncServiceInfo(
             "_esphomelib._tcp.local.",
             f"{self.name}._esphomelib._tcp.local.",
             addresses=[socket.inet_aton(self.host)],
@@ -46,13 +47,18 @@ class HomeAssistantZeroconf:
                 "mac": _get_mac_address(),
                 "board": "host",
                 "platform": "HOST",
-                "network": "ethernet",  # or "wifi"
+                "network": "wifi",  # or "ethernet"
             },
             server=f"{self.name}.local.",
         )
-        await self._aiozc.async_register_service(service_info)
-        _LOGGER.debug("Zeroconf discovery enabled: %s", service_info)
+        await self._aiozc.async_register_service(self.service_info)
+        _LOGGER.debug("Zeroconf discovery enabled: %s", self.service_info)
 
+    async def unregister_server(self) -> None:
+        if self.service_info is not None:
+            await self._aiozc.async_unregister_service(self.service_info)
+            await self._aiozc.async_close()
+            _LOGGER.debug("Zeroconf discovery disabled")
 
 def _get_mac_address() -> str:
     """Return MAC address formatted as hex with no colons."""
