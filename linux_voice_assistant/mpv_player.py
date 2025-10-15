@@ -1,94 +1,203 @@
-"""Media player using mpv in a subprocess."""
+"""
+Media player using mpv in a subprocess.
+Includes logic to detect the audio server being used (Pirewire, PulseAudio, Alsa).
+This refactored version simplifies the audio backend selection logic,
+improves readability with docstrings, and standardizes method signatures.
+"""
+from __future__ import annotations
 
 import logging
-from collections.abc import Callable
-from threading import Lock
-from typing import List, Optional, Union
+import os
+from threading import Lock, Timer
+from typing import Callable, Iterable, List, Optional, Sequence, Tuple, Union
 
 from mpv import MPV
 
 _LOGGER = logging.getLogger(__name__)
 
+# -----------------------------------------------------------------------------
+
+def _set_player_opt(player: MPV, key: str, value) -> bool:
+    """Safely set an mpv option, logging any errors."""
+    try:
+        player[key] = value
+        return True
+    except Exception:
+        _LOGGER.warning("Failed to set mpv option %r=%r", key, value, exc_info=True)
+        return False
+
+def _select_backend(player: MPV, device: Optional[str]) -> None:
+    """
+    Selects the best available audio output backend for mpv.
+    
+    The selection follows a clear priority:
+    1. A fully qualified device string (e.g., 'alsa/plughw:...') is used directly.
+    2. A simple device name tries PipeWire, then PulseAudio, then ALSA.
+    3. No device specified (or 'default') tries the default for PipeWire, PulseAudio, and ALSA in order.
+    """
+    candidates: List[Tuple[str, str]] = []
+    
+    # Define the preferred order of audio outputs
+    preferred_ao_order = ["pipewire", "pulse", "alsa"]
+
+    if device:
+        # If a full device path is given (e.g., "alsa/plughw:...")
+        for prefix in preferred_ao_order:
+            if device.startswith(f"{prefix}/"):
+                candidates.append((prefix, device))
+                break
+        
+        # If it's a simple name or "default"
+        if not candidates:
+            for ao in preferred_ao_order:
+                candidates.append((ao, f"{ao}/{device}"))
+    else:
+        # If no device is specified, try the default for each backend
+        for ao in preferred_ao_order:
+            candidates.append((ao, f"{ao}/default"))
+
+    # Try to set the audio output from the generated candidates
+    for ao, audio_device in candidates:
+        try:
+            player["ao"] = ao
+            player["audio-device"] = audio_device
+            _LOGGER.debug("mpv backend selected: ao=%s, audio-device=%s", ao, audio_device)
+            return
+        except Exception:
+            continue
+            
+    _LOGGER.warning("No suitable audio output backend could be found.")
+
 
 class MpvMediaPlayer:
-    def __init__(self, device: Optional[str] = None) -> None:
-        self.player = MPV()
+    """A media player class that wraps the python-mpv library."""
+    def __init__(self, device: Optional[str] = None, initial_volume: float = 1.0) -> None:
+        self.player = MPV(
+            video=False,
+            terminal=False,
+            log_handler=self._mpv_log,
+            # Set options directly in the constructor
+            audio_samplerate=44100,
+            audio_channels="stereo",
+            keep_open="no",
+            network_timeout=7,
+            msg_level=os.environ.get("LVA_MPV_MSG_LEVEL", "all=warn"),
+        )
 
-        if device:
-            self.player["audio-device"] = device
+        _select_backend(self.player, device)
+        self.set_volume(int(initial_volume * 100))
 
-        self.is_playing = False
-
+        self.is_playing: bool = False
         self._playlist: List[str] = []
         self._done_callback: Optional[Callable[[], None]] = None
         self._done_callback_lock = Lock()
+        self._pre_duck_volume: Optional[int] = None
 
-        self._duck_volume: int = 50
-        self._unduck_volume: int = 100
-
-        self.player.event_callback("end-file")(self._on_end_file)
+        self.player.observe_property("idle-active", self._on_idle_active)
 
     def play(
         self,
-        url: Union[str, List[str]],
+        url: Union[str, Sequence[str], bytes],
         done_callback: Optional[Callable[[], None]] = None,
-        stop_first: bool = True,
     ) -> None:
-        self.stop()
+        """Plays a URL or a sequence of URLs."""
+        self.stop() # Ensure player is in a clean state
 
-        if isinstance(url, str):
-            self._playlist = [url]
+        with self._done_callback_lock:
+            self._done_callback = done_callback
+
+        playlist: List[str] = []
+        if isinstance(url, (list, tuple)):
+            playlist = list(url)
+        elif isinstance(url, bytes):
+            playlist = [url.decode(errors="ignore")]
+        elif isinstance(url, str):
+            playlist = [url]
         else:
-            self._playlist = url
+            _LOGGER.error("play() expected str, bytes, or sequence, got %r", type(url))
+            self._run_done_callback()
+            return
+        
+        if not playlist:
+            self._run_done_callback()
+            return
+            
+        # Load the full playlist into mpv
+        self.player.playlist_clear()
+        for item in playlist:
+            self.player.playlist_append(item)
 
-        next_url = self._playlist.pop(0)
-        _LOGGER.debug("Playing %s", next_url)
-
-        self._done_callback = done_callback
         self.is_playing = True
-        self.player.play(next_url)
-
+        self.player.playlist_pos = 0 # Start playing from the first item
+        
     def pause(self) -> None:
+        """Pauses playback."""
         self.player.pause = True
-        self.is_playing = False
 
     def resume(self) -> None:
+        """Resumes playback."""
         self.player.pause = False
-        if self._playlist:
-            self.is_playing = True
 
     def stop(self) -> None:
-        self.player.stop()
-        self._playlist.clear()
+        """Stops playback and clears the playlist."""
+        if self.is_playing:
+            self.is_playing = False
+            self.player.playlist_clear()
+            self.player.command("stop")
+            self._run_done_callback()
+            
+    def set_volume(self, volume: int) -> None:
+        """Sets the player volume from 0 to 100."""
+        try:
+            self.player.volume = max(0, min(100, volume))
+        except Exception:
+            _LOGGER.exception("set_volume() failed")
 
-    def duck(self) -> None:
-        self.player.volume = self._duck_volume
+    def duck(self, target_percent: int = 20) -> None:
+        """Lowers the volume for an announcement."""
+        if self._pre_duck_volume is not None:
+            return
+        try:
+            self._pre_duck_volume = int(self.player.volume)
+            self.set_volume(target_percent)
+        except Exception:
+            _LOGGER.exception("duck() failed")
 
     def unduck(self) -> None:
-        self.player.volume = self._unduck_volume
-
-    def set_volume(self, volume: int) -> None:
-        volume = max(0, min(100, volume))
-        self.player.volume = volume
-
-        self._unduck_volume = volume
-        self._duck_volume = volume // 2
-
-    def _on_end_file(self, event) -> None:
-        if self._playlist:
-            self.player.play(self._playlist.pop(0))
+        """Restores the volume after an announcement."""
+        if self._pre_duck_volume is None:
             return
+        try:
+            self.set_volume(self._pre_duck_volume)
+        finally:
+            self._pre_duck_volume = None
 
-        self.is_playing = False
+    def _on_idle_active(self, _name: str, active: bool) -> None:
+        """Callback triggered when mpv enters or leaves the idle state."""
+        if active and self.is_playing:
+            _LOGGER.debug("mpv became idle; treating as end-of-playback")
+            self.is_playing = False
+            self._run_done_callback()
 
-        todo_callback: Optional[Callable[[], None]] = None
+    def _run_done_callback(self) -> None:
+        """Safely runs the done_callback if it exists."""
         with self._done_callback_lock:
-            if self._done_callback:
-                todo_callback = self._done_callback
-                self._done_callback = None
-
-        if todo_callback:
+            cb = self._done_callback
+            self._done_callback = None
+        if cb:
             try:
-                todo_callback()
+                cb()
             except Exception:
-                _LOGGER.exception("Unexpected error running done callback")
+                _LOGGER.exception("Error in done_callback")
+
+    def _mpv_log(self, level: str, prefix: str, text: str) -> None:
+        """Routes mpv's internal logs to our logger."""
+        msg = f"mpv[{prefix}]: {text}".rstrip()
+        if level == "error":
+            _LOGGER.error(msg)
+        elif level == "warn":
+            _LOGGER.warning(msg)
+        elif level == "info":
+            _LOGGER.info(msg)
+        else:
+            _LOGGER.debug(msg)
