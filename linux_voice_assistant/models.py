@@ -9,7 +9,7 @@ from queue import Queue
 from typing import TYPE_CHECKING, Dict, List, Optional, Union
 
 if TYPE_CHECKING:
-    from .entity import ESPHomeEntity, MediaPlayerEntity
+    from .entity import ESPHomeEntity, MediaPlayerEntity, MuteSwitchEntity
     from .microwakeword import MicroWakeWord
     from .mpv_player import MpvMediaPlayer
     from .openwakeword import OpenWakeWord
@@ -56,6 +56,7 @@ class AvailableWakeWord:
 @dataclass
 class Preferences:
     active_wake_words: List[str] = field(default_factory=list)
+    volume: Optional[float] = None
 
 
 @dataclass
@@ -81,8 +82,12 @@ class ServerState:
 
     media_player_entity: "Optional[MediaPlayerEntity]" = None
     satellite: "Optional[VoiceSatelliteProtocol]" = None
+    mute_switch_entity: "Optional[MuteSwitchEntity]" = None
     wake_words_changed: bool = False
     refractory_seconds: float = 2.0
+    muted: bool = False
+    connected: bool = False
+    volume: float = 1.0
 
     def save_preferences(self) -> None:
         """Save preferences as JSON."""
@@ -92,3 +97,18 @@ class ServerState:
             json.dump(
                 asdict(self.preferences), preferences_file, ensure_ascii=False, indent=4
             )
+
+    def persist_volume(self, volume: float) -> None:
+        """Persist the normalized media volume (0.0 - 1.0)."""
+        clamped_volume = max(0.0, min(1.0, volume))
+
+        if (
+            abs(self.volume - clamped_volume) < 0.0001
+            and self.preferences.volume is not None
+            and abs(self.preferences.volume - clamped_volume) < 0.0001
+        ):
+            return
+
+        self.volume = clamped_volume
+        self.preferences.volume = clamped_volume
+        self.save_preferences()

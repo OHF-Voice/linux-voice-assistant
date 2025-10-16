@@ -23,8 +23,9 @@ class MpvMediaPlayer:
         self._done_callback: Optional[Callable[[], None]] = None
         self._done_callback_lock = Lock()
 
-        self._duck_volume: int = 50
+        self._duck_ratio: float = 0.2
         self._unduck_volume: int = 100
+        self._duck_volume: int = self._compute_duck_volume()
 
         self.player.event_callback("end-file")(self._on_end_file)
 
@@ -72,7 +73,14 @@ class MpvMediaPlayer:
         self.player.volume = volume
 
         self._unduck_volume = volume
-        self._duck_volume = volume // 2
+        self._unduck_volume = volume
+        self._duck_volume = self._compute_duck_volume()
+
+    def _compute_duck_volume(self) -> int:
+        if self._unduck_volume <= 0:
+            return 0
+
+        return max(1, int(round(self._unduck_volume * self._duck_ratio)))
 
     def _on_end_file(self, event) -> None:
         if self._playlist:

@@ -133,6 +133,10 @@ async def main() -> None:
     else:
         preferences = Preferences()
 
+    initial_volume = preferences.volume if preferences.volume is not None else 1.0
+    initial_volume = max(0.0, min(1.0, float(initial_volume)))
+    preferences.volume = initial_volume
+
     libtensorflowlite_c_path = _LIB_DIR / "libtensorflowlite_c.so"
     _LOGGER.debug("libtensorflowlite_c path: %s", libtensorflowlite_c_path)
 
@@ -190,7 +194,12 @@ async def main() -> None:
         oww_melspectrogram_path=Path(args.oww_melspectrogram_model),
         oww_embedding_path=Path(args.oww_embedding_model),
         refractory_seconds=args.refractory_seconds,
+        volume=initial_volume,
     )
+
+    initial_volume_percent = int(round(initial_volume * 100))
+    state.music_player.set_volume(initial_volume_percent)
+    state.tts_player.set_volume(initial_volume_percent)
 
     process_audio_thread = threading.Thread(
         target=process_audio, args=(state,), daemon=True
@@ -302,7 +311,7 @@ def process_audio(state: ServerState):
                                 if prob > 0.5:
                                     activated = True
 
-                    if activated:
+                    if activated and not state.muted:
                         # Check refractory
                         now = time.monotonic()
                         if (last_active is None) or (
@@ -317,7 +326,7 @@ def process_audio(state: ServerState):
                     if state.stop_word.process_streaming(micro_input):
                         stopped = True
 
-                if stopped and state.stop_word.is_active:
+                if stopped and state.stop_word.is_active and not state.muted:
                     state.satellite.stop()
             except Exception:
                 _LOGGER.exception("Unexpected error handling audio")
