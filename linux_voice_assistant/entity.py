@@ -13,12 +13,28 @@ from aioesphomeapi.api_pb2 import (  # type: ignore[attr-defined]
     SwitchCommandRequest,
     SwitchStateResponse,
 )
-from aioesphomeapi.model import MediaPlayerCommand, MediaPlayerState, EntityCategory
+from aioesphomeapi.model import (
+    MediaPlayerCommand,
+    MediaPlayerEntityFeature,
+    MediaPlayerState,
+    EntityCategory,
+)
 from google.protobuf import message
 
 from .api_server import APIServer
 from .mpv_player import MpvMediaPlayer
 from .util import call_all
+
+
+SUPPORTED_MEDIA_PLAYER_FEATURES = (
+    MediaPlayerEntityFeature.PLAY
+    | MediaPlayerEntityFeature.PAUSE
+    | MediaPlayerEntityFeature.STOP
+    | MediaPlayerEntityFeature.PLAY_MEDIA
+    | MediaPlayerEntityFeature.VOLUME_SET
+    | MediaPlayerEntityFeature.VOLUME_MUTE
+    | MediaPlayerEntityFeature.MEDIA_ANNOUNCE
+)
 
 
 class ESPHomeEntity:
@@ -102,21 +118,20 @@ class MediaPlayerEntity(ESPHomeEntity):
                 announcement = msg.has_announcement and msg.announcement
                 yield from self.play(msg.media_url, announcement=announcement)
             elif msg.has_command:
-                if msg.command == MediaPlayerCommand.PAUSE:
+                command = MediaPlayerCommand(msg.command)
+                if command == MediaPlayerCommand.PAUSE:
                     self.music_player.pause()
                     self.announce_player.pause()
-                    if self.music_player.player['idle-active'] and self.announce_player.player['idle-active']:
-                        yield self._update_state(MediaPlayerState.IDLE)
-                    else:
-                        yield self._update_state(MediaPlayerState.PAUSED)
-                elif msg.command == MediaPlayerCommand.PLAY:
+                    yield self._update_state(self._determine_state())
+                elif command == MediaPlayerCommand.PLAY:
                     self.music_player.resume()
                     self.announce_player.resume()
-                    if self.music_player.player['idle-active'] and self.announce_player.player['idle-active']:
-                        yield self._update_state(MediaPlayerState.IDLE)
-                    else:
-                        yield self._update_state(MediaPlayerState.PLAYING)
-                elif msg.command == MediaPlayerCommand.MUTE:
+                    yield self._update_state(self._determine_state())
+                elif command == MediaPlayerCommand.STOP:
+                    self.music_player.stop()
+                    self.announce_player.stop()
+                    yield self._update_state(self._determine_state())
+                elif command == MediaPlayerCommand.MUTE:
                     if not self.muted:
                         self.previous_volume = self.volume
                         self.volume = 0
@@ -124,17 +139,13 @@ class MediaPlayerEntity(ESPHomeEntity):
                         self.announce_player.set_volume(0)
                         self.muted = True
                     yield self._update_state(self.state)
-                elif msg.command == MediaPlayerCommand.UNMUTE:
+                elif command == MediaPlayerCommand.UNMUTE:
                     if self.muted:
                         self.volume = self.previous_volume
                         self.music_player.set_volume(int(self.volume * 100))
                         self.announce_player.set_volume(int(self.volume * 100))
                         self.muted = False
                     yield self._update_state(self.state)
-                    yield self._update_state(MediaPlayerState.PAUSED)
-                elif msg.command == MediaPlayerCommand.PLAY:
-                    self.music_player.resume()
-                    yield self._update_state(MediaPlayerState.PLAYING)
             elif msg.has_volume:
                 volume = int(msg.volume * 100)
                 self.music_player.set_volume(volume)
@@ -147,6 +158,7 @@ class MediaPlayerEntity(ESPHomeEntity):
                 key=self.key,
                 name=self.name,
                 supports_pause=True,
+                feature_flags=SUPPORTED_MEDIA_PLAYER_FEATURES,
             )
         elif isinstance(msg, SubscribeHomeAssistantStatesRequest):
             yield self._get_state_message()
@@ -162,6 +174,15 @@ class MediaPlayerEntity(ESPHomeEntity):
             volume=self.volume,
             muted=self.muted,
         )
+
+    def _determine_state(self) -> MediaPlayerState:
+        if self.music_player.is_playing or self.announce_player.is_playing:
+            return MediaPlayerState.PLAYING
+
+        if self.music_player.is_paused or self.announce_player.is_paused:
+            return MediaPlayerState.PAUSED
+
+        return MediaPlayerState.IDLE
 
 
 # -----------------------------------------------------------------------------

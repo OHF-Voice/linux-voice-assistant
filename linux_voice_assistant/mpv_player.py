@@ -18,6 +18,7 @@ class MpvMediaPlayer:
             self.player["audio-device"] = device
 
         self.is_playing = False
+        self.is_paused = False
 
         self._playlist: List[str] = []
         self._done_callback: Optional[Callable[[], None]] = None
@@ -46,20 +47,29 @@ class MpvMediaPlayer:
 
         self._done_callback = done_callback
         self.is_playing = True
+        self.is_paused = False
         self.player.play(next_url)
 
     def pause(self) -> None:
+        was_active = self.is_playing or self.is_paused
         self.player.pause = True
         self.is_playing = False
+        self.is_paused = was_active
 
     def resume(self) -> None:
+        was_paused = self.is_paused
         self.player.pause = False
-        if self._playlist:
+        self.is_paused = False
+        if was_paused or self._playlist:
             self.is_playing = True
+        else:
+            self.is_playing = False
 
     def stop(self) -> None:
         self.player.stop()
         self._playlist.clear()
+        self.is_playing = False
+        self.is_paused = False
 
     def duck(self) -> None:
         self.player.volume = self._duck_volume
@@ -80,6 +90,7 @@ class MpvMediaPlayer:
             return
 
         self.is_playing = False
+        self.is_paused = False
 
         todo_callback: Optional[Callable[[], None]] = None
         with self._done_callback_lock:
