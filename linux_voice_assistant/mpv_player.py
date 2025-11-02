@@ -48,6 +48,8 @@ class MpvMediaPlayer:
         self._done_callback = done_callback
         self.is_playing = True
         self.is_paused = False
+        # Ensure playback starts even if the player was previously paused.
+        self.player.pause = False
         self.player.play(next_url)
 
     def pause(self) -> None:

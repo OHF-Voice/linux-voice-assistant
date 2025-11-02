@@ -77,24 +77,41 @@ class MediaPlayerEntity(ESPHomeEntity):
         announcement: bool = False,
         done_callback: Optional[Callable[[], None]] = None,
     ) -> Iterable[message.Message]:
+        previous_state = self._determine_state()
+
         if announcement:
-            if self.music_player.is_playing:
-                # Announce, resume music
+            music_was_playing = self.music_player.is_playing
+            announce_was_paused = self.announce_player.is_paused
+
+            if music_was_playing:
                 self.music_player.pause()
+
+            def restore_announcement_pause() -> None:
+                if announce_was_paused:
+                    self.announce_player.pause()
+                    self.announce_player.is_paused = True
+
+            def restore_state() -> None:
+                self.server.send_messages(
+                    [self._update_state(previous_state)]
+                )
+
+            if music_was_playing:
                 self.announce_player.play(
                     url,
                     done_callback=lambda: call_all(
-                        self.music_player.resume, done_callback
+                        self.music_player.resume,
+                        restore_announcement_pause,
+                        restore_state,
+                        done_callback,
                     ),
                 )
             else:
-                # Announce, idle
                 self.announce_player.play(
                     url,
                     done_callback=lambda: call_all(
-                        self.server.send_messages(
-                            [self._update_state(MediaPlayerState.IDLE)]
-                        ),
+                        restore_announcement_pause,
+                        restore_state,
                         done_callback,
                     ),
                 )
