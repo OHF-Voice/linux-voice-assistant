@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 import asyncio
+import errno
 import json
 import logging
 import sys
@@ -33,64 +34,92 @@ _SOUNDS_DIR = _REPO_DIR / "sounds"
 
 async def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--name", required=True)
+    parser.add_argument(
+        "--name",
+        metavar="NAME",
+        help="Name for the voice assistant (Required)"
+    )
     parser.add_argument(
         "--audio-input-device",
-        help="soundcard name for input device (see --list-input-devices)",
+        help="Device name for input device (see --list-input-devices)"
     )
     parser.add_argument(
         "--list-input-devices",
         action="store_true",
-        help="List audio input devices and exit",
+        help="List audio input devices and exit"
     )
-    parser.add_argument("--audio-input-block-size", type=int, default=1024)
+    parser.add_argument(
+        "--audio-input-block-size",
+        type=int,
+        default=1024
+    )
     parser.add_argument(
         "--audio-output-device",
-        help="mpv name for output device (see --list-output-devices)",
+        help="Device name for output device (see --list-output-devices)"
     )
     parser.add_argument(
         "--list-output-devices",
         action="store_true",
-        help="List audio output devices and exit",
+        help="List audio output devices and exit"
     )
     parser.add_argument(
         "--wake-word-dir",
         default=[_WAKEWORDS_DIR],
         action="append",
-        help="Directory with wake word models (.tflite) and configs (.json)",
+        help="Directory with wake word models (.tflite) and configs (.json) (default: wakewords)"
     )
     parser.add_argument(
-        "--wake-model", default="okay_nabu", help="Id of active wake model"
+        "--wake-model",
+        default="okay_nabu",
+        help="Id of active wake model (default: okay_nabu)"
     )
-    parser.add_argument("--stop-model", default="stop", help="Id of stop model")
+    parser.add_argument(
+        "--stop-model",
+        default="stop",
+        help="Id of stop model (default: stop)"
+    )
     parser.add_argument(
         "--refractory-seconds",
         default=2.0,
         type=float,
-        help="Seconds before wake word can be activated again",
-    )
-    #
-    parser.add_argument(
-        "--wakeup-sound", default=str(_SOUNDS_DIR / "wake_word_triggered.flac")
+        help="Seconds before wake word can be activated again (default: 2.0)"
     )
     parser.add_argument(
-        "--timer-finished-sound", default=str(_SOUNDS_DIR / "timer_finished.flac")
+        "--wakeup-sound",
+        default=str(_SOUNDS_DIR / "wake_word_triggered.flac"),
+        help="Directory and file name for wake sound (default: wake_word_triggered.flac)"
     )
-    #
-    parser.add_argument("--preferences-file", default=_REPO_DIR / "preferences.json")
-    #
+    parser.add_argument(
+        "--timer-finished-sound",
+        default=str(_SOUNDS_DIR / "timer_finished.flac"),
+        help="Directory and file name for timer finished sound (default: timer_finished.flac)"
+    )
+    parser.add_argument(
+        "--preferences-file",
+        default=_REPO_DIR / "preferences.json",
+        help="Directory and file name for preferences file (default: preferences.json)"
+    )
     parser.add_argument(
         "--host",
         default="0.0.0.0",
-        help="Address for ESPHome server (default: 0.0.0.0)",
+        help="Address for ESPHome server (default: 0.0.0.0)"
     )
     parser.add_argument(
-        "--port", type=int, default=6053, help="Port for ESPHome server (default: 6053)"
+        "--port",
+        type=int,
+        default=6053,
+        help="Port for ESPHome server (default: 6053)"
     )
     parser.add_argument(
-        "--debug", action="store_true", help="Print DEBUG messages to console"
+        "--debug",
+        action="store_true",
+        help="Print DEBUG messages to console"
     )
     args = parser.parse_args()
+
+    if len(sys.argv) == 1:
+        parser.print_help()
+        return
 
     if args.list_input_devices:
         print("Input devices")
@@ -109,6 +138,9 @@ async def main() -> None:
         for speaker in player.audio_device_list:  # type: ignore
             print(speaker["name"] + ":", speaker["description"])
         return
+
+    if args.name is None:
+        parser.error("--name is required unless listing audio devices")
 
     logging.basicConfig(level=logging.DEBUG if args.debug else logging.INFO)
     _LOGGER.debug(args)
@@ -218,17 +250,27 @@ async def main() -> None:
         refractory_seconds=args.refractory_seconds,
     )
 
+    loop = asyncio.get_running_loop()
+    try:
+        server = await loop.create_server(
+            lambda: VoiceSatelliteProtocol(state), host=args.host, port=args.port
+        )
+    except OSError as err:
+        message = err.strerror or str(err)
+        if err.errno == errno.EADDRINUSE:
+            message = "address already in use"
+        print(
+            f"Error while attempting to bind on address ({args.host!r}, {args.port}): {message}",
+            file=sys.stderr,
+        )
+        return
+
     process_audio_thread = threading.Thread(
         target=process_audio,
         args=(state, mic, args.audio_input_block_size),
         daemon=True,
     )
     process_audio_thread.start()
-
-    loop = asyncio.get_running_loop()
-    server = await loop.create_server(
-        lambda: VoiceSatelliteProtocol(state), host=args.host, port=args.port
-    )
 
     # Auto discovery (zeroconf, mDNS)
     discovery = HomeAssistantZeroconf(port=args.port, name=args.name)
