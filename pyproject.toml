@@ -26,20 +26,21 @@ classifiers = [
 requires-python = ">=3.9.0"
 dependencies = [
     "aioesphomeapi==37.2.1",
-    "sounddevice<1",
+    "soundcard<1",
     "numpy>=2,<3",
-    "pymicro-features==1.0.0",
+    "pymicro-wakeword>=2,<3",
+    "pyopen-wakeword>=1,<2",
     "python-mpv>=1,<2",
-    "zeroconf",
+    "zeroconf<1",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "black==24.8.0",
-    "flake8==7.2.0",
-    "mypy==1.14.0",
-    "pylint==3.2.7",
-    "pytest==8.3.5",
+    "black",
+    "flake8",
+    "mypy",
+    "pylint",
+    "pytest",
 ]
 
 [project.urls]

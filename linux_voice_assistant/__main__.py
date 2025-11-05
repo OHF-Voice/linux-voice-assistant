@@ -3,34 +3,29 @@ import argparse
 import asyncio
 import json
 import logging
+import sys
 import threading
 import time
 from pathlib import Path
 from queue import Queue
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional, Set, Union
 
 import numpy as np
-import sounddevice as sd
+import soundcard as sc
+from pymicro_wakeword import MicroWakeWord, MicroWakeWordFeatures
+from pyopen_wakeword import OpenWakeWord, OpenWakeWordFeatures
 
-from .microwakeword import MicroWakeWord, MicroWakeWordFeatures
 from .models import AvailableWakeWord, Preferences, ServerState, WakeWordType
 from .mpv_player import MpvMediaPlayer
-from .openwakeword import OpenWakeWord, OpenWakeWordFeatures
 from .satellite import VoiceSatelliteProtocol
-from .util import get_mac, is_arm
+from .util import get_mac
 from .zeroconf import HomeAssistantZeroconf
 
 _LOGGER = logging.getLogger(__name__)
 _MODULE_DIR = Path(__file__).parent
 _REPO_DIR = _MODULE_DIR.parent
 _WAKEWORDS_DIR = _REPO_DIR / "wakewords"
-_OWW_DIR = _WAKEWORDS_DIR / "openWakeWord"
 _SOUNDS_DIR = _REPO_DIR / "sounds"
-
-if is_arm():
-    _LIB_DIR = _REPO_DIR / "lib" / "linux_arm64"
-else:
-    _LIB_DIR = _REPO_DIR / "lib" / "linux_amd64"
 
 
 # -----------------------------------------------------------------------------
@@ -41,11 +36,23 @@ async def main() -> None:
     parser.add_argument("--name", required=True)
     parser.add_argument(
         "--audio-input-device",
-        default="default",
-        help="sounddevice name for input device",
+        help="soundcard name for input device (see --list-input-devices)",
+    )
+    parser.add_argument(
+        "--list-input-devices",
+        action="store_true",
+        help="List audio input devices and exit",
     )
     parser.add_argument("--audio-input-block-size", type=int, default=1024)
-    parser.add_argument("--audio-output-device", help="mpv name for output device")
+    parser.add_argument(
+        "--audio-output-device",
+        help="mpv name for output device (see --list-output-devices)",
+    )
+    parser.add_argument(
+        "--list-output-devices",
+        action="store_true",
+        help="List audio output devices and exit",
+    )
     parser.add_argument(
         "--wake-word-dir",
         default=[_WAKEWORDS_DIR],
@@ -61,17 +68,6 @@ async def main() -> None:
         default=2.0,
         type=float,
         help="Seconds before wake word can be activated again",
-    )
-    #
-    parser.add_argument(
-        "--oww-melspectrogram-model",
-        default=_OWW_DIR / "melspectrogram.tflite",
-        help="Path to openWakeWord melspectrogram model",
-    )
-    parser.add_argument(
-        "--oww-embedding-model",
-        default=_OWW_DIR / "embedding_model.tflite",
-        help="Path to openWakeWord embedding model",
     )
     #
     parser.add_argument(
@@ -96,8 +92,37 @@ async def main() -> None:
     )
     args = parser.parse_args()
 
+    if args.list_input_devices:
+        print("Input devices")
+        print("=" * 13)
+        for idx, mic in enumerate(sc.all_microphones()):
+            print(f"[{idx}]", mic.name)
+        return
+
+    if args.list_output_devices:
+        from mpv import MPV
+
+        player = MPV()
+        print("Output devices")
+        print("=" * 14)
+
+        for speaker in player.audio_device_list:  # type: ignore
+            print(speaker["name"] + ":", speaker["description"])
+        return
+
     logging.basicConfig(level=logging.DEBUG if args.debug else logging.INFO)
     _LOGGER.debug(args)
+
+    # Resolve microphone
+    if args.audio_input_device is not None:
+        try:
+            args.audio_input_device = int(args.audio_input_device)
+        except ValueError:
+            pass
+
+        mic = sc.get_microphone(args.audio_input_device)
+    else:
+        mic = sc.default_microphone()
 
     # Load available wake words
     wake_word_dirs = [Path(ww_dir) for ww_dir in args.wake_word_dir]
@@ -112,13 +137,18 @@ async def main() -> None:
 
             with open(model_config_path, "r", encoding="utf-8") as model_config_file:
                 model_config = json.load(model_config_file)
-                model_type = model_config["type"]
+                model_type = WakeWordType(model_config["type"])
+                if model_type == WakeWordType.OPEN_WAKE_WORD:
+                    wake_word_path = model_config_path.parent / model_config["model"]
+                else:
+                    wake_word_path = model_config_path
+
                 available_wake_words[model_id] = AvailableWakeWord(
                     id=model_id,
                     type=WakeWordType(model_type),
                     wake_word=model_config["wake_word"],
                     trained_languages=model_config.get("trained_languages", []),
-                    config_path=model_config_path,
+                    wake_word_path=wake_word_path,
                 )
 
     _LOGGER.debug("Available wake words: %s", list(sorted(available_wake_words.keys())))
@@ -133,10 +163,8 @@ async def main() -> None:
     else:
         preferences = Preferences()
 
-    libtensorflowlite_c_path = _LIB_DIR / "libtensorflowlite_c.so"
-    _LOGGER.debug("libtensorflowlite_c path: %s", libtensorflowlite_c_path)
-
     # Load wake/stop models
+    active_wake_words: Set[str] = set()
     wake_models: Dict[str, Union[MicroWakeWord, OpenWakeWord]] = {}
     if preferences.active_wake_words:
         # Load preferred models
@@ -147,7 +175,8 @@ async def main() -> None:
                 continue
 
             _LOGGER.debug("Loading wake model: %s", wake_word_id)
-            wake_models[wake_word_id] = wake_word.load(libtensorflowlite_c_path)
+            wake_models[wake_word_id] = wake_word.load()
+            active_wake_words.add(wake_word_id)
 
     if not wake_models:
         # Load default model
@@ -155,7 +184,8 @@ async def main() -> None:
         wake_word = available_wake_words[wake_word_id]
 
         _LOGGER.debug("Loading wake model: %s", wake_word_id)
-        wake_models[wake_word_id] = wake_word.load(libtensorflowlite_c_path)
+        wake_models[wake_word_id] = wake_word.load()
+        active_wake_words.add(wake_word_id)
 
     # TODO: allow openWakeWord for "stop"
     stop_model: Optional[MicroWakeWord] = None
@@ -165,9 +195,7 @@ async def main() -> None:
             continue
 
         _LOGGER.debug("Loading stop model: %s", stop_config_path)
-        stop_model = MicroWakeWord.from_config(
-            stop_config_path, libtensorflowlite_c_path
-        )
+        stop_model = MicroWakeWord.from_config(stop_config_path)
         break
 
     assert stop_model is not None
@@ -179,6 +207,7 @@ async def main() -> None:
         entities=[],
         available_wake_words=available_wake_words,
         wake_words=wake_models,
+        active_wake_words=active_wake_words,
         stop_word=stop_model,
         music_player=MpvMediaPlayer(device=args.audio_output_device),
         tts_player=MpvMediaPlayer(device=args.audio_output_device),
@@ -186,19 +215,15 @@ async def main() -> None:
         timer_finished_sound=args.timer_finished_sound,
         preferences=preferences,
         preferences_path=preferences_path,
-        libtensorflowlite_c_path=libtensorflowlite_c_path,
-        oww_melspectrogram_path=Path(args.oww_melspectrogram_model),
-        oww_embedding_path=Path(args.oww_embedding_model),
         refractory_seconds=args.refractory_seconds,
     )
 
     process_audio_thread = threading.Thread(
-        target=process_audio, args=(state,), daemon=True
+        target=process_audio,
+        args=(state, mic, args.audio_input_block_size),
+        daemon=True,
     )
     process_audio_thread.start()
-
-    def sd_callback(indata, _frames, _time, _status):
-        state.audio_queue.put_nowait(bytes(indata))
 
     loop = asyncio.get_running_loop()
     server = await loop.create_server(
@@ -210,18 +235,9 @@ async def main() -> None:
     await discovery.register_server()
 
     try:
-        _LOGGER.debug("Opening audio input device: %s", args.audio_input_device)
-        with sd.RawInputStream(
-            samplerate=16000,
-            blocksize=args.audio_input_block_size,
-            device=args.audio_input_device,
-            dtype="int16",
-            channels=1,
-            callback=sd_callback,
-        ):
-            async with server:
-                _LOGGER.info("Server started (host=%s, port=%s)", args.host, args.port)
-                await server.serve_forever()
+        async with server:
+            _LOGGER.info("Server started (host=%s, port=%s)", args.host, args.port)
+            await server.serve_forever()
     except KeyboardInterrupt:
         pass
     finally:
@@ -234,7 +250,7 @@ async def main() -> None:
 # -----------------------------------------------------------------------------
 
 
-def process_audio(state: ServerState):
+def process_audio(state: ServerState, mic, block_size: int):
     """Process audio chunks from the microphone."""
 
     wake_words: List[Union[MicroWakeWord, OpenWakeWord]] = []
@@ -248,82 +264,85 @@ def process_audio(state: ServerState):
     last_active: Optional[float] = None
 
     try:
-        while True:
-            audio_chunk = state.audio_queue.get()
-            if audio_chunk is None:
-                break
+        _LOGGER.debug("Opening audio input device: %s", mic.name)
+        with mic.recorder(samplerate=16000, channels=1, blocksize=block_size) as mic_in:
+            while True:
+                audio_chunk_array = mic_in.record(block_size).reshape(-1)
+                audio_chunk = (
+                    (np.clip(audio_chunk_array, -1.0, 1.0) * 32767.0)
+                    .astype("<i2")  # little-endian 16-bit signed
+                    .tobytes()
+                )
 
-            if state.satellite is None:
-                continue
+                if state.satellite is None:
+                    continue
 
-            if (not wake_words) or (state.wake_words_changed and state.wake_words):
-                # Update list of wake word models to process
-                state.wake_words_changed = False
-                wake_words = [ww for ww in state.wake_words.values() if ww.is_active]
+                if (not wake_words) or (state.wake_words_changed and state.wake_words):
+                    # Update list of wake word models to process
+                    state.wake_words_changed = False
+                    wake_words = [
+                        ww
+                        for ww in state.wake_words.values()
+                        if ww.id in state.active_wake_words
+                    ]
 
-                has_oww = False
-                for wake_word in wake_words:
-                    if isinstance(wake_word, OpenWakeWord):
-                        has_oww = True
+                    has_oww = False
+                    for wake_word in wake_words:
+                        if isinstance(wake_word, OpenWakeWord):
+                            has_oww = True
 
-                if micro_features is None:
-                    micro_features = MicroWakeWordFeatures(
-                        libtensorflowlite_c_path=state.libtensorflowlite_c_path,
-                    )
+                    if micro_features is None:
+                        micro_features = MicroWakeWordFeatures()
 
-                if has_oww and (oww_features is None):
-                    oww_features = OpenWakeWordFeatures(
-                        melspectrogram_model=state.oww_melspectrogram_path,
-                        embedding_model=state.oww_embedding_path,
-                        libtensorflowlite_c_path=state.libtensorflowlite_c_path,
-                    )
+                    if has_oww and (oww_features is None):
+                        oww_features = OpenWakeWordFeatures.from_builtin()
 
-            try:
-                state.satellite.handle_audio(audio_chunk)
+                try:
+                    state.satellite.handle_audio(audio_chunk)
 
-                assert micro_features is not None
-                micro_inputs.clear()
-                micro_inputs.extend(micro_features.process_streaming(audio_chunk))
+                    assert micro_features is not None
+                    micro_inputs.clear()
+                    micro_inputs.extend(micro_features.process_streaming(audio_chunk))
 
-                if has_oww:
-                    assert oww_features is not None
-                    oww_inputs.clear()
-                    oww_inputs.extend(oww_features.process_streaming(audio_chunk))
+                    if has_oww:
+                        assert oww_features is not None
+                        oww_inputs.clear()
+                        oww_inputs.extend(oww_features.process_streaming(audio_chunk))
 
-                for wake_word in wake_words:
-                    activated = False
-                    if isinstance(wake_word, MicroWakeWord):
-                        for micro_input in micro_inputs:
-                            if wake_word.process_streaming(micro_input):
-                                activated = True
-                    elif isinstance(wake_word, OpenWakeWord):
-                        for oww_input in oww_inputs:
-                            for prob in wake_word.process_streaming(oww_input):
-                                if prob > 0.5:
+                    for wake_word in wake_words:
+                        activated = False
+                        if isinstance(wake_word, MicroWakeWord):
+                            for micro_input in micro_inputs:
+                                if wake_word.process_streaming(micro_input):
                                     activated = True
+                        elif isinstance(wake_word, OpenWakeWord):
+                            for oww_input in oww_inputs:
+                                for prob in wake_word.process_streaming(oww_input):
+                                    if prob > 0.5:
+                                        activated = True
 
-                    if activated and not state.muted:
-                        # Check refractory
-                        now = time.monotonic()
-                        if (last_active is None) or (
-                            (now - last_active) > state.refractory_seconds
-                        ):
-                            state.satellite.wakeup(wake_word)
-                            last_active = now
+                        if activated and not state.muted:
+                            # Check refractory
+                            now = time.monotonic()
+                            if (last_active is None) or (
+                                (now - last_active) > state.refractory_seconds
+                            ):
+                                state.satellite.wakeup(wake_word)
+                                last_active = now
 
-                # Always process to keep state correct
-                stopped = False
-                for micro_input in micro_inputs:
-                    if state.stop_word.process_streaming(micro_input):
-                        stopped = True
+                    # Always process to keep state correct
+                    stopped = False
+                    for micro_input in micro_inputs:
+                        if state.stop_word.process_streaming(micro_input):
+                            stopped = True
 
-                if stopped and state.stop_word.is_active and not state.muted:
-                    state.satellite.stop()
-            except Exception:
-                _LOGGER.exception("Unexpected error handling audio")
-
+                    if stopped and (state.stop_word.id in state.active_wake_words) and not state.muted:
+                        state.satellite.stop()
+                except Exception:
+                    _LOGGER.exception("Unexpected error handling audio")
     except Exception:
         _LOGGER.exception("Unexpected error processing audio")
+        sys.exit(1)
 
 
 # -----------------------------------------------------------------------------

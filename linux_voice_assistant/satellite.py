@@ -37,12 +37,12 @@ from aioesphomeapi.model import (
     VoiceAssistantTimerEventType,
 )
 from google.protobuf import message
+from pymicro_wakeword import MicroWakeWord
+from pyopen_wakeword import OpenWakeWord
 
 from .api_server import APIServer
 from .entity import MediaPlayerEntity, MuteSwitchEntity
-from .microwakeword import MicroWakeWord
 from .models import ServerState
-from .openwakeword import OpenWakeWord
 from .util import call_all
 
 _LOGGER = logging.getLogger(__name__)
@@ -180,7 +180,7 @@ class VoiceSatelliteProtocol(APIServer):
         _LOGGER.debug("Timer event: type=%s", event_type.name)
         if event_type == VoiceAssistantTimerEventType.VOICE_ASSISTANT_TIMER_FINISHED:
             if not self._timer_finished:
-                self.state.stop_word.is_active = True
+                self.state.active_wake_words.add(self.state.stop_word.id)
                 self._timer_finished = True
                 self.duck()
                 self._play_timer_finished()
@@ -204,7 +204,7 @@ class VoiceSatelliteProtocol(APIServer):
 
             urls.append(msg.media_id)
 
-            self.state.stop_word.is_active = True
+            self.state.active_wake_words.add(self.state.stop_word.id)
             self._continue_conversation = msg.start_conversation
 
             self.duck()
@@ -259,7 +259,9 @@ class VoiceSatelliteProtocol(APIServer):
                     for ww in self.state.available_wake_words.values()
                 ],
                 active_wake_words=[
-                    ww.id for ww in self.state.wake_words.values() if ww.is_active
+                    ww.id
+                    for ww in self.state.wake_words.values()
+                    if ww.id in self.state.active_wake_words
                 ],
                 max_active_wake_words=2,
             )
@@ -278,18 +280,14 @@ class VoiceSatelliteProtocol(APIServer):
                 if not model_info:
                     continue
 
-                _LOGGER.debug("Loading wake word: %s", model_info.config_path)
-                self.state.wake_words[wake_word_id] = model_info.load(
-                    self.state.libtensorflowlite_c_path
-                )
+                _LOGGER.debug("Loading wake word: %s", model_info.wake_word_path)
+                self.state.wake_words[wake_word_id] = model_info.load()
 
                 _LOGGER.info("Wake word set: %s", wake_word_id)
                 active_wake_words.add(wake_word_id)
                 break
 
-            for wake_word in self.state.wake_words.values():
-                wake_word.is_active = wake_word.id in active_wake_words
-
+            self.state.active_wake_words = active_wake_words
             _LOGGER.debug("Active wake words: %s", active_wake_words)
 
             self.state.preferences.active_wake_words = list(active_wake_words)
@@ -325,7 +323,7 @@ class VoiceSatelliteProtocol(APIServer):
         self.state.tts_player.play(self.state.wakeup_sound)
 
     def stop(self) -> None:
-        self.state.stop_word.is_active = False
+        self.state.active_wake_words.discard(self.state.stop_word.id)
         self.state.tts_player.stop()
 
         if self._timer_finished:
@@ -342,7 +340,7 @@ class VoiceSatelliteProtocol(APIServer):
         self._tts_played = True
         _LOGGER.debug("Playing TTS response: %s", self._tts_url)
 
-        self.state.stop_word.is_active = True
+        self.state.active_wake_words.add(self.state.stop_word.id)
         self.state.tts_player.play(self._tts_url, done_callback=self._tts_finished)
 
     def duck(self) -> None:
@@ -354,7 +352,7 @@ class VoiceSatelliteProtocol(APIServer):
         self.state.music_player.unduck()
 
     def _tts_finished(self) -> None:
-        self.state.stop_word.is_active = False
+        self.state.active_wake_words.discard(self.state.stop_word.id)
         self.send_messages([VoiceAssistantAnnounceFinished()])
 
         if self._continue_conversation:
