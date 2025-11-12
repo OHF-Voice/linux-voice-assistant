@@ -40,7 +40,7 @@ from pymicro_wakeword import MicroWakeWord
 from pyopen_wakeword import OpenWakeWord
 
 from .api_server import APIServer
-from .entity import MediaPlayerEntity
+from .entity import MediaPlayerEntity, ThinkingSoundEntity
 from .models import AvailableWakeWord, ServerState, WakeWordType
 from .util import call_all
 
@@ -66,12 +66,62 @@ class VoiceSatelliteProtocol(APIServer):
             )
             self.state.entities.append(self.state.media_player_entity)
 
+        existing_thinking_sound_switches = [
+            entity
+            for entity in self.state.entities
+            if isinstance(entity, ThinkingSoundEntity)
+        ]
+        if existing_thinking_sound_switches:
+            self.state.thinking_sound_entity = existing_thinking_sound_switches[0]
+            for extra in existing_thinking_sound_switches[1:]:
+                self.state.entities.remove(extra)
+
+        # Add/update thinking sound entity
+        thinking_sound_switch = self.state.thinking_sound_entity
+        if thinking_sound_switch is None:
+            thinking_sound_switch = ThinkingSoundEntity(
+                server=self,
+                key=len(state.entities),
+                name="Thinking Sound",
+                object_id="thinking_sound",
+                get_thinking_sound_enabled=lambda: self.state.thinking_sound_enabled,
+                set_thinking_sound_enabled=self._set_thinking_sound_enabled,
+            )
+            self.state.entities.append(thinking_sound_switch)
+            self.state.thinking_sound_entity = thinking_sound_switch
+        elif thinking_sound_switch not in self.state.entities:
+            self.state.entities.append(thinking_sound_switch)
+
+        # Load thinking sound enabled state from preferences (default to False if not set or unknown)
+        if hasattr(self.state.preferences, 'thinking_sound') and self.state.preferences.thinking_sound in (0, 1):
+            self.state.thinking_sound_enabled = bool(self.state.preferences.thinking_sound)
+        else:
+            self.state.thinking_sound_enabled = False
+
+        thinking_sound_switch.server = self
+        thinking_sound_switch.update_get_thinking_sound_enabled(lambda: self.state.thinking_sound_enabled)
+        thinking_sound_switch.update_set_thinking_sound_enabled(self._set_thinking_sound_enabled)
+        thinking_sound_switch.sync_with_state()
+
         self._is_streaming_audio = False
         self._tts_url: Optional[str] = None
         self._tts_played = False
         self._continue_conversation = False
         self._timer_finished = False
+        self._processing = False
         self._external_wake_words: Dict[str, VoiceAssistantExternalWakeWord] = {}
+
+    def _set_thinking_sound_enabled(self, new_state: bool) -> None:
+        self.state.thinking_sound_enabled = bool(new_state)
+        self.state.preferences.thinking_sound = 1 if self.state.thinking_sound_enabled else 0
+
+        if self.state.thinking_sound_enabled:
+            _LOGGER.debug("Thinking sound enabled")
+        else:
+            _LOGGER.debug("Thinking sound disabled")
+            pass
+        self.state.save_preferences()
+        
 
     def handle_voice_event(
         self, event_type: VoiceAssistantEventType, data: Dict[str, str]
@@ -82,6 +132,15 @@ class VoiceSatelliteProtocol(APIServer):
             self._tts_url = data.get("url")
             self._tts_played = False
             self._continue_conversation = False
+        elif event_type == VoiceAssistantEventType.VOICE_ASSISTANT_INTENT_START and self.state.thinking_sound_enabled:
+            # Play short "thinking/processing" sound if configured
+            processing = getattr(self.state, "processing_sound", None)
+            if processing:
+                _LOGGER.debug("Playing processing sound: %s", processing)
+                self.state.stop_word.is_active = True
+                self._processing = True
+                self.duck()
+                self.state.tts_player.play(self.state.processing_sound)            
         elif event_type in (
             VoiceAssistantEventType.VOICE_ASSISTANT_STT_VAD_END,
             VoiceAssistantEventType.VOICE_ASSISTANT_STT_END,
