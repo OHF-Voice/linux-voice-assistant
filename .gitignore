@@ -15,5 +15,6 @@ venv/
 .mypy_cache/
 *.egg-info/
 
-dist/
-preferences.json
+/dist/
+/preferences.json
+/local/
