@@ -17,7 +17,7 @@ from pyopen_wakeword import OpenWakeWord, OpenWakeWordFeatures
 
 from .models import AvailableWakeWord, Preferences, ServerState, WakeWordType
 from .mpv_player import MpvMediaPlayer
-from .satellite import VoiceSatelliteProtocol
+from .satellite import BaseSatelliteProtocol, VoiceSatelliteProtocol
 from .util import get_mac
 from .zeroconf import HomeAssistantZeroconf
 
@@ -52,6 +52,11 @@ async def main() -> None:
         "--list-output-devices",
         action="store_true",
         help="List audio output devices and exit",
+    )
+    parser.add_argument(
+        "--output-only",
+        action="store_true",
+        help="Create an output only (announcements) satellite",
     )
     parser.add_argument(
         "--wake-word-dir",
@@ -124,124 +129,154 @@ async def main() -> None:
     args.download_dir = Path(args.download_dir)
     args.download_dir.mkdir(parents=True, exist_ok=True)
 
-    # Resolve microphone
-    if args.audio_input_device is not None:
-        try:
-            args.audio_input_device = int(args.audio_input_device)
-        except ValueError:
-            pass
-
-        mic = sc.get_microphone(args.audio_input_device)
+    if args.output_only:
+        _LOGGER.info("Output only satellite")
+        state = ServerState(
+            name=args.name,
+            mac_address=get_mac(),
+            audio_queue=Queue(),
+            entities=[],
+            available_wake_words=None,
+            wake_words=None,
+            active_wake_words=None,
+            stop_word=None,
+            music_player=MpvMediaPlayer(device=args.audio_output_device),
+            tts_player=MpvMediaPlayer(device=args.audio_output_device),
+            wakeup_sound=None,
+            timer_finished_sound=None,
+            preferences=None,
+            preferences_path=None,
+            download_dir=args.download_dir,
+        )
     else:
-        mic = sc.default_microphone()
+        # Resolve microphone
+        if args.audio_input_device is not None:
+            try:
+                args.audio_input_device = int(args.audio_input_device)
+            except ValueError:
+                pass
 
-    # Load available wake words
-    wake_word_dirs = [Path(ww_dir) for ww_dir in args.wake_word_dir]
-    wake_word_dirs.append(args.download_dir / "external_wake_words")
-    available_wake_words: Dict[str, AvailableWakeWord] = {}
+            mic = sc.get_microphone(args.audio_input_device)
+        else:
+            mic = sc.default_microphone()
 
-    for wake_word_dir in wake_word_dirs:
-        for model_config_path in wake_word_dir.glob("*.json"):
-            model_id = model_config_path.stem
-            if model_id == args.stop_model:
-                # Don't show stop model as an available wake word
-                continue
+        # Load available wake words
+        wake_word_dirs = [Path(ww_dir) for ww_dir in args.wake_word_dir]
+        wake_word_dirs.append(args.download_dir / "external_wake_words")
+        available_wake_words: Dict[str, AvailableWakeWord] = {}
 
-            with open(model_config_path, "r", encoding="utf-8") as model_config_file:
-                model_config = json.load(model_config_file)
-                model_type = WakeWordType(model_config["type"])
-                if model_type == WakeWordType.OPEN_WAKE_WORD:
-                    wake_word_path = model_config_path.parent / model_config["model"]
-                else:
-                    wake_word_path = model_config_path
+        for wake_word_dir in wake_word_dirs:
+            for model_config_path in wake_word_dir.glob("*.json"):
+                model_id = model_config_path.stem
+                if model_id == args.stop_model:
+                    # Don't show stop model as an available wake word
+                    continue
 
-                available_wake_words[model_id] = AvailableWakeWord(
-                    id=model_id,
-                    type=WakeWordType(model_type),
-                    wake_word=model_config["wake_word"],
-                    trained_languages=model_config.get("trained_languages", []),
-                    wake_word_path=wake_word_path,
-                )
+                with open(
+                    model_config_path, "r", encoding="utf-8"
+                ) as model_config_file:
+                    model_config = json.load(model_config_file)
+                    model_type = WakeWordType(model_config["type"])
+                    if model_type == WakeWordType.OPEN_WAKE_WORD:
+                        wake_word_path = (
+                            model_config_path.parent / model_config["model"]
+                        )
+                    else:
+                        wake_word_path = model_config_path
 
-    _LOGGER.debug("Available wake words: %s", list(sorted(available_wake_words.keys())))
+                    available_wake_words[model_id] = AvailableWakeWord(
+                        id=model_id,
+                        type=WakeWordType(model_type),
+                        wake_word=model_config["wake_word"],
+                        trained_languages=model_config.get("trained_languages", []),
+                        wake_word_path=wake_word_path,
+                    )
 
-    # Load preferences
-    preferences_path = Path(args.preferences_file)
-    if preferences_path.exists():
-        _LOGGER.debug("Loading preferences: %s", preferences_path)
-        with open(preferences_path, "r", encoding="utf-8") as preferences_file:
-            preferences_dict = json.load(preferences_file)
-            preferences = Preferences(**preferences_dict)
-    else:
-        preferences = Preferences()
+        _LOGGER.debug(
+            "Available wake words: %s", list(sorted(available_wake_words.keys()))
+        )
 
-    # Load wake/stop models
-    active_wake_words: Set[str] = set()
-    wake_models: Dict[str, Union[MicroWakeWord, OpenWakeWord]] = {}
-    if preferences.active_wake_words:
-        # Load preferred models
-        for wake_word_id in preferences.active_wake_words:
-            wake_word = available_wake_words.get(wake_word_id)
-            if wake_word is None:
-                _LOGGER.warning("Unrecognized wake word id: %s", wake_word_id)
-                continue
+        # Load preferences
+        preferences_path = Path(args.preferences_file)
+        if preferences_path.exists():
+            _LOGGER.debug("Loading preferences: %s", preferences_path)
+            with open(preferences_path, "r", encoding="utf-8") as preferences_file:
+                preferences_dict = json.load(preferences_file)
+                preferences = Preferences(**preferences_dict)
+        else:
+            preferences = Preferences()
+
+        # Load wake/stop models
+        active_wake_words: Set[str] = set()
+        wake_models: Dict[str, Union[MicroWakeWord, OpenWakeWord]] = {}
+        if preferences.active_wake_words:
+            # Load preferred models
+            for wake_word_id in preferences.active_wake_words:
+                wake_word = available_wake_words.get(wake_word_id)
+                if wake_word is None:
+                    _LOGGER.warning("Unrecognized wake word id: %s", wake_word_id)
+                    continue
+
+                _LOGGER.debug("Loading wake model: %s", wake_word_id)
+                wake_models[wake_word_id] = wake_word.load()
+                active_wake_words.add(wake_word_id)
+
+        if not wake_models:
+            # Load default model
+            wake_word_id = args.wake_model
+            wake_word = available_wake_words[wake_word_id]
 
             _LOGGER.debug("Loading wake model: %s", wake_word_id)
             wake_models[wake_word_id] = wake_word.load()
             active_wake_words.add(wake_word_id)
 
-    if not wake_models:
-        # Load default model
-        wake_word_id = args.wake_model
-        wake_word = available_wake_words[wake_word_id]
+        # TODO: allow openWakeWord for "stop"
+        stop_model: Optional[MicroWakeWord] = None
+        for wake_word_dir in wake_word_dirs:
+            stop_config_path = wake_word_dir / f"{args.stop_model}.json"
+            if not stop_config_path.exists():
+                continue
 
-        _LOGGER.debug("Loading wake model: %s", wake_word_id)
-        wake_models[wake_word_id] = wake_word.load()
-        active_wake_words.add(wake_word_id)
+            _LOGGER.debug("Loading stop model: %s", stop_config_path)
+            stop_model = MicroWakeWord.from_config(stop_config_path)
+            break
 
-    # TODO: allow openWakeWord for "stop"
-    stop_model: Optional[MicroWakeWord] = None
-    for wake_word_dir in wake_word_dirs:
-        stop_config_path = wake_word_dir / f"{args.stop_model}.json"
-        if not stop_config_path.exists():
-            continue
+        assert stop_model is not None
 
-        _LOGGER.debug("Loading stop model: %s", stop_config_path)
-        stop_model = MicroWakeWord.from_config(stop_config_path)
-        break
-
-    assert stop_model is not None
-
-    state = ServerState(
-        name=args.name,
-        mac_address=get_mac(),
-        audio_queue=Queue(),
-        entities=[],
-        available_wake_words=available_wake_words,
-        wake_words=wake_models,
-        active_wake_words=active_wake_words,
-        stop_word=stop_model,
-        music_player=MpvMediaPlayer(device=args.audio_output_device),
-        tts_player=MpvMediaPlayer(device=args.audio_output_device),
-        wakeup_sound=args.wakeup_sound,
-        timer_finished_sound=args.timer_finished_sound,
-        preferences=preferences,
-        preferences_path=preferences_path,
-        refractory_seconds=args.refractory_seconds,
-        download_dir=args.download_dir,
-    )
-
-    process_audio_thread = threading.Thread(
-        target=process_audio,
-        args=(state, mic, args.audio_input_block_size),
-        daemon=True,
-    )
-    process_audio_thread.start()
+        state = ServerState(
+            name=args.name,
+            mac_address=get_mac(),
+            audio_queue=Queue(),
+            entities=[],
+            available_wake_words=available_wake_words,
+            wake_words=wake_models,
+            active_wake_words=active_wake_words,
+            stop_word=stop_model,
+            music_player=MpvMediaPlayer(device=args.audio_output_device),
+            tts_player=MpvMediaPlayer(device=args.audio_output_device),
+            wakeup_sound=args.wakeup_sound,
+            timer_finished_sound=args.timer_finished_sound,
+            preferences=preferences,
+            preferences_path=preferences_path,
+            refractory_seconds=args.refractory_seconds,
+            download_dir=args.download_dir,
+        )
+        process_audio_thread = threading.Thread(
+            target=process_audio,
+            args=(state, mic, args.audio_input_block_size),
+            daemon=True,
+        )
+        process_audio_thread.start()
 
     loop = asyncio.get_running_loop()
-    server = await loop.create_server(
-        lambda: VoiceSatelliteProtocol(state), host=args.host, port=args.port
-    )
+    if args.output_only:
+        server = await loop.create_server(
+            lambda: BaseSatelliteProtocol(state), host=args.host, port=args.port
+        )
+    else:
+        server = await loop.create_server(
+            lambda: VoiceSatelliteProtocol(state), host=args.host, port=args.port
+        )
 
     # Auto discovery (zeroconf, mDNS)
     discovery = HomeAssistantZeroconf(port=args.port, name=args.name)
@@ -251,13 +286,19 @@ async def main() -> None:
         async with server:
             _LOGGER.info("Server started (host=%s, port=%s)", args.host, args.port)
             await server.serve_forever()
-    except KeyboardInterrupt:
-        pass
+    except asyncio.CancelledError:
+        _LOGGER.debug("Stopping Server...")
+        server.close()
+        await server.wait_closed()
+        _LOGGER.debug("Server stopped")
+        raise
     finally:
+        _LOGGER.debug("Shutting down audio queue...")
         state.audio_queue.put_nowait(None)
-        process_audio_thread.join()
-
-    _LOGGER.debug("Server stopped")
+        if not args.output_only:
+            _LOGGER.debug("Waiting on audio processing thread...")
+            process_audio_thread.join()
+        _LOGGER.debug("Audio shutdown complete")
 
 
 # -----------------------------------------------------------------------------
@@ -361,4 +402,8 @@ def process_audio(state: ServerState, mic, block_size: int):
 # -----------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        pass
+
