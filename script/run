@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 import sys
+import os
 import subprocess
 import venv
+import shlex
+import time
 from pathlib import Path
 import json
 
@@ -30,6 +33,131 @@ else:
 # store preferences as `preferences/<NAME>.json` where <NAME> is the
 # `--name` argument. This keeps all instance preferences together.
 args = sys.argv[1:]
+# Helper: ensure a single universal RAM-backed log exists and return its path
+def _ensure_universal_ram_log():
+    ram_dir = Path(os.environ.get("LVAS_RAM_LOG_DIR", "/dev/shm"))
+    if not ram_dir.exists() or not ram_dir.is_dir():
+        ram_dir = Path("/tmp")
+    ram_log = ram_dir / "lvas_log"
+    if not ram_log.exists():
+        try:
+            try:
+                ram_dir.mkdir(parents=True, exist_ok=True)
+            except Exception:
+                pass
+            with open(ram_log, "x", encoding="utf-8") as lf:
+                lf.write("")
+        except Exception:
+            # fallback to /tmp
+            ram_dir = Path("/tmp")
+            ram_log = ram_dir / "lvas_log"
+            try:
+                if not ram_log.exists():
+                    with open(ram_log, "x", encoding="utf-8") as lf:
+                        lf.write("")
+            except Exception:
+                return None
+
+    # create/refresh project symlink `lvas_log`
+    try:
+        link_path = Path(__file__).parent.parent / "lvas_log"
+        if link_path.exists() or link_path.is_symlink():
+            try:
+                link_path.unlink()
+            except Exception:
+                pass
+        try:
+            link_path.symlink_to(ram_log)
+        except Exception:
+            pass
+    except Exception:
+        pass
+
+    return str(ram_log)
+
+def _append_deploy_log(log_path: str, name: str, args_list, pid=None):
+    try:
+        from datetime import datetime
+        # Use date+time prefix in [YYYY_MM_DD - HH:MM:SS] format
+        date_prefix = datetime.now().strftime("[%Y_%m_%d - %H:%M:%S]")
+        # Format args as a CLI string (e.g. --name "_test" --debug)
+        cli_args = shlex.join(args_list) if args_list else (f'--name "{name}"' if name else "")
+        pid_part = f"PID={pid} " if pid is not None else ""
+        with open(log_path, "a", encoding="utf-8") as lf:
+            lf.write(f"{date_prefix} START {pid_part}{cli_args}\n")
+    except Exception:
+        pass
+
+def _append_stop_log(log_path: str, name: str, args_list, pid=None, exit_code=None):
+    try:
+        from datetime import datetime
+
+        date_prefix = datetime.now().strftime("[%Y_%m_%d - %H:%M:%S]")
+        cli_args = shlex.join(args_list) if args_list else (f'--name "{name}"' if name else "")
+        pid_part = f"PID={pid} " if pid is not None else ""
+        code_part = f"code={exit_code} " if exit_code is not None else ""
+        with open(log_path, "a", encoding="utf-8") as lf:
+            lf.write(f"{date_prefix} STOP {pid_part}{code_part}{cli_args}\n")
+    except Exception:
+        pass
+
+# If the user asked for --all, start every stored assistant found in
+# `preferences/*_cli.json` using a single universal RAM-backed log.
+if "--all" in args:
+    prefs_dir = _PROGRAM_DIR / "preferences"
+    if not prefs_dir.exists() or not prefs_dir.is_dir():
+        sys.exit(0)
+
+    universal_log = _ensure_universal_ram_log()
+    procs = []
+    for cli_file in sorted(prefs_dir.glob("*_cli.json")):
+        try:
+            name = cli_file.name[:-9]  # strip '_cli.json'
+            with open(cli_file, "r", encoding="utf-8") as f:
+                cli_map = json.load(f) or {}
+        except Exception:
+            continue
+
+        # reconstruct saved CLI flags
+        inst_args = []
+        for k, v in (cli_map.items() if isinstance(cli_map, dict) else []):
+            if k in ("name", "preferences-file"):
+                continue
+            flag = "--" + k
+            if v is True:
+                inst_args.append(flag)
+            else:
+                inst_args.extend([flag, str(v)])
+
+        # ensure name and preferences-file present
+        inst_args.extend(["--name", name])
+        prefs_path = prefs_dir / f"{name}.json"
+        inst_args.extend(["--preferences-file", str(prefs_path)])
+
+        env = os.environ.copy()
+        if universal_log:
+            env["LVAS_LOG"] = universal_log
+
+        try:
+            p = subprocess.Popen([python_exe, "-m", "linux_voice_assistant"] + inst_args, env=env)
+            procs.append((p, name, inst_args))
+            if universal_log:
+                _append_deploy_log(universal_log, name, inst_args, p.pid)
+            # Wait a short interval before launching the next instance
+            time.sleep(3)
+        except Exception:
+            pass
+
+    # Wait for started instances and log their exit codes
+    for p, name, inst_args in procs:
+        try:
+            rc = p.wait()
+        except Exception:
+            rc = None
+        if universal_log:
+            _append_stop_log(universal_log, name, inst_args, p.pid, rc)
+
+    sys.exit(0)
 prefs_flag = _find_arg_value(args, "--preferences-file")
 if prefs_flag is None:
     name_val = _find_arg_value(args, "--name")
@@ -77,6 +205,9 @@ if prefs_flag is None:
         # 3) generate a new random MAC
         mac_val = None
         cli_path = prefs_dir / f"{name_val}_cli.json"
+        # Remember whether a CLI file existed before — if it didn't, we're
+        # creating a new instance and should auto-assign a free port.
+        cli_existed = cli_path.exists()
         existing_cli = {}
         try:
             if cli_path.exists():
@@ -110,10 +241,61 @@ if prefs_flag is None:
         # so user changes from Home Assistant won't clobber saved CLI metadata.
         cli_path = prefs_dir / f"{name_val}_cli.json"
         try:
+            # If this is a newly-created CLI file and no --port was provided,
+            # choose a free port starting at LVAS_BASE_PORT (default 6053).
+            if not cli_existed and ("port" not in arg_map):
+                try:
+                    base_port = int(os.environ.get("LVAS_BASE_PORT", "6053"))
+                except Exception:
+                    base_port = 6053
+
+                used = set()
+                try:
+                    for other in prefs_dir.glob("*_cli.json"):
+                        try:
+                            with open(other, "r", encoding="utf-8") as of:
+                                m = json.load(of) or {}
+                            v = m.get("port")
+                            if v is not None:
+                                used.add(int(v))
+                        except Exception:
+                            continue
+                except Exception:
+                    used = set()
+
+                port = base_port
+                while port in used:
+                    port += 1
+
+                arg_map["port"] = str(port)
+                args = args + ["--port", str(port)]
+
             with open(cli_path, "w", encoding="utf-8") as pf:
                 json.dump(arg_map, pf, ensure_ascii=False, indent=4)
         except Exception:
             # If writing CLI file fails, continue without blocking startup
             pass
 
-subprocess.check_call([python_exe, "-m", "linux_voice_assistant"] + args)
+# For single-instance runs, ensure universal log exists and start the process
+universal_log = _ensure_universal_ram_log()
+env = os.environ.copy()
+if universal_log:
+    env["LVAS_LOG"] = universal_log
+
+try:
+    p = subprocess.Popen([python_exe, "-m", "linux_voice_assistant"] + args, env=env)
+    # record successful start
+    if universal_log:
+        # use provided name (if any) for logging; fall back to empty
+        log_name = name_val if 'name_val' in globals() and name_val else ""
+        _append_deploy_log(universal_log, log_name, args, p.pid)
+    try:
+        ret = p.wait()
+    except Exception:
+        ret = None
+    if universal_log:
+        _append_stop_log(universal_log, log_name, args, p.pid, ret)
+    sys.exit(ret if ret is not None else 0)
+except Exception:
+    # fallback to blocking call without log if Popen fails
+    subprocess.check_call([python_exe, "-m", "linux_voice_assistant"] + args)

@@ -33,7 +33,12 @@ Run in Windows PowerShell (Admin):
 
 PowerShell
 
-New-NetFirewallRule -DisplayName "LVA-Test-Port" -Direction Inbound -Action Allow -Protocol TCP -LocalPort 6070
+
+
+New-NetFirewallRule -DisplayName "LVA-Test-Port" -Direction Inbound -Action Allow -Protocol TCP -LocalPort 6070New-NetFirewallRule -DisplayName "LVA-Test-Port" -Direction Inbound -Action Allow -Protocol TCP -LocalPort 6070
+
+
+
 4. Running the Engine
 Go to your folder and run the engine on the "clean" port we opened.
 
