@@ -282,6 +282,12 @@ class VoiceSatelliteProtocol(APIServer):
     def play_tts(self) -> None:
         if (not self._tts_url) or self._tts_played:
             return
+        # NEW: Check if the URL contains "wake_chime" or "acknowledge"
+        # Home Assistant system chimes usually have distinct paths
+        if "ack" in self._tts_url or "chime" in self._tts_url:
+            _LOGGER.debug("Skipping HA-provided chime: %s", self._tts_url)
+            self._tts_played = True # Mark as played so it doesn't loop
+            return
 
         self._tts_played = True
         _LOGGER.debug("Playing TTS response: %s", self._tts_url)
