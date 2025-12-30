@@ -47,7 +47,7 @@ from .util import call_all
 _LOGGER = logging.getLogger(__name__)
 
 
-class VoiceSatelliteProtocol(APIServer):
+class BaseSatelliteProtocol(APIServer):
 
     def __init__(self, state: ServerState) -> None:
         super().__init__(state.name)
@@ -69,6 +69,96 @@ class VoiceSatelliteProtocol(APIServer):
         self._is_streaming_audio = False
         self._tts_url: Optional[str] = None
         self._tts_played = False
+
+    def handle_message(self, msg: message.Message) -> Iterable[message.Message]:
+        if isinstance(msg, VoiceAssistantAnnounceRequest):
+            _LOGGER.debug("Announcing: %s", msg.text)
+
+            assert self.state.media_player_entity is not None
+
+            urls = []
+            if msg.preannounce_media_id:
+                urls.append(msg.preannounce_media_id)
+
+            urls.append(msg.media_id)
+
+            self.duck()
+            yield from self.state.media_player_entity.play(
+                urls, announcement=True, done_callback=self._tts_finished
+            )
+        elif isinstance(msg, DeviceInfoRequest):
+            yield DeviceInfoResponse(
+                uses_password=False,
+                name=self.state.name,
+                mac_address=self.state.mac_address,
+                voice_assistant_feature_flags=(
+                    VoiceAssistantFeature.API_AUDIO | VoiceAssistantFeature.ANNOUNCE
+                ),
+            )
+        elif isinstance(
+            msg,
+            (
+                ListEntitiesRequest,
+                SubscribeHomeAssistantStatesRequest,
+                MediaPlayerCommandRequest,
+            ),
+        ):
+            for entity in self.state.entities:
+                yield from entity.handle_message(msg)
+
+            if isinstance(msg, ListEntitiesRequest):
+                yield ListEntitiesDoneResponse()
+        elif isinstance(msg, VoiceAssistantConfigurationRequest):
+            _LOGGER.debug("Got configuration request")
+
+            yield VoiceAssistantConfigurationResponse(
+                available_wake_words=[],
+                active_wake_words=[],
+                max_active_wake_words=0,
+            )
+            _LOGGER.info("Connected to Home Assistant")
+
+    def handle_audio(self, audio_chunk: bytes) -> None:
+
+        if not self._is_streaming_audio:
+            return
+
+        self.send_messages([VoiceAssistantAudio(data=audio_chunk)])
+
+    def duck(self) -> None:
+        _LOGGER.debug("Ducking music")
+        self.state.music_player.duck()
+
+    def unduck(self) -> None:
+        _LOGGER.debug("Unducking music")
+        self.state.music_player.unduck()
+
+    def play_tts(self) -> None:
+        if (not self._tts_url) or self._tts_played:
+            return
+
+        self._tts_played = True
+        _LOGGER.debug("Playing TTS response: %s", self._tts_url)
+
+        self.state.tts_player.play(self._tts_url, done_callback=self._tts_finished)
+
+    def _tts_finished(self) -> None:
+        self.send_messages([VoiceAssistantAnnounceFinished()])
+
+        self.unduck()
+
+        _LOGGER.debug("TTS response finished")
+
+    def connection_lost(self, exc):
+        super().connection_lost(exc)
+        _LOGGER.info("Disconnected from Home Assistant")
+
+
+class VoiceSatelliteProtocol(BaseSatelliteProtocol):
+
+    def __init__(self, state: ServerState) -> None:
+        super().__init__(state)
+
         self._continue_conversation = False
         self._timer_finished = False
         self._external_wake_words: Dict[str, VoiceAssistantExternalWakeWord] = {}
@@ -244,13 +334,6 @@ class VoiceSatelliteProtocol(APIServer):
             self.state.save_preferences()
             self.state.wake_words_changed = True
 
-    def handle_audio(self, audio_chunk: bytes) -> None:
-
-        if not self._is_streaming_audio:
-            return
-
-        self.send_messages([VoiceAssistantAudio(data=audio_chunk)])
-
     def wakeup(self, wake_word: Union[MicroWakeWord, OpenWakeWord]) -> None:
         if self._timer_finished:
             # Stop timer instead
@@ -289,14 +372,6 @@ class VoiceSatelliteProtocol(APIServer):
         self.state.active_wake_words.add(self.state.stop_word.id)
         self.state.tts_player.play(self._tts_url, done_callback=self._tts_finished)
 
-    def duck(self) -> None:
-        _LOGGER.debug("Ducking music")
-        self.state.music_player.duck()
-
-    def unduck(self) -> None:
-        _LOGGER.debug("Unducking music")
-        self.state.music_player.unduck()
-
     def _tts_finished(self) -> None:
         self.state.active_wake_words.discard(self.state.stop_word.id)
         self.send_messages([VoiceAssistantAnnounceFinished()])
@@ -321,10 +396,6 @@ class VoiceSatelliteProtocol(APIServer):
                 lambda: time.sleep(1.0), self._play_timer_finished
             ),
         )
-
-    def connection_lost(self, exc):
-        super().connection_lost(exc)
-        _LOGGER.info("Disconnected from Home Assistant")
 
     def _download_external_wake_word(
         self, external_wake_word: VoiceAssistantExternalWakeWord
