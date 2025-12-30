@@ -3,10 +3,22 @@ import sys
 import subprocess
 import venv
 from pathlib import Path
+import json
 
 _DIR = Path(__file__).parent
 _PROGRAM_DIR = _DIR.parent
 _VENV_DIR = _PROGRAM_DIR / ".venv"
+
+def _find_arg_value(argv, name):
+    """Return the value for flag `name` in argv or None."""
+    try:
+        idx = argv.index(name)
+    except ValueError:
+        return None
+    if idx + 1 >= len(argv):
+        return None
+    return argv[idx + 1]
+
 
 if _VENV_DIR.exists():
     context = venv.EnvBuilder().ensure_directories(_VENV_DIR)
@@ -14,4 +26,94 @@ if _VENV_DIR.exists():
 else:
     python_exe = "python3"
 
-subprocess.check_call([python_exe, "-m", "linux_voice_assistant"] + sys.argv[1:])
+# If user did not pass --preferences-file, create/use `preferences/` and
+# store preferences as `preferences/<NAME>.json` where <NAME> is the
+# `--name` argument. This keeps all instance preferences together.
+args = sys.argv[1:]
+prefs_flag = _find_arg_value(args, "--preferences-file")
+if prefs_flag is None:
+    name_val = _find_arg_value(args, "--name")
+    if name_val:
+        prefs_dir = _PROGRAM_DIR / "preferences"
+        try:
+            prefs_dir.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            prefs_dir = _PROGRAM_DIR
+
+        prefs_path = prefs_dir / f"{name_val}.json"
+        # Append the flag and value to args so the module picks it up
+        args = args + ["--preferences-file", str(prefs_path)]
+
+        # If a --mac was provided on the command line, use it. Otherwise
+        # check for a stored mac in the existing preferences file. If still
+        # missing, generate a random MAC and add it to args and stored prefs.
+        def _generate_random_mac() -> str:
+            import random
+
+            return ":".join(f"{random.randint(0,255):02x}" for _ in range(6))
+
+        # Persist the runtime arguments into preferences/<name>.json for safekeeping.
+        # Parse simple flag/value pairs from args into a dictionary. Flags without
+        # a following value are stored as boolean true. Store these under a
+        # top-level `cli_args` key so the runtime preferences structure remains
+        # compatible with the program's expected schema.
+        arg_map = {}
+        i = 0
+        while i < len(args):
+            token = args[i]
+            if token.startswith("-"):
+                key = token.lstrip("-")
+                # next token is a value if it doesn't start with '-'
+                if (i + 1) < len(args) and not args[i + 1].startswith("-"):
+                    arg_map[key] = args[i + 1]
+                    i += 2
+                    continue
+                arg_map[key] = True
+            i += 1
+
+        # Determine mac with precedence:
+        # 1) existing saved CLI file (preferences/<name>_cli.json) - do NOT overwrite
+        # 2) CLI-provided --mac
+        # 3) generate a new random MAC
+        mac_val = None
+        cli_path = prefs_dir / f"{name_val}_cli.json"
+        existing_cli = {}
+        try:
+            if cli_path.exists():
+                with open(cli_path, "r", encoding="utf-8") as cpf:
+                    existing_cli = json.load(cpf) or {}
+        except Exception:
+            existing_cli = {}
+
+        existing_cli_mac = existing_cli.get("mac") if isinstance(existing_cli, dict) else None
+
+        cli_provided_mac = arg_map.get("mac") if isinstance(arg_map, dict) else None
+
+        if existing_cli_mac:
+            # Respect stored MAC and ensure it's present on the args we pass to the module
+            mac_val = existing_cli_mac
+            arg_map["mac"] = mac_val
+            if "--mac" not in args:
+                args = args + ["--mac", mac_val]
+        elif cli_provided_mac:
+            mac_val = cli_provided_mac
+            # ensure args include it (they usually will)
+            if "--mac" not in args:
+                args = args + ["--mac", mac_val]
+        else:
+            mac_val = _generate_random_mac()
+            arg_map["mac"] = mac_val
+            args = args + ["--mac", mac_val]
+
+        # Persist CLI args separately to avoid Home Assistant overwriting
+        # the main preferences file. Store them in preferences/<name>_cli.json
+        # so user changes from Home Assistant won't clobber saved CLI metadata.
+        cli_path = prefs_dir / f"{name_val}_cli.json"
+        try:
+            with open(cli_path, "w", encoding="utf-8") as pf:
+                json.dump(arg_map, pf, ensure_ascii=False, indent=4)
+        except Exception:
+            # If writing CLI file fails, continue without blocking startup
+            pass
+
+subprocess.check_call([python_exe, "-m", "linux_voice_assistant"] + args)

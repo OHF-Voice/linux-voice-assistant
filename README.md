@@ -29,6 +29,11 @@ You must specify `--name <NAME>` with a name that will be available in Home Assi
 
 See `--help` for more options.
 
+Optional flag `--mac` can be used to spoof the MAC address exposed to Home Assistant (accepts `aa:bb:cc:dd:ee:ff` or `aabbccddeeff`).
+
+Note about preferences file:
+- When you start the app via `script/run --name "<NAME>"`, the script will create a `preferences/` folder in the project root (if missing) and pass `--preferences-file <repo>/preferences/<NAME>.json` to the program. This keeps preferences per-instance in a single folder. If you prefer a different path, pass `--preferences-file <PATH>` explicitly.
+
 ### Microphone
 
 Use `--audio-input-device` to change the microphone device. Use `--list-input-devices` to see the available microphones. 

@@ -17,4 +17,10 @@ venv/
 
 /dist/
 /preferences.json
+# Ignore preferences folder
+/preferences/
 /local/
+
+
+# Ignore Copilot instructions (local helper file)
+.github/copilot-instructions.md

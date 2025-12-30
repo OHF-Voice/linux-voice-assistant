@@ -93,6 +93,10 @@ async def main() -> None:
         "--port", type=int, default=6053, help="Port for ESPHome server (default: 6053)"
     )
     parser.add_argument(
+        "--mac",
+        help="Spoof MAC address exposed to Home Assistant (format: aa:bb:cc:dd:ee:ff or aabbccddeeff)",
+    )
+    parser.add_argument(
         "--debug", action="store_true", help="Print DEBUG messages to console"
     )
     args = parser.parse_args()
@@ -168,7 +172,17 @@ async def main() -> None:
         _LOGGER.debug("Loading preferences: %s", preferences_path)
         with open(preferences_path, "r", encoding="utf-8") as preferences_file:
             preferences_dict = json.load(preferences_file)
-            preferences = Preferences(**preferences_dict)
+            # preferences file may contain extra metadata (e.g. CLI args) under
+            # other keys. Only extract known fields for the Preferences dataclass.
+            if isinstance(preferences_dict, dict):
+                active = preferences_dict.get("active_wake_words")
+                if active is None:
+                    # Some run scripts store CLI args under a `cli_args` key;
+                    # keep compatibility by looking for the field at top-level.
+                    active = []
+                preferences = Preferences(active_wake_words=active)
+            else:
+                preferences = Preferences()
     else:
         preferences = Preferences()
 
@@ -209,9 +223,25 @@ async def main() -> None:
 
     assert stop_model is not None
 
+    # Normalize MAC if provided so both DeviceInfo and zeroconf use consistent values
+    def _normalize_mac_colon(mac: str) -> str:
+        m = mac.replace(":", "").replace("-", "").lower()
+        if len(m) != 12:
+            return mac
+        return ":".join(m[i : i + 2] for i in range(0, 12, 2))
+
+    def _normalize_mac_nocolon(mac: str) -> str:
+        return _normalize_mac_colon(mac).replace(":", "")
+
+    mac_address_value = get_mac()
+    zeroconf_mac_value = None
+    if args.mac:
+        mac_address_value = _normalize_mac_colon(args.mac)
+        zeroconf_mac_value = _normalize_mac_nocolon(args.mac)
+
     state = ServerState(
         name=args.name,
-        mac_address=get_mac(),
+        mac_address=mac_address_value,
         audio_queue=Queue(),
         entities=[],
         available_wake_words=available_wake_words,
@@ -242,6 +272,7 @@ async def main() -> None:
 
     # Auto discovery (zeroconf, mDNS)
     discovery = HomeAssistantZeroconf(port=args.port, name=args.name)
+    discovery = HomeAssistantZeroconf(port=args.port, name=args.name, mac=zeroconf_mac_value)
     await discovery.register_server()
 
     try:
