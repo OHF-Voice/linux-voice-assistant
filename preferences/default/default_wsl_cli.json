@@ -1,0 +1,21 @@
+{
+    "name": "",
+    "autostart": false,
+    "debug": false,
+    "list_input_devices": false,
+    "list_output_devices": false,
+    "audio_input_device": "",
+    "audio_input_block_size": 1024,
+    "audio_output_device": "pulse",
+    "wake_word_dir": "",
+    "wake_model": "okay_nabu",
+    "stop_model": "stop",
+    "download_dir": "",
+    "refractory_seconds": 2.0,
+    "wakeup_sound": "../../sounds/halfknock.wav",
+    "timer_finished_sound": "",
+    "preferences_file": "",
+    "host": "0.0.0.0",
+    "port": false,
+    "mac": ""
+}

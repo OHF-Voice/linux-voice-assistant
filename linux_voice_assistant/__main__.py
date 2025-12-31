@@ -90,7 +90,7 @@ async def main() -> None:
         help="Address for ESPHome server (default: 0.0.0.0)",
     )
     parser.add_argument(
-        "--port", type=int, default=6053, help="Port for ESPHome server (default: 6053)"
+        "--port", type=int, default=6052, help="Port for ESPHome server (default: 6052)"
     )
     parser.add_argument(
         "--mac",
@@ -180,10 +180,21 @@ async def main() -> None:
                     # Some run scripts store CLI args under a `cli_args` key;
                     # keep compatibility by looking for the field at top-level.
                     active = []
-                preferences = Preferences(active_wake_words=active)
+                friendly_names = preferences_dict.get("wake_word_friendly_names", {})
+                ha_base_url = preferences_dict.get("ha_base_url")
+                ha_token = preferences_dict.get("ha_token")
+                ha_history_entity = preferences_dict.get("ha_history_entity")
+                preferences = Preferences(
+                    active_wake_words=active,
+                    wake_word_friendly_names=friendly_names,
+                    ha_base_url=ha_base_url,
+                    ha_token=ha_token,
+                    ha_history_entity=ha_history_entity
+                )
             else:
                 preferences = Preferences()
     else:
+        # Create minimal preferences (run script should have created this)
         preferences = Preferences()
 
     # Load wake/stop models

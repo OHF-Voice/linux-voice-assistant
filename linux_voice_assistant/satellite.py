@@ -1,14 +1,18 @@
 """Voice satellite protocol."""
 
+import asyncio
 import hashlib
 import logging
 import posixpath
 import shutil
 import time
 from collections.abc import Iterable
+from datetime import datetime
+from pathlib import Path
 from typing import Dict, Optional, Set, Union
 from urllib.parse import urlparse, urlunparse
-from urllib.request import urlopen
+from urllib.request import urlopen, Request
+import json
 
 # pylint: disable=no-name-in-module
 from aioesphomeapi.api_pb2 import (  # type: ignore[attr-defined]
@@ -40,7 +44,7 @@ from pymicro_wakeword import MicroWakeWord
 from pyopen_wakeword import OpenWakeWord
 
 from .api_server import APIServer
-from .entity import MediaPlayerEntity
+from .entity import MediaPlayerEntity, TextAttributeEntity
 from .models import AvailableWakeWord, ServerState, WakeWordType
 from .util import call_all
 
@@ -54,6 +58,7 @@ class VoiceSatelliteProtocol(APIServer):
 
         self.state = state
         self.state.satellite = self
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
 
         if self.state.media_player_entity is None:
             self.state.media_player_entity = MediaPlayerEntity(
@@ -66,12 +71,40 @@ class VoiceSatelliteProtocol(APIServer):
             )
             self.state.entities.append(self.state.media_player_entity)
 
+        if self.state.active_tts_entity is None:
+            self.state.active_tts_entity = TextAttributeEntity(
+                server=self,
+                key=len(state.entities),
+                name="Active TTS",
+                object_id="active_tts",
+            )
+            self.state.entities.append(self.state.active_tts_entity)
+
+        if self.state.active_stt_entity is None:
+            self.state.active_stt_entity = TextAttributeEntity(
+                server=self,
+                key=len(state.entities),
+                name="Active STT",
+                object_id="active_stt",
+            )
+            self.state.entities.append(self.state.active_stt_entity)
+
+        if self.state.active_assistant_entity is None:
+            self.state.active_assistant_entity = TextAttributeEntity(
+                server=self,
+                key=len(state.entities),
+                name="Active Assistant",
+                object_id="active_assistant",
+            )
+            self.state.entities.append(self.state.active_assistant_entity)
+
         self._is_streaming_audio = False
         self._tts_url: Optional[str] = None
         self._tts_played = False
         self._continue_conversation = False
         self._timer_finished = False
         self._external_wake_words: Dict[str, VoiceAssistantExternalWakeWord] = {}
+        self._current_assistant_name: str = "Assistant"
 
     def handle_voice_event(
         self, event_type: VoiceAssistantEventType, data: Dict[str, str]
@@ -82,11 +115,20 @@ class VoiceSatelliteProtocol(APIServer):
             self._tts_url = data.get("url")
             self._tts_played = False
             self._continue_conversation = False
-        elif event_type in (
-            VoiceAssistantEventType.VOICE_ASSISTANT_STT_VAD_END,
-            VoiceAssistantEventType.VOICE_ASSISTANT_STT_END,
-        ):
+            self._update_active_stt("")
+            self._update_active_tts("")
+        elif event_type == VoiceAssistantEventType.VOICE_ASSISTANT_STT_START:
+            self._update_active_stt("")
+        elif event_type == VoiceAssistantEventType.VOICE_ASSISTANT_STT_VAD_START:
+            self._update_active_stt("")
+        elif event_type == VoiceAssistantEventType.VOICE_ASSISTANT_STT_VAD_END:
             self._is_streaming_audio = False
+            self._update_active_stt("")
+        elif event_type == VoiceAssistantEventType.VOICE_ASSISTANT_STT_END:
+            self._is_streaming_audio = False
+            stt_text = data.get("text", data.get("stt", ""))
+            self._update_active_stt(stt_text)
+            self._log_to_file(f"User: {stt_text}")
         elif event_type == VoiceAssistantEventType.VOICE_ASSISTANT_INTENT_PROGRESS:
             if data.get("tts_start_streaming") == "1":
                 # Start streaming early
@@ -94,6 +136,11 @@ class VoiceSatelliteProtocol(APIServer):
         elif event_type == VoiceAssistantEventType.VOICE_ASSISTANT_INTENT_END:
             if data.get("continue_conversation") == "1":
                 self._continue_conversation = True
+        elif event_type == VoiceAssistantEventType.VOICE_ASSISTANT_TTS_START:
+            tts_text = data.get("text", "")
+            self._update_active_tts(tts_text)
+            self._log_to_file(f"{self._current_assistant_name}: {tts_text}")
+            self._sync_history_to_ha()
         elif event_type == VoiceAssistantEventType.VOICE_ASSISTANT_TTS_END:
             self._tts_url = data.get("url")
             self.play_tts()
@@ -137,6 +184,8 @@ class VoiceSatelliteProtocol(APIServer):
                 urls.append(msg.preannounce_media_id)
 
             urls.append(msg.media_id)
+
+            self._update_active_tts(msg.text)
 
             self.state.active_wake_words.add(self.state.stop_word.id)
             self._continue_conversation = msg.start_conversation
@@ -197,6 +246,13 @@ class VoiceSatelliteProtocol(APIServer):
 
                 self._external_wake_words[eww.id] = eww
 
+            # Store event loop reference for callbacks from other threads
+            if self._loop is None:
+                try:
+                    self._loop = asyncio.get_running_loop()
+                except RuntimeError:
+                    pass
+            
             yield VoiceAssistantConfigurationResponse(
                 available_wake_words=available_wake_words,
                 active_wake_words=[
@@ -261,6 +317,13 @@ class VoiceSatelliteProtocol(APIServer):
 
         wake_word_phrase = wake_word.wake_word
         _LOGGER.debug("Detected wake word: %s", wake_word_phrase)
+        
+        # Use friendly name if available
+        wake_word_id = wake_word.id if hasattr(wake_word, 'id') else None
+        friendly_name = self.state.preferences.wake_word_friendly_names.get(wake_word_id, wake_word_phrase)
+        self._current_assistant_name = friendly_name
+        
+        self._update_active_assistant(friendly_name)
         self.send_messages(
             [VoiceAssistantRequest(start=True, wake_word_phrase=wake_word_phrase)]
         )
@@ -271,6 +334,8 @@ class VoiceSatelliteProtocol(APIServer):
     def stop(self) -> None:
         self.state.active_wake_words.discard(self.state.stop_word.id)
         self.state.tts_player.stop()
+        self._update_active_tts("")
+        self._update_active_stt("")
 
         if self._timer_finished:
             self._timer_finished = False
@@ -313,8 +378,20 @@ class VoiceSatelliteProtocol(APIServer):
             _LOGGER.debug("Continuing conversation")
         else:
             self.unduck()
+            # Clear sensors after 5 seconds (using stored loop reference)
+            if self._loop is not None:
+                self._loop.call_later(5.0, self._clear_sensors)
+            else:
+                _LOGGER.warning("No event loop available for delayed sensor clearing")
 
         _LOGGER.debug("TTS response finished")
+
+    def _clear_sensors(self) -> None:
+        """Clear all text sensors."""
+        _LOGGER.debug("Clearing sensors after delay")
+        self._update_active_tts("")
+        self._update_active_stt("")
+        self._update_active_assistant("")
 
     def _play_timer_finished(self) -> None:
         if not self._timer_finished:
@@ -331,6 +408,104 @@ class VoiceSatelliteProtocol(APIServer):
     def connection_lost(self, exc):
         super().connection_lost(exc)
         _LOGGER.info("Disconnected from Home Assistant")
+
+    def _update_active_tts(self, text: str) -> None:
+        if self.state.active_tts_entity is None:
+            return
+
+        _LOGGER.debug("Updating active_tts to: %r", text)
+        msg = self.state.active_tts_entity.update(text)
+        self.send_messages([msg])
+
+    def _update_active_stt(self, text: str) -> None:
+        if self.state.active_stt_entity is None:
+            return
+
+        _LOGGER.debug("Updating active_stt to: %r", text)
+        msg = self.state.active_stt_entity.update(text)
+        self.send_messages([msg])
+
+    def _update_active_assistant(self, text: str) -> None:
+        if self.state.active_assistant_entity is None:
+            return
+
+        _LOGGER.debug("Updating active_assistant to: %r", text)
+        msg = self.state.active_assistant_entity.update(text)
+        self.send_messages([msg])
+
+    def _log_to_file(self, message: str) -> None:
+        """Log a message to the unified lvas_log file with timestamp."""
+        try:
+            # Use the symlink if available, otherwise construct the path
+            log_path = Path(__file__).parent.parent / "lvas_log"
+            if not log_path.exists():
+                log_path = Path("/dev/shm/lvas_log")
+            if not log_path.exists():
+                log_path = Path("/tmp/lvas_log")
+            
+            timestamp = datetime.now().strftime("%Y_%m_%d %H:%M:%S")
+            log_entry = f"[{timestamp}] -- {message}\n"
+            
+            with open(log_path, "a", encoding="utf-8") as f:
+                f.write(log_entry)
+        except Exception as e:
+            _LOGGER.warning("Failed to write to log file: %s", e)
+
+    def _sync_history_to_ha(self) -> None:
+        """Sync last 100 lines of log to Home Assistant."""
+        ha_url = self.state.preferences.ha_base_url
+        ha_token = self.state.preferences.ha_token
+        ha_entity = self.state.preferences.ha_history_entity or "input_text.lvas_history"
+        
+        if not ha_url or not ha_token:
+            _LOGGER.debug("HA sync disabled: ha_base_url=%s, ha_token=%s", ha_url, bool(ha_token))
+            return
+        
+        try:
+            # Read last 100 lines from log
+            log_path = Path(__file__).parent.parent / "lvas_log"
+            if not log_path.exists():
+                log_path = Path("/dev/shm/lvas_log")
+            if not log_path.exists():
+                log_path = Path("/tmp/lvas_log")
+            
+            if not log_path.exists():
+                _LOGGER.debug("Log file not found for HA sync")
+                return
+            
+            with open(log_path, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+            
+            # Get last 100 lines
+            history_lines = lines[-100:] if len(lines) > 100 else lines
+            history_text = "".join(history_lines)
+            
+            # Send to HA
+            url = f"{ha_url}/api/states/{ha_entity}"
+            headers = {
+                "Authorization": f"Bearer {ha_token}",
+                "Content-Type": "application/json"
+            }
+            data = {
+                "state": f"Updated {datetime.now().strftime('%H:%M:%S')}",
+                "attributes": {"history": history_text}
+            }
+            
+            _LOGGER.debug("Syncing history to HA: %s (%d lines)", ha_entity, len(history_lines))
+            
+            req = Request(
+                url,
+                data=json.dumps(data).encode('utf-8'),
+                headers=headers,
+                method='POST'
+            )
+            with urlopen(req) as response:
+                if response.status == 200 or response.status == 201:
+                    _LOGGER.debug("History synced to HA successfully")
+                else:
+                    _LOGGER.warning("Failed to sync history to HA: status %s", response.status)
+        except Exception as e:
+            _LOGGER.warning("Failed to sync history to HA: %s", e)
 
     def _download_external_wake_word(
         self, external_wake_word: VoiceAssistantExternalWakeWord

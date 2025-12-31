@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     from pymicro_wakeword import MicroWakeWord
     from pyopen_wakeword import OpenWakeWord
 
-    from .entity import ESPHomeEntity, MediaPlayerEntity
+    from .entity import ESPHomeEntity, MediaPlayerEntity, TextAttributeEntity
     from .mpv_player import MpvMediaPlayer
     from .satellite import VoiceSatelliteProtocol
 
@@ -52,6 +52,10 @@ class AvailableWakeWord:
 @dataclass
 class Preferences:
     active_wake_words: List[str] = field(default_factory=list)
+    wake_word_friendly_names: Dict[str, str] = field(default_factory=dict)
+    ha_base_url: Optional[str] = None
+    ha_token: Optional[str] = None
+    ha_history_entity: Optional[str] = None
 
 
 @dataclass
@@ -73,6 +77,9 @@ class ServerState:
     download_dir: Path
 
     media_player_entity: "Optional[MediaPlayerEntity]" = None
+    active_tts_entity: "Optional[TextAttributeEntity]" = None
+    active_stt_entity: "Optional[TextAttributeEntity]" = None
+    active_assistant_entity: "Optional[TextAttributeEntity]" = None
     satellite: "Optional[VoiceSatelliteProtocol]" = None
     wake_words_changed: bool = False
     refractory_seconds: float = 2.0

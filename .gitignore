@@ -17,8 +17,8 @@ venv/
 
 /dist/
 /preferences.json
-# Ignore preferences folder
-/preferences/
+# Ignore user preferences, but allow defaults to be versioned
+/preferences/user/
 /local/
 
 

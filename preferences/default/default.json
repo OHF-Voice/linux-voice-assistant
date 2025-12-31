@@ -1,0 +1,16 @@
+{
+    "active_wake_words": [],
+    "wake_word_friendly_names": {
+        "okay_nabu": "Nabu",
+        "hey_mycroft": "Mycroft",
+        "alexa": "Alexa",
+        "hey_jarvis": "Jarvis",
+        "hey_luna": "Luna",
+        "okay_computer": "Computer",
+        "hey_home_assistant": "Home Assistant",
+        "choo_choo_homie": "Choo Choo"
+    },
+    "ha_base_url": "https://ha.stefhartog.com",
+    "ha_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiIzMjkzMzMxMGU2MTQ0ZWFhOWI2NjRlMjcyYWI4YWVlYSIsImlhdCI6MTc2NjU4NTE1MCwiZXhwIjoyMDgxOTQ1MTUwfQ.Vc6jkxls4alWvlYJ2KIqrAw7VqhsKyujtlum9vgJCcw",
+    "ha_history_entity": "input_text.lvas_history"
+}

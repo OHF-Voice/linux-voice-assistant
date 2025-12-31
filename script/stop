@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# Stop all running linux-voice-assistant instances
+
+echo "Stopping all linux-voice-assistant instances..."
+
+# Find all processes running linux_voice_assistant
+pids=$(pgrep -f "python.*linux_voice_assistant" || true)
+
+if [ -z "$pids" ]; then
+    echo "No running instances found."
+    exit 0
+fi
+
+echo "Found processes: $pids"
+
+# Try graceful shutdown first (SIGTERM)
+for pid in $pids; do
+    echo "Sending SIGTERM to PID $pid..."
+    kill -TERM "$pid" 2>/dev/null || true
+done
+
+# Wait a bit for graceful shutdown
+sleep 2
+
+# Check if any are still running and force kill if needed
+remaining=$(pgrep -f "python.*linux_voice_assistant" || true)
+if [ -n "$remaining" ]; then
+    echo "Some processes still running, forcing shutdown..."
+    for pid in $remaining; do
+        echo "Sending SIGKILL to PID $pid..."
+        kill -KILL "$pid" 2>/dev/null || true
+    done
+fi
+
+echo "All instances stopped."

@@ -6,9 +6,11 @@ from typing import Callable, List, Optional, Union
 from aioesphomeapi.api_pb2 import (  # type: ignore[attr-defined]
     ListEntitiesMediaPlayerResponse,
     ListEntitiesRequest,
+    ListEntitiesTextSensorResponse,
     MediaPlayerCommandRequest,
     MediaPlayerStateResponse,
     SubscribeHomeAssistantStatesRequest,
+    TextSensorStateResponse,
 )
 from aioesphomeapi.model import MediaPlayerCommand, MediaPlayerState
 from google.protobuf import message
@@ -130,4 +132,45 @@ class MediaPlayerEntity(ESPHomeEntity):
             state=self.state,
             volume=self.volume,
             muted=self.muted,
+        )
+
+
+class TextAttributeEntity(ESPHomeEntity):
+    def __init__(
+        self,
+        server: APIServer,
+        key: int,
+        name: str,
+        object_id: str,
+        initial_text: str = "",
+    ) -> None:
+        super().__init__(server)
+
+        self.key = key
+        self.name = name
+        self.object_id = object_id
+        self.text = initial_text
+
+    def update(self, text: str) -> TextSensorStateResponse:
+        # Truncate to 250 chars to stay within ESPHome text sensor limits
+        if len(text) > 250:
+            text = text[:247] + "..."
+        self.text = text
+        return self._get_state_message()
+
+    def handle_message(self, msg: message.Message) -> Iterable[message.Message]:
+        if isinstance(msg, ListEntitiesRequest):
+            yield ListEntitiesTextSensorResponse(
+                object_id=self.object_id,
+                key=self.key,
+                name=self.name,
+            )
+        elif isinstance(msg, SubscribeHomeAssistantStatesRequest):
+            yield self._get_state_message()
+
+    def _get_state_message(self) -> TextSensorStateResponse:
+        return TextSensorStateResponse(
+            key=self.key,
+            state=self.text,
+            missing_state=False,
         )

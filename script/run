@@ -5,8 +5,48 @@ import subprocess
 import venv
 import shlex
 import time
+import platform
 from pathlib import Path
 import json
+
+try:
+    import distro
+except ImportError:
+    distro = None
+
+
+def _is_wsl() -> bool:
+    """Check if running under WSL (Windows Subsystem for Linux)."""
+    try:
+        with open("/proc/version", "r", encoding="utf-8") as f:
+            return "microsoft" in f.read().lower()
+    except Exception:
+        return "microsoft" in platform.uname().release.lower()
+
+
+def _get_system_info() -> dict:
+    """Get system info: OS, distro, architecture."""
+    system_info = {
+        "os": platform.system(),
+        "machine": platform.machine(),
+        "architecture": platform.architecture()[0],
+        "distro_id": None,
+        "distro_name": None,
+        "distro_version": None,
+        "is_wsl": False,
+    }
+    
+    if system_info["os"] == "Linux":
+        try:
+            if distro:
+                system_info["distro_id"] = distro.id()
+                system_info["distro_name"] = distro.name()
+                system_info["distro_version"] = distro.version()
+            system_info["is_wsl"] = _is_wsl()
+        except Exception:
+            pass
+    
+    return system_info
 
 _DIR = Path(__file__).parent
 _PROGRAM_DIR = _DIR.parent
@@ -23,279 +63,213 @@ def _find_arg_value(argv, name):
     return argv[idx + 1]
 
 
+def _choose_template(default_prefs_dir: Path, system_info: dict) -> Path:
+    """Choose template with cascade logic:
+    1. User custom default (default_user_cli.json)
+    2. OS-specific default (default_wsl_cli.json, etc.)
+    3. Main default (default_cli.json)
+    """
+    # Check for user custom default first
+    user_template = default_prefs_dir / "default_user_cli.json"
+    if user_template.exists():
+        print(f"Using user custom defaults: default_user_cli.json")
+        return user_template
+    
+    # Try OS-specific template
+    if system_info.get("is_wsl"):
+        wsl_template = default_prefs_dir / "default_wsl_cli.json"
+        if wsl_template.exists():
+            print(f"Detected WSL environment - using default_wsl_cli.json")
+            return wsl_template
+    
+    # Fall back to main default
+    main_template = default_prefs_dir / "default_cli.json"
+    if main_template.exists():
+        return main_template
+    
+    return None
+
+
+def _load_template_config(template_path: Path) -> dict:
+    """Load JSON template file, return empty dict if fails."""
+    try:
+        with open(template_path, "r", encoding="utf-8") as f:
+            return json.load(f) or {}
+    except Exception:
+        return {}
+
+
+def _generate_random_mac() -> str:
+    """Generate a random MAC address."""
+    import random
+    return ":".join(f"{random.randint(0,255):02x}" for _ in range(6))
+
+
+def _auto_assign_port(user_prefs_dir: Path, base_port: int = 6053) -> int:
+    """Find next available port by scanning existing instances."""
+    used = set()
+    try:
+        for other in user_prefs_dir.glob("*_cli.json"):
+            try:
+                config = _load_template_config(other)
+                port_val = config.get("port")
+                if port_val not in (None, False, "false", ""):
+                    used.add(int(port_val))
+            except Exception:
+                continue
+    except Exception:
+        pass
+    
+    port = base_port
+    while port in used:
+        port += 1
+    return port
+
+
+# Determine Python executable (venv or system python)
 if _VENV_DIR.exists():
     context = venv.EnvBuilder().ensure_directories(_VENV_DIR)
     python_exe = context.env_exe
 else:
     python_exe = "python3"
 
-# If user did not pass --preferences-file, create/use `preferences/` and
-# store preferences as `preferences/<NAME>.json` where <NAME> is the
-# `--name` argument. This keeps all instance preferences together.
 args = sys.argv[1:]
-# Helper: ensure a single universal RAM-backed log exists and return its path
-def _ensure_universal_ram_log():
-    ram_dir = Path(os.environ.get("LVAS_RAM_LOG_DIR", "/dev/shm"))
-    if not ram_dir.exists() or not ram_dir.is_dir():
-        ram_dir = Path("/tmp")
-    ram_log = ram_dir / "lvas_log"
-    if not ram_log.exists():
-        try:
-            try:
-                ram_dir.mkdir(parents=True, exist_ok=True)
-            except Exception:
-                pass
-            with open(ram_log, "x", encoding="utf-8") as lf:
-                lf.write("")
-        except Exception:
-            # fallback to /tmp
-            ram_dir = Path("/tmp")
-            ram_log = ram_dir / "lvas_log"
-            try:
-                if not ram_log.exists():
-                    with open(ram_log, "x", encoding="utf-8") as lf:
-                        lf.write("")
-            except Exception:
-                return None
-
-    # create/refresh project symlink `lvas_log`
-    try:
-        link_path = Path(__file__).parent.parent / "lvas_log"
-        if link_path.exists() or link_path.is_symlink():
-            try:
-                link_path.unlink()
-            except Exception:
-                pass
-        try:
-            link_path.symlink_to(ram_log)
-        except Exception:
-            pass
-    except Exception:
-        pass
-
-    return str(ram_log)
-
-def _append_deploy_log(log_path: str, name: str, args_list, pid=None):
-    try:
-        from datetime import datetime
-        # Use date+time prefix in [YYYY_MM_DD - HH:MM:SS] format
-        date_prefix = datetime.now().strftime("[%Y_%m_%d - %H:%M:%S]")
-        # Format args as a CLI string (e.g. --name "_test" --debug)
-        cli_args = shlex.join(args_list) if args_list else (f'--name "{name}"' if name else "")
-        pid_part = f"PID={pid} " if pid is not None else ""
-        with open(log_path, "a", encoding="utf-8") as lf:
-            lf.write(f"{date_prefix} START {pid_part}{cli_args}\n")
-    except Exception:
-        pass
-
-def _append_stop_log(log_path: str, name: str, args_list, pid=None, exit_code=None):
-    try:
-        from datetime import datetime
-
-        date_prefix = datetime.now().strftime("[%Y_%m_%d - %H:%M:%S]")
-        cli_args = shlex.join(args_list) if args_list else (f'--name "{name}"' if name else "")
-        pid_part = f"PID={pid} " if pid is not None else ""
-        code_part = f"code={exit_code} " if exit_code is not None else ""
-        with open(log_path, "a", encoding="utf-8") as lf:
-            lf.write(f"{date_prefix} STOP {pid_part}{code_part}{cli_args}\n")
-    except Exception:
-        pass
-
-# If the user asked for --all, start every stored assistant found in
-# `preferences/*_cli.json` using a single universal RAM-backed log.
-if "--all" in args:
-    prefs_dir = _PROGRAM_DIR / "preferences"
-    if not prefs_dir.exists() or not prefs_dir.is_dir():
-        sys.exit(0)
-
-    universal_log = _ensure_universal_ram_log()
-    procs = []
-    for cli_file in sorted(prefs_dir.glob("*_cli.json")):
-        try:
-            name = cli_file.name[:-9]  # strip '_cli.json'
-            with open(cli_file, "r", encoding="utf-8") as f:
-                cli_map = json.load(f) or {}
-        except Exception:
-            continue
-
-        # reconstruct saved CLI flags
-        inst_args = []
-        for k, v in (cli_map.items() if isinstance(cli_map, dict) else []):
-            if k in ("name", "preferences-file"):
-                continue
-            flag = "--" + k
-            if v is True:
-                inst_args.append(flag)
-            else:
-                inst_args.extend([flag, str(v)])
-
-        # ensure name and preferences-file present
-        inst_args.extend(["--name", name])
-        prefs_path = prefs_dir / f"{name}.json"
-        inst_args.extend(["--preferences-file", str(prefs_path)])
-
-        env = os.environ.copy()
-        if universal_log:
-            env["LVAS_LOG"] = universal_log
-
-        try:
-            p = subprocess.Popen([python_exe, "-m", "linux_voice_assistant"] + inst_args, env=env)
-            procs.append((p, name, inst_args))
-            if universal_log:
-                _append_deploy_log(universal_log, name, inst_args, p.pid)
-            # Wait a short interval before launching the next instance
-            time.sleep(3)
-        except Exception:
-            pass
-
-    # Wait for started instances and log their exit codes
-    for p, name, inst_args in procs:
-        try:
-            rc = p.wait()
-        except Exception:
-            rc = None
-        if universal_log:
-            _append_stop_log(universal_log, name, inst_args, p.pid, rc)
-
-    sys.exit(0)
 prefs_flag = _find_arg_value(args, "--preferences-file")
+
 if prefs_flag is None:
     name_val = _find_arg_value(args, "--name")
     if name_val:
         prefs_dir = _PROGRAM_DIR / "preferences"
-        try:
-            prefs_dir.mkdir(parents=True, exist_ok=True)
-        except Exception:
-            prefs_dir = _PROGRAM_DIR
+        user_prefs_dir = prefs_dir / "user"
+        default_prefs_dir = prefs_dir / "default"
+        user_prefs_dir.mkdir(parents=True, exist_ok=True)
+        default_prefs_dir.mkdir(parents=True, exist_ok=True)
 
-        prefs_path = prefs_dir / f"{name_val}.json"
-        # Append the flag and value to args so the module picks it up
-        args = args + ["--preferences-file", str(prefs_path)]
-
-        # If a --mac was provided on the command line, use it. Otherwise
-        # check for a stored mac in the existing preferences file. If still
-        # missing, generate a random MAC and add it to args and stored prefs.
-        def _generate_random_mac() -> str:
-            import random
-
-            return ":".join(f"{random.randint(0,255):02x}" for _ in range(6))
-
-        # Persist the runtime arguments into preferences/<name>.json for safekeeping.
-        # Parse simple flag/value pairs from args into a dictionary. Flags without
-        # a following value are stored as boolean true. Store these under a
-        # top-level `cli_args` key so the runtime preferences structure remains
-        # compatible with the program's expected schema.
-        arg_map = {}
+        # Get system info once
+        system_info = _get_system_info()
+        
+        # Choose appropriate template
+        template_path = _choose_template(default_prefs_dir, system_info)
+        
+        # Determine file paths
+        cli_path = user_prefs_dir / f"{name_val}_cli.json"
+        prefs_path = user_prefs_dir / f"{name_val}.json"
+        
+        # Start with template or existing config
+        if cli_path.exists():
+            # Existing instance: user is in control
+            arg_map = _load_template_config(cli_path)
+        elif template_path:
+            # New instance: start from template
+            arg_map = _load_template_config(template_path)
+        else:
+            # No template: start empty
+            arg_map = {}
+        
+        # Parse CLI arguments and override
         i = 0
         while i < len(args):
             token = args[i]
             if token.startswith("-"):
                 key = token.lstrip("-")
-                # next token is a value if it doesn't start with '-'
                 if (i + 1) < len(args) and not args[i + 1].startswith("-"):
                     arg_map[key] = args[i + 1]
                     i += 2
-                    continue
-                arg_map[key] = True
-            i += 1
-
-        # Determine mac with precedence:
-        # 1) existing saved CLI file (preferences/<name>_cli.json) - do NOT overwrite
-        # 2) CLI-provided --mac
-        # 3) generate a new random MAC
-        mac_val = None
-        cli_path = prefs_dir / f"{name_val}_cli.json"
-        # Remember whether a CLI file existed before — if it didn't, we're
-        # creating a new instance and should auto-assign a free port.
-        cli_existed = cli_path.exists()
-        existing_cli = {}
-        try:
-            if cli_path.exists():
-                with open(cli_path, "r", encoding="utf-8") as cpf:
-                    existing_cli = json.load(cpf) or {}
-        except Exception:
-            existing_cli = {}
-
-        existing_cli_mac = existing_cli.get("mac") if isinstance(existing_cli, dict) else None
-
-        cli_provided_mac = arg_map.get("mac") if isinstance(arg_map, dict) else None
-
-        if existing_cli_mac:
-            # Respect stored MAC and ensure it's present on the args we pass to the module
-            mac_val = existing_cli_mac
-            arg_map["mac"] = mac_val
-            if "--mac" not in args:
-                args = args + ["--mac", mac_val]
-        elif cli_provided_mac:
-            mac_val = cli_provided_mac
-            # ensure args include it (they usually will)
-            if "--mac" not in args:
-                args = args + ["--mac", mac_val]
-        else:
-            mac_val = _generate_random_mac()
-            arg_map["mac"] = mac_val
-            args = args + ["--mac", mac_val]
-
-        # Persist CLI args separately to avoid Home Assistant overwriting
-        # the main preferences file. Store them in preferences/<name>_cli.json
-        # so user changes from Home Assistant won't clobber saved CLI metadata.
-        cli_path = prefs_dir / f"{name_val}_cli.json"
-        try:
-            # If this is a newly-created CLI file and no --port was provided,
-            # choose a free port starting at LVAS_BASE_PORT (default 6053).
-            if not cli_existed and ("port" not in arg_map):
+                else:
+                    arg_map[key] = True
+                    i += 1
+            else:
+                i += 1
+        
+        # Add system info
+        arg_map["__system_info__"] = system_info
+        
+        # Handle MAC address
+        cli_provided_mac = arg_map.get("mac")
+        if not cli_provided_mac:
+            arg_map["mac"] = _generate_random_mac()
+        if "--mac" not in args:
+            args = args + ["--mac", arg_map["mac"]]
+        
+        # Handle port assignment for new instances
+        if not cli_path.exists():
+            port_in_args = "port" in arg_map and arg_map["port"] not in (False, None, "false", "")
+            if not port_in_args:
                 try:
                     base_port = int(os.environ.get("LVAS_BASE_PORT", "6053"))
                 except Exception:
                     base_port = 6053
-
-                used = set()
-                try:
-                    for other in prefs_dir.glob("*_cli.json"):
-                        try:
-                            with open(other, "r", encoding="utf-8") as of:
-                                m = json.load(of) or {}
-                            v = m.get("port")
-                            if v is not None:
-                                used.add(int(v))
-                        except Exception:
-                            continue
-                except Exception:
-                    used = set()
-
-                port = base_port
-                while port in used:
-                    port += 1
-
+                port = _auto_assign_port(user_prefs_dir, base_port)
                 arg_map["port"] = str(port)
                 args = args + ["--port", str(port)]
-
-            with open(cli_path, "w", encoding="utf-8") as pf:
-                json.dump(arg_map, pf, ensure_ascii=False, indent=4)
+        
+        # Save CLI config
+        try:
+            cli_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(cli_path, "w", encoding="utf-8") as f:
+                json.dump(arg_map, f, ensure_ascii=False, indent=4)
         except Exception:
-            # If writing CLI file fails, continue without blocking startup
             pass
+        
+        # Create main preferences file if needed
+        if not prefs_path.exists():
+            try:
+                prefs_template_path = default_prefs_dir / "default.json"
+                prefs_data = _load_template_config(prefs_template_path) or {"active_wake_words": []}
+                prefs_path.parent.mkdir(parents=True, exist_ok=True)
+                with open(prefs_path, "w", encoding="utf-8") as f:
+                    json.dump(prefs_data, f, ensure_ascii=False, indent=4)
+            except Exception:
+                pass
+        
+        # Ensure preferences path is passed to main app
+        args = args + ["--preferences-file", str(prefs_path)]
+        
+        # Convert arg_map back to CLI arguments for the Python module
+        # This ensures values from _cli.json are passed to the app
+        cli_only_keys = {"autostart"}  # Keys that are only for run script, not for main app
+        for key, value in arg_map.items():
+            if key.startswith("_") or key in cli_only_keys:
+                # Skip metadata keys like __system_info__ and CLI-only keys
+                continue
+            # Convert underscores to hyphens for CLI arguments
+            arg_name = key.replace("_", "-")
+            if isinstance(value, bool):
+                if value:
+                    args = args + [f"--{arg_name}"]
+            elif value not in (None, "", False):
+                args = args + [f"--{arg_name}", str(value)]
 
-# For single-instance runs, ensure universal log exists and start the process
-universal_log = _ensure_universal_ram_log()
+        # Setup unified RAM-based log file (shared across all instances)
+        log_link = _PROGRAM_DIR / "lvas_log"
+        ram_log_dir = Path("/dev/shm") if Path("/dev/shm").exists() else Path("/tmp")
+        ram_log_file = ram_log_dir / "lvas_log"
+        
+        # Create RAM log if it doesn't exist
+        if not ram_log_file.exists():
+            try:
+                ram_log_file.touch()
+                print(f"Created unified RAM-based log: {ram_log_file}")
+            except Exception as e:
+                print(f"Warning: Could not create RAM log: {e}", file=sys.stderr)
+        
+        # Create/update symlink
+        try:
+            if log_link.exists() or log_link.is_symlink():
+                log_link.unlink()
+            log_link.symlink_to(ram_log_file)
+            print(f"Symlinked {log_link} -> {ram_log_file}")
+        except Exception as e:
+            print(f"Warning: Could not create symlink: {e}", file=sys.stderr)
+
+
+# For single-instance runs, start the process
 env = os.environ.copy()
-if universal_log:
-    env["LVAS_LOG"] = universal_log
 
 try:
     p = subprocess.Popen([python_exe, "-m", "linux_voice_assistant"] + args, env=env)
-    # record successful start
-    if universal_log:
-        # use provided name (if any) for logging; fall back to empty
-        log_name = name_val if 'name_val' in globals() and name_val else ""
-        _append_deploy_log(universal_log, log_name, args, p.pid)
-    try:
-        ret = p.wait()
-    except Exception:
-        ret = None
-    if universal_log:
-        _append_stop_log(universal_log, log_name, args, p.pid, ret)
+    ret = p.wait()
     sys.exit(ret if ret is not None else 0)
 except Exception:
-    # fallback to blocking call without log if Popen fails
+    # fallback to blocking call if Popen fails
     subprocess.check_call([python_exe, "-m", "linux_voice_assistant"] + args)

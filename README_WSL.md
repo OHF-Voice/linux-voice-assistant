@@ -12,6 +12,8 @@ Ini, TOML
 systemd=true
 Restart (In Windows PowerShell): wsl --shutdown
 
+
+
 2. Mirrored Networking (The LAN Bridge)
 This makes your WSL Ubuntu share your Windows IP so Home Assistant can find it.
 
@@ -26,14 +28,15 @@ networkingMode=mirrored
 firewall=true
 Restart (In Windows PowerShell): wsl --shutdown
 
+
+
+
 3. Windows Firewall Rule (Opening the Gate)
 Since we moved to port 6070 to avoid Windows port conflicts, we must tell Windows to let that traffic through.
 
 Run in Windows PowerShell (Admin):
 
 PowerShell
-
-
 
 New-NetFirewallRule -DisplayName "LVA-Test-Port" -Direction Inbound -Action Allow -Protocol TCP -LocalPort 6070New-NetFirewallRule -DisplayName "LVA-Test-Port" -Direction Inbound -Action Allow -Protocol TCP -LocalPort 6070
 
