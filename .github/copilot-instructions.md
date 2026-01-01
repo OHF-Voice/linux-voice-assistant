@@ -1,0 +1,144 @@
+# Linux Voice Assistant - AI Agent Instructions
+
+## Project Overview
+A multi-instance Linux voice satellite for Home Assistant using the ESPHome protocol. Supports wake words, announcements, timers, and conversations through Home Assistant's voice pipeline. Designed to run as systemd services on servers and Raspberry Pi devices.
+
+## Architecture
+
+### Core Components
+- **`satellite.py`**: Main `VoiceSatelliteProtocol` class (inherits from `APIServer`) implementing ESPHome server protocol. Handles voice events, audio streaming, TTS playback, wake word management, and timer events. Includes Raspberry Pi-specific LED control for visual feedback during voice interactions.
+- **`api_server.py`**: Base `APIServer` class implementing ESPHome network protocol (packet parsing, message handling, protobuf serialization, authentication). Provides `handle_message()` abstract method for subclasses.
+- **`__main__.py`**: Entry point with CLI parsing, wake word discovery from filesystem, preferences loading with migration support, audio device enumeration, and asyncio event loop setup.
+- **`mpv_player.py`**: `MpvMediaPlayer` wrapper for audio playback with ducking support (temporarily lowers music volume during announcements).
+- **`entity.py`**: ESPHome entities exposed to Home Assistant (`MediaPlayerEntity` for audio control, `TextAttributeEntity` for displaying active STT/TTS/assistant text in HA UI).
+- **`models.py`**: Data classes for preferences (`Preferences`, `GlobalPreferences`), wake words (`AvailableWakeWord`, `WakeWordType`), and runtime state (`ServerState` - central state container passed through the app).
+- **`zeroconf.py`**: Zeroconf/mDNS service discovery for automatic Home Assistant detection.
+- **`script/*`**: Zero-dependency Python scripts (not shell scripts) for deployment, management, and development. All executable with `#!/usr/bin/env python3`.
+
+### Data Flow
+1. Audio captured from microphone → wake word detection (pymicro-wakeword/pyopen-wakeword)
+2. On wake → `VoiceAssistantAudio` messages stream audio chunks to Home Assistant via ESPHome protocol
+3. Home Assistant processes STT/intent/TTS → sends back `VoiceAssistantEventResponse` events and audio URL
+4. TTS audio downloaded and played via mpv, with music ducking if media player is active
+5. Events trigger visual feedback on Raspberry Pi (LED control via `/sys/class/leds/PWR/trigger`)
+
+### Script System Architecture
+All scripts in `script/` are **Python executables** (not shell scripts) with zero external dependencies beyond stdlib. Key design:
+- Self-contained: Parse CLI args, read/write JSON configs, manage systemd services
+- Template cascade: `script/run` and `script/deploy` use intelligent defaults (user → OS-specific → main)
+- Auto-assignment: Ports (starting from 6053) and MAC addresses auto-generated if not specified
+- Preference migration: Legacy single-file preferences automatically split into per-instance + global on first run
+
+## Multi-Instance Configuration
+
+### Preferences System (Two-Tier)
+- **Per-instance** (`preferences/user/{NAME}_cli.json`): CLI args, port, MAC address, system info
+- **Per-instance** (`preferences/user/{NAME}.json`): Active wake words list only
+- **Shared/global** (`preferences/user/ha_settings.json`): HA base URL, token, friendly names, history entity
+
+### Template Cascade
+`script/run` loads defaults with priority:
+1. `preferences/default/default_user_cli.json` (user custom defaults)
+2. `preferences/default/default_wsl_cli.json` (OS-specific, e.g., WSL)
+3. `preferences/default/default_cli.json` (main fallback)
+
+When creating a new instance, `script/run` auto-generates a unique MAC address and port (starting from 6053, incrementing for each instance).
+
+## Developer Workflows
+
+### Setup & Run
+```bash
+script/setup              # Create venv, install dependencies
+script/run --name "MyVA"  # Auto-creates preferences/{NAME}_cli.json and {NAME}.json
+```
+
+### Deployment (Production)
+```bash
+# Deploy and auto-start one or more instances as systemd user services
+script/deploy MyVA1 MyVA2 --audio-input-device 0  # Deploy multiple with shared overrides
+script/deploy --name MyVA --port 6055             # Deploy single with custom port
+```
+**Important**: `script/deploy` is the primary deployment tool. It:
+- Creates preference files (like `script/run`)
+- Enables systemd user linger (persistent user sessions across reboots)
+- Installs systemd user service for each instance
+- Starts services immediately
+- Sets `autostart: true` by default in CLI config
+- Creates convenience symlinks in `preferences/user/` pointing to systemd unit files
+
+### Instance Management
+```bash
+script/status             # Show all instances and their service status
+script/restart            # Restart running instance(s)
+script/stop <NAME>        # Stop instance(s)
+script/remove <NAME>      # Remove instance config and service
+```
+
+### Testing & Linting
+```bash
+script/test               # Run pytest in tests/
+script/format             # black + isort formatting
+script/lint               # black --check, isort --check, flake8, pylint, mypy
+```
+
+## Key Patterns
+
+### Wake Word Loading
+Wake words discovered from `wakewords/` subdirectories by scanning `*.json` config files. Two types:
+- **microWakeWord**: Config file itself is the model (`.json` contains model data)
+- **openWakeWord**: Config references separate `.tflite` model file
+
+Example config (`wakewords/okay_nabu.json`):
+```json
+{
+  "type": "micro",
+  "wake_word": "Okay Nabu",
+  "trained_languages": ["en"]
+}
+```
+
+Loaded via `AvailableWakeWord.load()` in [models.py](linux_voice_assistant/models.py#L31-L49), which dynamically imports and instantiates the correct wake word detector class.
+
+### Audio Device Selection
+Use `--list-input-devices` / `--list-output-devices` to discover devices. Microphone must support 16kHz mono.
+
+### ESPHome Protocol
+Communication uses protobuf messages from `aioesphomeapi.api_pb2`. Key messages:
+- `VoiceAssistantEventResponse`: Voice pipeline events (STT start/end, TTS start/end, intent results)
+- `VoiceAssistantAudio`: Audio chunks sent to HA during conversation
+- `VoiceAssistantTimerEventResponse`: Timer events (started, updated, finished)
+- `VoiceAssistantConfigurationRequest`: Wake word configuration exchange
+
+Message handling flow: [api_server.py](linux_voice_assistant/api_server.py#L47-L78) `process_packet()` → `handle_message()` (implemented in [satellite.py](linux_voice_assistant/satellite.py)) → `send_messages()`.
+
+### Raspberry Pi LED Feedback
+On Raspberry Pi hardware, visual feedback provided via power LED:
+- **Idle**: LED off (`none` trigger)
+- **Listening**: LED solid on (`default-on` trigger)
+- **Processing**: LED heartbeat pattern (`heartbeat` trigger)
+
+Detection via `/proc/device-tree/model` or `/proc/cpuinfo`. LED control in [satellite.py](linux_voice_assistant/satellite.py#L56-L99) `_set_led()` function.
+
+### Logging & History
+- Conversation history logged to `lvas_log` (symlinked to `/dev/shm/lvas_log` for RAM-based logging to reduce disk wear)
+- History synced to HA via REST API if `ha_token` and `ha_history_entity` configured in `ha_settings.json`
+- Log entries formatted as "User: {stt_text}" and "{assistant_name}: {tts_text}"
+
+## Dependencies
+- **aioesphomeapi**: ESPHome API protocol implementation
+- **soundcard**: Audio input (requires `portaudio19-dev`)
+- **pymicro-wakeword** / **pyopen-wakeword**: Wake word detection
+- **python-mpv**: Audio output (requires `libmpv-dev`)
+
+## Testing Notes
+- Minimal test coverage currently (`tests/test_placeholder.py`)
+- When adding tests, use `script/test` which activates venv automatically
+- Integration tests require Home Assistant instance running
+
+## Common Gotchas
+- **Port conflicts**: Each instance needs unique port. Script auto-assigns starting from 6053 (or `LVAS_BASE_PORT` env var).
+- **MAC spoofing**: Each instance needs unique MAC. Auto-generated if not specified.
+- **Preferences migration**: Legacy single-file preferences automatically split into per-instance + global files on first run.
+- **Wake word stop model**: `stop.tflite` is special—not shown as selectable wake word in HA.
+- **Systemd linger**: `script/deploy` enables user linger via `loginctl enable-linger` so services persist across SSH disconnects and reboots.
+- **Development vs Production**: Use `script/run` for development (runs in foreground). Use `script/deploy` for production (installs as systemd service with autostart).
