@@ -54,6 +54,9 @@ async def main() -> None:
         "--audio-output-device",
         help="mpv name for output device (see --list-output-devices)",
     )
+    parser.add_argument("--audio-output-buffer-size", type=int, default=0,
+        help="mpv audio buffer size in milliseconds (0=default)",
+    )
     parser.add_argument(
         "--list-output-devices",
         action="store_true",
@@ -170,7 +173,7 @@ async def main() -> None:
         mic = sc.default_microphone()
 
     # Load available wake words
-    wake_word_dirs = [Path(ww_dir) for ww_dir in args.wake_word_dir]
+    wake_word_dirs = [Path(ww_dir) for ww_dir in args.wake_word_dir if ww_dir]
     wake_word_dirs.append(args.download_dir / "external_wake_words")
     available_wake_words: Dict[str, AvailableWakeWord] = {}
 
@@ -181,21 +184,27 @@ async def main() -> None:
                 # Don't show stop model as an available wake word
                 continue
 
-            with open(model_config_path, "r", encoding="utf-8") as model_config_file:
-                model_config = json.load(model_config_file)
-                model_type = WakeWordType(model_config["type"])
-                if model_type == WakeWordType.OPEN_WAKE_WORD:
-                    wake_word_path = model_config_path.parent / model_config["model"]
-                else:
-                    wake_word_path = model_config_path
+            try:
+                with open(model_config_path, "r", encoding="utf-8") as model_config_file:
+                    model_config = json.load(model_config_file)
+                    if "type" not in model_config:
+                        _LOGGER.debug("Skipping invalid wake word config: %s (missing 'type' field)", model_config_path)
+                        continue
+                    model_type = WakeWordType(model_config["type"])
+                    if model_type == WakeWordType.OPEN_WAKE_WORD:
+                        wake_word_path = model_config_path.parent / model_config["model"]
+                    else:
+                        wake_word_path = model_config_path
 
-                available_wake_words[model_id] = AvailableWakeWord(
-                    id=model_id,
-                    type=WakeWordType(model_type),
-                    wake_word=model_config["wake_word"],
-                    trained_languages=model_config.get("trained_languages", []),
-                    wake_word_path=wake_word_path,
-                )
+                    available_wake_words[model_id] = AvailableWakeWord(
+                        id=model_id,
+                        type=WakeWordType(model_type),
+                        wake_word=model_config["wake_word"],
+                        trained_languages=model_config.get("trained_languages", []),
+                        wake_word_path=wake_word_path,
+                    )
+            except Exception as e:
+                _LOGGER.debug("Failed to load wake word config %s: %s", model_config_path, e)
 
     _LOGGER.debug("Available wake words: %s", list(sorted(available_wake_words.keys())))
 
@@ -320,8 +329,8 @@ async def main() -> None:
         wake_words=wake_models,
         active_wake_words=active_wake_words,
         stop_word=stop_model,
-        music_player=MpvMediaPlayer(device=args.audio_output_device),
-        tts_player=MpvMediaPlayer(device=args.audio_output_device),
+        music_player=MpvMediaPlayer(device=args.audio_output_device, buffer_size=args.audio_output_buffer_size),
+        tts_player=MpvMediaPlayer(device=args.audio_output_device, buffer_size=args.audio_output_buffer_size),
         wakeup_sound=args.wakeup_sound,
         timer_finished_sound=args.timer_finished_sound,
         preferences=preferences,
