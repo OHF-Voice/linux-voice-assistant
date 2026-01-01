@@ -5,6 +5,7 @@ import json
 import subprocess
 import time
 from pathlib import Path
+import sys
 
 _SCRIPT_DIR = Path(__file__).parent
 _REPO_DIR = _SCRIPT_DIR.parent
@@ -72,8 +73,22 @@ def _write_service(instance_name: str) -> bool:
 
 
 def main() -> None:
+    target_name = None
+    args = sys.argv[1:]
+    for i, arg in enumerate(args):
+        if arg == "--name" and i + 1 < len(args):
+            target_name = args[i + 1]
+            break
+        if not arg.startswith("-") and target_name is None:
+            target_name = arg
+
     autostart = _get_autostart_instances()
-    if not autostart:
+    if target_name:
+        autostart = [n for n in autostart if n == target_name]
+        if not autostart:
+            print(f"No autostart instances match '{target_name}'.")
+            return
+    elif not autostart:
         print("No instances with autostart: true found")
         return
 

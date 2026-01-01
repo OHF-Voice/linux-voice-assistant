@@ -1,0 +1,141 @@
+#!/usr/bin/env python3
+"""Remove one or all Linux Voice Assistant instances safely.
+
+Steps:
+1) Ask for confirmation.
+2) Call the stop script for the targeted instances.
+3) Delete systemd service files and preference JSON files.
+"""
+
+import subprocess
+import sys
+from pathlib import Path
+from typing import Set
+
+_SCRIPT_DIR = Path(__file__).parent
+_REPO_DIR = _SCRIPT_DIR.parent
+_PREFS_USER_DIR = _REPO_DIR / "preferences" / "user"
+_SERVICE_DIR = Path.home() / ".config" / "systemd" / "user"
+_DEFAULT_WANTS_DIR = _SERVICE_DIR / "default.target.wants"
+
+
+def get_instances() -> Set[str]:
+    instances: Set[str] = set()
+    if _PREFS_USER_DIR.exists():
+        for cli_file in _PREFS_USER_DIR.glob("*_cli.json"):
+            instances.add(cli_file.stem.replace("_cli", ""))
+    return instances
+
+
+def parse_target_name(argv: list[str]) -> str | None:
+    target = None
+    for i, arg in enumerate(argv):
+        if arg == "--name" and i + 1 < len(argv):
+            target = argv[i + 1]
+            break
+        if not arg.startswith("-") and target is None:
+            target = arg
+    return target
+
+
+def remove_instance(name: str) -> tuple[int, int, int]:
+    """Remove service and preference files for one instance.
+
+    Returns (services_removed, wants_links_removed, prefs_removed).
+    """
+    service_name = f"{name}.service"
+    service_path = _SERVICE_DIR / service_name
+    wants_link = _DEFAULT_WANTS_DIR / service_name
+
+    # Disable/stop to be safe; stop script already ran but keep idempotent
+    subprocess.run(["systemctl", "--user", "disable", service_name], check=False)
+    subprocess.run(["systemctl", "--user", "stop", service_name], check=False)
+
+    services_removed = 0
+    wants_removed = 0
+    prefs_removed = 0
+
+    if wants_link.exists() or wants_link.is_symlink():
+        try:
+            wants_link.unlink()
+            wants_removed += 1
+        except Exception:
+            pass
+
+    if service_path.exists():
+        try:
+            service_path.unlink()
+            services_removed += 1
+        except Exception:
+            pass
+
+    # Remove possible service symlink placed in prefs (legacy/optional)
+    prefs_service_link = _PREFS_USER_DIR / service_name
+    if prefs_service_link.exists() or prefs_service_link.is_symlink():
+        try:
+            prefs_service_link.unlink()
+        except Exception:
+            pass
+
+    cli_json = _PREFS_USER_DIR / f"{name}_cli.json"
+    prefs_json = _PREFS_USER_DIR / f"{name}.json"
+    for file_path in (cli_json, prefs_json):
+        if file_path.exists():
+            try:
+                file_path.unlink()
+                prefs_removed += 1
+            except Exception:
+                pass
+
+    return services_removed, wants_removed, prefs_removed
+
+
+def main() -> None:
+    argv = sys.argv[1:]
+    target = parse_target_name(argv)
+
+    instances = get_instances()
+    if target:
+        instances = {i for i in instances if i == target}
+        if not instances:
+            print(f"Instance '{target}' not found.")
+            return
+    if not instances:
+        print("No instances found to remove.")
+        return
+
+    names_list = ", ".join(sorted(instances))
+    confirm = input(
+        f"About to stop and remove {len(instances)} instance(s): {names_list}. Type 'yes' to continue: "
+    ).strip().lower()
+    if confirm != "yes":
+        print("Aborted.")
+        return
+
+    # Stop first via existing stop script
+    stop_cmd = [_SCRIPT_DIR / "stop"]
+    if target:
+        stop_cmd.append(target)
+    subprocess.run([str(x) for x in stop_cmd], check=False)
+
+    total_services = 0
+    total_wants = 0
+    total_prefs = 0
+    for name in instances:
+        s, w, p = remove_instance(name)
+        total_services += s
+        total_wants += w
+        total_prefs += p
+
+    # Reload systemd if any unit files were removed
+    if total_services or total_wants:
+        subprocess.run(["systemctl", "--user", "daemon-reload"], check=False)
+
+    print(
+        f"Removed {len(instances)} instance(s); "
+        f"service files deleted: {total_services}, wants links removed: {total_wants}, prefs deleted: {total_prefs}."
+    )
+
+
+if __name__ == "__main__":
+    main()

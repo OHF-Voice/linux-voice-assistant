@@ -175,6 +175,15 @@ def format_status_line(label: str, value: str, width: int = 20) -> str:
 
 def main():
     """Main entry point - display comprehensive status."""
+    target_name = None
+    args = sys.argv[1:]
+    for i, arg in enumerate(args):
+        if arg == "--name" and i + 1 < len(args):
+            target_name = args[i + 1]
+            break
+        if not arg.startswith("-") and target_name is None:
+            target_name = arg
+
     print("Linux Voice Assistant - Comprehensive Status")
     print("=" * 80)
     print()
@@ -182,6 +191,11 @@ def main():
     # Get all information
     processes = get_running_processes()
     instances = get_all_instances()
+    if target_name:
+        instances = {i for i in instances if i == target_name}
+        if not instances:
+            print(f"No instances found matching '{target_name}'.")
+            return
     
     if not instances:
         print("No instances found (no configs or running processes).")

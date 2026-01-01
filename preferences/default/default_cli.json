@@ -1,6 +1,6 @@
 {
     "name": "",
-    "autostart": false,
+    "autostart": true,
     "debug": false,
     "list_input_devices": false,
     "list_output_devices": false,

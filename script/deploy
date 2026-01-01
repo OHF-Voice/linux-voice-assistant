@@ -1,0 +1,224 @@
+#!/usr/bin/env python3
+"""Deploy a new Linux Voice Assistant instance and install its service.
+
+Creates the instance preference files (like script/run does), then installs and
+starts the systemd user service so the instance is managed alongside others.
+
+Usage:
+    script/deploy <name> [<name2> ...] [extra args to store in *_cli.json]
+    script/deploy --name <name> [--name <name2> ...] [...args]
+
+Notes:
+- This does not launch the app directly; it prepares config and installs/starts
+  the service.
+- Extra CLI args are persisted into the *_cli.json (same semantics as script/run).
+"""
+
+import json
+import os
+import platform
+import subprocess
+import sys
+from pathlib import Path
+from typing import Dict
+
+try:
+    import distro  # type: ignore
+except Exception:  # pragma: no cover
+    distro = None
+
+_SCRIPT_DIR = Path(__file__).parent
+_REPO_DIR = _SCRIPT_DIR.parent
+_PREFS_DIR = _REPO_DIR / "preferences"
+_PREFS_USER_DIR = _PREFS_DIR / "user"
+_DEFAULT_PREFS_DIR = _PREFS_DIR / "default"
+_SERVICE_DIR = Path.home() / ".config" / "systemd" / "user"
+
+
+def _get_system_info() -> Dict[str, str | bool | None]:
+    info: Dict[str, str | bool | None] = {
+        "os": platform.system(),
+        "machine": platform.machine(),
+        "architecture": platform.architecture()[0],
+        "distro_id": None,
+        "distro_name": None,
+        "distro_version": None,
+        "is_wsl": False,
+    }
+    if info["os"] == "Linux":
+        try:
+            if distro:
+                info["distro_id"] = distro.id()
+                info["distro_name"] = distro.name()
+                info["distro_version"] = distro.version()
+            # WSL detection
+            try:
+                with open("/proc/version", "r", encoding="utf-8") as f:
+                    info["is_wsl"] = "microsoft" in f.read().lower()
+            except Exception:
+                info["is_wsl"] = "microsoft" in platform.uname().release.lower()
+        except Exception:
+            pass
+    return info
+
+
+def _choose_template(system_info: Dict[str, str | bool | None]) -> Path | None:
+    user_template = _DEFAULT_PREFS_DIR / "default_user_cli.json"
+    if user_template.exists():
+        return user_template
+    if system_info.get("is_wsl"):
+        wsl_template = _DEFAULT_PREFS_DIR / "default_wsl_cli.json"
+        if wsl_template.exists():
+            return wsl_template
+    main_template = _DEFAULT_PREFS_DIR / "default_cli.json"
+    return main_template if main_template.exists() else None
+
+
+def _load_json(path: Path) -> Dict:
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f) or {}
+    except Exception:
+        return {}
+
+
+def _generate_random_mac() -> str:
+    import random
+    return ":".join(f"{random.randint(0,255):02x}" for _ in range(6))
+
+
+def _auto_assign_port(user_prefs_dir: Path, base_port: int = 6053) -> int:
+    used = set()
+    for other in user_prefs_dir.glob("*_cli.json"):
+        config = _load_json(other)
+        port_val = config.get("port")
+        try:
+            if port_val not in (None, False, "false", ""):
+                used.add(int(port_val))
+        except Exception:
+            continue
+    port = base_port
+    while port in used:
+        port += 1
+    return port
+
+
+def _parse_names_and_args(argv: list[str]) -> tuple[list[str], Dict[str, str | bool]]:
+    names: list[str] = []
+    overrides: Dict[str, str | bool] = {}
+    i = 0
+    while i < len(argv):
+        token = argv[i]
+        if token == "--name" and i + 1 < len(argv):
+            names.append(argv[i + 1])
+            i += 2
+            continue
+        if token.startswith("--"):
+            key = token.lstrip("-")
+            if i + 1 < len(argv) and not argv[i + 1].startswith("-"):
+                overrides[key] = argv[i + 1]
+                i += 2
+            else:
+                overrides[key] = True
+                i += 1
+            continue
+        # Positional names fallback
+        names.append(token)
+        i += 1
+    return names, overrides
+
+
+def _ensure_pref_files(name: str, overrides: Dict[str, str | bool], system_info: Dict[str, str | bool | None]) -> None:
+    _PREFS_USER_DIR.mkdir(parents=True, exist_ok=True)
+    _DEFAULT_PREFS_DIR.mkdir(parents=True, exist_ok=True)
+
+    cli_path = _PREFS_USER_DIR / f"{name}_cli.json"
+    prefs_path = _PREFS_USER_DIR / f"{name}.json"
+
+    template_path = _choose_template(system_info)
+    if cli_path.exists():
+        arg_map = _load_json(cli_path)
+    elif template_path:
+        arg_map = _load_json(template_path)
+    else:
+        arg_map = {}
+
+    # apply overrides
+    arg_map.update(overrides)
+    arg_map["__system_info__"] = system_info
+
+    # mac
+    if not arg_map.get("mac"):
+        arg_map["mac"] = _generate_random_mac()
+
+    # port if missing
+    if "port" not in arg_map or arg_map.get("port") in (None, False, "false", ""):
+        base_port = os.environ.get("LVAS_BASE_PORT", "6053")
+        try:
+            base_port_int = int(base_port)
+        except Exception:
+            base_port_int = 6053
+        arg_map["port"] = str(_auto_assign_port(_PREFS_USER_DIR, base_port_int))
+
+    # autostart default true for deploy
+    if arg_map.get("autostart") is None:
+        arg_map["autostart"] = True
+
+    # persist cli
+    with open(cli_path, "w", encoding="utf-8") as f:
+        json.dump(arg_map, f, ensure_ascii=False, indent=4)
+
+    # ensure prefs json exists
+    if not prefs_path.exists():
+        prefs_template = _DEFAULT_PREFS_DIR / "default.json"
+        prefs_data = _load_json(prefs_template) or {"active_wake_words": []}
+        with open(prefs_path, "w", encoding="utf-8") as f:
+            json.dump(prefs_data, f, ensure_ascii=False, indent=4)
+
+
+def _ensure_service_symlink(name: str) -> None:
+    """Ensure a convenience symlink to the unit exists in preferences/user."""
+    _PREFS_USER_DIR.mkdir(parents=True, exist_ok=True)
+    unit = _SERVICE_DIR / f"{name}.service"
+    link = _PREFS_USER_DIR / f"{name}.service"
+    if link.exists() or link.is_symlink():
+        try:
+            link.unlink()
+        except Exception:
+            return
+    if unit.exists():
+        try:
+            link.symlink_to(unit)
+        except Exception:
+            pass
+
+
+def main() -> None:
+    argv = sys.argv[1:]
+    names, overrides = _parse_names_and_args(argv)
+    if not names:
+        print("Usage: script/deploy <name> [<name2> ...] [--key value ...]")
+        sys.exit(1)
+
+    system_info = _get_system_info()
+
+    success = 0
+    for name in names:
+        # Ensure prefs/cli files exist (no app launch)
+        _ensure_pref_files(name, overrides, system_info)
+
+        # Create/install the service and start it
+        try:
+            subprocess.run([str(_SCRIPT_DIR / "service"), "setup", name], check=True)
+            _ensure_service_symlink(name)
+            subprocess.run(["systemctl", "--user", "start", f"{name}.service"], check=True)
+            print(f"Deployed instance '{name}' with autostart service enabled and started.")
+            success += 1
+        except Exception as exc:
+            print(f"Error deploying '{name}': {exc}")
+
+    print(f"Done. {success}/{len(names)} instance(s) deployed.")
+
+
+if __name__ == "__main__":
+    main()
