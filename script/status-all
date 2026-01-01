@@ -1,0 +1,248 @@
+#!/usr/bin/env python3
+"""Comprehensive status view for all Linux Voice Assistant instances."""
+
+import json
+import subprocess
+import sys
+from pathlib import Path
+from typing import Dict, Optional, Set
+
+_SCRIPT_DIR = Path(__file__).parent
+_REPO_DIR = _SCRIPT_DIR.parent
+_PREFS_USER_DIR = _REPO_DIR / "preferences" / "user"
+_SERVICE_DIR = Path.home() / ".config" / "systemd" / "user"
+
+
+def get_running_processes() -> Dict[str, Dict]:
+    """Get all running LVA processes with their details.
+    
+    Returns: Dict mapping instance name to process info (pid, cmdline, uptime, etc.)
+    """
+    processes = {}
+    
+    try:
+        # Find all python processes running linux_voice_assistant
+        result = subprocess.run(
+            ["pgrep", "-f", "python.*linux_voice_assistant"],
+            capture_output=True,
+            text=True,
+            check=False
+        )
+        
+        if result.returncode != 0 or not result.stdout.strip():
+            return processes
+        
+        pids = result.stdout.strip().split('\n')
+        
+        for pid in pids:
+            # Get process details
+            try:
+                # Get command line
+                cmdline_result = subprocess.run(
+                    ["ps", "-p", pid, "-o", "args="],
+                    capture_output=True,
+                    text=True,
+                    check=True
+                )
+                cmdline = cmdline_result.stdout.strip()
+                
+                # Extract instance name from command line
+                name = None
+                parts = cmdline.split()
+                for i, part in enumerate(parts):
+                    if part == "--name" and i + 1 < len(parts):
+                        name = parts[i + 1]
+                        break
+                
+                if not name:
+                    name = f"unknown_{pid}"
+                
+                # Get uptime
+                uptime_result = subprocess.run(
+                    ["ps", "-p", pid, "-o", "etime="],
+                    capture_output=True,
+                    text=True,
+                    check=True
+                )
+                uptime = uptime_result.stdout.strip()
+                
+                # Get CPU and memory usage
+                stats_result = subprocess.run(
+                    ["ps", "-p", pid, "-o", "pcpu=,pmem=,stat="],
+                    capture_output=True,
+                    text=True,
+                    check=True
+                )
+                stats = stats_result.stdout.strip().split()
+                cpu = stats[0] if len(stats) > 0 else "?"
+                mem = stats[1] if len(stats) > 1 else "?"
+                stat = stats[2] if len(stats) > 2 else "?"
+                
+                processes[name] = {
+                    "pid": pid,
+                    "cmdline": cmdline,
+                    "uptime": uptime,
+                    "cpu": cpu,
+                    "mem": mem,
+                    "stat": stat,
+                }
+                
+            except subprocess.CalledProcessError:
+                continue
+                
+    except Exception as e:
+        print(f"Error getting processes: {e}", file=sys.stderr)
+    
+    return processes
+
+
+def get_instance_config(instance_name: str) -> Optional[Dict]:
+    """Get instance configuration from CLI JSON file.
+    
+    Returns: Dict with config (mac, port, host, etc.) or None if not found
+    """
+    cli_file = _PREFS_USER_DIR / f"{instance_name}_cli.json"
+    
+    if not cli_file.exists():
+        return None
+    
+    try:
+        with open(cli_file, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+
+def get_service_status(instance_name: str) -> Optional[Dict]:
+    """Get systemd service status for instance.
+    
+    Returns: Dict with service info (installed, enabled, active) or None
+    """
+    service_name = f"{instance_name}.service"
+    service_path = _SERVICE_DIR / service_name
+    
+    if not service_path.exists():
+        return None
+    
+    info = {"installed": True, "enabled": False, "active": "unknown"}
+    
+    try:
+        # Check if enabled
+        result = subprocess.run(
+            ["systemctl", "--user", "is-enabled", service_name],
+            capture_output=True,
+            text=True,
+            check=False
+        )
+        info["enabled"] = result.stdout.strip() == "enabled"
+        
+        # Check if active
+        result = subprocess.run(
+            ["systemctl", "--user", "is-active", service_name],
+            capture_output=True,
+            text=True,
+            check=False
+        )
+        info["active"] = result.stdout.strip()
+        
+    except Exception:
+        pass
+    
+    return info
+
+
+def get_all_instances() -> Set[str]:
+    """Get all known instance names (from configs and running processes)."""
+    instances = set()
+    
+    # Add instances from config files
+    if _PREFS_USER_DIR.exists():
+        for cli_file in _PREFS_USER_DIR.glob("*_cli.json"):
+            name = cli_file.stem.replace("_cli", "")
+            instances.add(name)
+    
+    # Add running processes
+    processes = get_running_processes()
+    instances.update(processes.keys())
+    
+    return instances
+
+
+def format_status_line(label: str, value: str, width: int = 20) -> str:
+    """Format a status line with aligned label and value."""
+    return f"  {label:<{width}}: {value}"
+
+
+def main():
+    """Main entry point - display comprehensive status."""
+    print("Linux Voice Assistant - Comprehensive Status")
+    print("=" * 80)
+    print()
+    
+    # Get all information
+    processes = get_running_processes()
+    instances = get_all_instances()
+    
+    if not instances:
+        print("No instances found (no configs or running processes).")
+        return
+    
+    # Display each instance
+    for instance_name in sorted(instances):
+        # Skip if this looks like an unknown process
+        if instance_name.startswith("unknown_"):
+            continue
+            
+        print(f"Instance: {instance_name}")
+        print("-" * 80)
+        
+        # Process information
+        if instance_name in processes:
+            proc = processes[instance_name]
+            print(format_status_line("Status", "🟢 RUNNING"))
+            print(format_status_line("PID", proc["pid"]))
+            print(format_status_line("Uptime", proc["uptime"]))
+            print(format_status_line("CPU Usage", f"{proc['cpu']}%"))
+            print(format_status_line("Memory Usage", f"{proc['mem']}%"))
+            print(format_status_line("Process State", proc["stat"]))
+        else:
+            print(format_status_line("Status", "🔴 NOT RUNNING"))
+        
+        # Configuration information
+        config = get_instance_config(instance_name)
+        if config:
+            mac = config.get("mac", "not set")
+            host = config.get("host", "not set")
+            port = config.get("port", "not set")
+            autostart = config.get("autostart", False)
+            
+            print(format_status_line("MAC Address", mac))
+            print(format_status_line("Host/IP", host))
+            print(format_status_line("Port", str(port)))
+            print(format_status_line("Autostart", "Yes" if autostart else "No"))
+        else:
+            print(format_status_line("Configuration", "❌ Not found"))
+        
+        # Service information
+        service = get_service_status(instance_name)
+        if service:
+            status_icon = "🟢" if service["active"] == "active" else "🔴"
+            print(format_status_line("Service Installed", "Yes"))
+            print(format_status_line("Service Enabled", "Yes" if service["enabled"] else "No"))
+            print(format_status_line("Service Status", f"{status_icon} {service['active']}"))
+        else:
+            print(format_status_line("Service Installed", "No"))
+        
+        print()
+    
+    # Summary
+    running_count = len(processes)
+    total_count = len([i for i in instances if not i.startswith("unknown_")])
+    
+    print("=" * 80)
+    print(f"Summary: {running_count} running / {total_count} total instances")
+    print()
+
+
+if __name__ == "__main__":
+    main()

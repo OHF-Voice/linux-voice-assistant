@@ -1,0 +1,164 @@
+#!/usr/bin/env python3
+"""Stop all Linux Voice Assistant services and kill running processes."""
+
+import os
+import signal
+import subprocess
+import time
+from pathlib import Path
+from typing import Set
+
+_SCRIPT_DIR = Path(__file__).parent
+_REPO_DIR = _SCRIPT_DIR.parent
+_PREFS_USER_DIR = _REPO_DIR / "preferences" / "user"
+_SERVICE_DIR = Path.home() / ".config" / "systemd" / "user"
+
+
+def get_instances() -> Set[str]:
+    """Collect instance names from CLI config files."""
+    instances: Set[str] = set()
+    if _PREFS_USER_DIR.exists():
+        for cli_file in _PREFS_USER_DIR.glob("*_cli.json"):
+            instances.add(cli_file.stem.replace("_cli", ""))
+    return instances
+
+
+def stop_services(instances: Set[str]) -> None:
+    """Stop and disable systemd user services for the given instances.
+
+    Disabling prevents systemd from immediately restarting the service when we
+    kill leftover processes (units have Restart=always).
+    """
+    processed: list[str] = []
+    active_before: list[str] = []
+    for name in sorted(instances):
+        service_name = f"{name}.service"
+        service_path = _SERVICE_DIR / service_name
+        if not service_path.exists():
+            continue
+
+        state_before = subprocess.run(
+            ["systemctl", "--user", "is-active", service_name],
+            capture_output=True,
+            text=True,
+            check=False,
+        ).stdout.strip()
+
+        # Stop first, then force-kill any lingering processes, then disable/reset
+        subprocess.run(["systemctl", "--user", "stop", service_name], check=False)
+
+        # Only kill if the unit still reports active/activating to avoid noisy errors
+        active_state = subprocess.run(
+            ["systemctl", "--user", "is-active", service_name],
+            capture_output=True,
+            text=True,
+            check=False,
+        ).stdout.strip()
+        if active_state in {"active", "activating"}:
+            subprocess.run(
+                [
+                    "systemctl",
+                    "--user",
+                    "kill",
+                    "--kill-who=all",
+                    "--signal=SIGKILL",
+                    service_name,
+                ],
+                check=False,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+
+        subprocess.run(
+            ["systemctl", "--user", "reset-failed", service_name],
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        subprocess.run(["systemctl", "--user", "disable", service_name], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        processed.append(service_name)
+        if state_before in {"active", "activating"}:
+            active_before.append(service_name)
+
+    if not processed:
+        print("No installed services found to stop or disable.")
+    else:
+        active_msg = f" ({len(active_before)} were running)" if active_before else ""
+        print(f"Stopped/disabled {len(processed)} service(s){active_msg}: {', '.join(processed)}")
+
+
+def find_pids() -> Set[int]:
+    """Find all linux_voice_assistant python processes by pgrep fallback to pkill --list."""
+    pids: Set[int] = set()
+    result = subprocess.run(
+        ["pgrep", "-f", "python.*linux_voice_assistant"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode == 0 and result.stdout.strip():
+        pids.update(int(pid) for pid in result.stdout.strip().splitlines() if pid.strip().isdigit())
+    return pids
+
+
+def kill_processes(max_attempts: int = 3) -> int:
+    """Terminate all running linux_voice_assistant python processes.
+
+    Attempts up to max_attempts rounds: SIGTERM then SIGKILL, re-scan each round.
+    Returns total processes signaled in the first pass (for reporting).
+    """
+    total_signaled = 0
+    for attempt in range(max_attempts):
+        pids = find_pids()
+        if not pids:
+            break
+
+        if attempt == 0:
+            total_signaled = len(pids)
+
+        # First send SIGTERM
+        for pid in pids:
+            try:
+                os.kill(pid, signal.SIGTERM)
+            except ProcessLookupError:
+                continue
+
+        time.sleep(1.0)
+
+        # Force kill any survivors in this round
+        survivors = []
+        for pid in pids:
+            try:
+                os.kill(pid, 0)
+                survivors.append(pid)
+            except ProcessLookupError:
+                continue
+        for pid in survivors:
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except ProcessLookupError:
+                continue
+
+        # small delay before re-scan
+        time.sleep(0.3)
+
+    return total_signaled
+
+
+def main() -> None:
+    instances = get_instances()
+    if instances:
+        print(f"Stopping services for {len(instances)} instance(s)...")
+        stop_services(instances)
+    else:
+        print("No instances found to stop services.")
+
+    killed = kill_processes()
+    if killed:
+        print(f"Killed {killed} running process(es).")
+    else:
+        print("No running processes found.")
+
+
+if __name__ == "__main__":
+    main()

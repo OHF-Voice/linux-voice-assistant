@@ -1,0 +1,115 @@
+#!/usr/bin/env python3
+"""Recreate and restart services for all autostart-enabled instances."""
+
+import json
+import subprocess
+import time
+from pathlib import Path
+
+_SCRIPT_DIR = Path(__file__).parent
+_REPO_DIR = _SCRIPT_DIR.parent
+_PREFS_USER_DIR = _REPO_DIR / "preferences" / "user"
+_SERVICE_DIR = Path.home() / ".config" / "systemd" / "user"
+
+
+def _get_autostart_instances() -> list[str]:
+    autostart: list[str] = []
+    if not _PREFS_USER_DIR.exists():
+        return autostart
+
+    for cli_file in _PREFS_USER_DIR.glob("*_cli.json"):
+        try:
+            with open(cli_file, "r", encoding="utf-8") as f:
+                config = json.load(f)
+            if config.get("autostart") is True:
+                autostart.append(cli_file.stem.replace("_cli", ""))
+        except Exception:
+            continue
+
+    return autostart
+
+
+def _get_service_name(instance_name: str) -> str:
+    return f"{instance_name}.service"
+
+
+def _get_service_path(instance_name: str) -> Path:
+    return _SERVICE_DIR / _get_service_name(instance_name)
+
+
+def _generate_service_file(instance_name: str) -> str:
+    return f"""[Unit]
+Description=Linux Voice Assistant - {instance_name}
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory={_REPO_DIR}
+ExecStart={_REPO_DIR}/script/run --name {instance_name}
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target
+"""
+
+
+def _write_service(instance_name: str) -> bool:
+    cli_file = _PREFS_USER_DIR / f"{instance_name}_cli.json"
+    if not cli_file.exists():
+        print(f"Skipping {instance_name}: missing {cli_file.name}")
+        return False
+
+    _SERVICE_DIR.mkdir(parents=True, exist_ok=True)
+    service_path = _get_service_path(instance_name)
+    try:
+        service_path.write_text(_generate_service_file(instance_name), encoding="utf-8")
+        print(f"Wrote {service_path}")
+        return True
+    except Exception as exc:
+        print(f"Error writing {service_path}: {exc}")
+        return False
+
+
+def main() -> None:
+    autostart = _get_autostart_instances()
+    if not autostart:
+        print("No instances with autostart: true found")
+        return
+
+    print(f"Found {len(autostart)} instance(s) with autostart enabled:")
+    for name in autostart:
+        print(f"  - {name}")
+
+    print()
+    success = 0
+    for name in autostart:
+        service_path = _get_service_path(name)
+        if service_path.exists():
+            print(f"[{name}] Updating existing service...")
+        else:
+            print(f"[{name}] Creating service...")
+
+        if _write_service(name):
+            success += 1
+
+    print("Reloading systemd...")
+    subprocess.run(["systemctl", "--user", "daemon-reload"], check=False)
+
+    print("Enabling and restarting services...")
+    for i, name in enumerate(autostart):
+        service_name = _get_service_name(name)
+        try:
+            subprocess.run(["systemctl", "--user", "enable", service_name], check=False)
+            subprocess.run(["systemctl", "--user", "restart", service_name], check=True)
+            print(f"Restarted: {service_name}")
+            if i < len(autostart) - 1:
+                time.sleep(4)
+        except Exception as exc:
+            print(f"Error restarting {service_name}: {exc}")
+
+    print(f"\nRestart complete: {success}/{len(autostart)} service files refreshed")
+
+
+if __name__ == "__main__":
+    main()

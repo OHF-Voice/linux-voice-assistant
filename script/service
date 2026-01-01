@@ -145,9 +145,9 @@ def setup_all() -> None:
         try:
             subprocess.run(["systemctl", "--user", "start", _get_service_name(name)], check=True)
             print(f"Started: {_get_service_name(name)}")
-            # Add delay between launches (except after the last one)
+            # Add delay between launches (except after the last one) to prevent audio conflicts
             if i < len(autostart) - 1:
-                time.sleep(2)
+                time.sleep(4)
         except Exception as e:
             print(f"Error starting {name}: {e}")
     

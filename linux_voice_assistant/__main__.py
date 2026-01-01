@@ -99,6 +99,28 @@ async def main() -> None:
     parser.add_argument(
         "--debug", action="store_true", help="Print DEBUG messages to console"
     )
+    
+    # Parse only --name first to load CLI config defaults
+    args, remaining = parser.parse_known_args()
+    
+    # Load CLI config from last run if it exists (to use as defaults)
+    if args.name:
+        user_prefs_dir = _REPO_DIR / "preferences" / "user"
+        cli_config_path = user_prefs_dir / f"{args.name}_cli.json"
+        if cli_config_path.exists():
+            try:
+                with open(cli_config_path, "r", encoding="utf-8") as f:
+                    cli_config = json.load(f)
+                    # Filter out non-argument keys
+                    cli_only_keys = {"autostart", "__system_info__"}
+                    defaults = {k: v for k, v in cli_config.items() if not k.startswith("_") and k not in cli_only_keys}
+                    # Convert underscores to hyphens in keys for argparse
+                    defaults = {k.replace("_", "-"): v for k, v in defaults.items()}
+                    parser.set_defaults(**defaults)
+            except Exception:
+                pass
+    
+    # Re-parse with defaults loaded
     args = parser.parse_args()
 
     if args.list_input_devices:

@@ -224,21 +224,6 @@ if prefs_flag is None:
         
         # Ensure preferences path is passed to main app
         args = args + ["--preferences-file", str(prefs_path)]
-        
-        # Convert arg_map back to CLI arguments for the Python module
-        # This ensures values from _cli.json are passed to the app
-        cli_only_keys = {"autostart"}  # Keys that are only for run script, not for main app
-        for key, value in arg_map.items():
-            if key.startswith("_") or key in cli_only_keys:
-                # Skip metadata keys like __system_info__ and CLI-only keys
-                continue
-            # Convert underscores to hyphens for CLI arguments
-            arg_name = key.replace("_", "-")
-            if isinstance(value, bool):
-                if value:
-                    args = args + [f"--{arg_name}"]
-            elif value not in (None, "", False):
-                args = args + [f"--{arg_name}", str(value)]
 
         # Setup unified RAM-based log file (shared across all instances)
         log_link = _PROGRAM_DIR / "lvas_log"
