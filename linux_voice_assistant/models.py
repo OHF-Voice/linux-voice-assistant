@@ -93,6 +93,7 @@ class ServerState:
     satellite: "Optional[VoiceSatelliteProtocol]" = None
     wake_words_changed: bool = False
     refractory_seconds: float = 2.0
+    screen_management: bool = False
 
     def save_preferences(self) -> None:
         """Save per-instance preferences (currently active wake words)."""

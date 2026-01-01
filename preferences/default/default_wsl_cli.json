@@ -12,7 +12,7 @@
     "stop_model": "stop",
     "download_dir": "",
     "refractory_seconds": 2.0,
-    "wakeup_sound": "../../sounds/halfknock.wav",
+    "wakeup_sound": "/home/stef/linux-voice-assistant/sounds/halfknock.wav",
     "timer_finished_sound": "",
     "preferences_file": "",
     "host": "0.0.0.0",

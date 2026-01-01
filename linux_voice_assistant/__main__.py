@@ -105,6 +105,11 @@ async def main() -> None:
     parser.add_argument(
         "--debug", action="store_true", help="Print DEBUG messages to console"
     )
+    parser.add_argument(
+        "--screen-management",
+        action="store_true",
+        help="Enable screen wake/sleep control via xset (requires X display)",
+    )
     
     # Parse only --name first to load CLI config defaults
     args, remaining = parser.parse_known_args()
@@ -325,6 +330,7 @@ async def main() -> None:
         global_preferences_path=global_preferences_path,
         refractory_seconds=args.refractory_seconds,
         download_dir=args.download_dir,
+        screen_management=args.screen_management,
     )
 
     process_audio_thread = threading.Thread(

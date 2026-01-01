@@ -1,0 +1,6 @@
+{
+    "files.exclude": {
+        "**/.hg": false,
+        "**/.svn": false
+    }
+}

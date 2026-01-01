@@ -98,6 +98,44 @@ def _set_led(trigger: str) -> None:
         _LOGGER.debug("Could not set LED trigger to %s: %s", trigger, e)
 
 
+def _set_screen_dpms(timeout: int, display: str = ":0") -> None:
+    """Set screen DPMS timeout using xset.
+    
+    Args:
+        timeout: Seconds until screen turns off (0 to force on immediately)
+        display: X display to target (default :0)
+    """
+    import os
+    try:
+        env = os.environ.copy()
+        env["DISPLAY"] = display
+        if timeout == 0:
+            # Force screen on immediately
+            subprocess.run(
+                ["/usr/bin/xset", "dpms", "force", "on"],
+                env=env,
+                check=True,
+                capture_output=True,
+            )
+            # Set stay-awake timeout (10 minutes)
+            subprocess.run(
+                ["/usr/bin/xset", "dpms", "600", "600", "600", "+dpms"],
+                env=env,
+                check=True,
+                capture_output=True,
+            )
+        else:
+            # Set timeout for auto-sleep
+            subprocess.run(
+                ["/usr/bin/xset", "dpms", str(timeout), str(timeout), str(timeout), "+dpms"],
+                env=env,
+                check=True,
+                capture_output=True,
+            )
+    except Exception as e:
+        _LOGGER.debug("Could not set screen DPMS to %s: %s", timeout, e)
+
+
 class VoiceSatelliteProtocol(APIServer):
 
     def __init__(self, state: ServerState) -> None:
@@ -153,7 +191,9 @@ class VoiceSatelliteProtocol(APIServer):
         self._external_wake_words: Dict[str, VoiceAssistantExternalWakeWord] = {}
         self._current_assistant_name: str = "Assistant"
         self._is_rpi = _is_raspberry_pi()
+        self._screen_management = state.screen_management
         
+        _LOGGER.info("Screen management enabled: %s", self._screen_management)
         # Set LED to idle state on init (only on RPi)
         if self._is_rpi:
             _set_led("none")
@@ -162,6 +202,11 @@ class VoiceSatelliteProtocol(APIServer):
         self, event_type: VoiceAssistantEventType, data: Dict[str, str]
     ) -> None:
         _LOGGER.debug("Voice event: type=%s, data=%s", event_type.name, data)
+        
+        # Log conversation start/end at INFO for external monitoring
+        if event_type in (VoiceAssistantEventType.VOICE_ASSISTANT_RUN_START,
+                          VoiceAssistantEventType.VOICE_ASSISTANT_TTS_END):
+            _LOGGER.info("Voice event: %s", event_type.name)
 
         if event_type == VoiceAssistantEventType.VOICE_ASSISTANT_RUN_START:
             self._tts_url = data.get("url")
@@ -171,6 +216,9 @@ class VoiceSatelliteProtocol(APIServer):
             self._update_active_tts("")
             if self._is_rpi:
                 _set_led("default-on")  # Listening
+            if self._screen_management:
+                _LOGGER.info("Waking screen for voice interaction")
+                _set_screen_dpms(0)  # Wake screen immediately
         elif event_type == VoiceAssistantEventType.VOICE_ASSISTANT_STT_START:
             self._update_active_stt("")
             if self._is_rpi:
@@ -445,6 +493,9 @@ class VoiceSatelliteProtocol(APIServer):
             self.unduck()
             if self._is_rpi:
                 _set_led("none")  # Back to idle
+            if self._screen_management:
+                _LOGGER.info("Setting screen sleep timeout after TTS playback finished")
+                _set_screen_dpms(10)  # 10 second timeout
             # Clear sensors after 5 seconds (using stored loop reference)
             if self._loop is not None:
                 self._loop.call_later(5.0, self._clear_sensors)
