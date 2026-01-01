@@ -15,7 +15,13 @@ import soundcard as sc
 from pymicro_wakeword import MicroWakeWord, MicroWakeWordFeatures
 from pyopen_wakeword import OpenWakeWord, OpenWakeWordFeatures
 
-from .models import AvailableWakeWord, Preferences, ServerState, WakeWordType
+from .models import (
+    AvailableWakeWord,
+    GlobalPreferences,
+    Preferences,
+    ServerState,
+    WakeWordType,
+)
 from .mpv_player import MpvMediaPlayer
 from .satellite import VoiceSatelliteProtocol
 from .util import get_mac
@@ -188,8 +194,13 @@ async def main() -> None:
 
     _LOGGER.debug("Available wake words: %s", list(sorted(available_wake_words.keys())))
 
-    # Load preferences
+    # Load per-instance preferences and shared global settings
     preferences_path = Path(args.preferences_file)
+    global_preferences_path = preferences_path.parent / "ha_settings.json"
+
+    # First load per-instance prefs (active wake words)
+    preferences = Preferences()
+    migration_globals: Dict[str, object] = {}
     if preferences_path.exists():
         _LOGGER.debug("Loading preferences: %s", preferences_path)
         with open(preferences_path, "r", encoding="utf-8") as preferences_file:
@@ -197,27 +208,50 @@ async def main() -> None:
             # preferences file may contain extra metadata (e.g. CLI args) under
             # other keys. Only extract known fields for the Preferences dataclass.
             if isinstance(preferences_dict, dict):
-                active = preferences_dict.get("active_wake_words")
-                if active is None:
-                    # Some run scripts store CLI args under a `cli_args` key;
-                    # keep compatibility by looking for the field at top-level.
-                    active = []
-                friendly_names = preferences_dict.get("wake_word_friendly_names", {})
-                ha_base_url = preferences_dict.get("ha_base_url")
-                ha_token = preferences_dict.get("ha_token")
-                ha_history_entity = preferences_dict.get("ha_history_entity")
-                preferences = Preferences(
-                    active_wake_words=active,
-                    wake_word_friendly_names=friendly_names,
-                    ha_base_url=ha_base_url,
-                    ha_token=ha_token,
-                    ha_history_entity=ha_history_entity
+                active = preferences_dict.get("active_wake_words") or []
+                preferences = Preferences(active_wake_words=active)
+
+                # Capture legacy global fields for migration if needed
+                for key in ("wake_word_friendly_names", "ha_base_url", "ha_token", "ha_history_entity"):
+                    if key in preferences_dict:
+                        migration_globals[key] = preferences_dict.get(key)
+
+    # Load global/shared preferences (base URL, token, friendly names)
+    global_preferences = GlobalPreferences()
+    if global_preferences_path.exists():
+        _LOGGER.debug("Loading global preferences: %s", global_preferences_path)
+        with open(global_preferences_path, "r", encoding="utf-8") as global_file:
+            global_dict = json.load(global_file)
+            if isinstance(global_dict, dict):
+                global_preferences = GlobalPreferences(
+                    wake_word_friendly_names=global_dict.get("wake_word_friendly_names", {}),
+                    ha_base_url=global_dict.get("ha_base_url"),
+                    ha_token=global_dict.get("ha_token"),
+                    ha_history_entity=global_dict.get("ha_history_entity"),
                 )
-            else:
-                preferences = Preferences()
-    else:
-        # Create minimal preferences (run script should have created this)
-        preferences = Preferences()
+
+    # Migrate legacy global fields embedded in per-instance file
+    if migration_globals and not global_preferences_path.exists():
+        _LOGGER.info("Migrating shared HA/friendly-name settings to %s", global_preferences_path)
+        global_preferences = GlobalPreferences(
+            wake_word_friendly_names=migration_globals.get("wake_word_friendly_names", {}),
+            ha_base_url=migration_globals.get("ha_base_url"),
+            ha_token=migration_globals.get("ha_token"),
+            ha_history_entity=migration_globals.get("ha_history_entity"),
+        )
+        global_preferences_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(global_preferences_path, "w", encoding="utf-8") as global_file:
+            json.dump(
+                {
+                    "wake_word_friendly_names": global_preferences.wake_word_friendly_names,
+                    "ha_base_url": global_preferences.ha_base_url,
+                    "ha_token": global_preferences.ha_token,
+                    "ha_history_entity": global_preferences.ha_history_entity,
+                },
+                global_file,
+                ensure_ascii=False,
+                indent=4,
+            )
 
     # Load wake/stop models
     active_wake_words: Set[str] = set()
@@ -286,7 +320,9 @@ async def main() -> None:
         wakeup_sound=args.wakeup_sound,
         timer_finished_sound=args.timer_finished_sound,
         preferences=preferences,
+        global_preferences=global_preferences,
         preferences_path=preferences_path,
+        global_preferences_path=global_preferences_path,
         refractory_seconds=args.refractory_seconds,
         download_dir=args.download_dir,
     )

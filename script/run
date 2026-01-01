@@ -211,14 +211,33 @@ if prefs_flag is None:
         except Exception:
             pass
         
-        # Create main preferences file if needed
+        global_prefs_path = user_prefs_dir / "ha_settings.json"
+
+        # Create main preferences file if needed (per-instance: active wake words only)
         if not prefs_path.exists():
             try:
                 prefs_template_path = default_prefs_dir / "default.json"
-                prefs_data = _load_template_config(prefs_template_path) or {"active_wake_words": []}
+                template = _load_template_config(prefs_template_path) or {}
+                active_only = {"active_wake_words": template.get("active_wake_words", [])}
                 prefs_path.parent.mkdir(parents=True, exist_ok=True)
                 with open(prefs_path, "w", encoding="utf-8") as f:
-                    json.dump(prefs_data, f, ensure_ascii=False, indent=4)
+                    json.dump(active_only, f, ensure_ascii=False, indent=4)
+            except Exception:
+                pass
+
+        # Create shared HA/friendly settings once
+        if not global_prefs_path.exists():
+            try:
+                template = _load_template_config(default_prefs_dir / "default.json") or {}
+                global_data = {
+                    "wake_word_friendly_names": template.get("wake_word_friendly_names", {}),
+                    "ha_base_url": template.get("ha_base_url"),
+                    "ha_token": template.get("ha_token"),
+                    "ha_history_entity": template.get("ha_history_entity"),
+                }
+                global_prefs_path.parent.mkdir(parents=True, exist_ok=True)
+                with open(global_prefs_path, "w", encoding="utf-8") as f:
+                    json.dump(global_data, f, ensure_ascii=False, indent=4)
             except Exception:
                 pass
         

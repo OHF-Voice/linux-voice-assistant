@@ -320,7 +320,7 @@ class VoiceSatelliteProtocol(APIServer):
         
         # Use friendly name if available
         wake_word_id = wake_word.id if hasattr(wake_word, 'id') else None
-        friendly_name = self.state.preferences.wake_word_friendly_names.get(wake_word_id, wake_word_phrase)
+        friendly_name = self.state.global_preferences.wake_word_friendly_names.get(wake_word_id, wake_word_phrase)
         self._current_assistant_name = friendly_name
         
         self._update_active_assistant(friendly_name)
@@ -453,9 +453,9 @@ class VoiceSatelliteProtocol(APIServer):
 
     def _sync_history_to_ha(self) -> None:
         """Sync last 100 lines of log to Home Assistant."""
-        ha_url = self.state.preferences.ha_base_url
-        ha_token = self.state.preferences.ha_token
-        ha_entity = self.state.preferences.ha_history_entity or "input_text.lvas_history"
+        ha_url = self.state.global_preferences.ha_base_url
+        ha_token = self.state.global_preferences.ha_token
+        ha_entity = self.state.global_preferences.ha_history_entity or "input_text.lvas_history"
         
         if not ha_url or not ha_token:
             _LOGGER.debug("HA sync disabled: ha_base_url=%s, ha_token=%s", ha_url, bool(ha_token))

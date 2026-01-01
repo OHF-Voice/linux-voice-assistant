@@ -17,6 +17,7 @@ Notes:
 import json
 import os
 import platform
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -33,6 +34,38 @@ _PREFS_DIR = _REPO_DIR / "preferences"
 _PREFS_USER_DIR = _PREFS_DIR / "user"
 _DEFAULT_PREFS_DIR = _PREFS_DIR / "default"
 _SERVICE_DIR = Path.home() / ".config" / "systemd" / "user"
+_GLOBAL_PREFS_PATH = _PREFS_USER_DIR / "ha_settings.json"
+
+
+def _current_user() -> str:
+    return os.environ.get("USER") or os.environ.get("LOGNAME") or Path.home().name
+
+
+def _ensure_user_linger(user: str) -> None:
+    """Enable systemd lingering so user services persist across logouts/reboots."""
+    if platform.system() != "Linux":
+        return
+    if shutil.which("loginctl") is None:
+        return
+
+    try:
+        status = subprocess.run(
+            ["loginctl", "show-user", user, "--property=Linger", "--value"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        if status.stdout.strip().lower() == "yes":
+            return
+    except Exception:
+        # fall through and try to enable linger anyway
+        pass
+
+    try:
+        subprocess.run(["loginctl", "enable-linger", user], check=True)
+        print(f"Enabled persistent user session (linger) for '{user}'.")
+    except Exception as exc:
+        print(f"Warning: Could not enable persistent user session via loginctl: {exc}")
 
 
 def _get_system_info() -> Dict[str, str | bool | None]:
@@ -168,12 +201,26 @@ def _ensure_pref_files(name: str, overrides: Dict[str, str | bool], system_info:
     with open(cli_path, "w", encoding="utf-8") as f:
         json.dump(arg_map, f, ensure_ascii=False, indent=4)
 
-    # ensure prefs json exists
+    # ensure prefs json exists (per-instance: active wake words only)
     if not prefs_path.exists():
         prefs_template = _DEFAULT_PREFS_DIR / "default.json"
-        prefs_data = _load_json(prefs_template) or {"active_wake_words": []}
+        template_data = _load_json(prefs_template) or {}
+        prefs_data = {"active_wake_words": template_data.get("active_wake_words", [])}
         with open(prefs_path, "w", encoding="utf-8") as f:
             json.dump(prefs_data, f, ensure_ascii=False, indent=4)
+
+    # ensure shared HA/friendly settings exist once
+    if not _GLOBAL_PREFS_PATH.exists():
+        template_data = _load_json(_DEFAULT_PREFS_DIR / "default.json") or {}
+        global_data = {
+            "wake_word_friendly_names": template_data.get("wake_word_friendly_names", {}),
+            "ha_base_url": template_data.get("ha_base_url"),
+            "ha_token": template_data.get("ha_token"),
+            "ha_history_entity": template_data.get("ha_history_entity"),
+        }
+        _GLOBAL_PREFS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with open(_GLOBAL_PREFS_PATH, "w", encoding="utf-8") as f:
+            json.dump(global_data, f, ensure_ascii=False, indent=4)
 
 
 def _ensure_service_symlink(name: str) -> None:
@@ -201,6 +248,7 @@ def main() -> None:
         sys.exit(1)
 
     system_info = _get_system_info()
+    _ensure_user_linger(_current_user())
 
     success = 0
     for name in names:

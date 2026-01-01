@@ -28,3 +28,4 @@ venv/
 # Ignore runtime RAM-backed log
 lvas_log
 linux-voice-assistant.code-workspace
+/WSL2/
