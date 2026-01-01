@@ -1,58 +1,137 @@
 # Linux Voice Assistant
 
-Experimental Linux voice assistant for [Home Assistant][homeassistant] that uses the [ESPHome][esphome] protocol.
+A production-ready Linux voice satellite for [Home Assistant][homeassistant] using the [ESPHome][esphome] protocol. Turn any Linux device into a voice-controlled assistant with wake word detection, voice conversations, announcements, and timer support.
+
+**Created by:** [Michael Hansen](https://github.com/synesthesiam) and [The Home Assistant Authors](https://github.com/OHF-Voice)
+
+## Features
+
+- 🎙️ **Local Wake Word Detection** - Multiple wake words (Alexa, Hey Jarvis, Okay Nabu, and more) using microWakeWord and openWakeWord
+- 💬 **Full Voice Pipeline** - Speech-to-text, intent processing, and text-to-speech through Home Assistant
+- 📢 **Announcements** - Play TTS announcements with automatic music ducking
+- ⏲️ **Timer Support** - Voice-controlled timers with callbacks
+- 🔄 **Multi-Instance** - Run multiple voice satellites on the same machine with unique wake words and audio devices
+- 🚀 **Production Ready** - Systemd service integration with automatic restarts and persistent sessions
+- 🎛️ **Audio Flexibility** - Supports PulseAudio echo cancellation and custom audio devices
 
 Runs on Linux `aarch64` and `x86_64` platforms. Tested with Python 3.13 and Python 3.11.
-Supports announcments, start/continue conversation, and timers.
 
 ## Installation
 
-Install system dependencies (`apt-get`):
+### System Requirements
 
-* `libportaudio2` or `portaudio19-dev` (for `sounddevice`)
-* `build-essential` (for `pymicro-features`)
-* `libmpv-dev` (for `python-mpv`)
+Install required system dependencies:
 
-Clone and install project:
+```sh
+sudo apt-get update && sudo apt-get install -y portaudio19-dev build-essential libmpv-dev
+```
 
-``` sh
+Individual packages:
+* `libportaudio2` or `portaudio19-dev` - Audio input support (soundcard library)
+* `build-essential` - Compilation tools for pymicro-features
+* `libmpv-dev` - Audio output and media playback
+
+### Quick Start
+
+Clone the repository and run setup:
+
+```sh
 git clone https://github.com/OHF-Voice/linux-voice-assistant.git
 cd linux-voice-assistant
 script/setup
 ```
 
-## Running
+This creates a Python virtual environment and installs all dependencies.
 
-Use `script/run` or `python3 -m linux_voice_assistant`
+## Usage
 
-You must specify `--name <NAME>` with a name that will be available in Home Assistant.
+### Development Mode (Foreground)
 
-See `--help` for more options.
+For testing and development, run an instance in the foreground:
 
-Optional flag `--mac` can be used to spoof the MAC address exposed to Home Assistant (accepts `aa:bb:cc:dd:ee:ff` or `aabbccddeeff`).
+```sh
+script/run --name "MyVoiceAssistant"
+```
 
-Note about preferences file:
-- When you start the app via `script/run --name "<NAME>"`, the script will create a `preferences/` folder in the project root (if missing) and pass `--preferences-file <repo>/preferences/<NAME>.json` to the program. This keeps preferences per-instance in a single folder. If you prefer a different path, pass `--preferences-file <PATH>` explicitly.
+This auto-creates preference files in `preferences/user/` and assigns a unique port and MAC address.
 
-### Microphone
+### Production Deployment (Background Service)
 
-Use `--audio-input-device` to change the microphone device. Use `--list-input-devices` to see the available microphones. 
+For production use on servers or Raspberry Pi, deploy as a systemd service:
 
-The microphone device **must** support 16Khz mono audio.
+```sh
+script/deploy MyVoiceAssistant
+```
 
-### Speaker
+This will:
+- Create all necessary preference files
+- Auto-assign a unique port (starting from 6053) and MAC address
+- Install a systemd user service
+- Enable persistent user sessions (survives reboots and SSH disconnects)
+- Start the service immediately
 
-Use `--audio-output-device` to change the speaker device. Use `--list-output-devices` to see the available speakers.
+#### Deploy Multiple Instances
 
-## Wake Word
+You can run multiple voice satellites on the same machine with different wake words and audio devices:
 
-Change the default wake word with `--wake-model <id>` where `<id>` is the name of a model in the `wakewords` directory. For example, `--wake-model hey_jarvis` will load `wakewords/hey_jarvis.tflite` by default.
+```sh
+script/deploy Kitchen LivingRoom Bedroom --wake-model hey_jarvis
+```
 
-You can include more wakeword directories by adding `--wake-word-dir <DIR>` where `<DIR>` contains either [microWakeWord][] or [openWakeWord][] config files and `.tflite` models. For example, `--wake-word-dir wakewords/openWakeWord` will include the default wake words for openWakeWord.
+Each instance gets its own port, MAC address, and configuration.
 
-If you want to add [other wakeword][wakewords-collection], make sure to create a small JSON config file to identify it as an openWakeWord model. For example, download the [GLaDOS][glados] model to `glados.tflite` and create `glados.json` with:
+### Managing Instances
 
-``` json
+```sh
+script/status                  # Show all instances and service status
+script/restart                 # Restart all running instances
+script/stop MyVoiceAssistant   # Stop a specific instance
+script/remove Kitchen          # Remove instance and service
+```
+
+### Audio Device Configuration
+
+List available devices:
+
+```sh
+script/run --name Test --list-input-devices   # List microphones
+script/run --name Test --list-output-devices  # List speakers
+```
+
+Configure devices during deployment:
+
+```sh
+script/deploy MyVA --audio-input-device 1 --audio-output-device "hdmi"
+```
+
+**Important:** Microphone must support 16kHz mono audio.
+
+## Wake Word Configuration
+
+### Default Wake Words
+
+The following wake words are included:
+- `okay_nabu` (default)
+- `alexa`
+- `hey_jarvis`
+- `hey_mycroft`
+- `hey_luna`
+- `okay_computer`
+
+Change the wake word:
+
+```sh
+script/deploy MyVA --wake-model hey_jarvis
+```
+
+### Custom Wake Words
+
+Add custom wake words from the [Home Assistant Wake Words Collection][wakewords-collection]:
+
+1. Download a `.tflite` model (e.g., `glados.tflite`)
+2. Create a config file `glados.json`:
+
+```json
 {
   "type": "openWakeWord",
   "wake_word": "GLaDOS",
@@ -60,42 +139,161 @@ If you want to add [other wakeword][wakewords-collection], make sure to create a
 }
 ```
 
-Add `--wake-word-dir <DIR>` with the directory containing `glados.tflite` and `glados.json` to your command-line.
+3. Place both files in a directory and add it:
+
+```sh
+script/run --name MyVA --wake-word-dir /path/to/custom/wakewords
+```
+
+The system supports both [microWakeWord][microWakeWord] and [openWakeWord][openWakeWord] models.
 
 ## Connecting to Home Assistant
 
-1. In Home Assistant, go to "Settings" -> "Device & services"
-2. Click the "Add integration" button
-3. Choose "ESPHome" and then "Set up another instance of ESPHome"
-4. Enter the IP address of your voice satellite with port 6053
-5. Click "Submit"
+1. In Home Assistant, go to **Settings → Devices & services**
+2. Click **Add Integration**
+3. Search for and select **ESPHome**
+4. Choose **Set up another instance of ESPHome**
+5. Enter your Linux device's IP address with port (default: `6053`)
+   - Example: `192.168.1.100:6053`
+6. Click **Submit**
 
-## Acoustic Echo Cancellation
+Your voice satellite will appear as a new device with media player and sensor entities.
 
-Enable the echo cancel PulseAudio module:
+### Multi-Instance Setup
 
-``` sh
+Each instance uses a unique port. Find assigned ports:
+
+```sh
+cat preferences/user/*_cli.json | grep port
+```
+
+Add each instance separately in Home Assistant using its unique port.
+
+## Advanced Configuration
+
+### Acoustic Echo Cancellation
+
+Enable PulseAudio echo cancellation for better wake word detection:
+
+```sh
 pactl load-module module-echo-cancel \
   aec_method=webrtc \
   aec_args="analog_gain_control=0 digital_gain_control=1 noise_suppression=1"
 ```
 
-Verify that the `echo-cancel-source` and `echo-cancel-sink` devices are present:
+Verify the devices are available:
 
-``` sh
+```sh
 pactl list short sources
 pactl list short sinks
 ```
 
-Use the new devices:
+Use the echo-cancelled devices:
 
-``` sh
-# The device names may be different on your system.
-# Double check with --list-input-devices and --list-output-devices
-python3 -m linux_voice_assistant ... \
-     --audio-input-device 'Echo-Cancel Source' \
-     --audio-output-device 'pipewire/echo-cancel-sink'
+```sh
+script/deploy MyVA \
+  --audio-input-device 'Echo-Cancel Source' \
+  --audio-output-device 'pipewire/echo-cancel-sink'
 ```
+
+### Configuration Files
+
+The system uses a two-tier preferences structure:
+
+- **Per-instance CLI config**: `preferences/user/{NAME}_cli.json`
+  - CLI arguments, port, MAC address, system info
+- **Per-instance preferences**: `preferences/user/{NAME}.json`
+  - Active wake words list
+- **Global settings**: `preferences/user/ha_settings.json`
+  - Home Assistant URL, token, wake word friendly names, history entity
+
+Edit these files to customize behavior without changing command-line arguments.
+
+### Template Defaults
+
+Create custom defaults for new instances in `preferences/default/default_user_cli.json`:
+
+```json
+{
+  "wake_model": "hey_jarvis",
+  "audio_input_device": "1",
+  "refractory_seconds": 3.0
+}
+```
+
+New instances will inherit these settings unless overridden.
+
+## Troubleshooting
+
+### Port Already in Use
+
+Each instance needs a unique port. The system auto-assigns ports starting from 6053. Set a custom port:
+
+```sh
+script/deploy MyVA --port 6055
+```
+
+Or change the base port for all instances:
+
+```sh
+export LVAS_BASE_PORT=7000
+script/deploy MyVA
+```
+
+### Service Management
+
+Check service logs:
+
+```sh
+journalctl --user -u MyVoiceAssistant.service -f
+```
+
+Restart a misbehaving instance:
+
+```sh
+systemctl --user restart MyVoiceAssistant.service
+```
+
+### Audio Issues
+
+Verify your microphone supports 16kHz mono:
+
+```sh
+script/run --name Test --list-input-devices
+```
+
+Test audio capture in development mode to see real-time detection.
+
+## Contributing
+
+Contributions are welcome! This project uses:
+- **black** + **isort** for code formatting
+- **flake8**, **pylint**, **mypy** for linting
+- **pytest** for testing
+
+Development workflow:
+
+```sh
+script/setup --dev          # Install dev dependencies
+script/format               # Format code
+script/lint                 # Check code quality
+script/test                 # Run tests
+```
+
+## License
+
+Apache License 2.0 - See [LICENSE.md](LICENSE.md) for details.
+
+## Credits
+
+**Original Creator:** [Michael Hansen](https://github.com/synesthesiam) (synesthesiam)  
+**Contributors:** [The Home Assistant Authors](https://github.com/OHF-Voice) and [community contributors](https://github.com/OHF-Voice/linux-voice-assistant/graphs/contributors)
+
+Built with:
+- [Home Assistant](https://www.home-assistant.io/) - Open source home automation
+- [ESPHome](https://esphome.io/) - Device communication protocol
+- [microWakeWord](https://github.com/kahrendt/microWakeWord) - Efficient wake word detection
+- [openWakeWord](https://github.com/dscripka/openWakeWord) - Open source wake word models
 
 <!-- Links -->
 [homeassistant]: https://www.home-assistant.io/
