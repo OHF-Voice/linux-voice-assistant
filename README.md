@@ -1,6 +1,6 @@
 # Linux Voice Assistant
 
-A production-ready Linux voice satellite for [Home Assistant][homeassistant] using the [ESPHome][esphome] protocol. Turn any Linux device into a voice-controlled assistant with wake word detection, voice conversations, announcements, and timer support.
+An alpha Linux multi-instance voice satellite for [Home Assistant][homeassistant] using the [ESPHome][esphome] protocol. Turn any Linux device into a voice-controlled assistant with wake word detection, voice conversations, announcements, and timer support.
 
 **Created by:** [Michael Hansen](https://github.com/synesthesiam) and [The Home Assistant Authors](https://github.com/OHF-Voice)
 
