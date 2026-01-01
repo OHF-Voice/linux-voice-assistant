@@ -241,6 +241,20 @@ if prefs_flag is None:
             except Exception:
                 pass
         
+        # Convert loaded arg_map back to CLI args (for service activation)
+        # This ensures preferences like wakeup_sound are passed to the python module
+        for key, value in arg_map.items():
+            if key.startswith("_") or key in {"autostart", "__system_info__"}:
+                continue  # skip metadata
+            cli_key = f"--{key.replace('_', '-')}"
+            # Only add if not already in args
+            if cli_key not in args:
+                if isinstance(value, bool):
+                    if value:
+                        args.append(cli_key)
+                else:
+                    args = args + [cli_key, str(value)]
+
         # Ensure preferences path is passed to main app
         args = args + ["--preferences-file", str(prefs_path)]
 

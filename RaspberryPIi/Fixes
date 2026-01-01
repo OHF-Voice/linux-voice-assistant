@@ -1,0 +1,37 @@
+The Audi sleep Fix
+Copy and paste this entire block into your terminal. It will create the folders and the configuration file in one go:
+
+Bash
+
+mkdir -p ~/.config/wireplumber/wireplumber.conf.d/ && cat <<EOF > ~/.config/wireplumber/wireplumber.conf.d/51-disable-suspension.conf
+monitor.alsa.rules = [
+  {
+    matches = [
+      {
+        node.name = "~alsa_input.usb-Anker.*"
+      },
+      {
+        node.name = "~alsa_output.usb-Anker.*"
+      }
+    ]
+    actions = {
+      update-props = {
+        session.suspend-timeout-seconds = 0
+      }
+    }
+  }
+]
+EOF
+After running that, apply the changes:
+For PipeWire to "see" this new rule and stop the Anker from sleeping, you need to restart the media services:
+
+Bash
+
+systemctl --user restart wireplumber pipewire pipewire-pulse
+How to verify it worked:
+Run this command to see if WirePlumber has loaded your new config file:
+
+Bash
+
+wpctl status
+If everything is correct, your Anker device should now stay in an "IDLE" or "RUNNING" state in the wpctl list, but it will never switch to "SUSPENDED."

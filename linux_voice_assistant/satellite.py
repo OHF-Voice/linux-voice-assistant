@@ -5,6 +5,7 @@ import hashlib
 import logging
 import posixpath
 import shutil
+import subprocess
 import time
 from collections.abc import Iterable
 from datetime import datetime
@@ -49,6 +50,52 @@ from .models import AvailableWakeWord, ServerState, WakeWordType
 from .util import call_all
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _is_raspberry_pi() -> bool:
+    """Detect if running on Raspberry Pi hardware."""
+    try:
+        # Check device tree model for Raspberry Pi signature
+        with open("/proc/device-tree/model", "r", encoding="utf-8") as f:
+            model = f.read().strip()
+            if "Raspberry Pi" in model:
+                return True
+    except Exception:
+        pass
+    
+    # Fallback: check for Raspberry Pi in cpuinfo
+    try:
+        with open("/proc/cpuinfo", "r", encoding="utf-8") as f:
+            cpuinfo = f.read()
+            if "Raspberry Pi" in cpuinfo:
+                return True
+    except Exception:
+        pass
+    
+    return False
+
+
+def _set_led(trigger: str) -> None:
+    """Set the Raspberry Pi power LED state.
+    
+    Args:
+        trigger: LED trigger state ('none', 'default-on', 'heartbeat', etc.)
+    
+    Only runs on Raspberry Pi systems.
+    """
+    led_path = Path("/sys/class/leds/PWR/trigger")
+    if not led_path.exists():
+        return  # LED control not available on this system
+    
+    try:
+        subprocess.run(
+            ["sudo", "tee", str(led_path)],
+            input=f"{trigger}\n".encode(),
+            check=True,
+            capture_output=True,
+        )
+    except Exception as e:
+        _LOGGER.debug("Could not set LED trigger to %s: %s", trigger, e)
 
 
 class VoiceSatelliteProtocol(APIServer):
@@ -105,6 +152,11 @@ class VoiceSatelliteProtocol(APIServer):
         self._timer_finished = False
         self._external_wake_words: Dict[str, VoiceAssistantExternalWakeWord] = {}
         self._current_assistant_name: str = "Assistant"
+        self._is_rpi = _is_raspberry_pi()
+        
+        # Set LED to idle state on init (only on RPi)
+        if self._is_rpi:
+            _set_led("none")
 
     def handle_voice_event(
         self, event_type: VoiceAssistantEventType, data: Dict[str, str]
@@ -117,8 +169,12 @@ class VoiceSatelliteProtocol(APIServer):
             self._continue_conversation = False
             self._update_active_stt("")
             self._update_active_tts("")
+            if self._is_rpi:
+                _set_led("default-on")  # Listening
         elif event_type == VoiceAssistantEventType.VOICE_ASSISTANT_STT_START:
             self._update_active_stt("")
+            if self._is_rpi:
+                _set_led("heartbeat")  # Processing speech
         elif event_type == VoiceAssistantEventType.VOICE_ASSISTANT_STT_VAD_START:
             self._update_active_stt("")
         elif event_type == VoiceAssistantEventType.VOICE_ASSISTANT_STT_VAD_END:
@@ -141,6 +197,8 @@ class VoiceSatelliteProtocol(APIServer):
             self._update_active_tts(tts_text)
             self._log_to_file(f"{self._current_assistant_name}: {tts_text}")
             self._sync_history_to_ha()
+            if self._is_rpi:
+                _set_led("default-on")  # Responding with TTS
         elif event_type == VoiceAssistantEventType.VOICE_ASSISTANT_TTS_END:
             self._tts_url = data.get("url")
             self.play_tts()
@@ -150,6 +208,8 @@ class VoiceSatelliteProtocol(APIServer):
                 self._tts_finished()
 
             self._tts_played = False
+            if self._is_rpi:
+                _set_led("default-on")  # Back to idle
 
         # TODO: handle error
 
@@ -263,6 +323,7 @@ class VoiceSatelliteProtocol(APIServer):
                 max_active_wake_words=2,
             )
             _LOGGER.info("Connected to Home Assistant")
+
         elif isinstance(msg, VoiceAssistantSetConfiguration):
             # Change active wake words
             active_wake_words: Set[str] = set()
@@ -373,11 +434,17 @@ class VoiceSatelliteProtocol(APIServer):
         self.send_messages([VoiceAssistantAnnounceFinished()])
 
         if self._continue_conversation:
+            self.duck()
+            self.state.tts_player.play(self.state.wakeup_sound)
             self.send_messages([VoiceAssistantRequest(start=True)])
             self._is_streaming_audio = True
+            if self._is_rpi:
+                _set_led("default-on")  # Back to listening
             _LOGGER.debug("Continuing conversation")
         else:
             self.unduck()
+            if self._is_rpi:
+                _set_led("none")  # Back to idle
             # Clear sensors after 5 seconds (using stored loop reference)
             if self._loop is not None:
                 self._loop.call_later(5.0, self._clear_sensors)
@@ -408,6 +475,8 @@ class VoiceSatelliteProtocol(APIServer):
     def connection_lost(self, exc):
         super().connection_lost(exc)
         _LOGGER.info("Disconnected from Home Assistant")
+        if self._is_rpi:
+            _set_led("none")  # LED off when disconnected or idle
 
     def _update_active_tts(self, text: str) -> None:
         if self.state.active_tts_entity is None:
