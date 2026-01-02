@@ -1,0 +1,32 @@
+[Unit]
+Description=PulseAudio Sound Server (for root user)
+Documentation=https://www.freedesktop.org/wiki/Software/PulseAudio/
+# Start before Docker so the socket is ready
+Before=docker.service
+After=sound.target
+
+[Service]
+Type=simple
+User=root
+
+# Use /var/run/pulse instead of /run/user/0/pulse
+# This avoids issues with systemd-logind recreating /run/user/0 on SSH login
+Environment="XDG_RUNTIME_DIR=/var/run/pulse"
+Environment="PULSE_RUNTIME_PATH=/var/run/pulse"
+
+# Create the socket directory
+ExecStartPre=/bin/mkdir -p /var/run/pulse
+
+# Run PulseAudio in foreground (systemd manages the process)
+# --exit-idle-time=-1 prevents auto-exit when no clients connected
+# --realtime=no avoids permission issues
+ExecStart=/usr/bin/pulseaudio --daemonize=no --exit-idle-time=-1 --log-target=journal --realtime=no
+
+# Wait for the socket to be created (up to 30 seconds)
+ExecStartPost=/bin/bash -c 'for i in $(seq 1 30); do [ -S /var/run/pulse/native ] && exit 0; sleep 1; done; exit 1'
+
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

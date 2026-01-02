@@ -1,6 +1,7 @@
 """Runs mDNS zeroconf service for Home Assistant discovery."""
 
 import logging
+import os
 import socket
 import uuid
 from typing import Optional
@@ -55,7 +56,15 @@ class HomeAssistantZeroconf:
 
 
 def _get_mac_address() -> str:
-    """Return MAC address formatted as hex with no colons."""
+    """Return MAC address formatted as hex with no colons.
+    
+    Uses LVA_MAC_ADDRESS env var if set (for Docker), otherwise system MAC.
+    """
+    env_mac = os.environ.get("LVA_MAC_ADDRESS")
+    if env_mac:
+        # Remove colons/dashes and return lowercase hex
+        return env_mac.replace(":", "").replace("-", "").lower()
+    
     return "".join(
         # pylint: disable=consider-using-f-string
         ["{:02x}".format((uuid.getnode() >> ele) & 0xFF) for ele in range(0, 8 * 6, 8)][
