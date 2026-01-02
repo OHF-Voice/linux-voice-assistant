@@ -76,6 +76,8 @@ class APIServer(asyncio.Protocol):
 
     def send_messages(self, msgs: List[message.Message]):
         if self._writelines is None:
+            msg_names = [msg.__class__.__name__ for msg in msgs]
+            _LOGGER.warning("Cannot send messages (no connection): %s", msg_names)
             return
 
         packets = [
@@ -84,10 +86,13 @@ class APIServer(asyncio.Protocol):
         ]
         packet_bytes = make_plain_text_packets(packets)
         self._writelines(packet_bytes)
+        _LOGGER.debug("Sent messages: %s", [msg.__class__.__name__ for msg in msgs])
 
     def connection_made(self, transport) -> None:
         self._transport = transport
         self._writelines = transport.writelines
+        peername = transport.get_extra_info('peername')
+        _LOGGER.info("Connection established from %s", peername)
 
     def data_received(self, data: bytes):
         if self._buffer is None:

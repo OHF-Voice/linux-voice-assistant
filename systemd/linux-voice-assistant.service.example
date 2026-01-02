@@ -1,0 +1,28 @@
+[Unit]
+Description=Linux Voice Assistant Docker Container
+# If running as root requires pulseaudio-root.service
+# For standard users, docker.service is sufficient
+Requires=pulseaudio-root.service docker.service
+# Requires=docker.service
+After=pulseaudio-root.service docker.service network-online.target
+# After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+
+# Change to your username if not running as root
+User=root
+
+# Change to your project directory
+WorkingDirectory=/home/user-name/linux-voice-assistant
+
+ExecStart=/usr/bin/docker compose up -d
+ExecStop=/usr/bin/docker compose down
+
+# Allow time for container to start and connect to audio
+TimeoutStartSec=120
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,67 @@
+# version: '3.8'
+
+services:
+  linux-voice-assistant:
+    build: .
+    # use instead of build if/when the official image is published:
+    # image: ghcr.io/ohf-voice/linux-voice-assistant:latest
+    container_name: linux-voice-assistant
+    restart: unless-stopped
+    
+    # ROOT USERS ONLY: If using systemd for startup ordering (see systemd/), 
+    # comment out the line above and uncomment below:
+    # restart: "no"
+    
+    # Host networking required for:
+    # - zeroconf/mDNS discovery by Home Assistant
+    # - ESPHome protocol on port 6053
+    network_mode: host
+    
+    environment:
+      - LANG=C.UTF-8
+      # PulseAudio connection to host
+      - PULSE_SERVER=unix:${PULSE_RUNTIME_PATH}/native
+      # Use host's MAC address for consistent device identity in HA
+      # Get your MAC with: ip link show | grep ether | head -1 | awk '{print $2}'
+      - LVA_MAC_ADDRESS=${LVA_MAC_ADDRESS:-}
+    
+    volumes:
+      # PulseAudio socket from host
+      # Standard user: /run/user/1000/pulse
+      # Root user: /var/run/pulse (see systemd/pulseaudio-root.service.example)
+      - ${PULSE_RUNTIME_PATH}:/run/pulse:rw
+      
+      # ALSA device access (fallback)
+      - /dev/snd:/dev/snd:rw
+      
+      # Persistent preferences
+      - ./preferences.json:/srv/preferences.json:rw
+      
+      # Downloaded wake words persist across rebuilds
+      - ./local:/srv/local:rw
+      
+      # Optional: custom wake words
+      # - ./custom_wakewords:/srv/custom_wakewords:ro
+    
+    devices:
+      - /dev/snd:/dev/snd
+    
+    # Required capabilities
+    cap_add:
+      - SYS_NICE  # For audio thread priority
+    
+    # Command line arguments - customize in .env file
+    # See: python3 -m linux_voice_assistant --help
+    command: [
+      "--name", "${LVA_NAME:-Linux Voice Assistant}",
+      "--wake-model", "${LVA_WAKE_MODEL:-okay_nabu}",
+      "--debug"
+    ]
+    
+    # Health check - verify process is running
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "linux_voice_assistant"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
