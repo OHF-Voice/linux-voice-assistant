@@ -13,7 +13,7 @@ This document explains how to run the Linux Voice Assistant using Docker and Doc
 1. **Clone the repository**:
    ```bash
    git clone https://github.com/OHF-Voice/linux-voice-assistant.git
-   cd linux-voice-assistant
+   cd linux-voice-assistant/docker
    ```
 
 2. **Configure environment**:
@@ -111,7 +111,7 @@ To use a different wake word, set `LVA_WAKE_MODEL` in your `.env` file.
 
 #### Adding Custom Wake Words
 
-1. Create a `custom_wakewords` directory in your project root
+1. Create a `custom_wakewords` directory in the project root (parent directory)
 2. Add your `.tflite` model files and corresponding `.json` config files
 3. Uncomment the custom_wakewords volume mount in `docker-compose.yaml`
 

@@ -2,7 +2,9 @@
 
 services:
   linux-voice-assistant:
-    build: .
+    build:
+      context: ..
+      dockerfile: docker/dockerfile
     # use instead of build if/when the official image is published:
     # image: ghcr.io/ohf-voice/linux-voice-assistant:latest
     container_name: linux-voice-assistant
@@ -35,10 +37,10 @@ services:
       - /dev/snd:/dev/snd:rw
       
       # Persistent preferences
-      - ./preferences.json:/srv/preferences.json:rw
+      - ../preferences.json:/srv/preferences.json:rw
       
       # Downloaded wake words persist across rebuilds
-      - ./local:/srv/local:rw
+      - ../local:/srv/local:rw
       
       # Optional: custom wake words
       # - ./custom_wakewords:/srv/custom_wakewords:ro

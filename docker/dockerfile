@@ -32,12 +32,12 @@ RUN mkdir -p /etc/pipewire /run/pulse \
     && chmod 755 /run/pulse
 
 WORKDIR /srv
-COPY pyproject.toml setup.cfg ./
-COPY script/ ./script/
-COPY linux_voice_assistant/ ./linux_voice_assistant/
-COPY wakewords/ ./wakewords/
-COPY sounds/ ./sounds/
-COPY docker-entrypoint.sh /usr/local/bin/
+COPY ../pyproject.toml ../setup.cfg ./
+COPY ../script/ ./script/
+COPY ../linux_voice_assistant/ ./linux_voice_assistant/
+COPY ../wakewords/ ./wakewords/
+COPY ../sounds/ ./sounds/
+COPY ../docker/docker-entrypoint.sh /usr/local/bin/
 
 # Install Python dependencies (no venv needed in container)
 RUN pip install --no-cache-dir -e . && \
