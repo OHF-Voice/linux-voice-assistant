@@ -7,7 +7,6 @@
     "audio_input_device": "",
     "audio_input_block_size": 1024,
     "audio_output_device": "",
-    "audio_output_buffer_size": 0,
     "wake_word_dir": "",
     "wake_model": "okay_nabu",
     "stop_model": "stop",
@@ -19,5 +18,6 @@
     "host": "0.0.0.0",
     "port": false,
     "mac": "",
-    "screen_management": false
+    "screen_management": false,
+    "disable_wakeword_during_tts": false
 }

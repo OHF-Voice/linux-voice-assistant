@@ -15,8 +15,6 @@ from urllib.parse import urlparse, urlunparse
 from urllib.request import urlopen, Request
 import json
 
-from . import screen
-
 # pylint: disable=no-name-in-module
 from aioesphomeapi.api_pb2 import (  # type: ignore[attr-defined]
     DeviceInfoRequest,
@@ -101,21 +99,41 @@ def _set_led(trigger: str) -> None:
 
 
 def _set_screen_dpms(timeout: int, display: str = ":0") -> None:
-    """Set screen state (cross-platform: X11 xset or WSL PowerShell).
+    """Set screen DPMS timeout using xset.
     
     Args:
         timeout: Seconds until screen turns off (0 to force on immediately)
-        display: X display to target (X11 only, ignored on WSL)
+        display: X display to target (default :0)
     """
-    if timeout == 0:
-        # Wake screen immediately
-        _LOGGER.debug("Waking screen")
-        screen.screen_on(display)
-    else:
-        # Sleep screen after timeout
-        _LOGGER.debug("Setting screen timeout to %d seconds", timeout)
-        screen.screen_off(timeout, display)
-
+    import os
+    try:
+        env = os.environ.copy()
+        env["DISPLAY"] = display
+        if timeout == 0:
+            # Force screen on immediately
+            subprocess.run(
+                ["/usr/bin/xset", "dpms", "force", "on"],
+                env=env,
+                check=True,
+                capture_output=True,
+            )
+            # Set stay-awake timeout (10 minutes)
+            subprocess.run(
+                ["/usr/bin/xset", "dpms", "600", "600", "600", "+dpms"],
+                env=env,
+                check=True,
+                capture_output=True,
+            )
+        else:
+            # Set timeout for auto-sleep
+            subprocess.run(
+                ["/usr/bin/xset", "dpms", str(timeout), str(timeout), str(timeout), "+dpms"],
+                env=env,
+                check=True,
+                capture_output=True,
+            )
+    except Exception as e:
+        _LOGGER.debug("Could not set screen DPMS to %s: %s", timeout, e)
 
 
 class VoiceSatelliteProtocol(APIServer):
@@ -477,7 +495,7 @@ class VoiceSatelliteProtocol(APIServer):
                 _set_led("none")  # Back to idle
             if self._screen_management:
                 _LOGGER.info("Setting screen sleep timeout after TTS playback finished")
-                _set_screen_dpms(10)  # 10 second timeout
+                _set_screen_dpms(30)  # 30 second timeout
             # Clear sensors after 5 seconds (using stored loop reference)
             if self._loop is not None:
                 self._loop.call_later(5.0, self._clear_sensors)

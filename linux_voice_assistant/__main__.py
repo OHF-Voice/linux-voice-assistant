@@ -113,6 +113,11 @@ async def main() -> None:
         action="store_true",
         help="Enable screen wake/sleep control via xset (requires X display)",
     )
+    parser.add_argument(
+        "--disable-wakeword-during-tts",
+        action="store_true",
+        help="Disable wake word detection while TTS is playing (reduces false triggers)",
+    )
     
     # Parse only --name first to load CLI config defaults
     args, remaining = parser.parse_known_args()
@@ -340,6 +345,7 @@ async def main() -> None:
         refractory_seconds=args.refractory_seconds,
         download_dir=args.download_dir,
         screen_management=args.screen_management,
+        disable_wakeword_during_tts=args.disable_wakeword_during_tts,
     )
 
     process_audio_thread = threading.Thread(
@@ -435,6 +441,10 @@ def process_audio(state: ServerState, mic, block_size: int):
                         oww_inputs.extend(oww_features.process_streaming(audio_chunk))
 
                     for wake_word in wake_words:
+                        # Skip wake word detection if TTS is playing and flag is enabled
+                        if state.disable_wakeword_during_tts and state.tts_player.is_playing:
+                            continue
+                        
                         activated = False
                         if isinstance(wake_word, MicroWakeWord):
                             for micro_input in micro_inputs:

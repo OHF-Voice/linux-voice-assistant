@@ -94,6 +94,7 @@ class ServerState:
     wake_words_changed: bool = False
     refractory_seconds: float = 2.0
     screen_management: bool = False
+    disable_wakeword_during_tts: bool = False
 
     def save_preferences(self) -> None:
         """Save per-instance preferences (currently active wake words)."""
