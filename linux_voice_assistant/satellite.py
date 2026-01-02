@@ -15,6 +15,8 @@ from urllib.parse import urlparse, urlunparse
 from urllib.request import urlopen, Request
 import json
 
+from . import screen
+
 # pylint: disable=no-name-in-module
 from aioesphomeapi.api_pb2 import (  # type: ignore[attr-defined]
     DeviceInfoRequest,
@@ -99,41 +101,21 @@ def _set_led(trigger: str) -> None:
 
 
 def _set_screen_dpms(timeout: int, display: str = ":0") -> None:
-    """Set screen DPMS timeout using xset.
+    """Set screen state (cross-platform: X11 xset or WSL PowerShell).
     
     Args:
         timeout: Seconds until screen turns off (0 to force on immediately)
-        display: X display to target (default :0)
+        display: X display to target (X11 only, ignored on WSL)
     """
-    import os
-    try:
-        env = os.environ.copy()
-        env["DISPLAY"] = display
-        if timeout == 0:
-            # Force screen on immediately
-            subprocess.run(
-                ["/usr/bin/xset", "dpms", "force", "on"],
-                env=env,
-                check=True,
-                capture_output=True,
-            )
-            # Set stay-awake timeout (10 minutes)
-            subprocess.run(
-                ["/usr/bin/xset", "dpms", "600", "600", "600", "+dpms"],
-                env=env,
-                check=True,
-                capture_output=True,
-            )
-        else:
-            # Set timeout for auto-sleep
-            subprocess.run(
-                ["/usr/bin/xset", "dpms", str(timeout), str(timeout), str(timeout), "+dpms"],
-                env=env,
-                check=True,
-                capture_output=True,
-            )
-    except Exception as e:
-        _LOGGER.debug("Could not set screen DPMS to %s: %s", timeout, e)
+    if timeout == 0:
+        # Wake screen immediately
+        _LOGGER.debug("Waking screen")
+        screen.screen_on(display)
+    else:
+        # Sleep screen after timeout
+        _LOGGER.debug("Setting screen timeout to %d seconds", timeout)
+        screen.screen_off(timeout, display)
+
 
 
 class VoiceSatelliteProtocol(APIServer):
