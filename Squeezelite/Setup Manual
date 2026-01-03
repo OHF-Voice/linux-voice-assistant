@@ -1,0 +1,81 @@
+# MUSIC ASSISTANT + LINUX VOICE ASSISTANT SETUP GUIDE
+# Target: Debian/Linux with PipeWire
+# Goal: Enable Music + Voice concurrently with automated ducking
+
+================================================================
+1. INSTALLATION & CLEANUP (SYSTEM LEVEL)
+================================================================
+# Install Squeezelite
+sudo apt update && sudo apt install squeezelite -y
+
+# Disable the legacy 'ghost' service that creates a duplicate player
+sudo systemctl stop squeezelite
+sudo systemctl mask squeezelite
+sudo update-rc.d -f squeezelite remove
+sudo pkill -9 squeezelite
+
+================================================================
+2. CREATE CUSTOM USER SERVICE
+================================================================
+# Create the user systemd directory
+mkdir -p ~/.config/systemd/user/
+
+# Create the service file
+# Replace <YOUR_HA_IP> with your actual Home Assistant IP address
+cat <<EOF > ~/.config/systemd/user/squeezelite.service
+[Unit]
+Description=Squeezelite Player for Music Assistant
+After=network.target pipewire.service
+Wants=pipewire.service
+
+[Service]
+ExecStart=/usr/bin/squeezelite -n "Laptop Speaker" -o pipewire -s <YOUR_HA_IP>
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target
+EOF
+
+# Enable and start the service
+systemctl --user daemon-reload
+systemctl --user enable squeezelite.service
+systemctl --user start squeezelite.service
+
+================================================================
+3. HOME ASSISTANT DUCKING AUTOMATION (YAML)
+================================================================
+# Triggered when Voice Assistant is listening to lower music volume.
+# Replace entity IDs with your specific satellite and player IDs.
+
+alias: "Duck Music for Voice Assistant"
+mode: restart
+trigger:
+  - platform: state
+    entity_id: binary_sensor.laptop_assist_in_progress
+    from: "off"
+    to: "on"
+    id: "active"
+  - platform: state
+    entity_id: binary_sensor.laptop_assist_in_progress
+    from: "on"
+    to: "off"
+    id: "idle"
+action:
+  - choose:
+      - conditions:
+          - condition: trigger
+            id: "active"
+        sequence:
+          - service: media_player.volume_set
+            target:
+              entity_id: media_player.laptop_speaker
+            data:
+              volume_level: 0.15
+      - conditions:
+          - condition: trigger
+            id: "idle"
+        sequence:
+          - service: media_player.volume_set
+            target:
+              entity_
