@@ -167,15 +167,55 @@ async def main() -> None:
     args.download_dir.mkdir(parents=True, exist_ok=True)
 
     # Resolve microphone
+    mic: Optional[sc.Microphone] = None
+
     if args.audio_input_device is not None:
         try:
             args.audio_input_device = int(args.audio_input_device)
         except ValueError:
             pass
 
-        mic = sc.get_microphone(args.audio_input_device)
-    else:
+        try:
+            mic = sc.get_microphone(args.audio_input_device)
+        except Exception as e:  # pragma: no cover - defensive
+            _LOGGER.warning("Requested input device %s unavailable: %s", args.audio_input_device, e)
+
+    if mic is None:
+        # If we are auto-selecting, bias toward USB mics (e.g. Anker PowerConf)
+        # and away from built-in/loopback devices like CX8200 monitor/capture.
+        def _score_microphone(dev: sc.Microphone) -> int:
+            name = dev.name.lower()
+            score = 0
+            if "anker" in name or "powerconf" in name:
+                score += 200
+            if "usb" in name:
+                score += 100
+            if dev.isloopback:
+                score -= 200
+            if "cx8200" in name or "built-in" in name:
+                score -= 50
+            return score
+
+        # Start from PipeWire's default
         mic = sc.default_microphone()
+
+        # If default looks wrong, pick the best physical mic we can find
+        candidates = [dev for dev in sc.all_microphones() if dev is not None]
+        if candidates:
+            best = sorted(candidates, key=_score_microphone, reverse=True)[0]
+            if mic is None or _score_microphone(mic) < _score_microphone(best):
+                if mic is not None:
+                    _LOGGER.info(
+                        "Replacing default microphone '%s' with '%s' (better match)",
+                        mic.name,
+                        best.name,
+                    )
+                mic = best
+
+    if mic is None:
+        raise RuntimeError("No audio input device available")
+
+    _LOGGER.info("Using microphone: %s", mic.name)
 
     # Load available wake words
     wake_word_dirs = [Path(ww_dir) for ww_dir in args.wake_word_dir if ww_dir]
@@ -346,7 +386,17 @@ async def main() -> None:
         download_dir=args.download_dir,
         screen_management=args.screen_management,
         disable_wakeword_during_tts=args.disable_wakeword_during_tts,
+        software_mute=False,
     )
+
+    # Initialize shared software mute state
+    try:
+        if state.shared_mute_path.exists():
+            txt = state.shared_mute_path.read_text(encoding="utf-8").strip().lower()
+            state.software_mute = txt.startswith("on") or txt.startswith("true")
+    except Exception:
+        _LOGGER.debug("Could not read shared mute state", exc_info=True)
+
 
     process_audio_thread = threading.Thread(
         target=process_audio,
@@ -393,6 +443,7 @@ def process_audio(state: ServerState, mic, block_size: int):
     has_oww = False
 
     last_active: Optional[float] = None
+    last_mute_poll: float = 0.0
 
     try:
         _LOGGER.debug("Opening audio input device: %s", mic.name)
@@ -406,6 +457,32 @@ def process_audio(state: ServerState, mic, block_size: int):
                 )
 
                 if state.satellite is None:
+                    continue
+
+                # Poll shared mute flag once per second to sync across instances
+                now = time.monotonic()
+                if now - last_mute_poll > 1.0:
+                    last_mute_poll = now
+                    try:
+                        if state.shared_mute_path.exists():
+                            txt = state.shared_mute_path.read_text(encoding="utf-8").strip().lower()
+                            desired = txt.startswith("on") or txt.startswith("true")
+                            if desired != state.software_mute:
+                                _LOGGER.info(
+                                    "Shared mute change detected (file=%s): desired=%s current=%s", 
+                                    state.shared_mute_path,
+                                    desired,
+                                    state.software_mute,
+                                )
+                                state.software_mute = desired
+                                if state.mute_entity is not None and state.satellite is not None:
+                                    state.satellite.send_messages([
+                                        state.mute_entity.set_state(desired)
+                                    ])
+                    except Exception:
+                        _LOGGER.debug("Mute poll failed", exc_info=True)
+
+                if state.software_mute:
                     continue
 
                 if (not wake_words) or (state.wake_words_changed and state.wake_words):
