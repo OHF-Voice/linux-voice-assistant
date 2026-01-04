@@ -23,19 +23,21 @@ A multi-instance Linux voice satellite for Home Assistant using the ESPHome prot
 5. Events trigger visual feedback on Raspberry Pi (LED control via `/sys/class/leds/PWR/trigger`)
 
 ### Script System Architecture
-All scripts in `script/` are **Python executables** (not shell scripts) with zero external dependencies beyond stdlib. Key design:
-- Self-contained: Parse CLI args, read/write JSON configs, manage systemd services
-- Venv-aware: Auto-detect `.venv/` and use appropriate Python interpreter
-- Template cascade: `script/run` and `script/deploy` use intelligent defaults (user → OS-specific → main)
-- Auto-assignment: Ports (starting from 6053, or `LVAS_BASE_PORT` env var) and MAC addresses auto-generated if not specified
-- Preference migration: Legacy single-file preferences automatically split into per-instance + global on first run
+All scripts in `script/` are **Python executables** (not shell scripts) with zero external dependencies beyond stdlib. Key design principles:
+- **Self-contained**: Parse CLI args, read/write JSON configs, manage systemd services, all without imports from the main package
+- **Venv-aware**: Auto-detect `.venv/` and use appropriate Python interpreter (see [script/run](script/run#L51-L53))
+- **Template cascade**: `script/run` and `script/deploy` use intelligent defaults (user → OS-specific → main) via `_choose_template()` function
+- **Auto-assignment**: Ports (starting from 6053, or `LVAS_BASE_PORT` env var) and MAC addresses (via `uuid.getnode()`) auto-generated if not specified
+- **Preference migration**: Legacy single-file preferences automatically split into per-instance + global on first run
+- **Systemd integration**: `script/deploy` enables user linger and installs services in `~/.config/systemd/user/`
 
 ## Multi-Instance Configuration
 
 ### Preferences System (Two-Tier)
-- **Per-instance** (`preferences/user/{NAME}_cli.json`): CLI args, port, MAC address, system info
-- **Per-instance** (`preferences/user/{NAME}.json`): Active wake words list only
-- **Shared/global** (`preferences/user/ha_settings.json`): HA base URL, token, friendly names, history entity
+The `preferences/user/` directory is created on first run. Each instance has two config files:
+- **Per-instance CLI config** (`preferences/user/{NAME}_cli.json`): CLI args, port, MAC address, system info, autostart flag
+- **Per-instance preferences** (`preferences/user/{NAME}.json`): Active wake words list only (minimal by design - see `Preferences` dataclass in [models.py](linux_voice_assistant/models.py#L52-L56))
+- **Shared/global** (`preferences/user/ha_settings.json`): HA base URL, token, friendly names, history entity (see `GlobalPreferences` in [models.py](linux_voice_assistant/models.py#L59-L66))
 
 ### Template Cascade
 `script/run` loads defaults with priority:
@@ -50,7 +52,7 @@ When creating a new instance, `script/run` auto-generates a unique MAC address a
 ### Setup & Run
 ```bash
 script/setup              # Create venv, install dependencies
-script/run --name "MyVA"  # Auto-creates preferences/{NAME}_cli.json and {NAME}.json
+script/run --name "MyVA"  # Auto-creates preferences/user/{NAME}_cli.json and {NAME}.json
 ```
 
 For direct module execution (after venv setup):
@@ -58,6 +60,8 @@ For direct module execution (after venv setup):
 source .venv/bin/activate  # Or let scripts auto-detect venv
 python -m linux_voice_assistant --name "Test" --list-input-devices
 ```
+
+**Note**: `script/setup` can optionally install dev dependencies with `--dev` flag for linting/testing tools.
 
 ### Deployment (Production)
 ```bash
