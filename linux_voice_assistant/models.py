@@ -93,8 +93,12 @@ class ServerState:
     satellite: "Optional[VoiceSatelliteProtocol]" = None
     wake_words_changed: bool = False
     refractory_seconds: float = 2.0
-    screen_management: bool = False
+    screen_management: int = 0
     disable_wakeword_during_tts: bool = False
+    software_mute: bool = False
+    shared_mute_path: Path = Path("/dev/shm/lvas_system_mute")
+
+    mute_entity: "Optional[ESPHomeEntity]" = None
 
     def save_preferences(self) -> None:
         """Save per-instance preferences (currently active wake words)."""

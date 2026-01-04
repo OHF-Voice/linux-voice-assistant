@@ -7,8 +7,11 @@ from aioesphomeapi.api_pb2 import (  # type: ignore[attr-defined]
     ListEntitiesMediaPlayerResponse,
     ListEntitiesRequest,
     ListEntitiesTextSensorResponse,
+    ListEntitiesSwitchResponse,
     MediaPlayerCommandRequest,
     MediaPlayerStateResponse,
+    SwitchCommandRequest,
+    SwitchStateResponse,
     SubscribeHomeAssistantStatesRequest,
     TextSensorStateResponse,
 )
@@ -173,4 +176,56 @@ class TextAttributeEntity(ESPHomeEntity):
             key=self.key,
             state=self.text,
             missing_state=False,
+        )
+
+
+class SwitchEntity(ESPHomeEntity):
+    def __init__(
+        self,
+        server: APIServer,
+        key: int,
+        name: str,
+        object_id: str,
+        initial_state: bool = False,
+        on_change: Optional[Callable[[bool], None]] = None,
+    ) -> None:
+        super().__init__(server)
+        self.key = key
+        self.name = name
+        self.object_id = object_id
+        self.state = initial_state
+        self.on_change = on_change
+
+    def set_state(self, new_state: bool) -> SwitchStateResponse:
+        self.state = new_state
+        return self._get_state_message()
+
+    def handle_message(self, msg: message.Message) -> Iterable[message.Message]:
+        if isinstance(msg, SwitchCommandRequest) and (msg.key == self.key):
+            import logging
+            logging.getLogger(__name__).info(
+                "Switch command received: key=%s state=%s object_id=%s", self.key, msg.state, self.object_id
+            )
+            self.state = msg.state
+            if self.on_change:
+                try:
+                    self.on_change(self.state)
+                except Exception:
+                    self.state = not self.state
+                    raise
+            yield self._get_state_message()
+        elif isinstance(msg, ListEntitiesRequest):
+            yield ListEntitiesSwitchResponse(
+                object_id=self.object_id,
+                key=self.key,
+                name=self.name,
+                icon="mdi:microphone-off",
+            )
+        elif isinstance(msg, SubscribeHomeAssistantStatesRequest):
+            yield self._get_state_message()
+
+    def _get_state_message(self) -> SwitchStateResponse:
+        return SwitchStateResponse(
+            key=self.key,
+            state=self.state,
         )

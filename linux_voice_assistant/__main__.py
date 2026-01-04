@@ -110,8 +110,9 @@ async def main() -> None:
     )
     parser.add_argument(
         "--screen-management",
-        action="store_true",
-        help="Enable screen wake/sleep control via xset (requires X display)",
+        type=int,
+        default=0,
+        help="Screen sleep timeout in seconds (0=off, >0=seconds before sleep, requires X display)",
     )
     parser.add_argument(
         "--disable-wakeword-during-tts",

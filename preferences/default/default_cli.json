@@ -4,7 +4,7 @@
     "debug": false,
     "list_input_devices": false,
     "list_output_devices": false,
-    "audio_input_device": "",
+    "audio_input_device": "Anker PowerConf Mono",
     "audio_input_block_size": 1024,
     "audio_output_device": "",
     "wake_word_dir": "",
@@ -18,6 +18,6 @@
     "host": "0.0.0.0",
     "port": false,
     "mac": "",
-    "screen_management": false,
+    "screen_management": 0,
     "disable_wakeword_during_tts": false
 }

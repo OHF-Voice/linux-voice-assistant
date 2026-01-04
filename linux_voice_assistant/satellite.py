@@ -22,6 +22,7 @@ from aioesphomeapi.api_pb2 import (  # type: ignore[attr-defined]
     ListEntitiesDoneResponse,
     ListEntitiesRequest,
     MediaPlayerCommandRequest,
+    SwitchCommandRequest,
     SubscribeHomeAssistantStatesRequest,
     VoiceAssistantAnnounceFinished,
     VoiceAssistantAnnounceRequest,
@@ -45,7 +46,7 @@ from pymicro_wakeword import MicroWakeWord
 from pyopen_wakeword import OpenWakeWord
 
 from .api_server import APIServer
-from .entity import MediaPlayerEntity, TextAttributeEntity
+from .entity import MediaPlayerEntity, TextAttributeEntity, SwitchEntity
 from .models import AvailableWakeWord, ServerState, WakeWordType
 from .util import call_all
 
@@ -183,6 +184,34 @@ class VoiceSatelliteProtocol(APIServer):
             )
             self.state.entities.append(self.state.active_assistant_entity)
 
+        if self.state.mute_entity is None:
+            def _on_mute_change(new_state: bool) -> None:
+                _LOGGER.info("Assistant mute changed: %s", new_state)
+                self.state.software_mute = new_state
+                # Persist shared flag
+                try:
+                    self.state.shared_mute_path.write_text(
+                        "on" if new_state else "off", encoding="utf-8"
+                    )
+                except Exception:
+                    _LOGGER.warning("Failed to write shared mute flag to %s", self.state.shared_mute_path, exc_info=True)
+
+            self.state.mute_entity = SwitchEntity(
+                server=self,
+                key=len(state.entities),
+                name="Assistant Mute",
+                object_id="assistant_mute",
+                initial_state=self.state.software_mute,
+                on_change=_on_mute_change,
+            )
+            self.state.entities.append(self.state.mute_entity)
+            # Apply initial mute state to system if already set
+            if self.state.software_mute:
+                try:
+                    _on_mute_change(True)
+                except Exception:
+                    _LOGGER.debug("Failed applying initial mute state", exc_info=True)
+
         self._is_streaming_audio = False
         self._tts_url: Optional[str] = None
         self._tts_played = False
@@ -191,12 +220,13 @@ class VoiceSatelliteProtocol(APIServer):
         self._external_wake_words: Dict[str, VoiceAssistantExternalWakeWord] = {}
         self._current_assistant_name: str = "Assistant"
         self._is_rpi = _is_raspberry_pi()
-        self._screen_management = state.screen_management
+        self._screen_management_timeout = state.screen_management
         
-        _LOGGER.info("Screen management enabled: %s", self._screen_management)
+        _LOGGER.info("Screen management timeout: %d seconds", self._screen_management_timeout)
         # Set LED to idle state on init (only on RPi)
         if self._is_rpi:
             _set_led("none")
+
 
     def handle_voice_event(
         self, event_type: VoiceAssistantEventType, data: Dict[str, str]
@@ -216,7 +246,7 @@ class VoiceSatelliteProtocol(APIServer):
             self._update_active_tts("")
             if self._is_rpi:
                 _set_led("default-on")  # Listening
-            if self._screen_management:
+            if self._screen_management_timeout > 0:
                 _LOGGER.info("Waking screen for voice interaction")
                 _set_screen_dpms(0)  # Wake screen immediately
         elif event_type == VoiceAssistantEventType.VOICE_ASSISTANT_STT_START:
@@ -323,6 +353,7 @@ class VoiceSatelliteProtocol(APIServer):
                 ListEntitiesRequest,
                 SubscribeHomeAssistantStatesRequest,
                 MediaPlayerCommandRequest,
+                SwitchCommandRequest,
             ),
         ):
             for entity in self.state.entities:
@@ -487,9 +518,9 @@ class VoiceSatelliteProtocol(APIServer):
             self.unduck()
             if self._is_rpi:
                 _set_led("none")  # Back to idle
-            if self._screen_management:
-                _LOGGER.info("Setting screen sleep timeout after TTS playback finished")
-                _set_screen_dpms(30)  # 30 second timeout
+            if self._screen_management_timeout > 0:
+                _LOGGER.info("Setting screen sleep timeout to %d seconds", self._screen_management_timeout)
+                _set_screen_dpms(self._screen_management_timeout)
             # Clear sensors after 5 seconds (using stored loop reference)
             if self._loop is not None:
                 self._loop.call_later(5.0, self._clear_sensors)
