@@ -21,7 +21,10 @@ sudo pkill -9 squeezelite
 mkdir -p ~/.config/systemd/user/
 
 # Create the service file
+# IMPORTANT: Use a device-specific name (e.g., "Pi Speaker", "Office Speaker")
+# to avoid conflicts when multiple devices connect to Music Assistant
 # Replace <YOUR_HA_IP> with your actual Home Assistant IP address
+# Replace <DEVICE_NAME> with a unique name for this device
 cat <<EOF > ~/.config/systemd/user/squeezelite.service
 [Unit]
 Description=Squeezelite Player for Music Assistant
@@ -29,7 +32,7 @@ After=network.target pipewire.service
 Wants=pipewire.service
 
 [Service]
-ExecStart=/usr/bin/squeezelite -n "Laptop Speaker" -o pipewire -s <YOUR_HA_IP>
+ExecStart=/usr/bin/squeezelite -n "<DEVICE_NAME>" -o pipewire -s <YOUR_HA_IP>
 Restart=always
 RestartSec=5
 
@@ -37,13 +40,43 @@ RestartSec=5
 WantedBy=default.target
 EOF
 
-# Enable and start the service
+# Reload systemd and verify
 systemctl --user daemon-reload
-systemctl --user enable squeezelite.service
-systemctl --user start squeezelite.service
+
+# DO NOT enable/start yet - see section 3 for staging setup
 
 ================================================================
-3. HOME ASSISTANT DUCKING AUTOMATION (YAML)
+3. STARTUP STAGING SERVICE (RECOMMENDED)
+================================================================
+# This service stages LVAS and Squeezelite startup with delays to
+# avoid audio device conflicts. The startup helper will manage both
+# services automatically on boot.
+
+# Copy the staging service (adjust for your environment)
+# For graphical sessions (Debian desktop):
+cp lvas_startup/lvas-startup-helper.service ~/.config/systemd/user/
+
+# For multi-user/headless systems (servers, Ubuntu Server):
+cp lvas_startup/lvas-startup-helper-multiuser.service ~/.config/systemd/user/
+ln -sf ~/linux-voice-assistant/lvas_startup/lvas-startup-helper-multiuser.service \
+       ~/.config/systemd/user/lvas-startup-helper-multiuser.service
+
+# Enable user linger (required for services to persist across logouts)
+loginctl enable-linger $USER
+
+# Disable squeezelite from auto-starting (staging service will handle it)
+systemctl --user disable squeezelite.service
+
+# Enable and start the staging service
+systemctl --user daemon-reload
+systemctl --user enable lvas-startup-helper-multiuser.service
+systemctl --user start lvas-startup-helper-multiuser.service
+
+# Verify staging service is working
+systemctl --user status lvas-startup-helper-multiuser.service
+
+================================================================
+4. HOME ASSISTANT DUCKING AUTOMATION (YAML)
 ================================================================
 # Triggered when Voice Assistant is listening to lower music volume.
 # Replace entity IDs with your specific satellite and player IDs.

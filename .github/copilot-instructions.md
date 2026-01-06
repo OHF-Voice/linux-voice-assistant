@@ -96,6 +96,48 @@ script/lint               # black --check, isort --check, flake8, pylint, mypy
 
 ## Key Patterns
 
+### Async/Event-Driven Architecture
+The entire app runs on a single asyncio event loop initialized in [__main__.py](linux_voice_assistant/__main__.py#L350). The event loop manages:
+- **Audio capture**: Runs in separate thread pushing audio chunks to `ServerState.audio_queue`
+- **Wake word detection**: Monitors queue in async task, triggers voice events
+- **ESPHome server**: `APIServer` (asyncio.Protocol) receives/sends protobuf messages
+- **TTS/Announcements**: Non-blocking playback with callbacks via mpv
+
+The event loop is accessible via `asyncio.get_running_loop()` and stored in `VoiceSatelliteProtocol._loop` for scheduling coroutines.
+
+### State Management (ServerState)
+`ServerState` (in [models.py](linux_voice_assistant/models.py#L70-L99)) is the central mutable state container passed through the entire app. Contains:
+- **Config**: name, MAC, port (from CLI args and preferences)
+- **Audio**: `audio_queue` (Queue[bytes]), wakeup/timer sounds
+- **Wake words**: `available_wake_words` (dict by ID), loaded instances in `wake_words` (dict by ID)
+- **Players**: `music_player`, `tts_player` (MpvMediaPlayer instances)
+- **Entities**: `media_player_entity`, `active_stt_entity`, `active_tts_entity`, `active_assistant_entity`
+- **Preferences**: Per-instance config path, per-instance `Preferences`, shared `GlobalPreferences`
+
+Initialize ServerState in [__main__.py](linux_voice_assistant/__main__.py#L180-L250) after loading preferences and discovering wake words.
+
+### Message Handling Pattern
+ESPHome protocol messages flow through a three-stage pipeline:
+1. **Receive**: `APIServer.data_received()` → `process_packet()` (packet parsing)
+2. **Dispatch**: `process_packet()` → `handle_message()` (abstract method in APIServer, implemented in VoiceSatelliteProtocol)
+3. **Entity handlers**: `VoiceSatelliteProtocol.handle_message()` dispatches to registered `ESPHomeEntity` subclasses (see [satellite.py](linux_voice_assistant/satellite.py#L307-L365))
+
+Each entity's `handle_message()` returns an iterable of protobuf messages to send back. Common dispatch pattern (see [satellite.py](linux_voice_assistant/satellite.py#L360)):
+```python
+if isinstance(msg, VoiceAssistantConfigurationRequest):
+    yield from self._handle_voice_config(msg)
+elif isinstance(msg, VoiceAssistantRequest):
+    # Process voice event
+```
+
+### Entity Pattern
+Entities inherit from `ESPHomeEntity` and are registered in `ServerState.entities`. Key subclasses:
+- **MediaPlayerEntity**: Exposes music/TTS playback control, handles ducking for announcements
+- **TextAttributeEntity**: Displays active STT/TTS/assistant text in HA UI
+- **SwitchEntity**: Handles toggle switches (e.g., for software mute)
+
+Each entity registers in `ListEntitiesResponse` with unique `key` and `object_id`. See [entity.py](linux_voice_assistant/entity.py#L35-L150) for implementation pattern.
+
 ### Wake Word Loading
 Wake words discovered from `wakewords/` subdirectories by scanning `*.json` config files. Two types:
 - **microWakeWord**: Config file itself is the model (`.json` contains model data)
@@ -113,7 +155,7 @@ Example config (`wakewords/okay_nabu.json`):
 Loaded via `AvailableWakeWord.load()` in [models.py](linux_voice_assistant/models.py#L31-L49), which dynamically imports and instantiates the correct wake word detector class. The `stop.json`/`stop.tflite` model is special-cased and not shown as selectable in HA UI.
 
 ### Audio Device Selection
-Use `--list-input-devices` / `--list-output-devices` to discover devices. Microphone must support 16kHz mono.
+Use `--list-input-devices` / `--list-output-devices` to discover devices. Microphone must support 16kHz mono. Audio input runs in background thread in [__main__.py](linux_voice_assistant/__main__.py#L330-L345), pushing frames to `ServerState.audio_queue`.
 
 ### ESPHome Protocol
 Communication uses protobuf messages from `aioesphomeapi.api_pb2`. Key messages:
@@ -131,6 +173,15 @@ On Raspberry Pi hardware, visual feedback provided via power LED:
 - **Processing**: LED heartbeat pattern (`heartbeat` trigger)
 
 Detection via `/proc/device-tree/model` or `/proc/cpuinfo`. LED control in [satellite.py](linux_voice_assistant/satellite.py#L56-L99) `_set_led()` function.
+
+### Music Ducking (Auto-Volume Control)
+When announcements play, music volume is automatically lowered. Implementation in [entity.py](linux_voice_assistant/entity.py#L60-L75): checks `music_player.is_playing`, pauses it, plays announcement via `announce_player`, resumes music on done callback. Separate players allow concurrent state tracking.
+
+### Common Modification Points
+- **Adding new wake word types**: Extend `WakeWordType` enum in [models.py](linux_voice_assistant/models.py#L22-L25) and implement `AvailableWakeWord.load()` branch
+- **Adding new ESPHome entities**: Subclass `ESPHomeEntity` in [entity.py](linux_voice_assistant/entity.py#L25-L30), register in `ServerState.entities`, handle messages in `VoiceSatelliteProtocol.handle_message()`
+- **Adding voice events**: Implement in [satellite.py](linux_voice_assistant/satellite.py#L307-L365) `handle_message()` dispatcher, yield `VoiceAssistantEventResponse` messages
+- **Modifying preferences**: Update dataclasses in [models.py](linux_voice_assistant/models.py#L52-L66), migration handled in [__main__.py](linux_voice_assistant/__main__.py#L280-L320)
 
 ### Logging & History
 - Conversation history logged to `lvas_log` (symlinked to `/dev/shm/lvas_log` for RAM-based logging to reduce disk wear)
@@ -156,3 +207,6 @@ Detection via `/proc/device-tree/model` or `/proc/cpuinfo`. LED control in [sate
 - **Systemd linger**: `script/deploy` enables user linger via `loginctl enable-linger` so services persist across SSH disconnects and reboots.
 - **Development vs Production**: Use `script/run` for development (runs in foreground with live logs). Use `script/deploy` for production (installs as systemd service with autostart). Direct module execution (`python -m linux_voice_assistant`) requires manual venv activation and explicit args.
 - **Legacy wrapper scripts**: Old deployments used manual `{NAME}_wrapper.py` scripts with hardcoded paths and MAC spoofing. Modern approach uses `script/deploy` which generates systemd units directly without wrapper intermediaries.
+- **Preferences load order**: CLI args override defaults in this order: hardcoded defaults → template defaults (default_user_cli.json → default_wsl_cli.json → default_cli.json) → per-instance CLI config → command-line args. See [script/run](script/run#L150-L200) for implementation.
+- **Async in message handlers**: `handle_message()` is synchronous (not async) but can access `asyncio.get_running_loop()` to schedule coroutines. Done callbacks in [entity.py](linux_voice_assistant/entity.py#L70-L75) use this pattern.
+- **Audio thread safety**: Audio input runs in background thread; always use `ServerState.audio_queue.put()` for thread-safe communication with main event loop.
