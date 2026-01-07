@@ -12,4 +12,4 @@ echo "Launching Firefox..."
 
 sleep 8
 echo "Playing Chime..."
-/usr/bin/paplay /home/stef/lvas/sounds/Presentation_Intro_Transition_5.wav
+/usr/bin/paplay /home/stef/linux-voice-assistant/sounds/Presentation_Intro_Transition_5.wav
