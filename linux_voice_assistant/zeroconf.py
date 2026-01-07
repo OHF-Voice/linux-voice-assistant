@@ -18,10 +18,16 @@ MDNS_TARGET_IP = "224.0.0.251"
 
 class HomeAssistantZeroconf:
     def __init__(
-        self, port: int, name: Optional[str] = None, host: Optional[str] = None
+        self,
+        port: int,
+        name: Optional[str] = None,
+        host: Optional[str] = None,
+        mac: Optional[str] = None,
     ) -> None:
         self.port = port
         self.name = name or _get_mac_address()
+        # `mac` should be provided as hex string with no colons (e.g. aabbccddeeff)
+        self.mac = mac
 
         if not host:
             test_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -43,7 +49,7 @@ class HomeAssistantZeroconf:
             port=self.port,
             properties={
                 "version": "2025.9.0",
-                "mac": _get_mac_address(),
+                "mac": self.mac or _get_mac_address(),
                 "board": "host",
                 "platform": "HOST",
                 "network": "ethernet",  # or "wifi"

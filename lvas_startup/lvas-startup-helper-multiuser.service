@@ -1,0 +1,13 @@
+[Unit]
+Description=Linux Voice Assistant Startup Helper (Multi-User Mode)
+After=multi-user.target
+Wants=multi-user.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/home/stef/linux-voice-assistant
+ExecStart=/bin/bash -c 'sleep 5 && /home/stef/linux-voice-assistant/script/restart && sleep 5 && systemctl --user start squeezelite.service && sleep 5 && ffplay -nodisp -autoexit /home/stef/linux-voice-assistant/sounds/wake_word_triggered.flac'
+
+[Install]
+WantedBy=default.target

@@ -17,4 +17,16 @@ venv/
 
 /dist/
 /preferences.json
+# Ignore user preferences, but allow defaults to be versioned
+/preferences/user/
 /local/
+
+
+# Ignore Copilot instructions (local helper file)
+.github/copilot-instructions.md
+
+# Ignore runtime RAM-backed log
+lvas_log
+linux-voice-assistant.code-workspace
+/WSL2/
+/PRIVATE

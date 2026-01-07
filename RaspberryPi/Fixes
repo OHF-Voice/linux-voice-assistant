@@ -1,0 +1,74 @@
+# Raspberry Pi USB Audio Device Setup
+
+## 1. Add User to Audio Group
+USB audio devices require proper permissions to access:
+
+```bash
+sudo usermod -aG audio $USER
+```
+
+**Important:** Log out and log back in (or reboot) for this to take effect.
+
+Verify it worked:
+```bash
+groups  # Should show 'audio' in the list
+arecord -l  # Should now list your USB audio devices
+cat /proc/asound/cards  # Shows all detected sound cards
+```
+
+## 2. Verify Device Detection
+Check that your USB device is detected:
+
+```bash
+lsusb | grep -i audio  # Should show your USB audio device
+wpctl status  # Should show device under Sources/Sinks
+```
+
+If device doesn't appear in wpctl after logging back in:
+```bash
+systemctl --user restart wireplumber pipewire pipewire-pulse
+```
+
+## 3. Prevent USB Audio Device Sleep (Anker PowerConf)
+USB audio devices may go to sleep and cause audio capture failures. Create a WirePlumber config to prevent suspension:
+
+```bash
+mkdir -p ~/.config/wireplumber/wireplumber.conf.d/ && cat <<EOF > ~/.config/wireplumber/wireplumber.conf.d/51-disable-suspension.conf
+monitor.alsa.rules = [
+  {
+    matches = [
+      {
+        node.name = "~alsa_input.usb-Anker.*"
+      },
+      {
+        node.name = "~alsa_output.usb-Anker.*"
+      }
+    ]
+    actions = {
+      update-props = {
+        session.suspend-timeout-seconds = 0
+      }
+    }
+  }
+]
+EOF
+```
+
+Apply the changes:
+```bash
+systemctl --user restart wireplumber pipewire pipewire-pulse
+```
+
+Verify it worked:
+```bash
+wpctl status  # Device should stay in IDLE or RUNNING state, never SUSPENDED
+```
+
+## 4. Test with Linux Voice Assistant
+Verify the application can detect your device:
+
+```bash
+script/run --name Test --list-input-devices
+```
+
+Your Anker PowerConf should appear as "Anker PowerConf Mono" in the device list.

@@ -11,11 +11,14 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class MpvMediaPlayer:
-    def __init__(self, device: Optional[str] = None) -> None:
+    def __init__(self, device: Optional[str] = None, buffer_size: int = 0) -> None:
         self.player = MPV()
 
         if device:
             self.player["audio-device"] = device
+        
+        if buffer_size > 0:
+            self.player["audio-buffer"] = buffer_size / 1000.0  # Convert ms to seconds
 
         self.is_playing = False
 

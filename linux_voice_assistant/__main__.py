@@ -15,7 +15,13 @@ import soundcard as sc
 from pymicro_wakeword import MicroWakeWord, MicroWakeWordFeatures
 from pyopen_wakeword import OpenWakeWord, OpenWakeWordFeatures
 
-from .models import AvailableWakeWord, Preferences, ServerState, WakeWordType
+from .models import (
+    AvailableWakeWord,
+    GlobalPreferences,
+    Preferences,
+    ServerState,
+    WakeWordType,
+)
 from .mpv_player import MpvMediaPlayer
 from .satellite import VoiceSatelliteProtocol
 from .util import get_mac
@@ -47,6 +53,9 @@ async def main() -> None:
     parser.add_argument(
         "--audio-output-device",
         help="mpv name for output device (see --list-output-devices)",
+    )
+    parser.add_argument("--audio-output-buffer-size", type=int, default=0,
+        help="mpv audio buffer size in milliseconds (0=default)",
     )
     parser.add_argument(
         "--list-output-devices",
@@ -90,11 +99,48 @@ async def main() -> None:
         help="Address for ESPHome server (default: 0.0.0.0)",
     )
     parser.add_argument(
-        "--port", type=int, default=6053, help="Port for ESPHome server (default: 6053)"
+        "--port", type=int, default=6052, help="Port for ESPHome server (default: 6052)"
+    )
+    parser.add_argument(
+        "--mac",
+        help="Spoof MAC address exposed to Home Assistant (format: aa:bb:cc:dd:ee:ff or aabbccddeeff)",
     )
     parser.add_argument(
         "--debug", action="store_true", help="Print DEBUG messages to console"
     )
+    parser.add_argument(
+        "--screen-management",
+        type=int,
+        default=0,
+        help="Screen sleep timeout in seconds (0=off, >0=seconds before sleep, requires X display)",
+    )
+    parser.add_argument(
+        "--disable-wakeword-during-tts",
+        action="store_true",
+        help="Disable wake word detection while TTS is playing (reduces false triggers)",
+    )
+    
+    # Parse only --name first to load CLI config defaults
+    args, remaining = parser.parse_known_args()
+    
+    # Load CLI config from last run if it exists (to use as defaults)
+    if args.name:
+        user_prefs_dir = _REPO_DIR / "preferences" / "user"
+        cli_config_path = user_prefs_dir / f"{args.name}_cli.json"
+        if cli_config_path.exists():
+            try:
+                with open(cli_config_path, "r", encoding="utf-8") as f:
+                    cli_config = json.load(f)
+                    # Filter out non-argument keys
+                    cli_only_keys = {"autostart", "__system_info__"}
+                    defaults = {k: v for k, v in cli_config.items() if not k.startswith("_") and k not in cli_only_keys}
+                    # Convert underscores to hyphens in keys for argparse
+                    defaults = {k.replace("_", "-"): v for k, v in defaults.items()}
+                    parser.set_defaults(**defaults)
+            except Exception:
+                pass
+    
+    # Re-parse with defaults loaded
     args = parser.parse_args()
 
     if args.list_input_devices:
@@ -122,18 +168,58 @@ async def main() -> None:
     args.download_dir.mkdir(parents=True, exist_ok=True)
 
     # Resolve microphone
+    mic: Optional[sc.Microphone] = None
+
     if args.audio_input_device is not None:
         try:
             args.audio_input_device = int(args.audio_input_device)
         except ValueError:
             pass
 
-        mic = sc.get_microphone(args.audio_input_device)
-    else:
+        try:
+            mic = sc.get_microphone(args.audio_input_device)
+        except Exception as e:  # pragma: no cover - defensive
+            _LOGGER.warning("Requested input device %s unavailable: %s", args.audio_input_device, e)
+
+    if mic is None:
+        # If we are auto-selecting, bias toward USB mics (e.g. Anker PowerConf)
+        # and away from built-in/loopback devices like CX8200 monitor/capture.
+        def _score_microphone(dev: sc.Microphone) -> int:
+            name = dev.name.lower()
+            score = 0
+            if "anker" in name or "powerconf" in name:
+                score += 200
+            if "usb" in name:
+                score += 100
+            if dev.isloopback:
+                score -= 200
+            if "cx8200" in name or "built-in" in name:
+                score -= 50
+            return score
+
+        # Start from PipeWire's default
         mic = sc.default_microphone()
 
+        # If default looks wrong, pick the best physical mic we can find
+        candidates = [dev for dev in sc.all_microphones() if dev is not None]
+        if candidates:
+            best = sorted(candidates, key=_score_microphone, reverse=True)[0]
+            if mic is None or _score_microphone(mic) < _score_microphone(best):
+                if mic is not None:
+                    _LOGGER.info(
+                        "Replacing default microphone '%s' with '%s' (better match)",
+                        mic.name,
+                        best.name,
+                    )
+                mic = best
+
+    if mic is None:
+        raise RuntimeError("No audio input device available")
+
+    _LOGGER.info("Using microphone: %s", mic.name)
+
     # Load available wake words
-    wake_word_dirs = [Path(ww_dir) for ww_dir in args.wake_word_dir]
+    wake_word_dirs = [Path(ww_dir) for ww_dir in args.wake_word_dir if ww_dir]
     wake_word_dirs.append(args.download_dir / "external_wake_words")
     available_wake_words: Dict[str, AvailableWakeWord] = {}
 
@@ -144,33 +230,88 @@ async def main() -> None:
                 # Don't show stop model as an available wake word
                 continue
 
-            with open(model_config_path, "r", encoding="utf-8") as model_config_file:
-                model_config = json.load(model_config_file)
-                model_type = WakeWordType(model_config["type"])
-                if model_type == WakeWordType.OPEN_WAKE_WORD:
-                    wake_word_path = model_config_path.parent / model_config["model"]
-                else:
-                    wake_word_path = model_config_path
+            try:
+                with open(model_config_path, "r", encoding="utf-8") as model_config_file:
+                    model_config = json.load(model_config_file)
+                    if "type" not in model_config:
+                        _LOGGER.debug("Skipping invalid wake word config: %s (missing 'type' field)", model_config_path)
+                        continue
+                    model_type = WakeWordType(model_config["type"])
+                    if model_type == WakeWordType.OPEN_WAKE_WORD:
+                        wake_word_path = model_config_path.parent / model_config["model"]
+                    else:
+                        wake_word_path = model_config_path
 
-                available_wake_words[model_id] = AvailableWakeWord(
-                    id=model_id,
-                    type=WakeWordType(model_type),
-                    wake_word=model_config["wake_word"],
-                    trained_languages=model_config.get("trained_languages", []),
-                    wake_word_path=wake_word_path,
-                )
+                    available_wake_words[model_id] = AvailableWakeWord(
+                        id=model_id,
+                        type=WakeWordType(model_type),
+                        wake_word=model_config["wake_word"],
+                        trained_languages=model_config.get("trained_languages", []),
+                        wake_word_path=wake_word_path,
+                    )
+            except Exception as e:
+                _LOGGER.debug("Failed to load wake word config %s: %s", model_config_path, e)
 
     _LOGGER.debug("Available wake words: %s", list(sorted(available_wake_words.keys())))
 
-    # Load preferences
+    # Load per-instance preferences and shared global settings
     preferences_path = Path(args.preferences_file)
+    global_preferences_path = preferences_path.parent / "ha_settings.json"
+
+    # First load per-instance prefs (active wake words)
+    preferences = Preferences()
+    migration_globals: Dict[str, object] = {}
     if preferences_path.exists():
         _LOGGER.debug("Loading preferences: %s", preferences_path)
         with open(preferences_path, "r", encoding="utf-8") as preferences_file:
             preferences_dict = json.load(preferences_file)
-            preferences = Preferences(**preferences_dict)
-    else:
-        preferences = Preferences()
+            # preferences file may contain extra metadata (e.g. CLI args) under
+            # other keys. Only extract known fields for the Preferences dataclass.
+            if isinstance(preferences_dict, dict):
+                active = preferences_dict.get("active_wake_words") or []
+                preferences = Preferences(active_wake_words=active)
+
+                # Capture legacy global fields for migration if needed
+                for key in ("wake_word_friendly_names", "ha_base_url", "ha_token", "ha_history_entity"):
+                    if key in preferences_dict:
+                        migration_globals[key] = preferences_dict.get(key)
+
+    # Load global/shared preferences (base URL, token, friendly names)
+    global_preferences = GlobalPreferences()
+    if global_preferences_path.exists():
+        _LOGGER.debug("Loading global preferences: %s", global_preferences_path)
+        with open(global_preferences_path, "r", encoding="utf-8") as global_file:
+            global_dict = json.load(global_file)
+            if isinstance(global_dict, dict):
+                global_preferences = GlobalPreferences(
+                    wake_word_friendly_names=global_dict.get("wake_word_friendly_names", {}),
+                    ha_base_url=global_dict.get("ha_base_url"),
+                    ha_token=global_dict.get("ha_token"),
+                    ha_history_entity=global_dict.get("ha_history_entity"),
+                )
+
+    # Migrate legacy global fields embedded in per-instance file
+    if migration_globals and not global_preferences_path.exists():
+        _LOGGER.info("Migrating shared HA/friendly-name settings to %s", global_preferences_path)
+        global_preferences = GlobalPreferences(
+            wake_word_friendly_names=migration_globals.get("wake_word_friendly_names", {}),
+            ha_base_url=migration_globals.get("ha_base_url"),
+            ha_token=migration_globals.get("ha_token"),
+            ha_history_entity=migration_globals.get("ha_history_entity"),
+        )
+        global_preferences_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(global_preferences_path, "w", encoding="utf-8") as global_file:
+            json.dump(
+                {
+                    "wake_word_friendly_names": global_preferences.wake_word_friendly_names,
+                    "ha_base_url": global_preferences.ha_base_url,
+                    "ha_token": global_preferences.ha_token,
+                    "ha_history_entity": global_preferences.ha_history_entity,
+                },
+                global_file,
+                ensure_ascii=False,
+                indent=4,
+            )
 
     # Load wake/stop models
     active_wake_words: Set[str] = set()
@@ -209,24 +350,54 @@ async def main() -> None:
 
     assert stop_model is not None
 
+    # Normalize MAC if provided so both DeviceInfo and zeroconf use consistent values
+    def _normalize_mac_colon(mac: str) -> str:
+        m = mac.replace(":", "").replace("-", "").lower()
+        if len(m) != 12:
+            return mac
+        return ":".join(m[i : i + 2] for i in range(0, 12, 2))
+
+    def _normalize_mac_nocolon(mac: str) -> str:
+        return _normalize_mac_colon(mac).replace(":", "")
+
+    mac_address_value = get_mac()
+    zeroconf_mac_value = None
+    if args.mac:
+        mac_address_value = _normalize_mac_colon(args.mac)
+        zeroconf_mac_value = _normalize_mac_nocolon(args.mac)
+
     state = ServerState(
         name=args.name,
-        mac_address=get_mac(),
+        mac_address=mac_address_value,
         audio_queue=Queue(),
         entities=[],
         available_wake_words=available_wake_words,
         wake_words=wake_models,
         active_wake_words=active_wake_words,
         stop_word=stop_model,
-        music_player=MpvMediaPlayer(device=args.audio_output_device),
-        tts_player=MpvMediaPlayer(device=args.audio_output_device),
+        music_player=MpvMediaPlayer(device=args.audio_output_device, buffer_size=args.audio_output_buffer_size),
+        tts_player=MpvMediaPlayer(device=args.audio_output_device, buffer_size=args.audio_output_buffer_size),
         wakeup_sound=args.wakeup_sound,
         timer_finished_sound=args.timer_finished_sound,
         preferences=preferences,
+        global_preferences=global_preferences,
         preferences_path=preferences_path,
+        global_preferences_path=global_preferences_path,
         refractory_seconds=args.refractory_seconds,
         download_dir=args.download_dir,
+        screen_management=args.screen_management,
+        disable_wakeword_during_tts=args.disable_wakeword_during_tts,
+        software_mute=False,
     )
+
+    # Initialize shared software mute state
+    try:
+        if state.shared_mute_path.exists():
+            txt = state.shared_mute_path.read_text(encoding="utf-8").strip().lower()
+            state.software_mute = txt.startswith("on") or txt.startswith("true")
+    except Exception:
+        _LOGGER.debug("Could not read shared mute state", exc_info=True)
+
 
     process_audio_thread = threading.Thread(
         target=process_audio,
@@ -242,6 +413,7 @@ async def main() -> None:
 
     # Auto discovery (zeroconf, mDNS)
     discovery = HomeAssistantZeroconf(port=args.port, name=args.name)
+    discovery = HomeAssistantZeroconf(port=args.port, name=args.name, mac=zeroconf_mac_value)
     await discovery.register_server()
 
     try:
@@ -272,6 +444,7 @@ def process_audio(state: ServerState, mic, block_size: int):
     has_oww = False
 
     last_active: Optional[float] = None
+    last_mute_poll: float = 0.0
 
     try:
         _LOGGER.debug("Opening audio input device: %s", mic.name)
@@ -285,6 +458,32 @@ def process_audio(state: ServerState, mic, block_size: int):
                 )
 
                 if state.satellite is None:
+                    continue
+
+                # Poll shared mute flag once per second to sync across instances
+                now = time.monotonic()
+                if now - last_mute_poll > 1.0:
+                    last_mute_poll = now
+                    try:
+                        if state.shared_mute_path.exists():
+                            txt = state.shared_mute_path.read_text(encoding="utf-8").strip().lower()
+                            desired = txt.startswith("on") or txt.startswith("true")
+                            if desired != state.software_mute:
+                                _LOGGER.info(
+                                    "Shared mute change detected (file=%s): desired=%s current=%s", 
+                                    state.shared_mute_path,
+                                    desired,
+                                    state.software_mute,
+                                )
+                                state.software_mute = desired
+                                if state.mute_entity is not None and state.satellite is not None:
+                                    state.satellite.send_messages([
+                                        state.mute_entity.set_state(desired)
+                                    ])
+                    except Exception:
+                        _LOGGER.debug("Mute poll failed", exc_info=True)
+
+                if state.software_mute:
                     continue
 
                 if (not wake_words) or (state.wake_words_changed and state.wake_words):
@@ -320,6 +519,10 @@ def process_audio(state: ServerState, mic, block_size: int):
                         oww_inputs.extend(oww_features.process_streaming(audio_chunk))
 
                     for wake_word in wake_words:
+                        # Skip wake word detection if TTS is playing and flag is enabled
+                        if state.disable_wakeword_during_tts and state.tts_player.is_playing:
+                            continue
+                        
                         activated = False
                         if isinstance(wake_word, MicroWakeWord):
                             for micro_input in micro_inputs:

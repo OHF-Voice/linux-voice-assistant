@@ -1,17 +1,293 @@
 #!/usr/bin/env python3
 import sys
+import os
 import subprocess
 import venv
+import shlex
+import time
+import platform
 from pathlib import Path
+import json
+
+try:
+    import distro
+except ImportError:
+    distro = None
+
+
+def _is_wsl() -> bool:
+    """Check if running under WSL (Windows Subsystem for Linux)."""
+    try:
+        with open("/proc/version", "r", encoding="utf-8") as f:
+            return "microsoft" in f.read().lower()
+    except Exception:
+        return "microsoft" in platform.uname().release.lower()
+
+
+def _get_system_info() -> dict:
+    """Get system info: OS, distro, architecture."""
+    system_info = {
+        "os": platform.system(),
+        "machine": platform.machine(),
+        "architecture": platform.architecture()[0],
+        "distro_id": None,
+        "distro_name": None,
+        "distro_version": None,
+        "is_wsl": False,
+    }
+    
+    if system_info["os"] == "Linux":
+        try:
+            if distro:
+                system_info["distro_id"] = distro.id()
+                system_info["distro_name"] = distro.name()
+                system_info["distro_version"] = distro.version()
+            system_info["is_wsl"] = _is_wsl()
+        except Exception:
+            pass
+    
+    return system_info
 
 _DIR = Path(__file__).parent
 _PROGRAM_DIR = _DIR.parent
 _VENV_DIR = _PROGRAM_DIR / ".venv"
 
+def _find_arg_value(argv, name):
+    """Return the value for flag `name` in argv or None."""
+    try:
+        idx = argv.index(name)
+    except ValueError:
+        return None
+    if idx + 1 >= len(argv):
+        return None
+    return argv[idx + 1]
+
+
+def _choose_template(default_prefs_dir: Path, system_info: dict) -> Path:
+    """Choose template with cascade logic:
+    1. User custom default (default_user_cli.json)
+    2. OS-specific default (default_wsl_cli.json, etc.)
+    3. Main default (default_cli.json)
+    """
+    # Check for user custom default first
+    user_template = default_prefs_dir / "default_user_cli.json"
+    if user_template.exists():
+        print(f"Using user custom defaults: default_user_cli.json")
+        return user_template
+    
+    # Try OS-specific template
+    if system_info.get("is_wsl"):
+        wsl_template = default_prefs_dir / "default_wsl_cli.json"
+        if wsl_template.exists():
+            print(f"Detected WSL environment - using default_wsl_cli.json")
+            return wsl_template
+    
+    # Fall back to main default
+    main_template = default_prefs_dir / "default_cli.json"
+    if main_template.exists():
+        return main_template
+    
+    return None
+
+
+def _load_template_config(template_path: Path) -> dict:
+    """Load JSON template file, return empty dict if fails."""
+    try:
+        with open(template_path, "r", encoding="utf-8") as f:
+            return json.load(f) or {}
+    except Exception:
+        return {}
+
+
+def _generate_random_mac() -> str:
+    """Generate a random MAC address."""
+    import random
+    return ":".join(f"{random.randint(0,255):02x}" for _ in range(6))
+
+
+def _auto_assign_port(user_prefs_dir: Path, base_port: int = 6053) -> int:
+    """Find next available port by scanning existing instances."""
+    used = set()
+    try:
+        for other in user_prefs_dir.glob("*_cli.json"):
+            try:
+                config = _load_template_config(other)
+                port_val = config.get("port")
+                if port_val not in (None, False, "false", ""):
+                    used.add(int(port_val))
+            except Exception:
+                continue
+    except Exception:
+        pass
+    
+    port = base_port
+    while port in used:
+        port += 1
+    return port
+
+
+# Determine Python executable (venv or system python)
 if _VENV_DIR.exists():
     context = venv.EnvBuilder().ensure_directories(_VENV_DIR)
     python_exe = context.env_exe
 else:
     python_exe = "python3"
 
-subprocess.check_call([python_exe, "-m", "linux_voice_assistant"] + sys.argv[1:])
+args = sys.argv[1:]
+prefs_flag = _find_arg_value(args, "--preferences-file")
+
+if prefs_flag is None:
+    name_val = _find_arg_value(args, "--name")
+    if name_val:
+        prefs_dir = _PROGRAM_DIR / "preferences"
+        user_prefs_dir = prefs_dir / "user"
+        default_prefs_dir = prefs_dir / "default"
+        user_prefs_dir.mkdir(parents=True, exist_ok=True)
+        default_prefs_dir.mkdir(parents=True, exist_ok=True)
+
+        # Get system info once
+        system_info = _get_system_info()
+        
+        # Choose appropriate template
+        template_path = _choose_template(default_prefs_dir, system_info)
+        
+        # Determine file paths
+        cli_path = user_prefs_dir / f"{name_val}_cli.json"
+        prefs_path = user_prefs_dir / f"{name_val}.json"
+        
+        # Start with template or existing config
+        if cli_path.exists():
+            # Existing instance: user is in control
+            arg_map = _load_template_config(cli_path)
+        elif template_path:
+            # New instance: start from template
+            arg_map = _load_template_config(template_path)
+        else:
+            # No template: start empty
+            arg_map = {}
+        
+        # Parse CLI arguments and override
+        i = 0
+        while i < len(args):
+            token = args[i]
+            if token.startswith("-"):
+                key = token.lstrip("-")
+                if (i + 1) < len(args) and not args[i + 1].startswith("-"):
+                    arg_map[key] = args[i + 1]
+                    i += 2
+                else:
+                    arg_map[key] = True
+                    i += 1
+            else:
+                i += 1
+        
+        # Add system info
+        arg_map["__system_info__"] = system_info
+        
+        # Handle MAC address
+        cli_provided_mac = arg_map.get("mac")
+        if not cli_provided_mac:
+            arg_map["mac"] = _generate_random_mac()
+        if "--mac" not in args:
+            args = args + ["--mac", arg_map["mac"]]
+        
+        # Handle port assignment for new instances
+        if not cli_path.exists():
+            port_in_args = "port" in arg_map and arg_map["port"] not in (False, None, "false", "")
+            if not port_in_args:
+                try:
+                    base_port = int(os.environ.get("LVAS_BASE_PORT", "6053"))
+                except Exception:
+                    base_port = 6053
+                port = _auto_assign_port(user_prefs_dir, base_port)
+                arg_map["port"] = str(port)
+                args = args + ["--port", str(port)]
+        
+        # Save CLI config
+        try:
+            cli_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(cli_path, "w", encoding="utf-8") as f:
+                json.dump(arg_map, f, ensure_ascii=False, indent=4)
+        except Exception:
+            pass
+        
+        global_prefs_path = user_prefs_dir / "ha_settings.json"
+
+        # Create main preferences file if needed (per-instance: active wake words only)
+        if not prefs_path.exists():
+            try:
+                prefs_template_path = default_prefs_dir / "default.json"
+                template = _load_template_config(prefs_template_path) or {}
+                active_only = {"active_wake_words": template.get("active_wake_words", [])}
+                prefs_path.parent.mkdir(parents=True, exist_ok=True)
+                with open(prefs_path, "w", encoding="utf-8") as f:
+                    json.dump(active_only, f, ensure_ascii=False, indent=4)
+            except Exception:
+                pass
+
+        # Create shared HA/friendly settings once
+        if not global_prefs_path.exists():
+            try:
+                template = _load_template_config(default_prefs_dir / "default.json") or {}
+                global_data = {
+                    "wake_word_friendly_names": template.get("wake_word_friendly_names", {}),
+                    "ha_base_url": template.get("ha_base_url"),
+                    "ha_token": template.get("ha_token"),
+                    "ha_history_entity": template.get("ha_history_entity"),
+                }
+                global_prefs_path.parent.mkdir(parents=True, exist_ok=True)
+                with open(global_prefs_path, "w", encoding="utf-8") as f:
+                    json.dump(global_data, f, ensure_ascii=False, indent=4)
+            except Exception:
+                pass
+        
+        # Convert loaded arg_map back to CLI args (for service activation)
+        # This ensures preferences like wakeup_sound are passed to the python module
+        for key, value in arg_map.items():
+            if key.startswith("_") or key in {"autostart", "__system_info__"}:
+                continue  # skip metadata
+            cli_key = f"--{key.replace('_', '-')}"
+            # Only add if not already in args
+            if cli_key not in args:
+                if isinstance(value, bool):
+                    if value:
+                        args.append(cli_key)
+                else:
+                    args = args + [cli_key, str(value)]
+
+        # Ensure preferences path is passed to main app
+        args = args + ["--preferences-file", str(prefs_path)]
+
+        # Setup unified RAM-based log file (shared across all instances)
+        log_link = _PROGRAM_DIR / "lvas_log"
+        ram_log_dir = Path("/dev/shm") if Path("/dev/shm").exists() else Path("/tmp")
+        ram_log_file = ram_log_dir / "lvas_log"
+        
+        # Create RAM log if it doesn't exist
+        if not ram_log_file.exists():
+            try:
+                ram_log_file.touch()
+                print(f"Created unified RAM-based log: {ram_log_file}")
+            except Exception as e:
+                print(f"Warning: Could not create RAM log: {e}", file=sys.stderr)
+        
+        # Create/update symlink
+        try:
+            if log_link.exists() or log_link.is_symlink():
+                log_link.unlink()
+            log_link.symlink_to(ram_log_file)
+            print(f"Symlinked {log_link} -> {ram_log_file}")
+        except Exception as e:
+            print(f"Warning: Could not create symlink: {e}", file=sys.stderr)
+
+
+# For single-instance runs, start the process
+env = os.environ.copy()
+
+try:
+    p = subprocess.Popen([python_exe, "-m", "linux_voice_assistant"] + args, env=env)
+    ret = p.wait()
+    sys.exit(ret if ret is not None else 0)
+except Exception:
+    # fallback to blocking call if Popen fails
+    subprocess.check_call([python_exe, "-m", "linux_voice_assistant"] + args)

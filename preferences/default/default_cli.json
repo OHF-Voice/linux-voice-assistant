@@ -1,0 +1,23 @@
+{
+    "name": "",
+    "autostart": true,
+    "debug": false,
+    "list_input_devices": false,
+    "list_output_devices": false,
+    "audio_input_device": "Anker PowerConf Mono",
+    "audio_input_block_size": 1024,
+    "audio_output_device": "",
+    "wake_word_dir": "",
+    "wake_model": "okay_nabu",
+    "stop_model": "stop",
+    "download_dir": "",
+    "refractory_seconds": 2.0,
+    "wakeup_sound": "/home/stef/linux-voice-assistant/sounds/halfknock.wav",
+    "timer_finished_sound": "",
+    "preferences_file": "",
+    "host": "0.0.0.0",
+    "port": false,
+    "mac": "",
+    "screen_management": 0,
+    "disable_wakeword_during_tts": false
+}

@@ -1,0 +1,79 @@
+#!/usr/bin/env python3
+"""Install system dependencies for Linux Voice Assistant."""
+
+import shutil
+import subprocess
+import sys
+
+# System packages required
+PACKAGES_APT = ["python3-venv", "portaudio19-dev", "build-essential", "libmpv-dev"]
+PACKAGES_DNF = ["python3-virtualenv", "portaudio-devel", "gcc", "gcc-c++", "make", "mpv-libs-devel"]
+PACKAGES_PACMAN = ["python-virtualenv", "portaudio", "base-devel", "mpv"]
+PACKAGES_ZYPPER = ["python3-virtualenv", "portaudio-devel", "gcc", "gcc-c++", "make", "libmpv-devel"]
+
+
+def detect_package_manager():
+    """Detect available package manager."""
+    managers = {
+        "apt-get": ("apt-get", PACKAGES_APT, ["sudo", "apt-get", "update"]),
+        "dnf": ("dnf", PACKAGES_DNF, None),
+        "yum": ("yum", PACKAGES_DNF, None),
+        "pacman": ("pacman", PACKAGES_PACMAN, None),
+        "zypper": ("zypper", PACKAGES_ZYPPER, None),
+    }
+    
+    for cmd, packages, update_cmd in managers.values():
+        if shutil.which(cmd):
+            return cmd, packages, update_cmd
+    
+    return None, None, None
+
+
+def main():
+    manager, packages, update_cmd = detect_package_manager()
+    
+    if not manager:
+        print("Error: Could not detect package manager (apt-get/dnf/yum/pacman/zypper)")
+        print("\nManually install these dependencies:")
+        print("  - Python venv/virtualenv")
+        print("  - PortAudio development files")
+        print("  - Build tools (gcc, make)")
+        print("  - MPV development files")
+        sys.exit(1)
+    
+    print(f"Detected package manager: {manager}")
+    print(f"Installing: {', '.join(packages)}\n")
+    
+    # Update package list if applicable
+    if update_cmd:
+        try:
+            subprocess.run(update_cmd, check=True)
+        except subprocess.CalledProcessError:
+            print("Warning: Failed to update package list")
+    
+    # Install packages
+    if manager == "apt-get":
+        cmd = ["sudo", "apt-get", "install", "-y"] + packages
+    elif manager in ["dnf", "yum"]:
+        cmd = ["sudo", manager, "install", "-y"] + packages
+    elif manager == "pacman":
+        cmd = ["sudo", "pacman", "-S", "--noconfirm"] + packages
+    elif manager == "zypper":
+        cmd = ["sudo", "zypper", "install", "-y"] + packages
+    else:
+        print(f"Error: Unsupported package manager: {manager}")
+        sys.exit(1)
+    
+    try:
+        subprocess.run(cmd, check=True)
+        print("\n✓ System dependencies installed successfully!")
+        print("\nNext steps:")
+        print("  1. Run: script/setup")
+        print("  2. Run: script/run --name MyVA")
+    except subprocess.CalledProcessError as e:
+        print(f"\nError: Failed to install packages: {e}")
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

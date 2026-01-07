@@ -1,0 +1,114 @@
+# MUSIC ASSISTANT + LINUX VOICE ASSISTANT SETUP GUIDE
+# Target: Debian/Linux with PipeWire
+# Goal: Enable Music + Voice concurrently with automated ducking
+
+================================================================
+1. INSTALLATION & CLEANUP (SYSTEM LEVEL)
+================================================================
+# Install Squeezelite
+sudo apt update && sudo apt install squeezelite -y
+
+# Disable the legacy 'ghost' service that creates a duplicate player
+sudo systemctl stop squeezelite
+sudo systemctl mask squeezelite
+sudo update-rc.d -f squeezelite remove
+sudo pkill -9 squeezelite
+
+================================================================
+2. CREATE CUSTOM USER SERVICE
+================================================================
+# Create the user systemd directory
+mkdir -p ~/.config/systemd/user/
+
+# Create the service file
+# IMPORTANT: Use a device-specific name (e.g., "Pi Speaker", "Office Speaker")
+# to avoid conflicts when multiple devices connect to Music Assistant
+# Replace <YOUR_HA_IP> with your actual Home Assistant IP address
+# Replace <DEVICE_NAME> with a unique name for this device
+cat <<EOF > ~/.config/systemd/user/squeezelite.service
+[Unit]
+Description=Squeezelite Player for Music Assistant
+After=network.target pipewire.service
+Wants=pipewire.service
+
+[Service]
+ExecStart=/usr/bin/squeezelite -n "<DEVICE_NAME>" -o pipewire -s <YOUR_HA_IP>
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target
+EOF
+
+# Reload systemd and verify
+systemctl --user daemon-reload
+
+# DO NOT enable/start yet - see section 3 for staging setup
+
+================================================================
+3. STARTUP STAGING SERVICE (RECOMMENDED)
+================================================================
+# This service stages LVAS and Squeezelite startup with delays to
+# avoid audio device conflicts. The startup helper will manage both
+# services automatically on boot.
+
+# Copy the staging service (adjust for your environment)
+# For graphical sessions (Debian desktop):
+cp lvas_startup/lvas-startup-helper.service ~/.config/systemd/user/
+
+# For multi-user/headless systems (servers, Ubuntu Server):
+cp lvas_startup/lvas-startup-helper-multiuser.service ~/.config/systemd/user/
+ln -sf ~/linux-voice-assistant/lvas_startup/lvas-startup-helper-multiuser.service \
+       ~/.config/systemd/user/lvas-startup-helper-multiuser.service
+
+# Enable user linger (required for services to persist across logouts)
+loginctl enable-linger $USER
+
+# Disable squeezelite from auto-starting (staging service will handle it)
+systemctl --user disable squeezelite.service
+
+# Enable and start the staging service
+systemctl --user daemon-reload
+systemctl --user enable lvas-startup-helper-multiuser.service
+systemctl --user start lvas-startup-helper-multiuser.service
+
+# Verify staging service is working
+systemctl --user status lvas-startup-helper-multiuser.service
+
+================================================================
+4. HOME ASSISTANT DUCKING AUTOMATION (YAML)
+================================================================
+# Triggered when Voice Assistant is listening to lower music volume.
+# Replace entity IDs with your specific satellite and player IDs.
+
+alias: "Duck Music for Voice Assistant"
+mode: restart
+trigger:
+  - platform: state
+    entity_id: binary_sensor.laptop_assist_in_progress
+    from: "off"
+    to: "on"
+    id: "active"
+  - platform: state
+    entity_id: binary_sensor.laptop_assist_in_progress
+    from: "on"
+    to: "off"
+    id: "idle"
+action:
+  - choose:
+      - conditions:
+          - condition: trigger
+            id: "active"
+        sequence:
+          - service: media_player.volume_set
+            target:
+              entity_id: media_player.laptop_speaker
+            data:
+              volume_level: 0.15
+      - conditions:
+          - condition: trigger
+            id: "idle"
+        sequence:
+          - service: media_player.volume_set
+            target:
+              entity_

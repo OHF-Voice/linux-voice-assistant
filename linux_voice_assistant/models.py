@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     from pymicro_wakeword import MicroWakeWord
     from pyopen_wakeword import OpenWakeWord
 
-    from .entity import ESPHomeEntity, MediaPlayerEntity
+    from .entity import ESPHomeEntity, MediaPlayerEntity, TextAttributeEntity
     from .mpv_player import MpvMediaPlayer
     from .satellite import VoiceSatelliteProtocol
 
@@ -51,7 +51,19 @@ class AvailableWakeWord:
 
 @dataclass
 class Preferences:
+    """Per-instance preferences (kept minimal by design)."""
+
     active_wake_words: List[str] = field(default_factory=list)
+
+
+@dataclass
+class GlobalPreferences:
+    """Shared settings across all instances."""
+
+    wake_word_friendly_names: Dict[str, str] = field(default_factory=dict)
+    ha_base_url: Optional[str] = None
+    ha_token: Optional[str] = None
+    ha_history_entity: Optional[str] = None
 
 
 @dataclass
@@ -69,19 +81,29 @@ class ServerState:
     wakeup_sound: str
     timer_finished_sound: str
     preferences: Preferences
+    global_preferences: GlobalPreferences
     preferences_path: Path
+    global_preferences_path: Path
     download_dir: Path
 
     media_player_entity: "Optional[MediaPlayerEntity]" = None
+    active_tts_entity: "Optional[TextAttributeEntity]" = None
+    active_stt_entity: "Optional[TextAttributeEntity]" = None
+    active_assistant_entity: "Optional[TextAttributeEntity]" = None
     satellite: "Optional[VoiceSatelliteProtocol]" = None
     wake_words_changed: bool = False
     refractory_seconds: float = 2.0
+    screen_management: int = 0
+    disable_wakeword_during_tts: bool = False
+    software_mute: bool = False
+    shared_mute_path: Path = Path("/dev/shm/lvas_system_mute")
+
+    mute_entity: "Optional[ESPHomeEntity]" = None
 
     def save_preferences(self) -> None:
-        """Save preferences as JSON."""
+        """Save per-instance preferences (currently active wake words)."""
         _LOGGER.debug("Saving preferences: %s", self.preferences_path)
         self.preferences_path.parent.mkdir(parents=True, exist_ok=True)
+        to_save = {"active_wake_words": self.preferences.active_wake_words}
         with open(self.preferences_path, "w", encoding="utf-8") as preferences_file:
-            json.dump(
-                asdict(self.preferences), preferences_file, ensure_ascii=False, indent=4
-            )
+            json.dump(to_save, preferences_file, ensure_ascii=False, indent=4)
