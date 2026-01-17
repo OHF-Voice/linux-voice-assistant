@@ -6,7 +6,14 @@ import subprocess
 import sys
 
 # System packages required
-PACKAGES_APT = ["python3-venv", "portaudio19-dev", "build-essential", "libmpv-dev"]
+PACKAGES_APT = [
+    "python3-venv",
+    "portaudio19-dev",
+    "build-essential",
+    "libmpv-dev",
+    "python3-spidev",
+    "python3-dev"
+]
 PACKAGES_DNF = ["python3-virtualenv", "portaudio-devel", "gcc", "gcc-c++", "make", "mpv-libs-devel"]
 PACKAGES_PACMAN = ["python-virtualenv", "portaudio", "base-devel", "mpv"]
 PACKAGES_ZYPPER = ["python3-virtualenv", "portaudio-devel", "gcc", "gcc-c++", "make", "libmpv-devel"]

@@ -13,7 +13,7 @@ parser.add_argument("--dev", action="store_true", help="Install dev requirements
 args = parser.parse_args()
 
 # Create virtual environment
-builder = venv.EnvBuilder(with_pip=True)
+builder = venv.EnvBuilder(with_pip=True, system_site_packages=True)
 context = builder.ensure_directories(_VENV_DIR)
 builder.create(_VENV_DIR)
 
