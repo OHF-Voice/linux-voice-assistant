@@ -84,27 +84,6 @@ class VoiceSatelliteProtocol(APIServer):
             self.state.mute_switch_entity = existing_mute_switches[0]
             for extra in existing_mute_switches[1:]:
                 self.state.entities.remove(extra)
-
-        existing_media_players = [
-            entity
-            for entity in self.state.entities
-            if isinstance(entity, MediaPlayerEntity)
-        ]
-        if existing_media_players:
-            # Keep the first instance and remove any extras.
-            self.state.media_player_entity = existing_media_players[0]
-            for extra in existing_media_players[1:]:
-                self.state.entities.remove(extra)
-
-        existing_mute_switches = [
-            entity
-            for entity in self.state.entities
-            if isinstance(entity, MuteSwitchEntity)
-        ]
-        if existing_mute_switches:
-            self.state.mute_switch_entity = existing_mute_switches[0]
-            for extra in existing_mute_switches[1:]:
-                self.state.entities.remove(extra)
                 
         if self.state.media_player_entity is None:
             self.state.media_player_entity = MediaPlayerEntity(
@@ -120,27 +99,6 @@ class VoiceSatelliteProtocol(APIServer):
             self.state.entities.append(self.state.media_player_entity)
 
         self.state.media_player_entity.server = self
-
-        # Add/update mute switch entity (like ESPHome Voice PE)
-        mute_switch = self.state.mute_switch_entity
-        if mute_switch is None:
-            mute_switch = MuteSwitchEntity(
-                server=self,
-                key=len(state.entities),
-                name="Mute",
-                object_id="mute",
-                get_muted=lambda: self.state.muted,
-                set_muted=self._set_muted,
-            )
-            self.state.entities.append(mute_switch)
-            self.state.mute_switch_entity = mute_switch
-        elif mute_switch not in self.state.entities:
-            self.state.entities.append(mute_switch)
-
-        mute_switch.server = self
-        mute_switch.update_get_muted(lambda: self.state.muted)
-        mute_switch.update_set_muted(self._set_muted)
-        mute_switch.sync_with_state()
 
         # Add/update mute switch entity (like ESPHome Voice PE)
         mute_switch = self.state.mute_switch_entity
@@ -219,11 +177,6 @@ class VoiceSatelliteProtocol(APIServer):
             pass
         self.state.save_preferences()
         
-        self._disconnect_event = asyncio.Event()
-
-    def _set_muted(self, new_state: bool) -> None:
-        self.state.muted = bool(new_state)
-
         self._disconnect_event = asyncio.Event()
 
     def _set_muted(self, new_state: bool) -> None:
