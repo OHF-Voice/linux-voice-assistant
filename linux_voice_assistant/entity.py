@@ -25,6 +25,15 @@ from .api_server import APIServer
 from .mpv_player import MpvMediaPlayer
 from .util import call_all
 
+SUPPORTED_MEDIA_PLAYER_FEATURES = (
+    MediaPlayerEntityFeature.PLAY
+    | MediaPlayerEntityFeature.PAUSE
+    | MediaPlayerEntityFeature.STOP
+    | MediaPlayerEntityFeature.PLAY_MEDIA
+    | MediaPlayerEntityFeature.VOLUME_SET
+    | MediaPlayerEntityFeature.VOLUME_MUTE
+    | MediaPlayerEntityFeature.MEDIA_ANNOUNCE
+)
 
 SUPPORTED_MEDIA_PLAYER_FEATURES = (
     MediaPlayerEntityFeature.PLAY
@@ -148,6 +157,7 @@ class MediaPlayerEntity(ESPHomeEntity):
                     self.music_player.stop()
                     self.announce_player.stop()
                     yield self._update_state(self._determine_state())
+                    yield self._update_state(MediaPlayerState.PLAYING)
                 elif command == MediaPlayerCommand.MUTE:
                     if not self.muted:
                         self.previous_volume = self.volume
@@ -204,7 +214,6 @@ class MediaPlayerEntity(ESPHomeEntity):
 
 # -----------------------------------------------------------------------------
 
-
 class MuteSwitchEntity(ESPHomeEntity):
     def __init__(
         self,
@@ -256,7 +265,7 @@ class MuteSwitchEntity(ESPHomeEntity):
             # Always return our internal switch state
             self.sync_with_state()
             yield SwitchStateResponse(key=self.key, state=self._switch_state)
-
+            
 class ThinkingSoundEntity(ESPHomeEntity):
     def __init__(
         self,

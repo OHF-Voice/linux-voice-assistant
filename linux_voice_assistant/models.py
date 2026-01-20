@@ -79,9 +79,10 @@ class ServerState:
     thinking_sound_entity: "Optional[ThinkingSoundEntity]" = None
     wake_words_changed: bool = False
     refractory_seconds: float = 2.0
+    thinking_sound_enabled: bool = False
     muted: bool = False
     connected: bool = False
-
+    
     def save_preferences(self) -> None:
         """Save preferences as JSON."""
         _LOGGER.debug("Saving preferences: %s", self.preferences_path)
