@@ -1,0 +1,15 @@
+*
+
+!/linux_voice_assistant/*.py
+
+!/pyproject.toml
+!/README.md
+!/script/setup
+!/script/run
+
+!/sounds/*.flac
+
+!/wakewords/*.json
+!/wakewords/*.tflite
+!/wakewords/openWakeWord/*.json
+!/wakewords/openWakeWord/*.tflite

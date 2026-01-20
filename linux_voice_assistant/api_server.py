@@ -9,8 +9,8 @@ from typing import TYPE_CHECKING, List, Optional
 # pylint: disable=no-name-in-module
 from aioesphomeapi._frame_helper.packets import make_plain_text_packets
 from aioesphomeapi.api_pb2 import (  # type: ignore[attr-defined]
-    ConnectRequest,
-    ConnectResponse,
+    AuthenticationRequest,
+    AuthenticationResponse,
     DisconnectRequest,
     DisconnectResponse,
     HelloRequest,
@@ -57,8 +57,8 @@ class APIServer(asyncio.Protocol):
             )
             return
 
-        if isinstance(msg_inst, ConnectRequest):
-            self.send_messages([ConnectResponse()])
+        if isinstance(msg_inst, AuthenticationRequest):
+            self.send_messages([AuthenticationResponse()])
         elif isinstance(msg_inst, DisconnectRequest):
             self.send_messages([DisconnectResponse()])
             _LOGGER.debug("Disconnect requested")

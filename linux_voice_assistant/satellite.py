@@ -3,9 +3,14 @@
 import asyncio
 import logging
 import re
+import hashlib
+import posixpath
+import shutil
 import time
 from collections.abc import Iterable
 from typing import Dict, Optional, Set, Union
+from urllib.parse import urlparse, urlunparse
+from urllib.request import urlopen
 
 # pylint: disable=no-name-in-module
 from aioesphomeapi.api_pb2 import (  # type: ignore[attr-defined]
@@ -23,6 +28,7 @@ from aioesphomeapi.api_pb2 import (  # type: ignore[attr-defined]
     VoiceAssistantConfigurationRequest,
     VoiceAssistantConfigurationResponse,
     VoiceAssistantEventResponse,
+    VoiceAssistantExternalWakeWord,
     VoiceAssistantRequest,
     VoiceAssistantSetConfiguration,
     VoiceAssistantTimerEventResponse,
@@ -41,7 +47,7 @@ from pymicro_wakeword import MicroWakeWord
 from pyopen_wakeword import OpenWakeWord
 
 from .api_server import APIServer
-from .entity import MediaPlayerEntity, MuteSwitchEntity
+from .entity import MediaPlayerEntity, MuteSwitchEntity, ThinkingSoundEntity
 from .models import ServerState
 from .util import call_all
 
@@ -115,11 +121,62 @@ class VoiceSatelliteProtocol(APIServer):
         mute_switch.update_set_muted(self._set_muted)
         mute_switch.sync_with_state()
 
+        existing_thinking_sound_switches = [
+            entity
+            for entity in self.state.entities
+            if isinstance(entity, ThinkingSoundEntity)
+        ]
+        if existing_thinking_sound_switches:
+            self.state.thinking_sound_entity = existing_thinking_sound_switches[0]
+            for extra in existing_thinking_sound_switches[1:]:
+                self.state.entities.remove(extra)
+
+        # Add/update thinking sound entity
+        thinking_sound_switch = self.state.thinking_sound_entity
+        if thinking_sound_switch is None:
+            thinking_sound_switch = ThinkingSoundEntity(
+                server=self,
+                key=len(state.entities),
+                name="Thinking Sound",
+                object_id="thinking_sound",
+                get_thinking_sound_enabled=lambda: self.state.thinking_sound_enabled,
+                set_thinking_sound_enabled=self._set_thinking_sound_enabled,
+            )
+            self.state.entities.append(thinking_sound_switch)
+            self.state.thinking_sound_entity = thinking_sound_switch
+        elif thinking_sound_switch not in self.state.entities:
+            self.state.entities.append(thinking_sound_switch)
+
+        # Load thinking sound enabled state from preferences (default to False if not set or unknown)
+        if hasattr(self.state.preferences, 'thinking_sound') and self.state.preferences.thinking_sound in (0, 1):
+            self.state.thinking_sound_enabled = bool(self.state.preferences.thinking_sound)
+        else:
+            self.state.thinking_sound_enabled = False
+
+        thinking_sound_switch.server = self
+        thinking_sound_switch.update_get_thinking_sound_enabled(lambda: self.state.thinking_sound_enabled)
+        thinking_sound_switch.update_set_thinking_sound_enabled(self._set_thinking_sound_enabled)
+        thinking_sound_switch.sync_with_state()
+
         self._is_streaming_audio = False
         self._tts_url: Optional[str] = None
         self._tts_played = False
         self._continue_conversation = False
         self._timer_finished = False
+        self._processing = False
+        self._external_wake_words: Dict[str, VoiceAssistantExternalWakeWord] = {}
+
+    def _set_thinking_sound_enabled(self, new_state: bool) -> None:
+        self.state.thinking_sound_enabled = bool(new_state)
+        self.state.preferences.thinking_sound = 1 if self.state.thinking_sound_enabled else 0
+
+        if self.state.thinking_sound_enabled:
+            _LOGGER.debug("Thinking sound enabled")
+        else:
+            _LOGGER.debug("Thinking sound disabled")
+            pass
+        self.state.save_preferences()
+        
 
         self._disconnect_event = asyncio.Event()
 
@@ -148,6 +205,15 @@ class VoiceSatelliteProtocol(APIServer):
             self._tts_url = data.get("url")
             self._tts_played = False
             self._continue_conversation = False
+        elif event_type == VoiceAssistantEventType.VOICE_ASSISTANT_INTENT_START and self.state.thinking_sound_enabled:
+            # Play short "thinking/processing" sound if configured
+            processing = getattr(self.state, "processing_sound", None)
+            if processing:
+                _LOGGER.debug("Playing processing sound: %s", processing)
+                self.state.stop_word.is_active = True
+                self._processing = True
+                self.duck()
+                self.state.tts_player.play(self.state.processing_sound)            
         elif event_type in (
             VoiceAssistantEventType.VOICE_ASSISTANT_STT_VAD_END,
             VoiceAssistantEventType.VOICE_ASSISTANT_STT_END,
@@ -249,15 +315,31 @@ class VoiceSatelliteProtocol(APIServer):
             if isinstance(msg, ListEntitiesRequest):
                 yield ListEntitiesDoneResponse()
         elif isinstance(msg, VoiceAssistantConfigurationRequest):
-            yield VoiceAssistantConfigurationResponse(
-                available_wake_words=[
+            available_wake_words = [
+                VoiceAssistantWakeWord(
+                    id=ww.id,
+                    wake_word=ww.wake_word,
+                    trained_languages=ww.trained_languages,
+                )
+                for ww in self.state.available_wake_words.values()
+            ]
+
+            for eww in msg.external_wake_words:
+                if eww.model_type != "micro":
+                    continue
+
+                available_wake_words.append(
                     VoiceAssistantWakeWord(
-                        id=ww.id,
-                        wake_word=ww.wake_word,
-                        trained_languages=ww.trained_languages,
+                        id=eww.id,
+                        wake_word=eww.wake_word,
+                        trained_languages=eww.trained_languages,
                     )
-                    for ww in self.state.available_wake_words.values()
-                ],
+                )
+
+                self._external_wake_words[eww.id] = eww
+
+            yield VoiceAssistantConfigurationResponse(
+                available_wake_words=available_wake_words,
                 active_wake_words=[
                     ww.id
                     for ww in self.state.wake_words.values()
@@ -278,7 +360,16 @@ class VoiceSatelliteProtocol(APIServer):
 
                 model_info = self.state.available_wake_words.get(wake_word_id)
                 if not model_info:
-                    continue
+                    # Check external wake words (may require download)
+                    external_wake_word = self._external_wake_words.get(wake_word_id)
+                    if not external_wake_word:
+                        continue
+
+                    model_info = self._download_external_wake_word(external_wake_word)
+                    if not model_info:
+                        continue
+
+                    self.state.available_wake_words[wake_word_id] = model_info
 
                 _LOGGER.debug("Loading wake word: %s", model_info.wake_word_path)
                 self.state.wake_words[wake_word_id] = model_info.load()
@@ -418,3 +509,71 @@ class VoiceSatelliteProtocol(APIServer):
                 states.extend(entity.handle_message(SubscribeHomeAssistantStatesRequest()))
             self.send_messages(states)
             _LOGGER.debug("Sent entity states after connect")
+        _LOGGER.info("Disconnected from Home Assistant")
+
+    def _download_external_wake_word(
+        self, external_wake_word: VoiceAssistantExternalWakeWord
+    ) -> Optional[AvailableWakeWord]:
+        eww_dir = self.state.download_dir / "external_wake_words"
+        eww_dir.mkdir(parents=True, exist_ok=True)
+
+        config_path = eww_dir / f"{external_wake_word.id}.json"
+        should_download_config = not config_path.exists()
+
+        # Check if we need to download the model file
+        model_path = eww_dir / f"{external_wake_word.id}.tflite"
+        should_download_model = True
+        if model_path.exists():
+            model_size = model_path.stat().st_size
+            if model_size == external_wake_word.model_size:
+                with open(model_path, "rb") as model_file:
+                    model_hash = hashlib.sha256(model_file.read()).hexdigest()
+
+                if model_hash == external_wake_word.model_hash:
+                    should_download_model = False
+                    _LOGGER.debug(
+                        "Model size and hash match for %s. Skipping download.",
+                        external_wake_word.id,
+                    )
+
+        if should_download_config or should_download_model:
+            # Download config
+            _LOGGER.debug("Downloading %s to %s", external_wake_word.url, config_path)
+            with urlopen(external_wake_word.url) as request:
+                if request.status != 200:
+                    _LOGGER.warning(
+                        "Failed to download: %s, status=%s",
+                        external_wake_word.url,
+                        request.status,
+                    )
+                    return None
+
+                with open(config_path, "wb") as model_file:
+                    shutil.copyfileobj(request, model_file)
+
+        if should_download_model:
+            # Download model file
+            parsed_url = urlparse(external_wake_word.url)
+            parsed_url = parsed_url._replace(
+                path=posixpath.join(posixpath.dirname(parsed_url.path), model_path.name)
+            )
+            model_url = urlunparse(parsed_url)
+
+            _LOGGER.debug("Downloading %s to %s", model_url, model_path)
+            with urlopen(model_url) as request:
+                if request.status != 200:
+                    _LOGGER.warning(
+                        "Failed to download: %s, status=%s", model_url, request.status
+                    )
+                    return None
+
+                with open(model_path, "wb") as model_file:
+                    shutil.copyfileobj(request, model_file)
+
+        return AvailableWakeWord(
+            id=external_wake_word.id,
+            type=WakeWordType.MICRO_WAKE_WORD,
+            wake_word=external_wake_word.wake_word,
+            trained_languages=external_wake_word.trained_languages,
+            wake_word_path=config_path,
+        )

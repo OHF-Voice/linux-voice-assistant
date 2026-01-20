@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add support for custom/external wake words
+- Add `--download-dir <DIR>` to store downloaded wake word models/configs
 - Switch to `soundcard` instead of `sounddevice`
 - Add `--list-input-devices` and `--list-output-devices`
 - Use `pymicro-wakeword` for microWakeWord
