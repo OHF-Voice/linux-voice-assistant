@@ -35,17 +35,6 @@ SUPPORTED_MEDIA_PLAYER_FEATURES = (
     | MediaPlayerEntityFeature.MEDIA_ANNOUNCE
 )
 
-SUPPORTED_MEDIA_PLAYER_FEATURES = (
-    MediaPlayerEntityFeature.PLAY
-    | MediaPlayerEntityFeature.PAUSE
-    | MediaPlayerEntityFeature.STOP
-    | MediaPlayerEntityFeature.PLAY_MEDIA
-    | MediaPlayerEntityFeature.VOLUME_SET
-    | MediaPlayerEntityFeature.VOLUME_MUTE
-    | MediaPlayerEntityFeature.MEDIA_ANNOUNCE
-)
-
-
 class ESPHomeEntity:
     def __init__(self, server: APIServer) -> None:
         self.server = server
