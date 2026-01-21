@@ -1,5 +1,49 @@
 {
   "app": {
-    "name": "Linux Voice Assistant"
+    "name": "LVA-Living"
+  },
+  "audio": {
+    "volume_sync": true,
+    "max_volume_percent": 100
+  },
+  "mqtt": {
+    "host": "172.16.10.133",
+    "port": 1883,
+    "username": "mqtt",
+    "password": "1Wfd0306@"
+  },
+  "led": {
+    "enabled": true,
+    "led_type": "xvf3800",
+    "interface": "usb"
+  },
+  "button": {
+    "enabled": true,
+    "mode": "xvf3800",
+    "poll_interval_seconds": 0.15
+  },
+  "wake_word": {
+    "openwakeword_threshold": 0.7
+  },
+  "sendspin": {
+    "enabled": true,
+    "connection": {
+      "mdns": true
+    },
+    "roles": {
+      "player": true,
+      "metadata": true,
+      "controller": true,
+      "artwork": false,
+      "visualizer": false
+    },
+    "player": {
+      "preferred_codec": "pcm",
+      "supported_codecs": ["pcm"],
+      "sample_rate": 48000,
+      "channels": 2,
+      "bit_depth": 16,
+      "buffer_capacity_bytes": 1048576
+    }
   }
 }

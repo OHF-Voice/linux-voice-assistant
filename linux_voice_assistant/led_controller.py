@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from typing import Any, Optional, Tuple
+import sys
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -201,6 +202,37 @@ class LedController(EventHandler):
             self.current_task.cancel()
 
         coro = getattr(self, action_method_name)(*args)
+        self.current_task = asyncio.ensure_future(coro, loop=self.loop)
+
+    def _handle_xvf3800_usb_error(self, operation: str, error: Exception) -> None:
+        """
+        Handle XVF3800 USB disconnection errors by triggering service restart.
+        
+        When the XVF3800 USB device becomes unavailable (disconnected or unresponsive),
+        we log the error and exit the process. The systemd service (with Restart=always)
+        will automatically restart the service, which reinitializes the USB connection
+        and fixes LED issues.
+        """
+        error_msg = str(error)
+        # Check if this is a USB-related error
+        if any(keyword in error_msg.lower() for keyword in [
+            'usb device not found', 
+            'xvf3800 usb device not found',
+            'usberror',
+            'no backend available',
+            'device disappeared',
+            'runtimeerror'
+        ]):
+            _LOGGER.error(
+                "XVF3800 USB device disconnected or unavailable during %s: %s. "
+                "Triggering service restart to reinitialize USB connection...",
+                operation, error_msg
+            )
+            # Exit with code 1 to trigger systemd restart
+            sys.exit(1)
+        else:
+            # For other errors, just log and continue
+            _LOGGER.exception("Error during XVF3800 operation '%s'", operation)
         self.current_task = asyncio.run_coroutine_threadsafe(coro, self.loop)
 
     def _apply_state_effect(self, state_name: str, publish_state: bool = True):
@@ -277,7 +309,8 @@ class LedController(EventHandler):
                 self._xvf3800_backend.set_color(r, g, b)
             self._xvf3800_backend.set_speed(speed_id)
             self._xvf3800_backend.set_effect(effect_id)
-        except Exception:
+        except Exception as e:
+            self._handle_xvf3800_usb_error("apply_effect", e)
             _LOGGER.exception(
                 "Error sending LED effect '%s' to XVF3800 backend", effect_name
             )
@@ -338,7 +371,10 @@ class LedController(EventHandler):
         rs = int(r * brightness)
         gs = int(g * brightness)
         bs = int(b * brightness)
-        self._xvf3800_backend.set_ring_solid(rs, gs, bs)
+        try:
+            self._xvf3800_backend.set_ring_solid(rs, gs, bs)
+        except Exception as e:
+            self._handle_xvf3800_usb_error("set_ring_solid", e)
 
     def _xvf3800_apply_ring_clear(self) -> None:
         if not self._xvf3800_backend:
@@ -347,7 +383,10 @@ class LedController(EventHandler):
             self._xvf3800_backend.set_effect(0)
         except Exception:
             pass
-        self._xvf3800_backend.clear_ring()
+        try:
+            self._xvf3800_backend.clear_ring()
+        except Exception as e:
+            self._handle_xvf3800_usb_error("clear_ring", e)
 
     async def startup_sequence(self, color=None, brightness=None):
         # Use a simple green blink on startup for all backends.
@@ -417,11 +456,17 @@ class LedController(EventHandler):
                     while True:
                         for i in range(0, 101, 10):
                             s = (i / 100.0) * brightness
-                            self._xvf3800_backend.set_ring_solid(int(r * s), int(g * s), int(b * s))
+                            try:
+                                self._xvf3800_backend.set_ring_solid(int(r * s), int(g * s), int(b * s))
+                            except Exception as e:
+                                self._handle_xvf3800_usb_error("set_ring_solid", e)
                             await asyncio.sleep(speed)
                         for i in range(100, -1, -10):
                             s = (i / 100.0) * brightness
-                            self._xvf3800_backend.set_ring_solid(int(r * s), int(g * s), int(b * s))
+                            try:
+                                self._xvf3800_backend.set_ring_solid(int(r * s), int(g * s), int(b * s))
+                            except Exception as e:
+                                self._handle_xvf3800_usb_error("set_ring_solid", e)
                             await asyncio.sleep(speed)
                     return
                 except Exception:
@@ -477,10 +522,16 @@ class LedController(EventHandler):
                     brightness = max(0.0, min(1.0, float(brightness)))
                     while True:
                         # On
-                        self._xvf3800_backend.set_ring_solid(int(r * brightness), int(g * brightness), int(b * brightness))
+                        try:
+                            self._xvf3800_backend.set_ring_solid(int(r * brightness), int(g * brightness), int(b * brightness))
+                        except Exception as e:
+                            self._handle_xvf3800_usb_error("set_ring_solid", e)
                         await asyncio.sleep(speed)
                         # Off
-                        self._xvf3800_backend.clear_ring()
+                        try:
+                            self._xvf3800_backend.clear_ring()
+                        except Exception as e:
+                            self._handle_xvf3800_usb_error("clear_ring", e)
                         await asyncio.sleep(speed)
                 except asyncio.CancelledError:
                     try:
@@ -538,7 +589,10 @@ class LedController(EventHandler):
                     while True:
                         colors = [(0, 0, 0)] * ring_n
                         colors[i % ring_n] = (r, g, b)
-                        self._xvf3800_backend.set_ring_rgb(colors)
+                        try:
+                            self._xvf3800_backend.set_ring_rgb(colors)
+                        except Exception as e:
+                            self._handle_xvf3800_usb_error("set_ring_rgb", e)
                         i += 1
                         await asyncio.sleep(speed)
                 except asyncio.CancelledError:
