@@ -20,7 +20,6 @@ from aioesphomeapi.api_pb2 import (  # type: ignore[attr-defined]
     ListEntitiesRequest,
     MediaPlayerCommandRequest,
     SubscribeHomeAssistantStatesRequest,
-    DisconnectRequest,
     SwitchCommandRequest,
     VoiceAssistantAnnounceFinished,
     VoiceAssistantAnnounceRequest,
@@ -33,7 +32,7 @@ from aioesphomeapi.api_pb2 import (  # type: ignore[attr-defined]
     VoiceAssistantSetConfiguration,
     VoiceAssistantTimerEventResponse,
     VoiceAssistantWakeWord,
-    ConnectRequest,
+    AuthenticationRequest,
 )
 from aioesphomeapi.core import MESSAGE_TYPE_TO_PROTO
 
@@ -500,7 +499,7 @@ class VoiceSatelliteProtocol(APIServer):
     def process_packet(self, msg_type: int, packet_data: bytes) -> None:
         super().process_packet(msg_type, packet_data)
 
-        if msg_type == PROTO_TO_MESSAGE_TYPE[ConnectRequest]:
+        if msg_type == PROTO_TO_MESSAGE_TYPE[AuthenticationRequest]:
             self.state.connected = True
             # Send states after connect
             states = []
