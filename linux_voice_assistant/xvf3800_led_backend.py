@@ -224,6 +224,18 @@ class XVF3800USBDevice:
                 self._rsp.close()
             except Exception:
                 pass
+            finally:
+                self._rsp = None
+
+    # CRITICAL FIX: Add context manager support
+    def __enter__(self):
+        """Context manager entry."""
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Context manager exit - ensures USB resources are released."""
+        self.close()
+        return False
 
     # --- Device control -----------------------------------------------------
 

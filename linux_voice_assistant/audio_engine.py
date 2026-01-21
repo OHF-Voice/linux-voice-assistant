@@ -14,6 +14,7 @@ from pymicro_wakeword import MicroWakeWord, MicroWakeWordFeatures
 from pyopen_wakeword import OpenWakeWord, OpenWakeWordFeatures
 
 from .models import ServerState
+from .utilities import clamp_0_1
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -21,35 +22,34 @@ _LOGGER = logging.getLogger(__name__)
 warnings.filterwarnings("ignore", category=RuntimeWarning, module="pymicro_wakeword")
 
 
-def _clamp_0_1(name: str, value: float, default: float = 0.5) -> float:
-    """Clamp a float to [0.0, 1.0] with warnings; fallback to default on parse errors."""
-    try:
-        v = float(value)
-    except Exception:
-        _LOGGER.warning("%s is not a number (%r); using default %.2f", name, value, default)
-        return float(default)
-
-    if v < 0.0:
-        _LOGGER.warning("%s < 0.0; clamping to 0.0 (was %s)", name, v)
-        return 0.0
-    if v > 1.0:
-        _LOGGER.warning("%s > 1.0; clamping to 1.0 (was %s)", name, v)
-        return 1.0
-    return v
-
-
 class AudioEngine:
+    """
+    Audio processing engine for wake word detection and voice streaming.
+
+    Runs a background thread that continuously processes audio from the microphone,
+    detecting wake words (both MicroWakeWord and OpenWakeWord), stop words, and
+    streaming audio to the satellite for voice assistant processing.
+
+    Thread-safe with automatic buffer management and refractory period handling.
+    """
+
     def __init__(self, state: ServerState, mic, block_size: int, oww_threshold: float = 0.5):
+        """
+        Initialize the audio engine.
+
+        Args:
+            state: Shared server state containing wake words and configuration
+            mic: Soundcard microphone device for audio input
+            block_size: Number of audio samples to process per block (typically 512 or 1024)
+            oww_threshold: OpenWakeWord activation threshold (0.0-1.0, default 0.5)
+        """
         self.state = state
         self.mic = mic
         self.block_size = block_size
         self._thread: Optional[threading.Thread] = None
 
         # Configurable OpenWakeWord activation threshold (default matches prior behavior)
-        self.oww_threshold = _clamp_0_1("wake_word.openwakeword_threshold", oww_threshold, default=0.5)
-
-        # CRITICAL FIX: Add lock for thread-safe wake word reload
-        self._wake_words_lock = threading.Lock()
+        self.oww_threshold = clamp_0_1("wake_word.openwakeword_threshold", oww_threshold, default=0.5)
 
     def start(self):
         """Starts the audio processing thread."""
@@ -137,7 +137,7 @@ class AudioEngine:
                             continue
 
                         # CRITICAL FIX: Protect wake word reload with lock
-                        with self._wake_words_lock:
+                        with self.state.wake_words_lock:
                             # Update active wake words if changed
                             if (not wake_words) or (self.state.wake_words_changed):
                                 self.state.wake_words_changed = False
@@ -281,9 +281,18 @@ class AudioEngine:
                                 self.state.satellite.handle_audio, audio_chunk
                             )
 
-                        except Exception:
-                            _LOGGER.exception("Unexpected error handling audio")
+                        except (KeyboardInterrupt, SystemExit):
+                            raise
+                        except Exception as e:
+                            _LOGGER.error("Unexpected error handling audio: %s", e, exc_info=True)
+                            # Continue processing - this is recoverable
 
+        except (KeyboardInterrupt, SystemExit):
+            _LOGGER.info("Audio engine shutting down due to interrupt")
+            raise
+        except OSError as e:
+            _LOGGER.critical("Audio device error (hardware failure): %s", e, exc_info=True)
+            self.state.loop.call_soon_threadsafe(self.state.loop.stop)
         except Exception as e:
-            _LOGGER.critical("A soundcard error occurred: %s", e)
+            _LOGGER.critical("Fatal error in audio engine: %s", e, exc_info=True)
             self.state.loop.call_soon_threadsafe(self.state.loop.stop)

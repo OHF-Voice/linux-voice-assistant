@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Dict, List, Optional, Set, Union
 
 from .event_bus import EventBus
+from .utilities import clamp_0_1 as _clamp_0_1, clamp_0_100 as _clamp_0_100
 
 if TYPE_CHECKING:
     from pymicro_wakeword import MicroWakeWord
@@ -34,40 +35,6 @@ class SatelliteState(str, Enum):
 class WakeWordType(str, Enum):
     MICRO_WAKE_WORD = "micro"
     OPEN_WAKE_WORD = "openWakeWord"
-
-
-def _clamp_0_1(name: str, value: float) -> float:
-    """Clamp float to [0.0, 1.0] with warnings."""
-    try:
-        v = float(value)
-    except Exception:
-        _LOGGER.warning("%s is not a number (%r); ignoring", name, value)
-        return 0.5
-
-    if v < 0.0:
-        _LOGGER.warning("%s < 0.0; clamping to 0.0 (was %s)", name, v)
-        return 0.0
-    if v > 1.0:
-        _LOGGER.warning("%s > 1.0; clamping to 1.0 (was %s)", name, v)
-        return 1.0
-    return v
-
-
-def _clamp_0_100(name: str, value: object, default: int = 100) -> int:
-    """Clamp an int to [0, 100] with warnings; fallback to default on parse errors."""
-    try:
-        v = int(value)  # type: ignore[arg-type]
-    except Exception:
-        _LOGGER.warning("%s is not an int (%r); using default %d", name, value, default)
-        return int(default)
-
-    if v < 0:
-        _LOGGER.warning("%s < 0; clamping to 0 (was %s)", name, v)
-        return 0
-    if v > 100:
-        _LOGGER.warning("%s > 100; clamping to 100 (was %s)", name, v)
-        return 100
-    return v
 
 
 @dataclass
@@ -150,6 +117,9 @@ class ServerState:
     # set() = Mic is ON (Audio processing running)
     # clear() = Mic is OFF (Audio processing paused)
     mic_muted_event: threading.Event = field(default_factory=threading.Event)
+
+    # Lock for thread-safe wake word updates between satellite and audio_engine
+    wake_words_lock: threading.Lock = field(default_factory=threading.Lock)
 
     def __post_init__(self):
         """Ensure the threading event matches the boolean state on init."""

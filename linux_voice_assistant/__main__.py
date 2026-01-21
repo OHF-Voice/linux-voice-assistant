@@ -500,29 +500,22 @@ def _xvf3800_startup_preflight(config: Config) -> None:
         _LOGGER.info("XVF3800 startup preflight: begin (reboot=%s, set_asr3=%s, save=%s)", do_reboot, do_route, do_save)
 
         if do_reboot:
-            try:
-                dev = XVF3800USBDevice()
+            # CRITICAL FIX: Use context manager to ensure USB resources are released
+            with XVF3800USBDevice() as dev:
                 _LOGGER.info("XVF3800 startup preflight: issuing REBOOT to USB device")
                 dev.reboot()
-            finally:
-                try:
-                    dev.close()
-                except Exception:
-                    pass
 
             XVF3800USBDevice.wait_for_reenumeration(timeout_s=12.0, settle_s=1.0)
 
         if do_route:
-            dev2 = XVF3800USBDevice()
-            try:
+            # CRITICAL FIX: Use context manager to ensure USB resources are released
+            with XVF3800USBDevice() as dev2:
                 _LOGGER.info("XVF3800 startup preflight: setting AUDIO_MGR_OP_L and AUDIO_MGR_OP_R to (7, 3)")
                 dev2.set_audio_mgr_op_l(7, 3)
                 dev2.set_audio_mgr_op_r(7, 3)
                 if do_save:
                     _LOGGER.info("XVF3800 startup preflight: saving configuration to flash")
                     dev2.save_configuration()
-            finally:
-                dev2.close()
 
         _LOGGER.info("XVF3800 startup preflight: done")
 

@@ -287,6 +287,9 @@ def load_config_from_json(config_path: Path) -> Config:
     if mqtt_config.host:
         mqtt_config.enabled = True
 
+    # Validate configuration
+    _validate_config(app_config, audio_config, wake_word_config, esphome_config)
+
     return Config(
         app=app_config,
         audio=audio_config,
@@ -297,3 +300,78 @@ def load_config_from_json(config_path: Path) -> Config:
         button=button_config,
         sendspin=sendspin_cfg,
     )
+
+
+def _validate_config(
+    app: AppConfig,
+    audio: AudioConfig,
+    wake_word: WakeWordConfig,
+    esphome: ESPHomeConfig,
+) -> None:
+    """
+    Validate configuration for common issues and log warnings.
+
+    Does not raise exceptions, only logs warnings for potential problems.
+    """
+    # Validate audio block size
+    if audio.input_block_size < 256:
+        _LOGGER.warning(
+            "audio.input_block_size (%d) is very small. Recommended: 512-2048",
+            audio.input_block_size
+        )
+    elif audio.input_block_size > 4096:
+        _LOGGER.warning(
+            "audio.input_block_size (%d) is very large. May cause latency. Recommended: 512-2048",
+            audio.input_block_size
+        )
+
+    # Validate refractory period
+    if wake_word.refractory_seconds < 0:
+        _LOGGER.warning(
+            "wake_word.refractory_seconds is negative (%f). Setting to 0.",
+            wake_word.refractory_seconds
+        )
+        wake_word.refractory_seconds = 0.0
+    elif wake_word.refractory_seconds > 10.0:
+        _LOGGER.warning(
+            "wake_word.refractory_seconds (%f) is very high. Users may experience delays.",
+            wake_word.refractory_seconds
+        )
+
+    # Validate OpenWakeWord threshold (already clamped, but warn if extreme)
+    if wake_word.openwakeword_threshold < 0.3:
+        _LOGGER.warning(
+            "wake_word.openwakeword_threshold (%f) is low. May cause false activations.",
+            wake_word.openwakeword_threshold
+        )
+    elif wake_word.openwakeword_threshold > 0.7:
+        _LOGGER.warning(
+            "wake_word.openwakeword_threshold (%f) is high. Wake word may be hard to trigger.",
+            wake_word.openwakeword_threshold
+        )
+
+    # Validate ESPHome port
+    if esphome.port < 1024:
+        _LOGGER.warning(
+            "esphome.port (%d) is below 1024. May require root privileges on some systems.",
+            esphome.port
+        )
+    elif esphome.port > 65535:
+        _LOGGER.error(
+            "esphome.port (%d) is invalid (must be 1-65535). Using default 6053.",
+            esphome.port
+        )
+        esphome.port = 6053
+
+    # Validate sound files exist
+    from pathlib import Path
+    for sound_name, sound_path in [
+        ("wakeup_sound", app.wakeup_sound),
+        ("timer_finished_sound", app.timer_finished_sound),
+    ]:
+        if not Path(sound_path).exists():
+            _LOGGER.warning(
+                "%s file not found: %s. Audio playback will fail.",
+                sound_name,
+                sound_path
+            )

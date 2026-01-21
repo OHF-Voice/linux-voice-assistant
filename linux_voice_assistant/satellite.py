@@ -43,6 +43,7 @@ from pyopen_wakeword import OpenWakeWord
 
 from .api_server import APIServer
 from .entity import MediaPlayerEntity
+from .error_handling import retry_with_backoff, NetworkError
 from .models import AvailableWakeWord, ServerState, SatelliteState, WakeWordType
 from .util import call_all
 
@@ -50,7 +51,26 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class VoiceSatelliteProtocol(APIServer):
+    """
+    ESPHome voice assistant satellite protocol handler.
+
+    Manages the complete voice assistant lifecycle including:
+    - Wake word configuration and loading
+    - Voice assistant request/response flow
+    - TTS playback and announcements
+    - Timer alarms with configurable auto-stop
+    - Media player entity for Home Assistant integration
+
+    Implements the ESPHome API protocol for voice assistant communication.
+    """
+
     def __init__(self, state: ServerState) -> None:
+        """
+        Initialize the voice satellite protocol.
+
+        Args:
+            state: Shared server state with configuration and resources
+        """
         super().__init__(state.name)
         self.state = state
         self.state.satellite = self
@@ -118,6 +138,10 @@ class VoiceSatelliteProtocol(APIServer):
 
         # Timer alarm auto-stop handle
         self._timer_auto_stop_handle: Optional[asyncio.TimerHandle] = None
+
+        # CRITICAL FIX: Lock for thread-safe timer operations
+        import threading
+        self._timer_lock = threading.Lock()
 
     # -------------------------------------------------------------------------
     # State machine helpers
@@ -222,26 +246,30 @@ class VoiceSatelliteProtocol(APIServer):
     ) -> None:
         _LOGGER.debug("Timer event: type=%s", event_type.name)
         if event_type == VoiceAssistantTimerEventType.VOICE_ASSISTANT_TIMER_FINISHED:
-            if not self._timer_finished:
-                self.state.active_wake_words.add(self.state.stop_word.id)
-                self._timer_finished = True
-                self.duck()
-                self._play_timer_finished()
+            # CRITICAL FIX: Protect timer state with lock
+            with self._timer_lock:
+                if not self._timer_finished:
+                    self.state.active_wake_words.add(self.state.stop_word.id)
+                    self._timer_finished = True
 
-                # Schedule auto-stop if configured
-                duration = getattr(
-                    self.state.preferences, "alarm_duration_seconds", 0
-                )
-                if duration > 0:
-                    if self._timer_auto_stop_handle is not None:
-                        self._timer_auto_stop_handle.cancel()
-                    _LOGGER.debug(
-                        "Scheduling auto-stop for timer alarm after %s seconds",
-                        duration,
+                    # Schedule auto-stop if configured
+                    duration = getattr(
+                        self.state.preferences, "alarm_duration_seconds", 0
                     )
-                    self._timer_auto_stop_handle = self.state.loop.call_later(
-                        duration, self._auto_stop_timer_alarm
-                    )
+                    if duration > 0:
+                        if self._timer_auto_stop_handle is not None:
+                            self._timer_auto_stop_handle.cancel()
+                        _LOGGER.debug(
+                            "Scheduling auto-stop for timer alarm after %s seconds",
+                            duration,
+                        )
+                        self._timer_auto_stop_handle = self.state.loop.call_later(
+                            duration, self._auto_stop_timer_alarm
+                        )
+
+            # Audio operations outside lock
+            self.duck()
+            self._play_timer_finished()
 
     # -------------------------------------------------------------------------
     # Main message handler (called by APIServer)
@@ -411,21 +439,26 @@ class VoiceSatelliteProtocol(APIServer):
                 self.state.available_wake_words[wake_word_id] = model_info
 
             _LOGGER.debug("Loading wake word: %s", model_info.wake_word_path)
-            self.state.wake_words[wake_word_id] = model_info.load()
+            # CRITICAL FIX: Protect wake_words dict modification with lock
+            with self.state.wake_words_lock:
+                self.state.wake_words[wake_word_id] = model_info.load()
 
             _LOGGER.info("Wake word set: %s", wake_word_id)
             active_wake_words.add(wake_word_id)
             # Do NOT break; we want to process all requested wake words.
 
         # Finalize active wake words with the subset that actually succeeded
-        self.state.active_wake_words = active_wake_words
+        # CRITICAL FIX: Protect active_wake_words update with lock
+        with self.state.wake_words_lock:
+            self.state.active_wake_words = active_wake_words
+            self.state.wake_words_changed = True
+
         _LOGGER.debug(
             "Active wake words after SetConfiguration: %s", active_wake_words
         )
 
         self.state.preferences.active_wake_words = list(active_wake_words)
         self.state.save_preferences()
-        self.state.wake_words_changed = True
 
     # -------------------------------------------------------------------------
     # Audio handling and wake word triggers
@@ -436,14 +469,18 @@ class VoiceSatelliteProtocol(APIServer):
             self.send_messages([VoiceAssistantAudio(data=audio_chunk)])
 
     def _clear_timer_auto_stop(self) -> None:
-        """Cancel any pending auto-stop for the timer alarm."""
-        if self._timer_auto_stop_handle is not None:
-            try:
-                self._timer_auto_stop_handle.cancel()
-            except Exception:
-                _LOGGER.exception("Failed to cancel timer auto-stop handle")
-            finally:
-                self._timer_auto_stop_handle = None
+        """Cancel any pending auto-stop for the timer alarm. Thread-safe."""
+        # CRITICAL FIX: Protect timer handle access with lock
+        with self._timer_lock:
+            if self._timer_auto_stop_handle is not None:
+                try:
+                    self._timer_auto_stop_handle.cancel()
+                except (RuntimeError, asyncio.CancelledError) as e:
+                    _LOGGER.warning("Timer auto-stop handle already cancelled or invalid: %s", e)
+                except Exception as e:
+                    _LOGGER.error("Unexpected error cancelling timer auto-stop: %s", e, exc_info=True)
+                finally:
+                    self._timer_auto_stop_handle = None
 
     def _stop_timer_alarm(self, reason: str) -> None:
         """
@@ -453,25 +490,47 @@ class VoiceSatelliteProtocol(APIServer):
         - Stop wake word / explicit stop()
         - Any wake word while timer is ringing (existing behavior)
         - Auto-stop after alarm_duration_seconds
-        """
-        if not self._timer_finished:
-            return
 
-        _LOGGER.debug("Stopping timer finished sound (%s)", reason)
-        self._timer_finished = False
-        self._clear_timer_auto_stop()
+        Thread-safe.
+        """
+        # CRITICAL FIX: Protect timer state access with lock
+        with self._timer_lock:
+            if not self._timer_finished:
+                return
+
+            _LOGGER.debug("Stopping timer finished sound (%s)", reason)
+            self._timer_finished = False
+            # Clear handle while holding lock
+            if self._timer_auto_stop_handle is not None:
+                try:
+                    self._timer_auto_stop_handle.cancel()
+                except (RuntimeError, asyncio.CancelledError) as e:
+                    _LOGGER.warning("Timer auto-stop handle already cancelled: %s", e)
+                except Exception as e:
+                    _LOGGER.error("Unexpected error cancelling timer: %s", e, exc_info=True)
+                finally:
+                    self._timer_auto_stop_handle = None
+
+        # Audio operations outside lock to avoid holding lock during I/O
         try:
             self.state.tts_player.stop()
-        except Exception:
-            _LOGGER.exception("Error stopping timer finished TTS player")
+        except (OSError, IOError) as e:
+            _LOGGER.warning("TTS player stop failed (device issue): %s", e)
+        except Exception as e:
+            _LOGGER.error("Unexpected error stopping TTS player: %s", e, exc_info=True)
         # Ensure we unduck and remove the stop word from active set
         self.unduck()
         self.state.active_wake_words.discard(self.state.stop_word.id)
 
     def _auto_stop_timer_alarm(self) -> None:
-        """Auto-stop callback fired after alarm_duration_seconds."""
-        if not self._timer_finished:
+        """Auto-stop callback fired after alarm_duration_seconds. Thread-safe."""
+        # CRITICAL FIX: Check timer state with lock
+        with self._timer_lock:
+            timer_active = self._timer_finished
+
+        if not timer_active:
             return
+
         duration = getattr(self.state.preferences, "alarm_duration_seconds", 0)
         _LOGGER.debug(
             "Auto-stopping timer finished alarm after %s seconds", duration
@@ -493,9 +552,13 @@ class VoiceSatelliteProtocol(APIServer):
             # Existing behavior: ignore wakeup in other states.
             return
 
+        # CRITICAL FIX: Check timer state with lock
         # If a timer alarm is currently ringing, stop it instead of starting
         # a new conversation run.
-        if self._timer_finished:
+        with self._timer_lock:
+            timer_active = self._timer_finished
+
+        if timer_active:
             self._stop_timer_alarm("wakeup")
             return
 
@@ -511,7 +574,11 @@ class VoiceSatelliteProtocol(APIServer):
         if self._state not in (SatelliteState.IDLE, SatelliteState.STARTING):
             return
 
-        if self._timer_finished:
+        # CRITICAL FIX: Check timer state with lock
+        with self._timer_lock:
+            timer_active = self._timer_finished
+
+        if timer_active:
             self._stop_timer_alarm("button")
             return
 
@@ -529,8 +596,12 @@ class VoiceSatelliteProtocol(APIServer):
         """
         self.state.active_wake_words.discard(self.state.stop_word.id)
 
+        # CRITICAL FIX: Check timer state with lock
         # If the timer alarm is ringing, stop that instead of a TTS run.
-        if self._timer_finished:
+        with self._timer_lock:
+            timer_active = self._timer_finished
+
+        if timer_active:
             self._stop_timer_alarm("stop_wake_word")
             return
 
@@ -586,11 +657,18 @@ class VoiceSatelliteProtocol(APIServer):
         Play the timer-finished sound in a loop until either:
         - _timer_finished is cleared (Stop/wakeup/auto-timeout), or
         - alarm_duration_seconds == 0 and user explicitly stops it.
+
+        Thread-safe.
         """
-        if not self._timer_finished:
+        # CRITICAL FIX: Check timer state with lock
+        with self._timer_lock:
+            timer_active = self._timer_finished
+
+        if not timer_active:
             # Alarm has been cleared; restore audio state.
             self.unduck()
             return
+
         self.state.tts_player.play(
             self.state.timer_finished_sound,
             done_callback=lambda: call_all(
@@ -613,10 +691,33 @@ class VoiceSatelliteProtocol(APIServer):
             ),
         )
 
+    # CRITICAL FIX: Add retry logic for network downloads
+    @retry_with_backoff(
+        max_retries=3,
+        initial_delay=2.0,
+        backoff_factor=2.0,
+        exceptions=(OSError, ConnectionError, TimeoutError)
+    )
+    def _download_file_with_retry(self, url: str, dest_path: Path) -> bool:
+        """Download a file with retry logic. Returns True on success."""
+        from urllib.error import URLError, HTTPError
+
+        try:
+            with urlopen(url, timeout=10) as request:
+                if request.status != 200:
+                    raise NetworkError(f"HTTP {request.status} from {url}")
+
+                with open(dest_path, "wb") as dest_file:
+                    shutil.copyfileobj(request, dest_file)
+            return True
+        except (URLError, HTTPError, OSError, ConnectionError, TimeoutError) as e:
+            _LOGGER.warning("Download failed for %s: %s", url, e)
+            raise NetworkError(f"Failed to download {url}") from e
+
     def _download_external_wake_word_sync(
         self, external_wake_word: VoiceAssistantExternalWakeWord
     ) -> Optional[AvailableWakeWord]:
-        """Blocking download logic, intended to run in an executor."""
+        """Blocking download logic with retry, intended to run in an executor."""
         eww_dir = self.state.download_dir / "external_wake_words"
         eww_dir.mkdir(parents=True, exist_ok=True)
 
@@ -638,24 +739,15 @@ class VoiceSatelliteProtocol(APIServer):
                         external_wake_word.id,
                     )
 
+        # CRITICAL FIX: Use retry logic for downloads
         if should_download_config or should_download_model:
             _LOGGER.debug(
                 "Downloading %s to %s", external_wake_word.url, config_path
             )
             try:
-                with urlopen(external_wake_word.url, timeout=10) as request:
-                    if request.status != 200:
-                        _LOGGER.warning(
-                            "Failed to download: %s, status=%s",
-                            external_wake_word.url,
-                            request.status,
-                        )
-                        return None
-
-                    with open(config_path, "wb") as model_file:
-                        shutil.copyfileobj(request, model_file)
-            except Exception as exc:  # noqa: BLE001
-                _LOGGER.error("Exception downloading config: %s", exc)
+                self._download_file_with_retry(external_wake_word.url, config_path)
+            except NetworkError as e:
+                _LOGGER.error("Failed to download config after retries: %s", e)
                 return None
 
         if should_download_model:
@@ -669,19 +761,9 @@ class VoiceSatelliteProtocol(APIServer):
 
             _LOGGER.debug("Downloading %s to %s", model_url, model_path)
             try:
-                with urlopen(model_url, timeout=10) as request:
-                    if request.status != 200:
-                        _LOGGER.warning(
-                            "Failed to download: %s, status=%s",
-                            model_url,
-                            request.status,
-                        )
-                        return None
-
-                    with open(model_path, "wb") as model_file:
-                        shutil.copyfileobj(request, model_file)
-            except Exception as exc:  # noqa: BLE001
-                _LOGGER.error("Exception downloading model: %s", exc)
+                self._download_file_with_retry(model_url, model_path)
+            except NetworkError as e:
+                _LOGGER.error("Failed to download model after retries: %s", e)
                 return None
 
         return AvailableWakeWord(

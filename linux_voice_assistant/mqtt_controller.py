@@ -41,6 +41,10 @@ class MqttController(EventHandler):
 
         self._is_muted = False  # Internal state
         self._connected = False  # Track connection state
+        self._reconnect_task: Optional[asyncio.Task] = None
+        self._reconnect_delay = 5.0  # Initial reconnect delay in seconds
+        self._max_reconnect_delay = 300.0  # Max 5 minutes
+        self._should_reconnect = True  # Flag to control reconnection
 
         self.CONFIGURABLE_STATES: List[str] = [
             SatelliteState.IDLE.value,
@@ -85,6 +89,7 @@ class MqttController(EventHandler):
         self._subscribe_all_methods()
 
     def start(self):
+        self._should_reconnect = True
         try:
             # Set Last Will and Testament (LWT) as a fallback
             self._client.will_set(
@@ -100,8 +105,15 @@ class MqttController(EventHandler):
             _LOGGER.debug("Connecting to MQTT broker at %s:%s", self._host, self._port)
             self._client.connect(self._host, self._port, 60)
             self._client.loop_start()
-        except Exception:
-            _LOGGER.exception("Failed to connect to MQTT broker")
+        except ConnectionRefusedError as e:
+            _LOGGER.error("MQTT broker connection refused at %s:%s", self._host, self._port)
+            self._schedule_reconnect()
+        except OSError as e:
+            _LOGGER.error("MQTT broker network error: %s", e)
+            self._schedule_reconnect()
+        except Exception as e:
+            _LOGGER.error("Failed to connect to MQTT broker: %s", e, exc_info=True)
+            self._schedule_reconnect()
 
     def _publish_offline_blocking(self):
         """Helper to publish offline status and BLOCK until sent."""
@@ -122,6 +134,15 @@ class MqttController(EventHandler):
             return
 
         _LOGGER.info("Stopping MQTT Controller...")
+
+        # Cancel reconnection attempts
+        self._should_reconnect = False
+        if self._reconnect_task and not self._reconnect_task.done():
+            self._reconnect_task.cancel()
+            try:
+                await self._reconnect_task
+            except asyncio.CancelledError:
+                pass
 
         # 1. Publish Offline Status (Blocking wait)
         if self._connected:
@@ -152,7 +173,9 @@ class MqttController(EventHandler):
     def _on_disconnect(self, client, userdata, rc):
         self._connected = False
         if rc != 0:
-            _LOGGER.warning("Unexpected MQTT disconnection (rc=%s)", rc)
+            _LOGGER.warning("Unexpected MQTT disconnection (rc=%s). Will attempt reconnection.", rc)
+            if self._should_reconnect:
+                self._schedule_reconnect()
         else:
             _LOGGER.debug("MQTT client disconnected cleanly")
 
@@ -401,3 +424,42 @@ class MqttController(EventHandler):
     @subscribe
     def mic_unmuted(self, data: dict):
         self.publish_mute_state(False)
+
+    def _schedule_reconnect(self):
+        """Schedule a reconnection attempt with exponential backoff."""
+        if not self._should_reconnect:
+            return
+
+        if self._reconnect_task and not self._reconnect_task.done():
+            # Already scheduled
+            return
+
+        _LOGGER.info("Scheduling MQTT reconnection in %.1f seconds", self._reconnect_delay)
+        self._reconnect_task = self.loop.create_task(self._reconnect())
+
+    async def _reconnect(self):
+        """Attempt to reconnect to MQTT broker with exponential backoff."""
+        await asyncio.sleep(self._reconnect_delay)
+
+        if not self._should_reconnect:
+            return
+
+        _LOGGER.info("Attempting to reconnect to MQTT broker...")
+        try:
+            await self.loop.run_in_executor(None, self._attempt_connection)
+            # Reset delay on successful connection
+            self._reconnect_delay = 5.0
+            _LOGGER.info("Successfully reconnected to MQTT broker")
+        except Exception as e:
+            _LOGGER.warning("Reconnection attempt failed: %s", e)
+            # Exponential backoff with cap
+            self._reconnect_delay = min(self._reconnect_delay * 2, self._max_reconnect_delay)
+            # Schedule next attempt
+            if self._should_reconnect:
+                self._schedule_reconnect()
+
+    def _attempt_connection(self):
+        """Synchronous method to attempt MQTT connection."""
+        # Reconnect using paho's reconnect method
+        self._client.reconnect()
+        # Loop should already be started from initial start() call
