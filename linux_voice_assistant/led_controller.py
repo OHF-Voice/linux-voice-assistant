@@ -31,6 +31,18 @@ _DIM_RED = (50, 0, 0)
 _ORANGE = (255, 165, 0)
 _PURPLE = (128, 0, 255)
 
+# Colorful mode colors - improved blue spectrum
+_COLORFUL_COLORS = [
+    (255, 0, 0),      # Red
+    (255, 127, 0),    # Orange  
+    (255, 255, 0),    # Yellow
+    (0, 255, 0),      # Green
+    (0, 127, 255),    # Light Blue (improved from previous cyan)
+    (0, 0, 255),      # Blue
+    (75, 0, 130),     # Indigo
+    (148, 0, 211),    # Violet
+]
+
 
 class LedController(EventHandler):
     def __init__(
@@ -626,6 +638,54 @@ class LedController(EventHandler):
                 self.leds.fill(_OFF)
                 self.leds.show()
 
+
+    async def _render_colorful(self):
+        """Cycle through rainbow colors smoothly"""
+        speed = 1.5  # seconds per color
+        
+        if not self._enabled:
+            return
+            
+        try:
+            if self._backend_mode == "xvf3800":
+                # XVF3800 USB backend
+                if not self._xvf3800_backend:
+                    return
+                try:
+                    color_index = 0
+                    while True:
+                        r, g, b = _COLORFUL_COLORS[color_index]
+                        try:
+                            self._xvf3800_backend.set_ring_solid(r, g, b)
+                        except Exception as e:
+                            self._handle_xvf3800_usb_error("set_ring_solid", e)
+                        await asyncio.sleep(speed)
+                        color_index = (color_index + 1) % len(_COLORFUL_COLORS)
+                except asyncio.CancelledError:
+                    try:
+                        self._xvf3800_apply_ring_clear()
+                    except Exception:
+                        pass
+                    raise
+            else:
+                # Pixel-based backends (DotStar/NeoPixel)
+                if not self.leds:
+                    return
+                try:
+                    color_index = 0
+                    while True:
+                        r, g, b = _COLORFUL_COLORS[color_index]
+                        self.leds.fill((r, g, b))
+                        self.leds.show()
+                        await asyncio.sleep(speed)
+                        color_index = (color_index + 1) % len(_COLORFUL_COLORS)
+                except asyncio.CancelledError:
+                    self.leds.fill(_OFF)
+                    self.leds.show()
+                    raise
+        except Exception:
+            _LOGGER.exception("Error in colorful LED mode")
+
     @subscribe
     def voice_idle(self, data: dict):
         self._apply_state_effect("idle")
@@ -753,6 +813,21 @@ class LedController(EventHandler):
     @subscribe
     def set_error_color(self, data: dict):
         self._update_config("error", data, False)
+
+    @subscribe
+    async def handle_led_color(self, color: Tuple[int, int, int]):
+        """Set a single solid color, or handle special 'colorful' cycling mode"""
+        # Check if this is the special "colorful" mode trigger
+        if color == (1, 2, 3):  # Magic tuple to trigger colorful mode
+            _LOGGER.info("Activating colorful LED cycling mode")
+            await self._render_colorful()
+            return
+            
+        _LOGGER.debug("Setting solid color: %s", color)
+        if self.current_task:
+            self.current_task.cancel()
+        coro = self._render_solid(color=color, brightness=1.0)
+        self.current_task = asyncio.ensure_future(coro, loop=self.loop)
 
     @subscribe
     def set_num_leds(self, data: dict):
