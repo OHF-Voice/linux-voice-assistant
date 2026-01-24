@@ -59,6 +59,16 @@ class VoiceSatelliteProtocol(APIServer):
     def __init__(self, state: ServerState) -> None:
         super().__init__(state.name)
 
+        self._is_streaming_audio = False
+        self._tts_url: Optional[str] = None
+        self._tts_played = False
+        self._continue_conversation = False
+        self._timer_finished = False
+        self._processing = False
+        self._pipeline_active = False
+        self._external_wake_words: Dict[str, VoiceAssistantExternalWakeWord] = {}
+        self._disconnect_event = asyncio.Event()
+
         self.state = state
         self.state.satellite = self
         self.state.connected = False
@@ -156,16 +166,6 @@ class VoiceSatelliteProtocol(APIServer):
         thinking_sound_switch.update_get_thinking_sound_enabled(lambda: self.state.thinking_sound_enabled)
         thinking_sound_switch.update_set_thinking_sound_enabled(self._set_thinking_sound_enabled)
         thinking_sound_switch.sync_with_state()
-
-        self._is_streaming_audio = False
-        self._tts_url: Optional[str] = None
-        self._tts_played = False
-        self._continue_conversation = False
-        self._timer_finished = False
-        self._processing = False
-        self._pipeline_active = False
-        self._external_wake_words: Dict[str, VoiceAssistantExternalWakeWord] = {}
-        self._disconnect_event = asyncio.Event()
 
     def _set_thinking_sound_enabled(self, new_state: bool) -> None:
         self.state.thinking_sound_enabled = bool(new_state)
