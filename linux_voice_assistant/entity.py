@@ -226,10 +226,6 @@ class MuteSwitchEntity(ESPHomeEntity):
         # Update the callback used to read the mute state.
         self._get_muted = get_muted
 
-    def update_set_muted(self, set_muted: Callable[[bool], None]) -> None:
-        # Update the callback used to change the mute state.
-        self._set_muted = set_muted
-
     def sync_with_state(self) -> None:
         # Sync internal switch state with the actual mute state.
         self._switch_state = self._get_muted()
