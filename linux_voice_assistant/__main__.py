@@ -87,6 +87,10 @@ async def main() -> None:
     parser.add_argument(
         "--timer-finished-sound", default=str(_SOUNDS_DIR / "timer_finished.flac")
     )
+    parser.add_argument(
+        "--processing-sound", default=str(_SOUNDS_DIR / "processing.wav"),
+        help="Short sound to play while assistant is processing (thinking)"
+    )
     #
     parser.add_argument("--preferences-file", default=_REPO_DIR / "preferences.json")
     #
@@ -98,6 +102,9 @@ async def main() -> None:
     parser.add_argument(
         "--port", type=int, default=6053, help="Port for ESPHome server (default: 6053)"
     )
+    parser.add_argument(
+        "--enable-thinking-sound", action="store_true", help="Enable thinking sound on startup"
+    )    
     parser.add_argument(
         "--debug", action="store_true", help="Print DEBUG messages to console"
     )
@@ -178,6 +185,9 @@ async def main() -> None:
     else:
         preferences = Preferences()
 
+    if args.enable_thinking_sound:
+        preferences.thinking_sound = 1
+
     # Load wake/stop models
     active_wake_words: Set[str] = set()
     wake_models: Dict[str, Union[MicroWakeWord, OpenWakeWord]] = {}
@@ -228,12 +238,16 @@ async def main() -> None:
         tts_player=MpvMediaPlayer(device=args.audio_output_device),
         wakeup_sound=args.wakeup_sound,
         timer_finished_sound=args.timer_finished_sound,
+        processing_sound=args.processing_sound,
         preferences=preferences,
         preferences_path=preferences_path,
         refractory_seconds=args.refractory_seconds,
         openwakeword_threshold=args.openwakeword_threshold,
         download_dir=args.download_dir,
     )
+
+    if args.enable_thinking_sound:
+        state.save_preferences() 
 
     process_audio_thread = threading.Thread(
         target=process_audio,
