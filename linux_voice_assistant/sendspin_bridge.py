@@ -7,6 +7,7 @@ import socket
 import tempfile
 import threading
 import time
+from collections import deque
 from typing import TYPE_CHECKING, Callable, Optional
 
 from aioesphomeapi.model import MediaPlayerState
@@ -28,8 +29,9 @@ class SendspinBridge:
     """Bridge that connects SendSpin streaming to MediaPlayerEntity.
 
     When SendSpin server starts streaming, this bridge plays the audio using
-    time-synchronized playback via MPV (using FIFO). It coordinates with the
-    existing music_player to ensure only one source plays at a time.
+    MPV with a FIFO pipe. Audio chunks are written immediately to prevent
+    starvation, with the initial buffering delay handled by waiting to start
+    the stream.
     """
 
     def __init__(
@@ -65,11 +67,12 @@ class SendspinBridge:
         self._fifo_fd: Optional[int] = None
         self._current_format: Optional["AudioFormat"] = None
 
-        # Time-synchronized playback
-        self._chunk_queue: asyncio.Queue = asyncio.Queue(maxsize=100)
-        self._playback_task: Optional[asyncio.Task] = None
+        # Buffering and playback
+        self._buffer: deque = deque(maxlen=50)  # Buffer chunks before starting
+        self._min_buffer_chunks = 10  # Start playback after 10 chunks
         self._first_chunk_timestamp: Optional[int] = None
         self._playback_started = False
+        self._write_task: Optional[asyncio.Task] = None
 
         # Volume state (synced with MediaPlayerEntity)
         self._volume: int = 100
@@ -157,7 +160,6 @@ class SendspinBridge:
             _LOGGER.info("Stopping SendSpin playback (HA taking over)")
             self._stop_playback()
             self._stream_active = False
-            # Note: We don't update MediaPlayerEntity state here because HA is taking over
 
     async def start(self, server_url: Optional[str] = None) -> None:
         """Start the SendSpin client.
@@ -248,7 +250,11 @@ class SendspinBridge:
         self._player["cache"] = "no"
 
         # Set volume
-        self._player.volume = 0 if self._muted else self._volume
+        self._player.volume = (
+            0
+            if self._muted
+            else (self._duck_volume if self._is_ducked else self._volume)
+        )
 
         # Start playback from FIFO (in separate thread to not block)
         def start_playback():
@@ -290,18 +296,14 @@ class SendspinBridge:
         self._current_format = None
 
     def _stop_playback(self) -> None:
-        """Stop playback and clear queue."""
-        # Cancel playback task
-        if self._playback_task and not self._playback_task.done():
-            self._playback_task.cancel()
-        self._playback_task = None
+        """Stop playback and clear buffer."""
+        # Cancel write task
+        if self._write_task and not self._write_task.done():
+            self._write_task.cancel()
+        self._write_task = None
 
-        # Clear queue
-        while not self._chunk_queue.empty():
-            try:
-                self._chunk_queue.get_nowait()
-            except asyncio.QueueEmpty:
-                break
+        # Clear buffer
+        self._buffer.clear()
 
         # Stop player
         self._stop_player()
@@ -350,6 +352,7 @@ class SendspinBridge:
         self._stream_active = True
         self._playback_started = False
         self._first_chunk_timestamp = None
+        self._buffer.clear()
 
         # Notify that SendSpin is starting (so HA music can stop)
         if self._on_sendspin_start:
@@ -435,7 +438,7 @@ class SendspinBridge:
         if not self._stream_active or not self._client:
             return
 
-        # Store first chunk timestamp
+        # Store first chunk timestamp for sync calculation
         if self._first_chunk_timestamp is None:
             self._first_chunk_timestamp = server_timestamp_us
 
@@ -444,73 +447,81 @@ class SendspinBridge:
             self._start_player(fmt)
             self._current_format = fmt
 
-        # Queue chunk with timestamp for time-synchronized playback
-        try:
-            self._chunk_queue.put_nowait((server_timestamp_us, audio_data))
-        except asyncio.QueueFull:
-            _LOGGER.warning("Chunk queue full, dropping chunk")
-            return
+        # Buffer chunks before starting playback
+        if not self._playback_started:
+            self._buffer.append((server_timestamp_us, audio_data))
 
-        # Start playback task if not already running
-        if self._playback_task is None or self._playback_task.done():
-            self._playback_task = asyncio.create_task(self._time_sync_playback())
-
-    async def _time_sync_playback(self) -> None:
-        """Time-synchronized playback loop."""
-        try:
-            while self._stream_active and self._client:
+            if len(self._buffer) >= self._min_buffer_chunks:
+                # Calculate when to start based on first buffered chunk
+                first_ts = self._buffer[0][0]
                 try:
-                    # Get next chunk with timeout
-                    server_timestamp_us, audio_data = await asyncio.wait_for(
-                        self._chunk_queue.get(), timeout=5.0
+                    target_play_time_us = self._client.compute_play_time(first_ts)
+                    now_us = int(time.monotonic() * 1_000_000)
+                    delay_us = target_play_time_us - now_us
+
+                    # Start playback task with calculated delay
+                    _LOGGER.info(
+                        "Starting playback with %.2fs initial delay (buffered %d chunks)",
+                        delay_us / 1_000_000.0,
+                        len(self._buffer),
                     )
-                except asyncio.TimeoutError:
-                    _LOGGER.debug("Playback queue empty for 5s, stopping")
-                    break
-
-                # Calculate when to play this chunk
-                # compute_play_time returns client time (monotonic time) when to play
-                try:
-                    play_at_client_us = self._client.compute_play_time(
-                        server_timestamp_us
+                    self._playback_started = True
+                    self._write_task = asyncio.create_task(
+                        self._continuous_write(delay_us / 1_000_000.0)
                     )
-                    now_client_us = int(time.monotonic() * 1_000_000)
-
-                    # Calculate delay
-                    delay_us = play_at_client_us - now_client_us
-
-                    if delay_us > 0:
-                        # Wait until it's time to play
-                        delay_s = delay_us / 1_000_000.0
-                        # Cap at reasonable maximum (5 seconds) to avoid too-long waits
-                        if delay_s > 5.0:
-                            _LOGGER.warning(
-                                "Chunk scheduled too far in future: %.2fs, playing now",
-                                delay_s,
-                            )
-                        else:
-                            await asyncio.sleep(delay_s)
-                    elif delay_us < -1_000_000:  # More than 1 second late
-                        _LOGGER.warning(
-                            "Chunk %.1fs late, skipping", abs(delay_us) / 1_000_000.0
-                        )
-                        continue  # Skip this chunk, it's too late
                 except Exception as e:
-                    _LOGGER.debug("Time calculation failed: %s, playing immediately", e)
-                    # If time calculation fails, just play immediately
+                    _LOGGER.warning(
+                        "Failed to calculate start time: %s, starting now", e
+                    )
+                    self._playback_started = True
+                    self._write_task = asyncio.create_task(self._continuous_write(0.0))
+        else:
+            # Playback already started, just buffer for continuous writing
+            self._buffer.append((server_timestamp_us, audio_data))
 
-                # Write to FIFO
-                if self._fifo_fd is not None:
+    async def _continuous_write(self, initial_delay: float) -> None:
+        """Continuously write buffered chunks to FIFO."""
+        try:
+            # Wait for initial delay to sync with other clients
+            if initial_delay > 0:
+                await asyncio.sleep(min(initial_delay, 2.0))  # Cap at 2s
+
+            # Write all buffered chunks first
+            while self._buffer and self._fifo_fd is not None:
+                _, audio_data = self._buffer.popleft()
+                try:
+                    await asyncio.get_event_loop().run_in_executor(
+                        None, os.write, self._fifo_fd, audio_data
+                    )
+                except (BrokenPipeError, OSError) as e:
+                    _LOGGER.warning("FIFO write error: %s", e)
+                    return
+
+            # Continue writing as new chunks arrive
+            while self._stream_active and self._fifo_fd is not None:
+                # Wait for new chunks with timeout
+                for _ in range(50):  # Check 50 times (500ms total)
+                    if self._buffer:
+                        break
+                    await asyncio.sleep(0.01)
+                else:
+                    # No chunks for 500ms, keep waiting
+                    continue
+
+                if self._buffer:
+                    _, audio_data = self._buffer.popleft()
                     try:
-                        os.write(self._fifo_fd, audio_data)
+                        await asyncio.get_event_loop().run_in_executor(
+                            None, os.write, self._fifo_fd, audio_data
+                        )
                     except (BrokenPipeError, OSError) as e:
                         _LOGGER.warning("FIFO write error: %s", e)
-                        break
+                        return
 
         except asyncio.CancelledError:
-            _LOGGER.debug("Playback task cancelled")
+            _LOGGER.debug("Write task cancelled")
         except Exception:
-            _LOGGER.exception("Error in time-sync playback loop")
+            _LOGGER.exception("Error in continuous write loop")
 
     @property
     def connected(self) -> bool:
