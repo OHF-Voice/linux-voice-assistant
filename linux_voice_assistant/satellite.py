@@ -48,7 +48,6 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class VoiceSatelliteProtocol(APIServer):
-
     def __init__(self, state: ServerState) -> None:
         super().__init__(state.name)
 
@@ -93,14 +92,22 @@ class VoiceSatelliteProtocol(APIServer):
             self.state.entities.append(thinking_sound_switch)
 
         # Load thinking sound enabled state from preferences (default to False if not set or unknown)
-        if hasattr(self.state.preferences, 'thinking_sound') and self.state.preferences.thinking_sound in (0, 1):
-            self.state.thinking_sound_enabled = bool(self.state.preferences.thinking_sound)
+        if hasattr(
+            self.state.preferences, "thinking_sound"
+        ) and self.state.preferences.thinking_sound in (0, 1):
+            self.state.thinking_sound_enabled = bool(
+                self.state.preferences.thinking_sound
+            )
         else:
             self.state.thinking_sound_enabled = False
 
         thinking_sound_switch.server = self
-        thinking_sound_switch.update_get_thinking_sound_enabled(lambda: self.state.thinking_sound_enabled)
-        thinking_sound_switch.update_set_thinking_sound_enabled(self._set_thinking_sound_enabled)
+        thinking_sound_switch.update_get_thinking_sound_enabled(
+            lambda: self.state.thinking_sound_enabled
+        )
+        thinking_sound_switch.update_set_thinking_sound_enabled(
+            self._set_thinking_sound_enabled
+        )
         thinking_sound_switch.sync_with_state()
 
         self._is_streaming_audio = False
@@ -113,7 +120,9 @@ class VoiceSatelliteProtocol(APIServer):
 
     def _set_thinking_sound_enabled(self, new_state: bool) -> None:
         self.state.thinking_sound_enabled = bool(new_state)
-        self.state.preferences.thinking_sound = 1 if self.state.thinking_sound_enabled else 0
+        self.state.preferences.thinking_sound = (
+            1 if self.state.thinking_sound_enabled else 0
+        )
 
         if self.state.thinking_sound_enabled:
             _LOGGER.debug("Thinking sound enabled")
@@ -121,7 +130,6 @@ class VoiceSatelliteProtocol(APIServer):
             _LOGGER.debug("Thinking sound disabled")
             pass
         self.state.save_preferences()
-        
 
     def handle_voice_event(
         self, event_type: VoiceAssistantEventType, data: Dict[str, str]
@@ -132,7 +140,10 @@ class VoiceSatelliteProtocol(APIServer):
             self._tts_url = data.get("url")
             self._tts_played = False
             self._continue_conversation = False
-        elif event_type == VoiceAssistantEventType.VOICE_ASSISTANT_INTENT_START and self.state.thinking_sound_enabled:
+        elif (
+            event_type == VoiceAssistantEventType.VOICE_ASSISTANT_INTENT_START
+            and self.state.thinking_sound_enabled
+        ):
             # Play short "thinking/processing" sound if configured
             processing = getattr(self.state, "processing_sound", None)
             if processing:
@@ -140,7 +151,7 @@ class VoiceSatelliteProtocol(APIServer):
                 self.state.stop_word.is_active = True
                 self._processing = True
                 self.duck()
-                self.state.tts_player.play(self.state.processing_sound)            
+                self.state.tts_player.play(self.state.processing_sound)
         elif event_type in (
             VoiceAssistantEventType.VOICE_ASSISTANT_STT_VAD_END,
             VoiceAssistantEventType.VOICE_ASSISTANT_STT_END,
@@ -304,7 +315,6 @@ class VoiceSatelliteProtocol(APIServer):
             self.state.wake_words_changed = True
 
     def handle_audio(self, audio_chunk: bytes) -> None:
-
         if not self._is_streaming_audio:
             return
 
@@ -351,10 +361,16 @@ class VoiceSatelliteProtocol(APIServer):
     def duck(self) -> None:
         _LOGGER.debug("Ducking music")
         self.state.music_player.duck()
+        # Also duck SendSpin streaming audio
+        if self.state.sendspin_bridge:
+            self.state.sendspin_bridge.duck()
 
     def unduck(self) -> None:
         _LOGGER.debug("Unducking music")
         self.state.music_player.unduck()
+        # Also unduck SendSpin streaming audio
+        if self.state.sendspin_bridge:
+            self.state.sendspin_bridge.unduck()
 
     def _tts_finished(self) -> None:
         self.state.active_wake_words.discard(self.state.stop_word.id)

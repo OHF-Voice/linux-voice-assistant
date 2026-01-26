@@ -64,9 +64,18 @@ class SendspinBridge:
         self._fifo_fd: Optional[int] = None
         self._current_format: Optional["AudioFormat"] = None
 
+        # Buffering to help with sync (buffer first chunks before starting playback)
+        self._buffer: list[bytes] = []
+        self._min_buffer_chunks = (
+            16  # Buffer 16 chunks before starting (~350ms at 44.1kHz)
+        )
+
         # Volume state (synced with MediaPlayerEntity)
         self._volume: int = 100
         self._muted: bool = False
+        self._duck_volume: int = 50
+        self._unduck_volume: int = 100
+        self._is_ducked: bool = False
 
         # Callback to notify when SendSpin starts playing (so HA music can stop)
         self._on_sendspin_start: Optional[Callable[[], None]] = None
@@ -116,8 +125,25 @@ class SendspinBridge:
         """Set volume (called from MediaPlayerEntity when HA changes volume)."""
         self._volume = max(0, min(100, volume))
         self._muted = muted
+        self._unduck_volume = self._volume
+        self._duck_volume = self._volume // 2
         if self._player:
-            self._player.volume = 0 if self._muted else self._volume
+            if self._is_ducked:
+                self._player.volume = 0 if self._muted else self._duck_volume
+            else:
+                self._player.volume = 0 if self._muted else self._volume
+
+    def duck(self) -> None:
+        """Reduce volume (for wake word/TTS)."""
+        self._is_ducked = True
+        if self._player:
+            self._player.volume = self._duck_volume
+
+    def unduck(self) -> None:
+        """Restore volume (after wake word/TTS)."""
+        self._is_ducked = False
+        if self._player:
+            self._player.volume = 0 if self._muted else self._unduck_volume
 
     @property
     def is_playing(self) -> bool:
@@ -300,6 +326,8 @@ class SendspinBridge:
         """Handle stream start from SendSpin server."""
         _LOGGER.info("SendSpin stream started - interrupting Home Assistant playback")
         self._stream_active = True
+        # Clear any previous buffer
+        self._buffer.clear()
 
         # Notify that SendSpin is starting (so HA music can stop)
         if self._on_sendspin_start:
@@ -319,6 +347,8 @@ class SendspinBridge:
         """Handle stream end from SendSpin server."""
         _LOGGER.info("SendSpin stream ended")
         self._stream_active = False
+        # Clear buffer
+        self._buffer.clear()
 
         # Stop MPV player
         self._stop_player()
@@ -385,9 +415,29 @@ class SendspinBridge:
         if not self._stream_active:
             return
 
-        # Start player if needed or if format changed
-        if self._player is None or self._current_format != fmt:
+        # Buffer initial chunks before starting playback (helps with sync)
+        if self._player is None:
+            self._buffer.append(audio_data)
+            if len(self._buffer) >= self._min_buffer_chunks:
+                # Start player with buffered data
+                if self._current_format != fmt:
+                    self._start_player(fmt)
+                # Write all buffered chunks
+                if self._fifo_fd is not None:
+                    try:
+                        for chunk in self._buffer:
+                            os.write(self._fifo_fd, chunk)
+                        self._buffer.clear()
+                    except (BrokenPipeError, OSError) as e:
+                        _LOGGER.warning("FIFO write error during buffer flush: %s", e)
+                        self._buffer.clear()
+            return
+
+        # Format changed - restart player
+        if self._current_format != fmt:
+            self._buffer.clear()
             self._start_player(fmt)
+            return
 
         # Write audio data to FIFO
         if self._fifo_fd is not None:
@@ -395,6 +445,7 @@ class SendspinBridge:
                 os.write(self._fifo_fd, audio_data)
             except (BrokenPipeError, OSError) as e:
                 _LOGGER.warning("FIFO write error: %s, restarting player", e)
+                self._buffer.clear()
                 self._start_player(fmt)
 
     @property
