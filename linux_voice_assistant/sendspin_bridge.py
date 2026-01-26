@@ -2,15 +2,18 @@
 
 import asyncio
 import logging
+import os
 import socket
-import subprocess
-from typing import TYPE_CHECKING, Optional
+import tempfile
+import threading
+from typing import TYPE_CHECKING, Callable, Optional
 
 from aioesphomeapi.model import MediaPlayerState
 from aiosendspin.client import SendspinClient
-from aiosendspin.models.core import DeviceInfo, StreamStartMessage
+from aiosendspin.models.core import DeviceInfo, ServerCommandPayload, StreamStartMessage
 from aiosendspin.models.player import ClientHelloPlayerSupport, SupportedAudioFormat
-from aiosendspin.models.types import AudioCodec, PlayerCommand, Roles
+from aiosendspin.models.types import AudioCodec, PlayerCommand, PlayerStateType, Roles
+from mpv import MPV
 
 if TYPE_CHECKING:
     from aiosendspin.client import AudioFormat
@@ -24,8 +27,8 @@ class SendspinBridge:
     """Bridge that connects SendSpin streaming to MediaPlayerEntity.
 
     When SendSpin server starts streaming, this bridge plays the audio using
-    MPV (same as the rest of LVA) and updates the MediaPlayerEntity state to
-    reflect that SendSpin (not Home Assistant) is the active source.
+    MPV (via a FIFO pipe) and updates the MediaPlayerEntity state. It coordinates
+    with the existing music_player to ensure only one source plays at a time.
     """
 
     def __init__(
@@ -54,8 +57,19 @@ class SendspinBridge:
         self._client: Optional[SendspinClient] = None
         self._running = False
         self._stream_active = False
-        self._mpv_process: Optional[subprocess.Popen] = None
+
+        # MPV player for SendSpin audio (similar to music_player)
+        self._player: Optional[MPV] = None
+        self._fifo_path: Optional[str] = None
+        self._fifo_fd: Optional[int] = None
         self._current_format: Optional["AudioFormat"] = None
+
+        # Volume state (synced with MediaPlayerEntity)
+        self._volume: int = 100
+        self._muted: bool = False
+
+        # Callback to notify when SendSpin starts playing (so HA music can stop)
+        self._on_sendspin_start: Optional[Callable[[], None]] = None
 
         # Create SendSpin client
         self._client = SendspinClient(
@@ -92,6 +106,31 @@ class SendspinBridge:
         self._client.add_audio_chunk_listener(self._on_audio_chunk)
         self._client.add_stream_start_listener(self._on_stream_start)
         self._client.add_stream_end_listener(self._on_stream_end)
+        self._client.add_server_command_listener(self._on_server_command)
+
+    def set_on_sendspin_start(self, callback: Callable[[], None]) -> None:
+        """Set callback to be called when SendSpin starts playing."""
+        self._on_sendspin_start = callback
+
+    def set_volume(self, volume: int, muted: bool = False) -> None:
+        """Set volume (called from MediaPlayerEntity when HA changes volume)."""
+        self._volume = max(0, min(100, volume))
+        self._muted = muted
+        if self._player:
+            self._player.volume = 0 if self._muted else self._volume
+
+    @property
+    def is_playing(self) -> bool:
+        """Check if SendSpin is currently playing."""
+        return self._stream_active
+
+    def stop(self) -> None:
+        """Stop SendSpin playback (called when HA wants to play)."""
+        if self._stream_active:
+            _LOGGER.info("Stopping SendSpin playback (HA taking over)")
+            self._stop_player()
+            self._stream_active = False
+            # Note: We don't update MediaPlayerEntity state here because HA is taking over
 
     async def start(self, server_url: Optional[str] = None) -> None:
         """Start the SendSpin client.
@@ -103,6 +142,12 @@ class SendspinBridge:
             return
 
         self._running = True
+
+        # Sync volume with MediaPlayerEntity
+        if self.media_player:
+            self._volume = int(self.media_player.volume * 100)
+            self._muted = self.media_player.muted
+
         _LOGGER.info("Starting SendSpin bridge: %s", self.client_id)
 
         if server_url:
@@ -113,7 +158,7 @@ class SendspinBridge:
                 "SendSpin bridge started (no server URL - waiting for connections)"
             )
 
-    async def stop(self) -> None:
+    async def disconnect(self) -> None:
         """Stop the SendSpin client."""
         if not self._running:
             return
@@ -121,22 +166,101 @@ class SendspinBridge:
         _LOGGER.info("Stopping SendSpin bridge")
         self._running = False
 
-        self._stop_mpv()
+        self._stop_player()
 
         if self._client and self._client.connected:
             await self._client.disconnect()
 
-    def _stop_mpv(self) -> None:
-        """Stop the MPV process if running."""
-        if self._mpv_process:
+    def _create_fifo(self) -> str:
+        """Create a named pipe for audio streaming."""
+        # Create FIFO in temp directory
+        fifo_dir = tempfile.mkdtemp(prefix="lva_sendspin_")
+        fifo_path = os.path.join(fifo_dir, "audio.pcm")
+        os.mkfifo(fifo_path)
+        return fifo_path
+
+    def _cleanup_fifo(self) -> None:
+        """Clean up the FIFO and its directory."""
+        if self._fifo_fd is not None:
             try:
-                self._mpv_process.stdin.close()
-                self._mpv_process.terminate()
-                self._mpv_process.wait(timeout=2)
+                os.close(self._fifo_fd)
+            except OSError:
+                pass
+            self._fifo_fd = None
+
+        if self._fifo_path:
+            try:
+                os.unlink(self._fifo_path)
+                os.rmdir(os.path.dirname(self._fifo_path))
+            except OSError:
+                pass
+            self._fifo_path = None
+
+    def _start_player(self, fmt: "AudioFormat") -> None:
+        """Start MPV player for the given audio format."""
+        self._stop_player()
+
+        pcm_format = fmt.pcm_format
+        sample_rate = pcm_format.sample_rate
+        channels = pcm_format.channels
+
+        # Create FIFO for audio data
+        self._fifo_path = self._create_fifo()
+
+        # Create MPV instance
+        self._player = MPV()
+
+        if self._audio_device:
+            self._player["audio-device"] = self._audio_device
+
+        # Set demuxer options for raw audio
+        self._player["demuxer-rawaudio-rate"] = sample_rate
+        self._player["demuxer-rawaudio-channels"] = channels
+        self._player["demuxer-rawaudio-format"] = "s16le"
+        self._player["demuxer"] = "rawaudio"
+        self._player["cache"] = "no"
+
+        # Set volume
+        self._player.volume = 0 if self._muted else self._volume
+
+        # Start playback from FIFO (in separate thread to not block)
+        def start_playback():
+            try:
+                self._player.play(self._fifo_path)
             except Exception:
-                _LOGGER.debug("Error stopping MPV process", exc_info=True)
-            self._mpv_process = None
-            self._current_format = None
+                _LOGGER.debug("MPV playback ended", exc_info=True)
+
+        threading.Thread(target=start_playback, daemon=True).start()
+
+        # Open FIFO for writing (this blocks until MPV opens it for reading)
+        # Do this in a thread to avoid blocking the event loop
+        def open_fifo():
+            try:
+                self._fifo_fd = os.open(self._fifo_path, os.O_WRONLY)
+                _LOGGER.info(
+                    "SendSpin audio stream started: %d Hz, %d channels",
+                    sample_rate,
+                    channels,
+                )
+            except Exception:
+                _LOGGER.exception("Failed to open FIFO for writing")
+
+        threading.Thread(target=open_fifo, daemon=True).start()
+
+        self._current_format = fmt
+
+    def _stop_player(self) -> None:
+        """Stop the MPV player."""
+        if self._player:
+            try:
+                self._player.stop()
+                self._player.terminate()
+            except Exception:
+                _LOGGER.debug("Error stopping MPV player", exc_info=True)
+            self._player = None
+
+        self._cleanup_fifo()
+        self._current_format = None
 
     async def _connection_loop(self, url: str) -> None:
         """Connection loop with auto-reconnect."""
@@ -177,6 +301,10 @@ class SendspinBridge:
         _LOGGER.info("SendSpin stream started - interrupting Home Assistant playback")
         self._stream_active = True
 
+        # Notify that SendSpin is starting (so HA music can stop)
+        if self._on_sendspin_start:
+            self._on_sendspin_start()
+
         # Stop any Home Assistant music that's currently playing
         if self.media_player and self.media_player.music_player.is_playing:
             self.media_player.music_player.stop()
@@ -192,14 +320,60 @@ class SendspinBridge:
         _LOGGER.info("SendSpin stream ended")
         self._stream_active = False
 
-        # Stop MPV process
-        self._stop_mpv()
+        # Stop MPV player
+        self._stop_player()
 
         # Update MediaPlayerEntity state to idle
         if self.media_player:
             self.media_player.server.send_messages(
                 [self.media_player._update_state(MediaPlayerState.IDLE)]
             )
+
+    def _on_server_command(self, payload: ServerCommandPayload) -> None:
+        """Handle volume/mute commands from SendSpin server."""
+        if payload.player is None or self._client is None:
+            return
+
+        player_cmd = payload.player
+
+        if player_cmd.command == PlayerCommand.VOLUME and player_cmd.volume is not None:
+            self._volume = player_cmd.volume
+            if self._player:
+                self._player.volume = 0 if self._muted else self._volume
+            # Sync with MediaPlayerEntity
+            if self.media_player:
+                self.media_player.volume = self._volume / 100.0
+                self.media_player.music_player.set_volume(self._volume)
+                self.media_player.announce_player.set_volume(self._volume)
+                self.media_player.server.send_messages(
+                    [self.media_player._update_state(self.media_player.state)]
+                )
+            _LOGGER.info("SendSpin server set volume: %d%%", player_cmd.volume)
+
+        elif player_cmd.command == PlayerCommand.MUTE and player_cmd.mute is not None:
+            self._muted = player_cmd.mute
+            if self._player:
+                self._player.volume = 0 if self._muted else self._volume
+            # Sync with MediaPlayerEntity
+            if self.media_player:
+                self.media_player.muted = self._muted
+                self.media_player.server.send_messages(
+                    [self.media_player._update_state(self.media_player.state)]
+                )
+            _LOGGER.info(
+                "SendSpin server %s player", "muted" if player_cmd.mute else "unmuted"
+            )
+
+        # Send state update back to server per spec
+        asyncio.get_event_loop().call_soon(
+            lambda: asyncio.create_task(
+                self._client.send_player_state(
+                    state=PlayerStateType.SYNCHRONIZED,
+                    volume=self._volume,
+                    muted=self._muted,
+                )
+            )
+        )
 
     def _on_audio_chunk(
         self,
@@ -211,70 +385,19 @@ class SendspinBridge:
         if not self._stream_active:
             return
 
-        # Start MPV process if needed or if format changed
-        if self._mpv_process is None or self._current_format != fmt:
-            self._start_mpv(fmt)
+        # Start player if needed or if format changed
+        if self._player is None or self._current_format != fmt:
+            self._start_player(fmt)
 
-        # Write audio data to MPV's stdin
-        if self._mpv_process and self._mpv_process.stdin:
+        # Write audio data to FIFO
+        if self._fifo_fd is not None:
             try:
-                self._mpv_process.stdin.write(audio_data)
-                self._mpv_process.stdin.flush()
-            except (BrokenPipeError, OSError):
-                _LOGGER.warning("MPV pipe broken, restarting")
-                self._stop_mpv()
-
-    def _start_mpv(self, fmt: "AudioFormat") -> None:
-        """Start MPV process for raw PCM playback."""
-        self._stop_mpv()
-
-        pcm_format = fmt.pcm_format
-        sample_rate = pcm_format.sample_rate
-        channels = pcm_format.channels
-
-        # Build MPV command for raw PCM input
-        # Format: s16le (signed 16-bit little-endian)
-        cmd = [
-            "mpv",
-            "--no-terminal",
-            "--no-video",
-            f"--demuxer-rawaudio-rate={sample_rate}",
-            f"--demuxer-rawaudio-channels={channels}",
-            "--demuxer-rawaudio-format=s16le",
-            "--demuxer=rawaudio",
-            "--cache=no",
-            "--stream-buffer-size=64k",
-        ]
-
-        # Use same audio device as the rest of LVA
-        if self._audio_device:
-            cmd.append(f"--audio-device={self._audio_device}")
-
-        # Read from stdin
-        cmd.append("-")
-
-        try:
-            self._mpv_process = subprocess.Popen(
-                cmd,
-                stdin=subprocess.PIPE,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-            self._current_format = fmt
-            _LOGGER.info(
-                "SendSpin audio stream started via MPV: %d Hz, %d channels",
-                sample_rate,
-                channels,
-            )
-        except Exception:
-            _LOGGER.exception("Failed to start MPV for SendSpin audio")
+                os.write(self._fifo_fd, audio_data)
+            except (BrokenPipeError, OSError) as e:
+                _LOGGER.warning("FIFO write error: %s, restarting player", e)
+                self._start_player(fmt)
 
     @property
     def connected(self) -> bool:
         """Check if connected to SendSpin server."""
         return self._client is not None and self._client.connected
-
-    @property
-    def is_running(self) -> bool:
-        """Check if bridge is running."""
-        return self._running

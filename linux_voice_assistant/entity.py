@@ -1,29 +1,32 @@
 from abc import abstractmethod
 from collections.abc import Iterable
-from typing import Callable, List, Optional, Union
+from typing import TYPE_CHECKING, Callable, List, Optional, Union
 
 # pylint: disable=no-name-in-module
 from aioesphomeapi.api_pb2 import (  # type: ignore[attr-defined]
     ListEntitiesMediaPlayerResponse,
     ListEntitiesRequest,
     ListEntitiesSwitchResponse,
-    SwitchCommandRequest,
-    SwitchStateResponse,
     MediaPlayerCommandRequest,
     MediaPlayerStateResponse,
     SubscribeHomeAssistantStatesRequest,
+    SwitchCommandRequest,
+    SwitchStateResponse,
 )
 from aioesphomeapi.model import (
+    EntityCategory,
     MediaPlayerCommand,
     MediaPlayerEntityFeature,
     MediaPlayerState,
-    EntityCategory,
 )
 from google.protobuf import message
 
 from .api_server import APIServer
 from .mpv_player import MpvMediaPlayer
 from .util import call_all
+
+if TYPE_CHECKING:
+    from .sendspin_bridge import SendspinBridge
 
 
 class ESPHomeEntity:
@@ -58,6 +61,23 @@ class MediaPlayerEntity(ESPHomeEntity):
         self.muted = False
         self.music_player = music_player
         self.announce_player = announce_player
+        self.sendspin_bridge: Optional["SendspinBridge"] = None
+
+    def set_sendspin_bridge(self, bridge: "SendspinBridge") -> None:
+        """Set the SendSpin bridge for coordinated playback."""
+        self.sendspin_bridge = bridge
+        # Register callback so SendSpin can notify us when it starts
+        bridge.set_on_sendspin_start(self._on_sendspin_start)
+
+    def _on_sendspin_start(self) -> None:
+        """Called when SendSpin starts playing - stop HA music."""
+        if self.music_player.is_playing:
+            self.music_player.stop()
+
+    def _stop_sendspin_if_playing(self) -> None:
+        """Stop SendSpin playback if it's active."""
+        if self.sendspin_bridge and self.sendspin_bridge.is_playing:
+            self.sendspin_bridge.stop()
 
     def play(
         self,
@@ -65,6 +85,9 @@ class MediaPlayerEntity(ESPHomeEntity):
         announcement: bool = False,
         done_callback: Optional[Callable[[], None]] = None,
     ) -> Iterable[message.Message]:
+        # Stop SendSpin if it's playing (HA is taking over)
+        self._stop_sendspin_if_playing()
+
         if announcement:
             if self.music_player.is_playing:
                 # Announce, resume music
@@ -116,6 +139,9 @@ class MediaPlayerEntity(ESPHomeEntity):
                 volume = int(msg.volume * 100)
                 self.music_player.set_volume(volume)
                 self.announce_player.set_volume(volume)
+                # Sync volume with SendSpin bridge
+                if self.sendspin_bridge:
+                    self.sendspin_bridge.set_volume(volume, self.muted)
                 self.volume = msg.volume
                 yield self._update_state(self.state)
         elif isinstance(msg, ListEntitiesRequest):
@@ -140,7 +166,9 @@ class MediaPlayerEntity(ESPHomeEntity):
             muted=self.muted,
         )
 
+
 # -----------------------------------------------------------------------------
+
 
 class ThinkingSoundEntity(ESPHomeEntity):
     def __init__(
@@ -160,12 +188,16 @@ class ThinkingSoundEntity(ESPHomeEntity):
         self._get_thinking_sound_enabled = get_thinking_sound_enabled
         self._set_thinking_sound_enabled = set_thinking_sound_enabled
         self._switch_state = self._get_thinking_sound_enabled()  # Sync internal state
-        
-    def update_get_thinking_sound_enabled(self, get_thinking_sound_enabled: Callable[[], bool]) -> None:
+
+    def update_get_thinking_sound_enabled(
+        self, get_thinking_sound_enabled: Callable[[], bool]
+    ) -> None:
         # Update the callback used to read the thinking sound enabled state.
         self._get_thinking_sound_enabled = get_thinking_sound_enabled
 
-    def update_set_thinking_sound_enabled(self, set_thinking_sound_enabled: Callable[[bool], None]) -> None:
+    def update_set_thinking_sound_enabled(
+        self, set_thinking_sound_enabled: Callable[[bool], None]
+    ) -> None:
         # Update the callback used to change the thinking sound enabled state.
         self._set_thinking_sound_enabled = set_thinking_sound_enabled
 
@@ -192,4 +224,4 @@ class ThinkingSoundEntity(ESPHomeEntity):
         elif isinstance(msg, SubscribeHomeAssistantStatesRequest):
             # Always return our internal switch state
             self.sync_with_state()
-            yield SwitchStateResponse(key=self.key, state=self._switch_state)       
+            yield SwitchStateResponse(key=self.key, state=self._switch_state)

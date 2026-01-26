@@ -268,6 +268,8 @@ async def main() -> None:
             static_delay_ms=args.sendspin_static_delay_ms,
             audio_device=args.audio_output_device,
         )
+        # Wire up the bridge to the entity for coordinated playback
+        state.media_player_entity.set_sendspin_bridge(state.sendspin_bridge)
         await state.sendspin_bridge.start(server_url=args.sendspin_url)
 
 
@@ -296,7 +298,7 @@ async def main() -> None:
     finally:
         # Stop SendSpin bridge
         if state.sendspin_bridge:
-            await state.sendspin_bridge.stop()
+            await state.sendspin_bridge.disconnect()
 
         state.audio_queue.put_nowait(None)
         process_audio_thread.join()
