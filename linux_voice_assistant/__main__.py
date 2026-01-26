@@ -266,6 +266,7 @@ async def main() -> None:
             client_id=args.sendspin_client_id,
             client_name=args.name,
             static_delay_ms=args.sendspin_static_delay_ms,
+            audio_device=args.audio_output_device,
         )
         await state.sendspin_bridge.start(server_url=args.sendspin_url)
 

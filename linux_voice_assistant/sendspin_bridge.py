@@ -3,10 +3,9 @@
 import asyncio
 import logging
 import socket
+import subprocess
 from typing import TYPE_CHECKING, Optional
 
-import numpy as np
-import sounddevice as sd
 from aioesphomeapi.model import MediaPlayerState
 from aiosendspin.client import SendspinClient
 from aiosendspin.models.core import DeviceInfo, StreamStartMessage
@@ -24,9 +23,9 @@ _LOGGER = logging.getLogger(__name__)
 class SendspinBridge:
     """Bridge that connects SendSpin streaming to MediaPlayerEntity.
 
-    When SendSpin server starts streaming, this bridge plays the audio directly
-    using sounddevice and updates the MediaPlayerEntity state to reflect that
-    SendSpin (not Home Assistant) is the active source.
+    When SendSpin server starts streaming, this bridge plays the audio using
+    MPV (same as the rest of LVA) and updates the MediaPlayerEntity state to
+    reflect that SendSpin (not Home Assistant) is the active source.
     """
 
     def __init__(
@@ -35,6 +34,7 @@ class SendspinBridge:
         client_id: Optional[str] = None,
         client_name: Optional[str] = None,
         static_delay_ms: float = 0.0,
+        audio_device: Optional[str] = None,
     ) -> None:
         """Initialize the SendSpin bridge.
 
@@ -43,17 +43,19 @@ class SendspinBridge:
             client_id: Unique client ID
             client_name: Friendly client name
             static_delay_ms: Static playback delay
+            audio_device: Audio device to use (same as MPV audio-device)
         """
         hostname = socket.gethostname()
         self.media_player = media_player_entity
         self.client_id = client_id or f"linux-voice-assistant-{hostname}"
         self.client_name = client_name or hostname
+        self._audio_device = audio_device
 
         self._client: Optional[SendspinClient] = None
         self._running = False
-        self._stream: Optional[sd.RawOutputStream] = None
-        self._audio_queue: asyncio.Queue = asyncio.Queue(maxsize=100)
         self._stream_active = False
+        self._mpv_process: Optional[subprocess.Popen] = None
+        self._current_format: Optional["AudioFormat"] = None
 
         # Create SendSpin client
         self._client = SendspinClient(
@@ -119,13 +121,22 @@ class SendspinBridge:
         _LOGGER.info("Stopping SendSpin bridge")
         self._running = False
 
-        if self._stream:
-            self._stream.stop()
-            self._stream.close()
-            self._stream = None
+        self._stop_mpv()
 
         if self._client and self._client.connected:
             await self._client.disconnect()
+
+    def _stop_mpv(self) -> None:
+        """Stop the MPV process if running."""
+        if self._mpv_process:
+            try:
+                self._mpv_process.stdin.close()
+                self._mpv_process.terminate()
+                self._mpv_process.wait(timeout=2)
+            except Exception:
+                _LOGGER.debug("Error stopping MPV process", exc_info=True)
+            self._mpv_process = None
+            self._current_format = None
 
     async def _connection_loop(self, url: str) -> None:
         """Connection loop with auto-reconnect."""
@@ -181,11 +192,8 @@ class SendspinBridge:
         _LOGGER.info("SendSpin stream ended")
         self._stream_active = False
 
-        # Close audio stream
-        if self._stream:
-            self._stream.stop()
-            self._stream.close()
-            self._stream = None
+        # Stop MPV process
+        self._stop_mpv()
 
         # Update MediaPlayerEntity state to idle
         if self.media_player:
@@ -203,53 +211,63 @@ class SendspinBridge:
         if not self._stream_active:
             return
 
-        # Initialize or reconfigure audio stream if needed
-        if self._stream is None:
-            pcm_format = fmt.pcm_format
+        # Start MPV process if needed or if format changed
+        if self._mpv_process is None or self._current_format != fmt:
+            self._start_mpv(fmt)
+
+        # Write audio data to MPV's stdin
+        if self._mpv_process and self._mpv_process.stdin:
             try:
-                self._stream = sd.RawOutputStream(
-                    samplerate=pcm_format.sample_rate,
-                    channels=pcm_format.channels,
-                    dtype="int16",
-                    callback=self._audio_callback,
-                )
-                self._stream.start()
-                _LOGGER.info(
-                    "SendSpin audio stream started: %d Hz, %d channels",
-                    pcm_format.sample_rate,
-                    pcm_format.channels,
-                )
-            except Exception:
-                _LOGGER.exception("Failed to start audio stream")
-                return
+                self._mpv_process.stdin.write(audio_data)
+                self._mpv_process.stdin.flush()
+            except (BrokenPipeError, OSError):
+                _LOGGER.warning("MPV pipe broken, restarting")
+                self._stop_mpv()
 
-        # Queue audio data for playback
+    def _start_mpv(self, fmt: "AudioFormat") -> None:
+        """Start MPV process for raw PCM playback."""
+        self._stop_mpv()
+
+        pcm_format = fmt.pcm_format
+        sample_rate = pcm_format.sample_rate
+        channels = pcm_format.channels
+
+        # Build MPV command for raw PCM input
+        # Format: s16le (signed 16-bit little-endian)
+        cmd = [
+            "mpv",
+            "--no-terminal",
+            "--no-video",
+            f"--demuxer-rawaudio-rate={sample_rate}",
+            f"--demuxer-rawaudio-channels={channels}",
+            "--demuxer-rawaudio-format=s16le",
+            "--demuxer=rawaudio",
+            "--cache=no",
+            "--stream-buffer-size=64k",
+        ]
+
+        # Use same audio device as the rest of LVA
+        if self._audio_device:
+            cmd.append(f"--audio-device={self._audio_device}")
+
+        # Read from stdin
+        cmd.append("-")
+
         try:
-            self._audio_queue.put_nowait(audio_data)
-        except asyncio.QueueFull:
-            _LOGGER.warning("Audio queue full, dropping chunk")
-
-    def _audio_callback(
-        self,
-        outdata: memoryview,
-        frames: int,
-        time_info,
-        status,
-    ) -> None:
-        """Audio callback to fill output buffer."""
-        if status:
-            _LOGGER.debug("Audio callback status: %s", status)
-
-        # Get audio data from queue
-        try:
-            data = self._audio_queue.get_nowait()
-            outdata[: len(data)] = data
-            if len(data) < len(outdata):
-                # Pad with silence if needed
-                outdata[len(data) :] = b"\x00" * (len(outdata) - len(data))
-        except asyncio.QueueEmpty:
-            # Fill with silence
-            outdata[:] = b"\x00" * len(outdata)
+            self._mpv_process = subprocess.Popen(
+                cmd,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            self._current_format = fmt
+            _LOGGER.info(
+                "SendSpin audio stream started via MPV: %d Hz, %d channels",
+                sample_rate,
+                channels,
+            )
+        except Exception:
+            _LOGGER.exception("Failed to start MPV for SendSpin audio")
 
     @property
     def connected(self) -> bool:

@@ -5,8 +5,8 @@ Linux Voice Assistant now supports receiving synchronized audio streams from Sen
 ## Overview
 
 The SendSpin integration adds the ability for LVA to act as a SendSpin client:
-- **Home Assistant music**: Continues to play through MPV as before
-- **SendSpin streams**: Play through sounddevice when a SendSpin server starts streaming
+- **Home Assistant music**: Plays through MPV as before
+- **SendSpin streams**: Also play through MPV (using the same audio device)
 - **Automatic switching**: SendSpin interrupts Home Assistant music when it starts
 - **State synchronization**: MediaPlayerEntity accurately reflects which source is playing
 
@@ -28,8 +28,10 @@ The SendSpin integration adds the ability for LVA to act as a SendSpin client:
 │                                                │
 │   ┌──────────────────────────────────────┐    │
 │   │  SendSpin Bridge                     │    │
-│   │  - sounddevice output                │    │
-│   │  - Interrupts MPV when active        │    │
+│   │  - MPV subprocess for PCM playback   │    │
+│   │  - Uses same --audio-output-device   │    │
+│   │  - Interrupts music_player when      │    │
+│   │    active                            │    │
 │   │  - Updates MediaPlayerEntity state   │    │
 │   └──────────────────────────────────────┘    │
 └────────────────────────────────────────────────┘
@@ -42,18 +44,10 @@ The SendSpin integration adds the ability for LVA to act as a SendSpin client:
 
 ## Installation
 
-Install the additional system dependency:
-
-```bash
-# On Debian/Ubuntu/Raspberry Pi:
-sudo apt-get install libportaudio2
-
-# On other systems: https://www.portaudio.com/
-```
-
 Python dependencies are automatically included:
 - `aiosendspin~=3.0` - SendSpin protocol client
-- `sounddevice>=0.4.6` - Audio device interface for SendSpin playback
+
+No additional system dependencies are required since SendSpin audio is played through MPV (already required by LVA).
 
 ## Usage
 
@@ -103,11 +97,11 @@ python3 -m linux_voice_assistant \
 
 1. **Home Assistant plays music** → MPV plays, MediaPlayerEntity state = PLAYING
 2. **SendSpin server starts streaming** → SendSpin bridge:
-   - Stops MPV playback
-   - Starts sounddevice stream
+   - Stops MPV music_player
+   - Starts new MPV subprocess for PCM audio
    - Updates MediaPlayerEntity state = PLAYING
 3. **SendSpin stream ends** → SendSpin bridge:
-   - Stops sounddevice stream
+   - Stops MPV subprocess
    - Updates MediaPlayerEntity state = IDLE
    - Home Assistant can resume playing if needed
 
@@ -117,32 +111,33 @@ The MediaPlayerEntity in Home Assistant always reflects the current playback sta
 - Shows PLAYING when either source is active
 - Shows IDLE when both sources are idle
 - Shows the correct volume level
-- Responds to pause/play/volume commands (affects MPV player)
+- Responds to pause/play/volume commands (affects MPV music_player)
 
 ### Audio Output
 
-- **MPV**: Plays Home Assistant music, TTS, announcements through the device specified by `--audio-output-device`
-- **sounddevice**: Plays SendSpin streams through the system default audio device
-- Both use the same physical output in typical setups
+Both Home Assistant music and SendSpin streams use MPV for playback:
+- **music_player**: Uses python-mpv library for Home Assistant music, TTS, announcements
+- **SendSpin bridge**: Uses MPV subprocess with raw PCM input via stdin
+- Both respect the `--audio-output-device` setting
 
 ## Behavior
 
 ### When SendSpin Starts Streaming
 
 - Any Home Assistant music currently playing is stopped
-- SendSpin audio plays through sounddevice
+- SendSpin audio plays through a dedicated MPV subprocess
 - MediaPlayerEntity state shows PLAYING
 - Home Assistant sees the entity as busy
 
 ### When SendSpin Stops Streaming
 
-- SendSpin audio stops
+- SendSpin MPV subprocess stops
 - MediaPlayerEntity state shows IDLE
 - Home Assistant can send new music if desired
 
 ### TTS and Announcements
 
-- Always play through MPV (original behavior)
+- Always play through the main MPV player (original behavior)
 - Work regardless of SendSpin state
 - Not affected by SendSpin streams
 
@@ -150,10 +145,10 @@ The MediaPlayerEntity in Home Assistant always reflects the current playback sta
 
 ### SendSpin Audio Not Playing
 
-1. Ensure PortAudio is installed: `apt-get install libportaudio2`
-2. Check connection to server: verify `--sendspin-url` is correct
-3. Test default audio device: `python3 -c "import sounddevice as sd; sd.play([0.1]*44100, 44100); sd.wait()"`
-4. Enable debug logging: `--debug`
+1. Check connection to server: verify `--sendspin-url` is correct
+2. Test MPV directly: `echo | mpv --demuxer=rawaudio -`
+3. Enable debug logging: `--debug`
+4. Check that MPV is installed and working
 
 ### Connection Issues
 
@@ -166,7 +161,7 @@ The MediaPlayerEntity in Home Assistant always reflects the current playback sta
 
 If SendSpin audio is out of sync with other clients:
 
-1. Adjust `--sendspin-static-delay-ms` (typically negative values like `-100` to `-150`)
+1. Adjust `--sendspin-static-delay-ms` (typically negative values like `-100` to `-250`)
 2. Check network latency: `ping <server-ip>`
 3. Use wired Ethernet instead of WiFi
 
@@ -198,8 +193,6 @@ This integration adds SendSpin support while maintaining full backward compatibi
 
 **Dependencies Added:**
 - `aiosendspin~=3.0`
-- `sounddevice>=0.4.6`
-- System: `libportaudio2`
 
 ## Related Projects
 
