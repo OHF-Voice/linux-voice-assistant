@@ -102,6 +102,22 @@ async def main() -> None:
     parser.add_argument(
         "--debug", action="store_true", help="Print DEBUG messages to console"
     )
+    #
+    # SendSpin client options
+    parser.add_argument(
+        "--sendspin-url",
+        help="SendSpin server WebSocket URL (e.g., ws://192.168.1.100:8928/sendspin)",
+    )
+    parser.add_argument(
+        "--sendspin-client-id",
+        help="Unique identifier for SendSpin client (default: linux-voice-assistant-<hostname>)",
+    )
+    parser.add_argument(
+        "--sendspin-static-delay-ms",
+        type=float,
+        default=0.0,
+        help="Static playback delay in milliseconds for SendSpin sync adjustment",
+    )
     args = parser.parse_args()
 
     if args.list_input_devices:
@@ -240,7 +256,19 @@ async def main() -> None:
     )
 
     if args.enable_thinking_sound:
-        state.save_preferences() 
+        state.save_preferences()
+    # Initialize SendSpin bridge if URL provided
+    if args.sendspin_url:
+        from .sendspin_bridge import SendspinBridge
+
+        state.sendspin_bridge = SendspinBridge(
+            media_player_entity=state.media_player_entity,
+            client_id=args.sendspin_client_id,
+            client_name=args.name,
+            static_delay_ms=args.sendspin_static_delay_ms,
+        )
+        await state.sendspin_bridge.start(server_url=args.sendspin_url)
+
 
     process_audio_thread = threading.Thread(
         target=process_audio,
@@ -265,6 +293,10 @@ async def main() -> None:
     except KeyboardInterrupt:
         pass
     finally:
+        # Stop SendSpin bridge
+        if state.sendspin_bridge:
+            await state.sendspin_bridge.stop()
+
         state.audio_queue.put_nowait(None)
         process_audio_thread.join()
 
