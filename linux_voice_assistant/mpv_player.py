@@ -62,6 +62,15 @@ class MpvMediaPlayer:
         self._playlist.clear()
 
     def duck(self) -> None:
+        # Capture current volume before ducking
+        try:
+            current_vol = self.player.volume
+            if current_vol is not None:
+                self._unduck_volume = int(current_vol)
+                self._duck_volume = self._unduck_volume // 2
+        except Exception:
+            # Fallback to defaults if can't read volume
+            pass
         self.player.volume = self._duck_volume
 
     def unduck(self) -> None:

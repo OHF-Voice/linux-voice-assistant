@@ -1104,6 +1104,9 @@ class SendspinBridge:
     def duck(self) -> None:
         """Reduce volume (for wake word/TTS)."""
         self._is_ducked = True
+        # Recalculate duck volume based on current volume
+        self._unduck_volume = self._volume
+        self._duck_volume = self._volume // 2
         if self._player:
             self._player.set_volume(self._duck_volume, muted=False)
 
@@ -1232,8 +1235,19 @@ class SendspinBridge:
         """Stop and clean up the AudioPlayer."""
         if self._player:
             try:
+                # Close the stream immediately to release audio device
+                if self._player._stream:
+                    try:
+                        self._player._stream.stop()
+                        self._player._stream.close()
+                    except Exception:
+                        _LOGGER.debug("Error closing audio stream", exc_info=True)
+                    self._player._stream = None
+
+                # Clear buffer
                 self._player.clear()
-                # Run stop in a task since it's async
+
+                # Schedule full cleanup in background
                 loop = asyncio.get_event_loop()
                 loop.create_task(self._player.stop())
             except Exception:
