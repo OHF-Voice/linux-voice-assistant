@@ -1,6 +1,6 @@
 # Linux Voice Assistant
 
-Experimental Linux voice assistant for [Home Assistant][homeassistant] that uses the [ESPHome][esphome] protocol.
+Experimental Linux voice assistant for [Home Assistant][homeassistant] that uses the [ESPHome][esphome] protocol/API (via [aioesphomeapi](https://github.com/esphome/aioesphomeapi)).
 
 Runs on Linux `aarch64` and `x86_64` platforms. Tested with Python 3.13 and Python 3.11.
 Supports announcments, start/continue conversation, and timers.
