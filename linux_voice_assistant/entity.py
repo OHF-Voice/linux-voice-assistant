@@ -105,6 +105,7 @@ class MediaPlayerEntity(ESPHomeEntity):
                     ),
                 )
             else:
+                # Announce, idle
                 self.announce_player.play(
                     url,
                     done_callback=lambda: call_all(
@@ -136,15 +137,12 @@ class MediaPlayerEntity(ESPHomeEntity):
                 command = MediaPlayerCommand(msg.command)
                 if command == MediaPlayerCommand.PAUSE:
                     self.music_player.pause()
-                    self.announce_player.pause()
                     yield self._update_state(self._determine_state())
                 elif command == MediaPlayerCommand.PLAY:
                     self.music_player.resume()
-                    self.announce_player.resume()
                     yield self._update_state(self._determine_state())
                 elif command == MediaPlayerCommand.STOP:
                     self.music_player.stop()
-                    self.announce_player.stop()
                     yield self._update_state(self._determine_state())
                     yield self._update_state(MediaPlayerState.PLAYING)
                 elif command == MediaPlayerCommand.MUTE:
@@ -192,10 +190,10 @@ class MediaPlayerEntity(ESPHomeEntity):
         )
 
     def _determine_state(self) -> MediaPlayerState:
-        if self.music_player.is_playing or self.announce_player.is_playing:
+        if self.music_player.is_playing:
             return MediaPlayerState.PLAYING
 
-        if self.music_player.is_paused or self.announce_player.is_paused:
+        if self.music_player.is_paused:
             return MediaPlayerState.PAUSED
 
         return MediaPlayerState.IDLE
