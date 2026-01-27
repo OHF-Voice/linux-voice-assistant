@@ -126,9 +126,7 @@ class MediaPlayerEntity(ESPHomeEntity):
                     url,
                     done_callback=lambda: call_all(
                         self._resume_sendspin,
-                        lambda: self.server.send_messages(
-                            [self._update_state(MediaPlayerState.PAUSED)]
-                        ),
+                        lambda: self._safe_send_state(MediaPlayerState.PAUSED),
                         done_callback,
                     ),
                 )
@@ -137,9 +135,7 @@ class MediaPlayerEntity(ESPHomeEntity):
                 self.announce_player.play(
                     url,
                     done_callback=lambda: call_all(
-                        lambda: self.server.send_messages(
-                            [self._update_state(MediaPlayerState.IDLE)]
-                        ),
+                        lambda: self._safe_send_state(MediaPlayerState.IDLE),
                         done_callback,
                     ),
                 )
@@ -148,9 +144,7 @@ class MediaPlayerEntity(ESPHomeEntity):
             self.music_player.play(
                 url,
                 done_callback=lambda: call_all(
-                    lambda: self.server.send_messages(
-                        [self._update_state(MediaPlayerState.IDLE)]
-                    ),
+                    lambda: self._safe_send_state(MediaPlayerState.IDLE),
                     done_callback,
                 ),
             )
@@ -191,6 +185,13 @@ class MediaPlayerEntity(ESPHomeEntity):
     def _update_state(self, new_state: MediaPlayerState) -> MediaPlayerStateResponse:
         self.state = new_state
         return self._get_state_message()
+
+    def _safe_send_state(self, state: MediaPlayerState) -> None:
+        """Send state update, ignoring connection errors."""
+        try:
+            self.server.send_messages([self._update_state(state)])
+        except Exception:
+            pass  # Connection may be closed or in error state
 
     def _get_state_message(self) -> MediaPlayerStateResponse:
         return MediaPlayerStateResponse(

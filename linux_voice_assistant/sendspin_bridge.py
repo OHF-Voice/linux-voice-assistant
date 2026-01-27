@@ -1148,12 +1148,13 @@ class SendspinBridge:
             self._stream_active = False
             self._paused = False
 
-            # Report PAUSED state to SendSpin server
+            # Report state to SendSpin server (SYNCHRONIZED is the only valid state)
+            # SendSpin protocol doesn't have PAUSED - it uses SYNCHRONIZED/ERROR only
             if self._client and self._client.connected:
                 asyncio.get_event_loop().call_soon(
                     lambda: asyncio.create_task(
                         self._client.send_player_state(
-                            state=PlayerStateType.PAUSED,
+                            state=PlayerStateType.SYNCHRONIZED,
                             volume=self._volume,
                             muted=self._muted,
                         )
