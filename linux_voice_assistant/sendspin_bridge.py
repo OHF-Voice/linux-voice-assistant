@@ -1393,7 +1393,7 @@ class SendspinBridge:
             if self.media_player:
                 self.media_player.volume = self._volume / 100.0
                 self.media_player.music_player.set_volume(self._volume)
-                self.media_player.announce_player.set_volume(self._volume)
+                # NOTE: announce_player volume is NOT synced - it always plays at full volume
                 self.media_player.server.send_messages(
                     [self.media_player._update_state(self.media_player.state)]
                 )

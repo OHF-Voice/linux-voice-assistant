@@ -65,6 +65,9 @@ class VoiceSatelliteProtocol(APIServer):
             )
             self.state.entities.append(self.state.media_player_entity)
 
+        # TTS player always plays at full volume (not synced with music volume)
+        self.state.tts_player.player.volume = 100
+
         existing_thinking_sound_switches = [
             entity
             for entity in self.state.entities
@@ -151,10 +154,8 @@ class VoiceSatelliteProtocol(APIServer):
                 self.state.stop_word.is_active = True
                 self._processing = True
                 self.duck()
-                # Ensure TTS player is at full volume before playing processing sound
-                self.state.tts_player.player.volume = (
-                    self.state.tts_player._unduck_volume
-                )
+                # TTS player always plays at full volume
+                self.state.tts_player.player.volume = 100
                 self.state.tts_player.play(self.state.processing_sound)
         elif event_type in (
             VoiceAssistantEventType.VOICE_ASSISTANT_STT_VAD_END,
@@ -216,8 +217,8 @@ class VoiceSatelliteProtocol(APIServer):
             self._continue_conversation = msg.start_conversation
 
             self.duck()
-            # Ensure announce player is at full volume before playing announcement
-            self.state.tts_player.player.volume = self.state.tts_player._unduck_volume
+            # TTS player always plays at full volume
+            self.state.tts_player.player.volume = 100
             yield from self.state.media_player_entity.play(
                 urls, announcement=True, done_callback=self._tts_finished
             )
@@ -341,8 +342,8 @@ class VoiceSatelliteProtocol(APIServer):
         )
         self.duck()
         self._is_streaming_audio = True
-        # Ensure TTS player is at full volume before playing chime
-        self.state.tts_player.player.volume = self.state.tts_player._unduck_volume
+        # TTS player always plays at full volume
+        self.state.tts_player.player.volume = 100
         self.state.tts_player.play(self.state.wakeup_sound)
 
     def stop(self) -> None:
@@ -364,8 +365,8 @@ class VoiceSatelliteProtocol(APIServer):
         _LOGGER.debug("Playing TTS response: %s", self._tts_url)
 
         self.state.active_wake_words.add(self.state.stop_word.id)
-        # Ensure TTS player is at full volume before playing TTS
-        self.state.tts_player.player.volume = self.state.tts_player._unduck_volume
+        # TTS player always plays at full volume
+        self.state.tts_player.player.volume = 100
         self.state.tts_player.play(self._tts_url, done_callback=self._tts_finished)
 
     def duck(self) -> None:
@@ -400,8 +401,8 @@ class VoiceSatelliteProtocol(APIServer):
             self.unduck()
             return
 
-        # Ensure TTS player is at full volume before playing timer sound
-        self.state.tts_player.player.volume = self.state.tts_player._unduck_volume
+        # TTS player always plays at full volume
+        self.state.tts_player.player.volume = 100
         self.state.tts_player.play(
             self.state.timer_finished_sound,
             done_callback=lambda: call_all(
