@@ -1032,6 +1032,7 @@ class SendspinBridge:
         self._client: SendspinClient | None = None
         self._running = False
         self._stream_active = False
+        self._paused = False  # Track if playback is paused (for announcements)
 
         # AudioPlayer for time-synchronized playback
         self._player: AudioPlayer | None = None
@@ -1109,13 +1110,32 @@ class SendspinBridge:
     def unduck(self) -> None:
         """Restore volume (after wake word/TTS)."""
         self._is_ducked = False
-        if self._player:
+        if self._player and not self._paused:
             self._player.set_volume(self._unduck_volume, muted=self._muted)
+
+    def pause(self) -> None:
+        """Pause SendSpin playback (for announcements)."""
+        if self._stream_active and not self._paused:
+            self._paused = True
+            if self._player:
+                self._player.set_volume(0, muted=True)  # Mute instead of stopping
+            _LOGGER.info("SendSpin playback paused")
+
+    def resume(self) -> None:
+        """Resume SendSpin playback after pause."""
+        if self._stream_active and self._paused:
+            self._paused = False
+            if self._player:
+                if self._is_ducked:
+                    self._player.set_volume(self._duck_volume, muted=self._muted)
+                else:
+                    self._player.set_volume(self._volume, muted=self._muted)
+            _LOGGER.info("SendSpin playback resumed")
 
     @property
     def is_playing(self) -> bool:
-        """Check if SendSpin is currently playing."""
-        return self._stream_active
+        """Check if SendSpin is currently playing (not paused)."""
+        return self._stream_active and not self._paused
 
     def stop(self) -> None:
         """Stop SendSpin playback (called when HA wants to play)."""
@@ -1123,6 +1143,19 @@ class SendspinBridge:
             _LOGGER.info("Stopping SendSpin playback (HA taking over)")
             self._stop_playback()
             self._stream_active = False
+            self._paused = False
+
+            # Report PAUSED state to SendSpin server
+            if self._client and self._client.connected:
+                asyncio.get_event_loop().call_soon(
+                    lambda: asyncio.create_task(
+                        self._client.send_player_state(
+                            state=PlayerStateType.PAUSED,
+                            volume=self._volume,
+                            muted=self._muted,
+                        )
+                    )
+                )
 
     async def start(self, server_url: str | None = None) -> None:
         """Start the SendSpin client.
@@ -1248,27 +1281,19 @@ class SendspinBridge:
 
     def _on_stream_start(self, _message: StreamStartMessage) -> None:
         """Handle stream start from SendSpin server."""
-        _LOGGER.info("SendSpin stream started - interrupting Home Assistant playback")
+        _LOGGER.info("SendSpin stream started")
         self._stream_active = True
+        self._paused = False
 
-        # Notify that SendSpin is starting (so HA music can stop)
+        # Notify MediaPlayerEntity (it will handle pausing HA music and updating state)
         if self._on_sendspin_start:
             self._on_sendspin_start()
-
-        # Stop any Home Assistant music that's currently playing
-        if self.media_player and self.media_player.music_player.is_playing:
-            self.media_player.music_player.stop()
-
-        # Update MediaPlayerEntity state to show we're playing
-        if self.media_player:
-            self.media_player.server.send_messages(
-                [self.media_player._update_state(MediaPlayerState.PLAYING)]
-            )
 
     def _on_stream_end(self, roles) -> None:
         """Handle stream end from SendSpin server."""
         _LOGGER.info("SendSpin stream ended")
         self._stream_active = False
+        self._paused = False
 
         # Stop playback
         self._stop_playback()
