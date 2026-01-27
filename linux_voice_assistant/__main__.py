@@ -46,7 +46,7 @@ async def main() -> None:
     parser.add_argument("--audio-input-block-size", type=int, default=1024)
     parser.add_argument(
         "--audio-output-device",
-        help="mpv name for output device (see --list-output-devices)",
+        help="MPV device name for output (see --list-output-devices). SendSpin will auto-match to sounddevice.",
     )
     parser.add_argument(
         "--list-output-devices",
@@ -128,14 +128,8 @@ async def main() -> None:
         return
 
     if args.list_output_devices:
-        from mpv import MPV
-
-        player = MPV()
-        print("Output devices")
-        print("=" * 14)
-
-        for speaker in player.audio_device_list:  # type: ignore
-            print(speaker["name"] + ":", speaker["description"])
+        from .audio_device_util import list_output_devices
+        list_output_devices()
         return
 
     logging.basicConfig(level=logging.DEBUG if args.debug else logging.INFO)
@@ -269,13 +263,17 @@ async def main() -> None:
     # Initialize SendSpin bridge if URL provided
     if args.sendspin_url:
         from .sendspin_bridge import SendspinBridge
+        from .audio_device_util import find_sounddevice_by_name
+
+        # Resolve MPV device name to sounddevice index
+        sounddevice_index = find_sounddevice_by_name(args.audio_output_device)
 
         vsp.state.sendspin_bridge = SendspinBridge(
             media_player_entity=vsp.state.media_player_entity,
             client_id=args.sendspin_client_id,
             client_name=args.name,
             static_delay_ms=args.sendspin_static_delay_ms,
-            audio_device=args.audio_output_device,
+            audio_device=sounddevice_index,
         )
         # Wire up the bridge to the entity for coordinated playback
         vsp.state.media_player_entity.set_sendspin_bridge(state.sendspin_bridge)
