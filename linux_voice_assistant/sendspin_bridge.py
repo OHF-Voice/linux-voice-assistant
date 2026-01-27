@@ -36,38 +36,23 @@ _LOGGER = logging.getLogger(__name__)
 def perceptual_to_linear(perceptual: int) -> int:
     """Convert SendSpin perceptual volume (0-100) to HA/MPV linear volume (0-100).
 
-    Physical basis:
-    - Perceptual: V=50 to V=100 = +10 dB
-    - Linear: V=50 to V=100 = +3 dB
-
-    At same numeric value, perceptual is LOUDER than linear.
-    Example: perceptual 30 ≈ linear 100
+    Uses power function to map full perceptual range to usable linear range.
+    Anchored at 100=100, clips at low end (linear can't go below 0).
     """
     if perceptual <= 0:
         return 0
-    # Amplitude from perceptual volume
-    amplitude = 10 ** (perceptual / 100)
-    # Convert amplitude to linear volume
-    linear = 1000 * math.log10(amplitude) / 3
+    linear = 100 * (perceptual / 100) ** 0.3
     return max(0, min(100, round(linear)))
 
 
 def linear_to_perceptual(linear: int) -> int:
     """Convert HA/MPV linear volume (0-100) to SendSpin perceptual volume (0-100).
 
-    Physical basis:
-    - Perceptual: V=50 to V=100 = +10 dB
-    - Linear: V=50 to V=100 = +3 dB
-
-    At same numeric value, perceptual is LOUDER than linear.
-    Example: linear 100 ≈ perceptual 30
+    Inverse of perceptual_to_linear.
     """
     if linear <= 0:
         return 0
-    # Amplitude from linear volume
-    amplitude = 10 ** (3 * linear / 1000)
-    # Convert amplitude to perceptual volume
-    perceptual = 100 * math.log10(amplitude)
+    perceptual = 100 * (linear / 100) ** (10 / 3)
     return max(0, min(100, round(perceptual)))
 
 

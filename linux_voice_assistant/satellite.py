@@ -65,8 +65,8 @@ class VoiceSatelliteProtocol(APIServer):
             )
             self.state.entities.append(self.state.media_player_entity)
 
-        # TTS player always plays at full volume (not synced with music volume)
-        self.state.tts_player.player.volume = 100
+        # TTS player always plays at fixed volume (not synced with music volume)
+        self.state.tts_player.player.volume = 60
 
         existing_thinking_sound_switches = [
             entity
@@ -154,8 +154,8 @@ class VoiceSatelliteProtocol(APIServer):
                 self.state.stop_word.is_active = True
                 self._processing = True
                 self.duck()
-                # TTS player always plays at full volume
-                self.state.tts_player.player.volume = 100
+                # TTS player always plays at fixed volume
+                self.state.tts_player.player.volume = 60
                 self.state.tts_player.play(self.state.processing_sound)
         elif event_type in (
             VoiceAssistantEventType.VOICE_ASSISTANT_STT_VAD_END,
@@ -217,8 +217,8 @@ class VoiceSatelliteProtocol(APIServer):
             self._continue_conversation = msg.start_conversation
 
             self.duck()
-            # TTS player always plays at full volume
-            self.state.tts_player.player.volume = 100
+            # TTS player always plays at fixed volume
+            self.state.tts_player.player.volume = 60
             yield from self.state.media_player_entity.play(
                 urls, announcement=True, done_callback=self._tts_finished
             )
@@ -342,8 +342,8 @@ class VoiceSatelliteProtocol(APIServer):
         )
         self.duck()
         self._is_streaming_audio = True
-        # TTS player always plays at full volume
-        self.state.tts_player.player.volume = 100
+        # TTS player always plays at fixed volume
+        self.state.tts_player.player.volume = 60
         self.state.tts_player.play(self.state.wakeup_sound)
 
     def stop(self) -> None:
@@ -365,8 +365,8 @@ class VoiceSatelliteProtocol(APIServer):
         _LOGGER.debug("Playing TTS response: %s", self._tts_url)
 
         self.state.active_wake_words.add(self.state.stop_word.id)
-        # TTS player always plays at full volume
-        self.state.tts_player.player.volume = 100
+        # TTS player always plays at fixed volume
+        self.state.tts_player.player.volume = 60
         self.state.tts_player.play(self._tts_url, done_callback=self._tts_finished)
 
     def duck(self) -> None:
@@ -401,8 +401,8 @@ class VoiceSatelliteProtocol(APIServer):
             self.unduck()
             return
 
-        # TTS player always plays at full volume
-        self.state.tts_player.player.volume = 100
+        # TTS player always plays at fixed volume
+        self.state.tts_player.player.volume = 60
         self.state.tts_player.play(
             self.state.timer_finished_sound,
             done_callback=lambda: call_all(
