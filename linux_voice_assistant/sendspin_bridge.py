@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import collections
 import logging
+import math
 import socket
 from dataclasses import dataclass
 from enum import Enum, auto
@@ -30,6 +31,44 @@ if TYPE_CHECKING:
     from .entity import MediaPlayerEntity
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def perceptual_to_linear(perceptual: int) -> int:
+    """Convert SendSpin perceptual volume (0-100) to HA/MPV linear volume (0-100).
+
+    Physical basis:
+    - Perceptual: V=50 to V=100 = +10 dB
+    - Linear: V=50 to V=100 = +3 dB
+
+    At same numeric value, perceptual is LOUDER than linear.
+    Example: perceptual 30 ≈ linear 100
+    """
+    if perceptual <= 0:
+        return 0
+    # Amplitude from perceptual volume
+    amplitude = 10 ** (perceptual / 100)
+    # Convert amplitude to linear volume
+    linear = 1000 * math.log10(amplitude) / 3
+    return max(0, min(100, round(linear)))
+
+
+def linear_to_perceptual(linear: int) -> int:
+    """Convert HA/MPV linear volume (0-100) to SendSpin perceptual volume (0-100).
+
+    Physical basis:
+    - Perceptual: V=50 to V=100 = +10 dB
+    - Linear: V=50 to V=100 = +3 dB
+
+    At same numeric value, perceptual is LOUDER than linear.
+    Example: linear 100 ≈ perceptual 30
+    """
+    if linear <= 0:
+        return 0
+    # Amplitude from linear volume
+    amplitude = 10 ** (3 * linear / 1000)
+    # Convert amplitude to perceptual volume
+    perceptual = 100 * math.log10(amplitude)
+    return max(0, min(100, round(perceptual)))
 
 
 class AudioTimeInfo(Protocol):
@@ -150,7 +189,7 @@ class AudioPlayer:
         self._closed = False
         self._stream_started = False
 
-        self._volume: int = 100
+        self._volume: int = 60
         self._muted: bool = False
 
         # Partial chunk tracking
@@ -1039,10 +1078,10 @@ class SendspinBridge:
         self._current_format: "AudioFormat | None" = None
 
         # Volume state (synced with MediaPlayerEntity)
-        self._volume: int = 100
+        self._volume: int = 60
         self._muted: bool = False
-        self._duck_volume: int = 50
-        self._unduck_volume: int = 100
+        self._duck_volume: int = 30
+        self._unduck_volume: int = 60
         self._is_ducked: bool = False
 
         # Callback to notify when SendSpin starts playing
@@ -1101,6 +1140,19 @@ class SendspinBridge:
             else:
                 self._player.set_volume(self._volume, muted=self._muted)
 
+        # Report volume change to SendSpin server (convert linear to perceptual)
+        if self._client and self._client.connected:
+            perceived_volume = linear_to_perceptual(self._volume)
+            asyncio.get_event_loop().call_soon(
+                lambda: asyncio.create_task(
+                    self._client.send_player_state(
+                        state=PlayerStateType.SYNCHRONIZED,
+                        volume=perceived_volume,
+                        muted=self._muted,
+                    )
+                )
+            )
+
     def duck(self) -> None:
         """Reduce volume (for wake word/TTS)."""
         self._is_ducked = True
@@ -1155,7 +1207,7 @@ class SendspinBridge:
                     lambda: asyncio.create_task(
                         self._client.send_player_state(
                             state=PlayerStateType.SYNCHRONIZED,
-                            volume=self._volume,
+                            volume=linear_to_perceptual(self._volume),
                             muted=self._muted,
                         )
                     )
@@ -1327,7 +1379,14 @@ class SendspinBridge:
         player_cmd = payload.player
 
         if player_cmd.command == PlayerCommand.VOLUME and player_cmd.volume is not None:
-            self._volume = player_cmd.volume
+            # Convert perceptual volume from SendSpin to linear for local playback
+            perceptual_vol = player_cmd.volume
+            self._volume = perceptual_to_linear(perceptual_vol)
+            _LOGGER.info(
+                "SendSpin volume %d (perceptual) -> %d (linear)",
+                perceptual_vol,
+                self._volume,
+            )
             if self._player:
                 self._player.set_volume(self._volume, muted=self._muted)
             # Sync with MediaPlayerEntity
@@ -1338,7 +1397,6 @@ class SendspinBridge:
                 self.media_player.server.send_messages(
                     [self.media_player._update_state(self.media_player.state)]
                 )
-            _LOGGER.info("SendSpin server set volume: %d%%", player_cmd.volume)
 
         elif player_cmd.command == PlayerCommand.MUTE and player_cmd.mute is not None:
             self._muted = player_cmd.mute
@@ -1359,7 +1417,7 @@ class SendspinBridge:
             lambda: asyncio.create_task(
                 self._client.send_player_state(
                     state=PlayerStateType.SYNCHRONIZED,
-                    volume=self._volume,
+                    volume=linear_to_perceptual(self._volume),
                     muted=self._muted,
                 )
             )
