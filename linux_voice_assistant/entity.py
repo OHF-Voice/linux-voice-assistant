@@ -7,11 +7,11 @@ from aioesphomeapi.api_pb2 import (  # type: ignore[attr-defined]
     ListEntitiesMediaPlayerResponse,
     ListEntitiesRequest,
     ListEntitiesSwitchResponse,
-    SwitchCommandRequest,
-    SwitchStateResponse,
     MediaPlayerCommandRequest,
     MediaPlayerStateResponse,
     SubscribeHomeAssistantStatesRequest,
+    SwitchCommandRequest,
+    SwitchStateResponse,
 )
 from aioesphomeapi.model import (
     MediaPlayerCommand,
@@ -75,14 +75,33 @@ class MediaPlayerEntity(ESPHomeEntity):
         announcement: bool = False,
         done_callback: Optional[Callable[[], None]] = None,
     ) -> Iterable[message.Message]:
+        previous_state = self._determine_state()
+
         if announcement:
-            if self.music_player.is_playing:
-                # Announce, resume music
+            music_was_playing = self.music_player.is_playing
+            announce_was_paused = self.announce_player.is_paused
+
+            if music_was_playing:
                 self.music_player.pause()
+
+            def restore_announcement_pause() -> None:
+                if announce_was_paused:
+                    self.announce_player.pause()
+                    self.announce_player.is_paused = True
+
+            def restore_state() -> None:
+                self.server.send_messages(
+                    [self._update_state(previous_state)]
+                )
+
+            if music_was_playing:
                 self.announce_player.play(
                     url,
                     done_callback=lambda: call_all(
-                        self.music_player.resume, done_callback
+                        self.music_player.resume,
+                        restore_announcement_pause,
+                        restore_state,
+                        done_callback,
                     ),
                 )
             else:
@@ -90,9 +109,8 @@ class MediaPlayerEntity(ESPHomeEntity):
                 self.announce_player.play(
                     url,
                     done_callback=lambda: call_all(
-                        self.server.send_messages(
-                            [self._update_state(MediaPlayerState.IDLE)]
-                        ),
+                        restore_announcement_pause,
+                        restore_state,
                         done_callback,
                     ),
                 )
@@ -117,11 +135,15 @@ class MediaPlayerEntity(ESPHomeEntity):
                 yield from self.play(msg.media_url, announcement=announcement)
             elif msg.has_command:
                 command = MediaPlayerCommand(msg.command)
-                if msg.command == MediaPlayerCommand.PAUSE:
+                if command == MediaPlayerCommand.PAUSE:
                     self.music_player.pause()
-                    yield self._update_state(MediaPlayerState.PAUSED)
-                elif msg.command == MediaPlayerCommand.PLAY:
+                    yield self._update_state(self._determine_state())
+                elif command == MediaPlayerCommand.PLAY:
                     self.music_player.resume()
+                    yield self._update_state(self._determine_state())
+                elif command == MediaPlayerCommand.STOP:
+                    self.music_player.stop()
+                    yield self._update_state(self._determine_state())
                     yield self._update_state(MediaPlayerState.PLAYING)
                 elif command == MediaPlayerCommand.MUTE:
                     if not self.muted:
@@ -137,7 +159,7 @@ class MediaPlayerEntity(ESPHomeEntity):
                         self.music_player.set_volume(int(self.volume * 100))
                         self.announce_player.set_volume(int(self.volume * 100))
                         self.muted = False
-                    yield self._update_state(self.state)                    
+                    yield self._update_state(self.state)
             elif msg.has_volume:
                 volume = int(msg.volume * 100)
                 self.music_player.set_volume(volume)
@@ -166,6 +188,16 @@ class MediaPlayerEntity(ESPHomeEntity):
             volume=self.volume,
             muted=self.muted,
         )
+
+    def _determine_state(self) -> MediaPlayerState:
+        if self.music_player.is_playing:
+            return MediaPlayerState.PLAYING
+
+        if self.music_player.is_paused:
+            return MediaPlayerState.PAUSED
+
+        return MediaPlayerState.IDLE
+
 
 # -----------------------------------------------------------------------------
 
@@ -271,4 +303,4 @@ class ThinkingSoundEntity(ESPHomeEntity):
         elif isinstance(msg, SubscribeHomeAssistantStatesRequest):
             # Always return our internal switch state
             self.sync_with_state()
-            yield SwitchStateResponse(key=self.key, state=self._switch_state)       
+            yield SwitchStateResponse(key=self.key, state=self._switch_state)   

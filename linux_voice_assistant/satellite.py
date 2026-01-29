@@ -1,9 +1,9 @@
 """Voice satellite protocol."""
 
 import asyncio
+import logging
 import re
 import hashlib
-import logging
 import posixpath
 import shutil
 import time
@@ -194,7 +194,7 @@ class VoiceSatelliteProtocol(APIServer):
             self.state.tts_player.play(self.state.unmute_sound)
             # Resume normal operation - wake word detection will be active again
             pass
-            
+
     def handle_voice_event(
         self, event_type: VoiceAssistantEventType, data: Dict[str, str]
     ) -> None:
@@ -284,13 +284,13 @@ class VoiceSatelliteProtocol(APIServer):
             mac_no_colon = self.state.mac_address.replace(":", "").lower()
             mac_last6 = mac_no_colon[-6:]
             device_name = f"{base_name}-{mac_last6}"
-            
+
             yield DeviceInfoResponse(
                 uses_password=False,
                 name=device_name,
                 mac_address=self.state.mac_address,
                 manufacturer="Open Home Foundation",
-                model="Linux Voice Assistant",                
+                model="Linux Voice Assistant",
                 voice_assistant_feature_flags=(
                     VoiceAssistantFeature.VOICE_ASSISTANT
                     | VoiceAssistantFeature.API_AUDIO
@@ -402,7 +402,7 @@ class VoiceSatelliteProtocol(APIServer):
         if self.state.muted:
             # Don't respond to wake words when muted (voice_assistant.stop behavior)
             return
-        
+
         wake_word_phrase = wake_word.wake_word
         _LOGGER.debug("Detected wake word: %s", wake_word_phrase)
         self.send_messages(
@@ -507,7 +507,7 @@ class VoiceSatelliteProtocol(APIServer):
             for entity in self.state.entities:
                 states.extend(entity.handle_message(SubscribeHomeAssistantStatesRequest()))
             self.send_messages(states)
-            _LOGGER.debug("Sent entity states after connect")        
+            _LOGGER.debug("Sent entity states after connect")
         _LOGGER.info("Disconnected from Home Assistant")
 
     def _download_external_wake_word(
