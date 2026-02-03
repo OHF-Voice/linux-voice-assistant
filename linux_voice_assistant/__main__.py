@@ -82,8 +82,8 @@ async def main() -> None:
         "--timer-finished-sound", default=str(_SOUNDS_DIR / "timer_finished.flac")
     )
     parser.add_argument(
-        "--timer-alarm-repeats", type=int, default=5,
-        help="Number of times to repeat timer alarm before auto-stopping (0 = infinite)"
+        "--timer-alarm-repeats", type=int, default=0,
+        help="Number of times to repeat timer alarm before auto-stopping (0 = infinite, default)"
     )
     parser.add_argument(
         "--processing-sound", default=str(_SOUNDS_DIR / "processing.wav"),
