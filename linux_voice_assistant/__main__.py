@@ -82,6 +82,10 @@ async def main() -> None:
         "--timer-finished-sound", default=str(_SOUNDS_DIR / "timer_finished.flac")
     )
     parser.add_argument(
+        "--timer-alarm-repeats", type=int, default=0,
+        help="Number of times to repeat timer alarm before auto-stopping (0 = infinite, default)"
+    )
+    parser.add_argument(
         "--processing-sound", default=str(_SOUNDS_DIR / "processing.wav"),
         help="Short sound to play while assistant is processing (thinking)"
     )
@@ -240,6 +244,7 @@ async def main() -> None:
         tts_player=MpvMediaPlayer(device=args.audio_output_device),
         wakeup_sound=args.wakeup_sound,
         timer_finished_sound=args.timer_finished_sound,
+        timer_alarm_repeats=args.timer_alarm_repeats,
         processing_sound=args.processing_sound,
         mute_sound=args.mute_sound,
         unmute_sound=args.unmute_sound,          
