@@ -70,6 +70,7 @@ class ServerState:
     wakeup_sound: str
     processing_sound: str
     timer_finished_sound: str
+    timer_alarm_repeats: int
     mute_sound: str
     unmute_sound: str      
     preferences: Preferences

@@ -161,6 +161,7 @@ class VoiceSatelliteProtocol(APIServer):
         self._tts_played = False
         self._continue_conversation = False
         self._timer_finished = False
+        self._timer_play_count = 0
         self._processing = False
         self._pipeline_active = False
         self._external_wake_words: Dict[str, VoiceAssistantExternalWakeWord] = {}
@@ -247,6 +248,7 @@ class VoiceSatelliteProtocol(APIServer):
             if not self._timer_finished:
                 self.state.active_wake_words.add(self.state.stop_word.id)
                 self._timer_finished = True
+                self._timer_play_count = 0
                 self.duck()
                 self._play_timer_finished()
 
@@ -456,6 +458,17 @@ class VoiceSatelliteProtocol(APIServer):
 
     def _play_timer_finished(self) -> None:
         if not self._timer_finished:
+            self.unduck()
+            return
+
+        self._timer_play_count += 1
+        max_repeats = self.state.timer_alarm_repeats
+
+        # Auto-stop after max repeats (0 = infinite)
+        if max_repeats > 0 and self._timer_play_count > max_repeats:
+            _LOGGER.debug("Timer alarm auto-stopped after %d repeats", max_repeats)
+            self._timer_finished = False
+            self.state.active_wake_words.discard(self.state.stop_word.id)
             self.unduck()
             return
 
