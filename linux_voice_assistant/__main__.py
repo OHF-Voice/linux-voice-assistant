@@ -33,7 +33,7 @@ _SOUNDS_DIR = _REPO_DIR / "sounds"
 
 async def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--name", required=True)
+    parser.add_argument("--name")
     parser.add_argument(
         "--audio-input-device",
         help="soundcard name for input device (see --list-input-devices)",
@@ -147,6 +147,9 @@ async def main() -> None:
 
     logging.basicConfig(level=logging.DEBUG if args.debug else logging.INFO)
     _LOGGER.debug(args)
+
+    if not args.name:
+        parser.error("the following arguments are required: --name")
 
     args.download_dir = Path(args.download_dir)
     args.download_dir.mkdir(parents=True, exist_ok=True)

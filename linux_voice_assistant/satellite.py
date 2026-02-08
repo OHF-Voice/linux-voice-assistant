@@ -289,11 +289,7 @@ class VoiceSatelliteProtocol(APIServer):
             self._continue_conversation = msg.start_conversation
 
             self.duck()
-            # TTS player always plays at fixed volume
-            self.state.tts_player.player.volume = 60
-            yield from self.state.media_player_entity.play(
-                urls, announcement=True, done_callback=self._tts_finished
-            )
+            self.state.tts_player.play(urls, done_callback=self._tts_finished)
         elif isinstance(msg, VoiceAssistantTimerEventResponse):
             self.handle_timer_event(VoiceAssistantTimerEventType(msg.event_type), msg)
         elif isinstance(msg, DeviceInfoRequest):
