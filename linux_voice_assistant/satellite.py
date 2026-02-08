@@ -1,10 +1,10 @@
 """Voice satellite protocol."""
 
 import asyncio
-import logging
-import re
 import hashlib
+import logging
 import posixpath
+import re
 import shutil
 import time
 from collections.abc import Iterable
@@ -14,6 +14,7 @@ from urllib.request import urlopen
 
 # pylint: disable=no-name-in-module
 from aioesphomeapi.api_pb2 import (  # type: ignore[attr-defined]
+    AuthenticationRequest,
     DeviceInfoRequest,
     DeviceInfoResponse,
     ListEntitiesDoneResponse,
@@ -32,7 +33,6 @@ from aioesphomeapi.api_pb2 import (  # type: ignore[attr-defined]
     VoiceAssistantSetConfiguration,
     VoiceAssistantTimerEventResponse,
     VoiceAssistantWakeWord,
-    AuthenticationRequest,
 )
 from aioesphomeapi.core import MESSAGE_TYPE_TO_PROTO
 from aioesphomeapi.model import (
@@ -53,11 +53,12 @@ _LOGGER = logging.getLogger(__name__)
 
 PROTO_TO_MESSAGE_TYPE = {v: k for k, v in MESSAGE_TYPE_TO_PROTO.items()}
 
+
 class VoiceSatelliteProtocol(APIServer):
 
     def __init__(self, state: ServerState) -> None:
         super().__init__(state.name)
-        
+
         self.state = state
         self.state.satellite = self
         self.state.connected = False
@@ -82,7 +83,7 @@ class VoiceSatelliteProtocol(APIServer):
             self.state.mute_switch_entity = existing_mute_switches[0]
             for extra in existing_mute_switches[1:]:
                 self.state.entities.remove(extra)
-                
+
         if self.state.media_player_entity is None:
             self.state.media_player_entity = MediaPlayerEntity(
                 server=self,
@@ -118,7 +119,7 @@ class VoiceSatelliteProtocol(APIServer):
         mute_switch.update_get_muted(lambda: self.state.muted)
         mute_switch.update_set_muted(self._set_muted)
         mute_switch.sync_with_state()
-        
+
         existing_thinking_sound_switches = [
             entity
             for entity in self.state.entities
@@ -146,14 +147,22 @@ class VoiceSatelliteProtocol(APIServer):
             self.state.entities.append(thinking_sound_switch)
 
         # Load thinking sound enabled state from preferences (default to False if not set or unknown)
-        if hasattr(self.state.preferences, 'thinking_sound') and self.state.preferences.thinking_sound in (0, 1):
-            self.state.thinking_sound_enabled = bool(self.state.preferences.thinking_sound)
+        if hasattr(
+            self.state.preferences, "thinking_sound"
+        ) and self.state.preferences.thinking_sound in (0, 1):
+            self.state.thinking_sound_enabled = bool(
+                self.state.preferences.thinking_sound
+            )
         else:
             self.state.thinking_sound_enabled = False
 
         thinking_sound_switch.server = self
-        thinking_sound_switch.update_get_thinking_sound_enabled(lambda: self.state.thinking_sound_enabled)
-        thinking_sound_switch.update_set_thinking_sound_enabled(self._set_thinking_sound_enabled)
+        thinking_sound_switch.update_get_thinking_sound_enabled(
+            lambda: self.state.thinking_sound_enabled
+        )
+        thinking_sound_switch.update_set_thinking_sound_enabled(
+            self._set_thinking_sound_enabled
+        )
         thinking_sound_switch.sync_with_state()
 
         self._is_streaming_audio = False
@@ -165,10 +174,12 @@ class VoiceSatelliteProtocol(APIServer):
         self._pipeline_active = False
         self._external_wake_words: Dict[str, VoiceAssistantExternalWakeWord] = {}
         self._disconnect_event = asyncio.Event()
-    
+
     def _set_thinking_sound_enabled(self, new_state: bool) -> None:
         self.state.thinking_sound_enabled = bool(new_state)
-        self.state.preferences.thinking_sound = 1 if self.state.thinking_sound_enabled else 0
+        self.state.preferences.thinking_sound = (
+            1 if self.state.thinking_sound_enabled else 0
+        )
 
         if self.state.thinking_sound_enabled:
             _LOGGER.debug("Thinking sound enabled")
@@ -204,7 +215,10 @@ class VoiceSatelliteProtocol(APIServer):
             self._tts_url = data.get("url")
             self._tts_played = False
             self._continue_conversation = False
-        elif event_type == VoiceAssistantEventType.VOICE_ASSISTANT_INTENT_START and self.state.thinking_sound_enabled:
+        elif (
+            event_type == VoiceAssistantEventType.VOICE_ASSISTANT_INTENT_START
+            and self.state.thinking_sound_enabled
+        ):
             # Play short "thinking/processing" sound if configured
             processing = getattr(self.state, "processing_sound", None)
             if processing:
@@ -212,7 +226,7 @@ class VoiceSatelliteProtocol(APIServer):
                 self.state.stop_word.is_active = True
                 self._processing = True
                 self.duck()
-                self.state.tts_player.play(self.state.processing_sound)            
+                self.state.tts_player.play(self.state.processing_sound)
         elif event_type in (
             VoiceAssistantEventType.VOICE_ASSISTANT_STT_VAD_END,
             VoiceAssistantEventType.VOICE_ASSISTANT_STT_END,
@@ -280,7 +294,7 @@ class VoiceSatelliteProtocol(APIServer):
             self.handle_timer_event(VoiceAssistantTimerEventType(msg.event_type), msg)
         elif isinstance(msg, DeviceInfoRequest):
             # Compute dynamic device name
-            base_name = re.sub(r'[\s-]+', '-', self.state.name.lower()).strip('-')
+            base_name = re.sub(r"[\s-]+", "-", self.state.name.lower()).strip("-")
             mac_no_colon = self.state.mac_address.replace(":", "").lower()
             mac_last6 = mac_no_colon[-6:]
             device_name = f"{base_name}-{mac_last6}"
@@ -505,7 +519,9 @@ class VoiceSatelliteProtocol(APIServer):
             # Send states after connect
             states = []
             for entity in self.state.entities:
-                states.extend(entity.handle_message(SubscribeHomeAssistantStatesRequest()))
+                states.extend(
+                    entity.handle_message(SubscribeHomeAssistantStatesRequest())
+                )
             self.send_messages(states)
             _LOGGER.debug("Sent entity states after connect")
         _LOGGER.info("Disconnected from Home Assistant")
@@ -576,15 +592,3 @@ class VoiceSatelliteProtocol(APIServer):
             trained_languages=external_wake_word.trained_languages,
             wake_word_path=config_path,
         )
-
-    def process_packet(self, msg_type: int, packet_data: bytes) -> None:
-        super().process_packet(msg_type, packet_data)
-
-        if msg_type == PROTO_TO_MESSAGE_TYPE[AuthenticationRequest]:
-            self.state.connected = True
-            # Send states after connect
-            states = []
-            for entity in self.state.entities:
-                states.extend(entity.handle_message(SubscribeHomeAssistantStatesRequest()))
-            self.send_messages(states)
-            _LOGGER.debug("Sent entity states after connect")
