@@ -104,6 +104,7 @@ async def main() -> None:
         default="0.0.0.0",
         help="Address for ESPHome server (default: 0.0.0.0)",
     )
+    # Note that default port is also set in docker-entrypoint.sh
     parser.add_argument(
         "--port", type=int, default=6053, help="Port for ESPHome server (default: 6053)"
     )

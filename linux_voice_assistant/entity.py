@@ -1,6 +1,7 @@
 from abc import abstractmethod
 from collections.abc import Iterable
 from typing import TYPE_CHECKING, Callable, List, Optional, Union
+import logging
 
 # pylint: disable=no-name-in-module
 from aioesphomeapi.api_pb2 import (  # type: ignore[attr-defined]
@@ -72,6 +73,7 @@ class MediaPlayerEntity(ESPHomeEntity):
         self.music_player = music_player
         self.announce_player = announce_player
         self.sendspin_bridge: Optional["SendspinBridge"] = None
+        self._log = logging.getLogger(f"{self.__class__.__name__}[{self.key}]")
 
     def set_sendspin_bridge(self, bridge: "SendspinBridge") -> None:
         """Set the SendSpin bridge for coordinated playback."""
@@ -162,19 +164,37 @@ class MediaPlayerEntity(ESPHomeEntity):
         yield self._update_state(MediaPlayerState.PLAYING)
 
     def handle_message(self, msg: message.Message) -> Iterable[message.Message]:
+        self._log.debug("handle_message called with msg: %s", msg)
+
         if isinstance(msg, MediaPlayerCommandRequest) and (msg.key == self.key):
+            self._log.debug("MediaPlayerCommandRequest matched for this key")
+
             if msg.has_media_url:
+                self._log.debug("Message has media URL: %s", msg.media_url)
                 announcement = msg.has_announcement and msg.announcement
                 yield from self.play(msg.media_url, announcement=announcement)
+
             elif msg.has_command:
+                self._log.debug("Message has command: %s", msg.command)
                 command = MediaPlayerCommand(msg.command)
+
                 if msg.command == MediaPlayerCommand.PAUSE:
+                    self._log.debug("Executing PAUSE")
                     self.music_player.pause()
                     yield self._update_state(MediaPlayerState.PAUSED)
+
                 elif msg.command == MediaPlayerCommand.PLAY:
+                    self._log.debug("Executing PLAY / RESUME")
                     self.music_player.resume()
                     yield self._update_state(MediaPlayerState.PLAYING)
+
+                elif command == MediaPlayerCommand.STOP:
+                    self._log.debug("Executing STOP")
+                    self.music_player.stop()
+                    yield self._update_state(MediaPlayerState.IDLE)
+
                 elif command == MediaPlayerCommand.MUTE:
+                    self._log.debug("Executing MUTE")
                     if not self.muted:
                         self.previous_volume = self.volume
                         self.volume = 0
@@ -182,14 +202,18 @@ class MediaPlayerEntity(ESPHomeEntity):
                         self.announce_player.set_volume(0)
                         self.muted = True
                     yield self._update_state(self.state)
+
                 elif command == MediaPlayerCommand.UNMUTE:
+                    self._log.debug("Executing UNMUTE")
                     if self.muted:
                         self.volume = self.previous_volume
                         self.music_player.set_volume(int(self.volume * 100))
                         self.announce_player.set_volume(int(self.volume * 100))
                         self.muted = False
                     yield self._update_state(self.state)
+
             elif msg.has_volume:
+                self._log.debug("Message has volume: %.2f", msg.volume)
                 volume = int(msg.volume * 100)
                 self.music_player.set_volume(volume)
                 # NOTE: announce_player volume is NOT synced - it always plays at full volume
@@ -198,7 +222,9 @@ class MediaPlayerEntity(ESPHomeEntity):
                     self.sendspin_bridge.set_volume(volume, self.muted)
                 self.volume = msg.volume
                 yield self._update_state(self.state)
+
         elif isinstance(msg, ListEntitiesRequest):
+            self._log.debug("ListEntitiesRequest received")
             yield ListEntitiesMediaPlayerResponse(
                 object_id=self.object_id,
                 key=self.key,
@@ -207,7 +233,10 @@ class MediaPlayerEntity(ESPHomeEntity):
                 feature_flags=SUPPORTED_MEDIA_PLAYER_FEATURES,
             )
         elif isinstance(msg, SubscribeHomeAssistantStatesRequest):
+            self._log.debug("SubscribeHomeAssistantStatesRequest received")
             yield self._get_state_message()
+        else:
+            self._log.warning("Unknown message type received: %s", type(msg))
 
     def _update_state(self, new_state: MediaPlayerState) -> MediaPlayerStateResponse:
         self.state = new_state
