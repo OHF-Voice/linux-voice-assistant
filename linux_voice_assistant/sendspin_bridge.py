@@ -33,29 +33,6 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 
-def perceptual_to_linear(perceptual: int) -> int:
-    """Convert SendSpin perceptual volume (0-100) to HA/MPV linear volume (0-100).
-
-    Uses power function to map full perceptual range to usable linear range.
-    Anchored at 100=100, clips at low end (linear can't go below 0).
-    """
-    if perceptual <= 0:
-        return 0
-    linear = 100 * (perceptual / 100) ** 0.3
-    return max(0, min(100, round(linear)))
-
-
-def linear_to_perceptual(linear: int) -> int:
-    """Convert HA/MPV linear volume (0-100) to SendSpin perceptual volume (0-100).
-
-    Inverse of perceptual_to_linear.
-    """
-    if linear <= 0:
-        return 0
-    perceptual = 100 * (linear / 100) ** (10 / 3)
-    return max(0, min(100, round(perceptual)))
-
-
 class AudioTimeInfo(Protocol):
     """Protocol for audio timing information from sounddevice callback."""
 
@@ -705,7 +682,10 @@ class AudioPlayer:
             return
 
         samples = np.frombuffer(output_buffer[:num_bytes], dtype=np.int16).copy()
-        amplitude = (volume / 100.0) ** 1.5
+        # Cubic curve matches mpv's gain = pow(volume/100, 3) so that
+        # the same 0-100 value produces the same perceived loudness on
+        # both the SendSpin PCM path and the MPV path.
+        amplitude = (volume / 100.0) ** 3
         samples = (samples * amplitude).astype(np.int16)
         output_buffer[:num_bytes] = samples.tobytes()
 
@@ -1063,10 +1043,8 @@ class SendspinBridge:
         self._current_format: "AudioFormat | None" = None
 
         # Volume state (synced with MediaPlayerEntity)
-        self._volume: int = 60
+        self._volume: int = 100
         self._muted: bool = False
-        self._duck_volume: int = 30
-        self._unduck_volume: int = 60
         self._is_ducked: bool = False
 
         # Callback to notify when SendSpin starts playing
@@ -1117,22 +1095,15 @@ class SendspinBridge:
         """Set volume (called from MediaPlayerEntity when HA changes volume)."""
         self._volume = max(0, min(100, volume))
         self._muted = muted
-        self._unduck_volume = self._volume
-        self._duck_volume = self._volume // 2
-        if self._player:
-            if self._is_ducked:
-                self._player.set_volume(self._duck_volume, muted=self._muted)
-            else:
-                self._player.set_volume(self._volume, muted=self._muted)
+        self._update_player_volume()
 
-        # Report volume change to SendSpin server (convert linear to perceptual)
+        # Report volume to SendSpin server (same 0-100 scale, no conversion)
         if self._client and self._client.connected:
-            perceived_volume = linear_to_perceptual(self._volume)
             asyncio.get_event_loop().call_soon(
-                lambda: asyncio.create_task(
+                lambda v=self._volume: asyncio.create_task(
                     self._client.send_player_state(
                         state=PlayerStateType.SYNCHRONIZED,
-                        volume=perceived_volume,
+                        volume=v,
                         muted=self._muted,
                     )
                 )
@@ -1141,17 +1112,25 @@ class SendspinBridge:
     def duck(self) -> None:
         """Reduce volume (for wake word/TTS)."""
         self._is_ducked = True
-        # Recalculate duck volume based on current volume
-        self._unduck_volume = self._volume
-        self._duck_volume = self._volume // 2
-        if self._player:
-            self._player.set_volume(self._duck_volume, muted=False)
+        self._update_player_volume()
 
     def unduck(self) -> None:
         """Restore volume (after wake word/TTS)."""
         self._is_ducked = False
-        if self._player and not self._paused:
-            self._player.set_volume(self._unduck_volume, muted=self._muted)
+        if not self._paused:
+            self._update_player_volume()
+
+    def _update_player_volume(self) -> None:
+        """Apply current volume (with duck state) to the audio player.
+
+        Ducking halves the volume value before the cubic curve, matching
+        MPV's duck behavior (LibMpvPlayer.duck(0.5) halves mpv.volume).
+        """
+        vol = self._volume
+        if self._is_ducked:
+            vol = vol // 2
+        if self._player:
+            self._player.set_volume(vol, muted=self._muted)
 
     def pause(self) -> None:
         """Pause SendSpin playback (for announcements)."""
@@ -1165,11 +1144,7 @@ class SendspinBridge:
         """Resume SendSpin playback after pause."""
         if self._stream_active and self._paused:
             self._paused = False
-            if self._player:
-                if self._is_ducked:
-                    self._player.set_volume(self._duck_volume, muted=self._muted)
-                else:
-                    self._player.set_volume(self._volume, muted=self._muted)
+            self._update_player_volume()
             _LOGGER.info("SendSpin playback resumed")
 
     @property
@@ -1192,7 +1167,7 @@ class SendspinBridge:
                     lambda: asyncio.create_task(
                         self._client.send_player_state(
                             state=PlayerStateType.SYNCHRONIZED,
-                            volume=linear_to_perceptual(self._volume),
+                            volume=self._volume,
                             muted=self._muted,
                         )
                     )
@@ -1255,11 +1230,8 @@ class SendspinBridge:
         # Set format to create stream
         self._player.set_format(fmt)
 
-        # Set volume
-        if self._is_ducked:
-            self._player.set_volume(self._duck_volume, muted=self._muted)
-        else:
-            self._player.set_volume(self._volume, muted=self._muted)
+        # Set volume (respects current duck state)
+        self._update_player_volume()
 
         self._current_format = fmt
 
@@ -1364,29 +1336,21 @@ class SendspinBridge:
         player_cmd = payload.player
 
         if player_cmd.command == PlayerCommand.VOLUME and player_cmd.volume is not None:
-            # Convert perceptual volume from SendSpin to linear for local playback
-            perceptual_vol = player_cmd.volume
-            self._volume = perceptual_to_linear(perceptual_vol)
-            _LOGGER.info(
-                "SendSpin volume %d (perceptual) -> %d (linear)",
-                perceptual_vol,
-                self._volume,
-            )
-            if self._player:
-                self._player.set_volume(self._volume, muted=self._muted)
+            self._volume = max(0, min(100, player_cmd.volume))
+            _LOGGER.info("SendSpin server set volume: %d", self._volume)
+            self._update_player_volume()
             # Sync with MediaPlayerEntity
             if self.media_player:
                 self.media_player.volume = self._volume / 100.0
                 self.media_player.music_player.set_volume(self._volume)
-                # NOTE: announce_player volume is NOT synced - it always plays at full volume
+                self.media_player.announce_player.set_volume(self._volume)
                 self.media_player.server.send_messages(
                     [self.media_player._update_state(self.media_player.state)]
                 )
 
         elif player_cmd.command == PlayerCommand.MUTE and player_cmd.mute is not None:
             self._muted = player_cmd.mute
-            if self._player:
-                self._player.set_volume(self._volume, muted=self._muted)
+            self._update_player_volume()
             # Sync with MediaPlayerEntity
             if self.media_player:
                 self.media_player.muted = self._muted
@@ -1397,12 +1361,12 @@ class SendspinBridge:
                 "SendSpin server %s player", "muted" if player_cmd.mute else "unmuted"
             )
 
-        # Send state update back to server
+        # Send state update back to server (same 0-100 scale, no conversion)
         asyncio.get_event_loop().call_soon(
-            lambda: asyncio.create_task(
+            lambda v=self._volume: asyncio.create_task(
                 self._client.send_player_state(
                     state=PlayerStateType.SYNCHRONIZED,
-                    volume=linear_to_perceptual(self._volume),
+                    volume=v,
                     muted=self._muted,
                 )
             )

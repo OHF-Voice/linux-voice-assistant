@@ -216,7 +216,7 @@ class MediaPlayerEntity(ESPHomeEntity):
                 self._log.debug("Message has volume: %.2f", msg.volume)
                 volume = int(msg.volume * 100)
                 self.music_player.set_volume(volume)
-                # NOTE: announce_player volume is NOT synced - it always plays at full volume
+                self.announce_player.set_volume(volume)
                 # Sync volume with SendSpin bridge
                 if self.sendspin_bridge:
                     self.sendspin_bridge.set_volume(volume, self.muted)
