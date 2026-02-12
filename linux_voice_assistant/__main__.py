@@ -74,6 +74,12 @@ async def main() -> None:
         type=float,
         help="Seconds before wake word can be activated again",
     )
+    parser.add_argument(
+        "--openwakeword-threshold",
+        type=float,
+        default=0.5,
+        help="Wake word model threshold when using OpenWakeWord (0.0-1.0, default: 0.5)",
+    )
     #
     parser.add_argument(
         "--wakeup-sound", default=str(_SOUNDS_DIR / "wake_word_triggered.flac")
@@ -255,6 +261,7 @@ async def main() -> None:
         preferences=preferences,
         preferences_path=preferences_path,
         refractory_seconds=args.refractory_seconds,
+        openwakeword_threshold=args.openwakeword_threshold,
         download_dir=args.download_dir,
     )
 
@@ -361,7 +368,7 @@ def process_audio(state: ServerState, mic, block_size: int):
                         elif isinstance(wake_word, OpenWakeWord):
                             for oww_input in oww_inputs:
                                 for prob in wake_word.process_streaming(oww_input):
-                                    if prob > 0.5:
+                                    if prob > state.openwakeword_threshold:
                                         activated = True
 
                         if activated and not state.muted:
