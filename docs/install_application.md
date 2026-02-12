@@ -88,29 +88,11 @@ LVA_XDG_RUNTIME_DIR="/run/user/${USERLVA_USER_ID
 # PORT="6053"
 
 ### Audio input device (optional):
-# AUDIO_INPUT_DEVICE="default"
 
-### Audio output device (optional):
-# AUDIO_OUTPUT_DEVICE="default"
-
-# Enable thinking sound (optional):
-# ENABLE_THINKING_SOUND="1"
-
-# Wake model (optional):
-# WAKE-MODEL="okay_nabu"
-
-# Refactory seconds (optional):
-# REFACTORY_SECONDS="2"
-
-# Sound files (optional):
-# WAKEUP_SOUND="sounds/wake_word_triggered.flac"
-# TIMER_FINISHED_SOUND="sounds/timer_finished.flac"
-# PROCESSING_SOUND="sounds/processing.wav"
-# MUTE_SOUND="sounds/mute_switch_on.flac"
-# UNMUTE_SOUND="sounds/mute_switch_off.flac"
+[...]
 ```
 
-You can change various settings here, for example the audio sounds which are played when the wake word is detected or when the timer is finished.
+Please use the original file from the repository. You can change various settings, for example the audio sounds which are played when the wake word is detected or when the timer is finished.
 
 💡 **Note:** You can exit vim with `:wq` or `:q!` if you dont want to save the changes.
 
@@ -278,18 +260,20 @@ The following variables can be configured in the `.env` or in the service file:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `USERLVA_USER_ID`1000` | User ID for the container (usually 1000 for the first user) |
+| `USERLVA_USER_ID` | `1000` | User ID for the container (usually 1000 for the first user) |
 | `GROUP_ID` | `1000` | GROUP ID for the container (usually 1000 for the first users group) |
 | `CLIENT_NAME` | (optional) | Custom name for this voice assistant instance |
 | `LVA_PULSE_SERVER` | `unix:/run/user/${LVA_USER_ID}/pulse/native` | Path to the PulseAudio/PipeWire socket |
-| `LVA_XDG_RUNTIME_DIR` | `/run/user/${LVA_USER_ID}` XDG runtime directory |
+| `LVA_XDG_RUNTIME_DIR` | `/run/user/${LVA_USER_ID}` | XDG runtime directory |
 | `ENABLE_DEBUG` | (optional) | Set to "1" to enable debug mode |
 | `LIST_DEVICES` | (optional) | Set to "1" to list audio devices instead of starting |
 | `PREFERENCES_FILE` | (optional) | Path to a custom preferences JSON file |
+| `NETWORK_INTERFACE` | Autodetected | network card for server |
+| `HOST` | Autodetected | API server IP-Address, can be 0.0.0.0 for all interfaces, but only one network card works for MAC-ADDRESS and ESP protocol |
 | `PORT` | `6053` | API server port |
 | `AUDIO_INPUT_DEVICE` | `default` | Audio input device name |
 | `AUDIO_OUTPUT_DEVICE` | `default` | Audio output device name |
-| `ENABLE_THINKING_SOUND` | (optional) | Set to "1" to enable thinking sound |
+| `ENABLE_THINKING_SOUND` | false | Set to "1" to enable thinking sound |
 | `WAKE_MODEL` | `okay_nabu` | Wake word model to use |
 | `REFACTORY_SECONDS` | `2` | Refractory period in seconds after wake word |
 | `WAKEUP_SOUND` | `sounds/wake_word_triggered.flac` | Sound file for wake word triggered |
