@@ -56,6 +56,26 @@ if [ -n "${REFACTORY_SECONDS}" ]; then
   EXTRA_ARGS+=( "--refractory-seconds" "$REFACTORY_SECONDS" )
 fi
 
+if [ -n "${WAKEUP_SOUND}" ]; then
+  EXTRA_ARGS+=( "--wakeup-sound" "$WAKEUP_SOUND" )
+fi
+
+if [ -n "${TIMER_FINISHED_SOUND}" ]; then
+  EXTRA_ARGS+=( "--timer-finished-sound" "$TIMER_FINISHED_SOUND" )
+fi
+
+if [ -n "${PROCESSING_SOUND}" ]; then
+  EXTRA_ARGS+=( "--processing-sound" "$PROCESSING_SOUND" )
+fi
+
+if [ -n "${MUTE_SOUND}" ]; then
+  EXTRA_ARGS+=( "--mute-sound" "$MUTE_SOUND" )
+fi
+
+if [ -n "${UNMUTE_SOUND}" ]; then
+  EXTRA_ARGS+=( "--unmute-sound" "$UNMUTE_SOUND" )
+fi
+
 
 ### Wait for PulseAudio
 # Wait for PulseAudio to be available before starting the application
