@@ -35,8 +35,8 @@ Download the docker-compose.yml and .env.example file from the repository to a f
 ``` sh
 mkdir linux-voice-assistant
 cd linux-voice-assistant
-wget https://raw.githubusercontent.com/OHF-Voice/linux-voice-assistant/refs/tags/v1.0.0/docker-compose.yml
-wget https://raw.githubusercontent.com/OHF-Voice/linux-voice-assistant/refs/tags/v1.0.0/.env.example
+wget https://github.com/OHF-Voice/linux-voice-assistant/raw/refs/heads/main/docker-compose.yml
+wget https://github.com/OHF-Voice/linux-voice-assistant/raw/refs/heads/main/.env.example
 mv .env.example .env
 ```
 
