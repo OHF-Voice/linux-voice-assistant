@@ -28,37 +28,37 @@ TEMP_CLIENT_NAME="lva-${MAC}"
 
 ### Handlers
 # Handle parameters
-EXTRA_ARGS=""
+EXTRA_ARGS=()
 
 if [ "$ENABLE_DEBUG" = "1" ]; then
-  EXTRA_ARGS="$EXTRA_ARGS --debug"
+  EXTRA_ARGS+=( "--debug" )
 fi
 
 CLIENT_NAME=${CLIENT_NAME:-$TEMP_CLIENT_NAME}
 if [ -n "${CLIENT_NAME}" ]; then
-  EXTRA_ARGS="$EXTRA_ARGS --name $CLIENT_NAME"
+  EXTRA_ARGS+=( "--name" "$CLIENT_NAME" )
 fi
 
 PREFERENCES_FILE=${PREFERENCES_FILE:-"/app/configuration/preferences.json"}
 if [ -n "${PREFERENCES_FILE}" ]; then
-  EXTRA_ARGS="$EXTRA_ARGS --preferences-file $PREFERENCES_FILE"
+  EXTRA_ARGS+=( "--preferences-file" "$PREFERENCES_FILE" )
 fi
 
 PORT=${PORT:-6053}
 if [ -n "${PORT}" ]; then
-  EXTRA_ARGS="$EXTRA_ARGS --port $PORT"
+  EXTRA_ARGS+=( "--port" "$PORT" )
 fi
 
 if [ -n "${AUDIO_INPUT_DEVICE}" ]; then
-  EXTRA_ARGS="$EXTRA_ARGS --audio-input-device $AUDIO_INPUT_DEVICE"
+  EXTRA_ARGS+=( "--audio-input-device" "$AUDIO_INPUT_DEVICE" )
 fi
 
 if [ -n "${AUDIO_OUTPUT_DEVICE}" ]; then
-  EXTRA_ARGS="$EXTRA_ARGS --audio-output-device $AUDIO_OUTPUT_DEVICE"
+  EXTRA_ARGS+=( "--audio-output-device" "$AUDIO_OUTPUT_DEVICE" )
 fi
 
 if [ "$ENABLE_THINKING_SOUND" = "1" ]; then
-  EXTRA_ARGS="$EXTRA_ARGS --enable-thinking-sound"
+  EXTRA_ARGS+=( "--enable-thinking-sound" )
 fi
 
 
@@ -110,10 +110,10 @@ done
 ### Start application
 if [ "$LIST_DEVICES" = "1" ]; then
   echo "list input devices"
-  ./script/run "$@" $EXTRA_ARGS --list-input-devices
+  ./script/run "$@" "${EXTRA_ARGS[@]}" --list-input-devices
   echo "list output devices"
-  ./script/run "$@" $EXTRA_ARGS --list-output-devices
+  ./script/run "$@" "${EXTRA_ARGS[@]}" --list-output-devices
 else
   echo "starting application"
-  exec ./script/run "$@" $EXTRA_ARGS
+  exec ./script/run "$@" "${EXTRA_ARGS[@]}"
 fi
