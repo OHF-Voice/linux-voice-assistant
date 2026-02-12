@@ -26,6 +26,7 @@ classifiers = [
 requires-python = ">=3.9.0"
 dependencies = [
     "aioesphomeapi==42.7.0",
+    "netifaces2==0.0.22",
     "soundcard<1",
     "numpy>=2,<3",
     "pymicro-wakeword>=2,<3",

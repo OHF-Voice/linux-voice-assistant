@@ -20,6 +20,8 @@ from .mpv_player import MpvMediaPlayer
 from .satellite import VoiceSatelliteProtocol
 from getmac import get_mac_address
 from .zeroconf import HomeAssistantZeroconf
+from .util import get_default_interface
+from .util import get_default_ipv4
 
 _LOGGER = logging.getLogger(__name__)
 _MODULE_DIR = Path(__file__).parent
@@ -101,13 +103,11 @@ async def main() -> None:
     #
     parser.add_argument(
         "--host",
-        default="0.0.0.0",
-        help="Address for ESPHome server (default: 0.0.0.0)",
+        help="Address for ESPHome server (default: 0.0.0.0)", # 0.0.0.0 is IPv4, None is all interfaces
     )
     parser.add_argument(
         "--network-interface",
-        default="eth0",
-        help="Network interface to use for ESPHome server (default: eth0)",
+        help="Network interface to use for ESPHome server (default: will be automatically detected)",
     )
     # Note that default port is also set in docker-entrypoint.sh
     parser.add_argument(
@@ -144,9 +144,39 @@ async def main() -> None:
     logging.basicConfig(level=logging.DEBUG if args.debug else logging.INFO)
     _LOGGER.debug(args)
 
-    if not args.name:
-        parser.error("the following arguments are required: --name")
+    # Resolve network interface for mac-adress detection
+    if not args.network_interface:
+        print("No network interface specified, try to detect default interface")
+        network_interface = get_default_interface()
+        print("Default interface detected: {network_interface}")
+    else:
+        print("Network interface specified")
+        print("Using network interface: {args.network_interface}")
+        network_interface = args.network_interface
 
+    # Resolve ip_address where the application will be listening
+    if not args.host:
+        print("No host (ip-address) specified, try to detect ip-address")
+        host_ip_adress = get_ip_adress(network_interface)
+        print("ip-address detected: {ip_adress}")
+    else:
+        print("Host specified")
+        print("Using host: {args.host}")
+        host_ip_adress = args.host
+
+    # Resolv mac
+    mac_address = get_mac_address(interface=network_interface),
+
+    # Resolve name
+    if not args.name:
+        print("No name specified, try to autogenerate name")
+        device_name = f"linux-voice-assistant-{mac_address}"
+    else:
+        print("Name specified")
+        print("Using name: {args.name}")
+        device_name = args.name
+
+    # Resolve download dir
     args.download_dir = Path(args.download_dir)
     args.download_dir.mkdir(parents=True, exist_ok=True)
 
@@ -242,8 +272,10 @@ async def main() -> None:
     assert stop_model is not None
 
     state = ServerState(
-        name=args.name,
-        mac_address=get_mac_address(interface=args.network_interface),
+        name=device_name,
+        network_interface=network_interface,
+        mac_address=get_mac_address(interface=network_interface),
+        ip_address=host_ip_adress,
         audio_queue=Queue(),
         entities=[],
         available_wake_words=available_wake_words,
@@ -275,16 +307,16 @@ async def main() -> None:
 
     loop = asyncio.get_running_loop()
     server = await loop.create_server(
-        lambda: VoiceSatelliteProtocol(state), host=args.host, port=args.port
+        lambda: VoiceSatelliteProtocol(state), host=host_ip_adress, port=args.port
     )
 
     # Auto discovery (zeroconf, mDNS)
-    discovery = HomeAssistantZeroconf(port=args.port, name=args.name, mac_address=state.mac_address)
+    discovery = HomeAssistantZeroconf(port=args.port, name=state.name, mac_address=state.mac_address)
     await discovery.register_server()
 
     try:
         async with server:
-            _LOGGER.info("Server started (host=%s, port=%s)", args.host, args.port)
+            _LOGGER.info("Server started (host=%s, port=%s)", host_ip_adress, args.port)
             await server.serve_forever()
     except KeyboardInterrupt:
         pass
