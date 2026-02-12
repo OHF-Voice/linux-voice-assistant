@@ -243,7 +243,7 @@ async def main() -> None:
 
     state = ServerState(
         name=args.name,
-        mac_address = get_mac_address(interface=args.network_interface)
+        mac_address=get_mac_address(interface=args.network_interface),
         audio_queue=Queue(),
         entities=[],
         available_wake_words=available_wake_words,
