@@ -206,13 +206,15 @@ WorkingDirectory=/home/pi/linux-voice-assistant
 Environment=PATH=/home/pi/linux-voice-assistant/.venv/bin:/usr/bin:/bin
 # Environment=ENABLE_DEBUG="1"
 # Environment=LIST_DEVICES="1"
-Environment=USERLVA_USER_ID00"
+Environment=LVA_USER_ID="1000"
 Environment=LVA_USER_GROUP="1000"
-Environment=CLIENT_NAME="My Voice Assistant Speaker"
-Environment=LVA_PULSE_SERVER="unix:/run/user/${USERLVA_USER_IDlse/native"
-Environment=LVA_XDG_RUNTIME_DIR="/run/user/${USERLVA_USER_ID
+# Environment=CLIENT_NAME="My Voice Assistant Speaker"
+Environment=LVA_PULSE_SERVER="unix:/run/user/${LVA_USER_ID}/pulse/native"
+Environment=LVA_XDG_RUNTIME_DIR="/run/user/${LVA_USER_ID}"
 Environment=PREFERENCES_FILE="/home/pi/linux-voice-assistant/preferences.json"
-Environment=PORT="6053"
+# Environment=NETWORK_INTERFACE="eth0"
+# Environment=HOST="0.0.0.0"
+# Environment=PORT="6053"
 # Environment=AUDIO_INPUT_DEVICE="default"
 # Environment=AUDIO_OUTPUT_DEVICE="default"
 # Environment=ENABLE_THINKING_SOUND="1"
@@ -223,8 +225,8 @@ Environment=PORT="6053"
 # Environment=PROCESSING_SOUND="sounds/processing.wav"
 # Environment=MUTE_SOUND="sounds/mute_switch_on.flac"
 # Environment=UNMUTE_SOUND="sounds/mute_switch_off.flac"
-# ExecStart=/home/pi/linux-voice-assistant/docker-entrypoint.sh --additional-parameter-if-you-want
 ExecStart=/home/pi/linux-voice-assistant/docker-entrypoint.sh
+# ExecStart=/home/pi/linux-voice-assistant/docker-entrypoint.sh --additional-parameter-if-you-want
 Restart=always
 RestartSec=5
 
@@ -279,8 +281,8 @@ The following variables can be configured in the `.env` or in the service file:
 | `USERLVA_USER_ID`1000` | User ID for the container (usually 1000 for the first user) |
 | `GROUP_ID` | `1000` | GROUP ID for the container (usually 1000 for the first users group) |
 | `CLIENT_NAME` | (optional) | Custom name for this voice assistant instance |
-| `LVA_PULSE_SERVER` | `unix:/run/user/${USERLVA_USER_IDlse/native` | Path to the PulseAudio/PipeWire socket |
-| `LVA_XDG_RUNTIME_DIR` | `/run/user/${USERLVA_USER_ID XDG runtime directory |
+| `LVA_PULSE_SERVER` | `unix:/run/user/${LVA_USER_ID}/pulse/native` | Path to the PulseAudio/PipeWire socket |
+| `LVA_XDG_RUNTIME_DIR` | `/run/user/${LVA_USER_ID}` XDG runtime directory |
 | `ENABLE_DEBUG` | (optional) | Set to "1" to enable debug mode |
 | `LIST_DEVICES` | (optional) | Set to "1" to list audio devices instead of starting |
 | `PREFERENCES_FILE` | (optional) | Path to a custom preferences JSON file |
