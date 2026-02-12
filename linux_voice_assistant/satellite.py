@@ -120,7 +120,7 @@ class VoiceSatelliteProtocol(APIServer):
         mute_switch.sync_with_state()
 
         # TTS player always plays at fixed volume (not synced with music volume)
-        self.state.tts_player.player.volume = 60
+        self.state.tts_player.set_volume(60)
 
         existing_thinking_sound_switches = [
             entity
@@ -425,7 +425,7 @@ class VoiceSatelliteProtocol(APIServer):
         self.duck()
         self._is_streaming_audio = True
         # TTS player always plays at fixed volume
-        self.state.tts_player.player.volume = 60
+        self.state.tts_player.set_volume(60)
         self.state.tts_player.play(self.state.wakeup_sound)
 
     def stop(self) -> None:
@@ -448,7 +448,7 @@ class VoiceSatelliteProtocol(APIServer):
 
         self.state.active_wake_words.add(self.state.stop_word.id)
         # TTS player always plays at fixed volume
-        self.state.tts_player.player.volume = 60
+        self.state.tts_player.set_volume(60)
         self.state.tts_player.play(self._tts_url, done_callback=self._tts_finished)
 
     def duck(self) -> None:
@@ -484,7 +484,7 @@ class VoiceSatelliteProtocol(APIServer):
             return
 
         # TTS player always plays at fixed volume
-        self.state.tts_player.player.volume = 60
+        self.state.tts_player.set_volume(60)
         self.state.tts_player.play(
             self.state.timer_finished_sound,
             done_callback=lambda: call_all(
