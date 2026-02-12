@@ -10,7 +10,7 @@ _LOGGER = logging.getLogger(__name__)
 try:
     from zeroconf.asyncio import AsyncServiceInfo, AsyncZeroconf
 except ImportError:
-    _LOGGER.fatal("pip install zeroconf")
+    _LOGGER.fatal("zeroconf not installed. Please install it with: pip install zeroconf")
     raise
 
 MDNS_TARGET_IP = "224.0.0.251"
