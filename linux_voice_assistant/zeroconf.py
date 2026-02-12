@@ -18,10 +18,11 @@ MDNS_TARGET_IP = "224.0.0.251"
 
 class HomeAssistantZeroconf:
     def __init__(
-        self, port: int, name: Optional[str] = None, host: Optional[str] = None
+        self, port: int, mac_address: str, name: Optional[str] = None, host: Optional[str] = None
     ) -> None:
         self.port = port
-        self.name = name or _get_mac_address()
+        self.mac_address = mac_address
+        self.name = name or self.mac_address
 
         if not host:
             test_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -43,7 +44,7 @@ class HomeAssistantZeroconf:
             port=self.port,
             properties={
                 "version": "2025.9.0",
-                "mac": _get_mac_address(),
+                "mac": self.mac_address,
                 "board": "host",
                 "platform": "HOST",
                 "network": "ethernet",  # or "wifi"
@@ -53,12 +54,3 @@ class HomeAssistantZeroconf:
         await self._aiozc.async_register_service(service_info)
         _LOGGER.debug("Zeroconf discovery enabled: %s", service_info)
 
-
-def _get_mac_address() -> str:
-    """Return MAC address formatted as hex with no colons."""
-    return "".join(
-        # pylint: disable=consider-using-f-string
-        ["{:02x}".format((uuid.getnode() >> ele) & 0xFF) for ele in range(0, 8 * 6, 8)][
-            ::-1
-        ]
-    )

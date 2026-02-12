@@ -18,7 +18,7 @@ from pyopen_wakeword import OpenWakeWord, OpenWakeWordFeatures
 from .models import AvailableWakeWord, Preferences, ServerState, WakeWordType
 from .mpv_player import MpvMediaPlayer
 from .satellite import VoiceSatelliteProtocol
-from .util import get_mac
+from getmac import get_mac_address
 from .zeroconf import HomeAssistantZeroconf
 
 _LOGGER = logging.getLogger(__name__)
@@ -103,6 +103,11 @@ async def main() -> None:
         "--host",
         default="0.0.0.0",
         help="Address for ESPHome server (default: 0.0.0.0)",
+    )
+    parser.add_argument(
+        "--network-interface",
+        default="eth0",
+        help="Network interface to use for ESPHome server (default: eth0)",
     )
     # Note that default port is also set in docker-entrypoint.sh
     parser.add_argument(
@@ -238,7 +243,7 @@ async def main() -> None:
 
     state = ServerState(
         name=args.name,
-        mac_address=get_mac(),
+        mac_address = get_mac_address(interface=args.network_interface)
         audio_queue=Queue(),
         entities=[],
         available_wake_words=available_wake_words,
@@ -274,7 +279,7 @@ async def main() -> None:
     )
 
     # Auto discovery (zeroconf, mDNS)
-    discovery = HomeAssistantZeroconf(port=args.port, name=args.name)
+    discovery = HomeAssistantZeroconf(port=args.port, name=args.name, mac_address=state.mac_address)
     await discovery.register_server()
 
     try:
