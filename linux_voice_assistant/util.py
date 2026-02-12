@@ -1,7 +1,8 @@
 """Utility methods."""
 
 import uuid
-import netifaces2
+# netifaces lib is from netifaces2
+import netifaces
 from collections.abc import Callable
 from typing import Optional
 

@@ -35,7 +35,9 @@ _SOUNDS_DIR = _REPO_DIR / "sounds"
 
 async def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--name")
+    parser.add_argument(
+        "--name"
+    )
     parser.add_argument(
         "--audio-input-device",
         help="soundcard name for input device (see --list-input-devices)",
@@ -45,7 +47,11 @@ async def main() -> None:
         action="store_true",
         help="List audio input devices and exit",
     )
-    parser.add_argument("--audio-input-block-size", type=int, default=1024)
+    parser.add_argument(
+        "--audio-input-block-size", 
+        type=int, 
+        default=1024
+    )
     parser.add_argument(
         "--audio-output-device",
         help="mpv name for output device (see --list-output-devices)",
@@ -62,9 +68,15 @@ async def main() -> None:
         help="Directory with wake word models (.tflite) and configs (.json)",
     )
     parser.add_argument(
-        "--wake-model", default="okay_nabu", help="Id of active wake model"
+        "--wake-model", 
+        default="okay_nabu", 
+        help="Id of active wake model"
     )
-    parser.add_argument("--stop-model", default="stop", help="Id of stop model")
+    parser.add_argument(
+        "--stop-model", 
+        default="stop", 
+        help="Id of stop model"
+    )
     parser.add_argument(
         "--download-dir",
         default=_REPO_DIR / "local",
@@ -76,12 +88,13 @@ async def main() -> None:
         type=float,
         help="Seconds before wake word can be activated again",
     )
-    #
     parser.add_argument(
-        "--wakeup-sound", default=str(_SOUNDS_DIR / "wake_word_triggered.flac")
+        "--wakeup-sound", 
+        default=str(_SOUNDS_DIR / "wake_word_triggered.flac")
     )
     parser.add_argument(
-        "--timer-finished-sound", default=str(_SOUNDS_DIR / "timer_finished.flac")
+        "--timer-finished-sound", 
+        default=str(_SOUNDS_DIR / "timer_finished.flac")
     )
     parser.add_argument(
         "--processing-sound",
@@ -98,12 +111,10 @@ async def main() -> None:
         default=str(_SOUNDS_DIR / "mute_switch_off.flac"),
         help="Sound to play when unmuting the assistant",
     )
-    #
     parser.add_argument("--preferences-file", default=_REPO_DIR / "preferences.json")
-    #
     parser.add_argument(
         "--host",
-        help="Address for ESPHome server (default: 0.0.0.0)", # 0.0.0.0 is IPv4, None is all interfaces
+        help="IP-Address for ESPHome server", # 0.0.0.0 is IPv4, None is all interfaces
     )
     parser.add_argument(
         "--network-interface",
@@ -111,7 +122,9 @@ async def main() -> None:
     )
     # Note that default port is also set in docker-entrypoint.sh
     parser.add_argument(
-        "--port", type=int, default=6053, help="Port for ESPHome server (default: 6053)"
+        "--port", type=int, 
+        default=6053, 
+        help="Port for ESPHome server (default: 6053)"
     )
     parser.add_argument(
         "--enable-thinking-sound",
