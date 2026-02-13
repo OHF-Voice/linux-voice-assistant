@@ -39,6 +39,7 @@ apt-get install --yes --no-install-recommends \
     libasound2-plugins \
     ca-certificates \
     iproute2 \
+    vim \
     procps && \
 apt-get clean
 
