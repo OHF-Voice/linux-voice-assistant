@@ -161,20 +161,20 @@ async def main() -> None:
     if not args.network_interface:
         print("No network interface specified, try to detect default interface")
         network_interface = get_default_interface()
-        print("Default interface detected: {network_interface}")
+        print(f"Default interface detected:", network_interface)
     else:
         print("Network interface specified")
-        print("Using network interface: {args.network_interface}")
+        print(f"Using network interface: ", network_interface)
         network_interface = args.network_interface
 
     # Resolve ip_address where the application will be listening
     if not args.host:
         print("No host (ip-address) specified, try to detect ip-address")
         host_ip_adress = get_default_ipv4(network_interface)
-        print("ip-address detected: {ip_adress}")
+        print(f"ip-address detected: ", host_ip_adress)
     else:
         print("Host specified")
-        print("Using host: {args.host}")
+        print(f"Using host: ", args.host)
         host_ip_adress = args.host
 
     # Resolv mac
@@ -183,7 +183,7 @@ async def main() -> None:
     # Resolve name
     if not args.name:
         print("No name specified, try to autogenerate name")
-        device_name = f"linux-voice-assistant-{mac_address}"
+        device_name = "linux-voice-assistant-{mac_address}"
     else:
         print("Name specified")
         print("Using name: {args.name}")

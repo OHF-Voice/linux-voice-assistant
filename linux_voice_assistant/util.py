@@ -10,17 +10,18 @@ def call_all(*callables: Optional[Callable[[], None]]) -> None:
     for item in filter(None, callables):
         item()
 
+
 def get_default_interface():
     gateways = netifaces.gateways()
 
     # Get default IPv4 gateway
-    default_gateway = gateways.get("default", {}).get(netifaces.AF_INET)
+    default_gateway = gateways['default'][netifaces.AF_INET]
 
-    if default_gateway:
-        gateway_ip, interface = default_gateway
-        return interface
+    if not default_gateway:
+        return None
 
-    return None
+    return default_gateway
+
 
 def get_default_ipv4(interface: str):
     if not interface:
