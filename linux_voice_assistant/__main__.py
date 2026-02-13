@@ -170,7 +170,7 @@ async def main() -> None:
     # Resolve ip_address where the application will be listening
     if not args.host:
         print("No host (ip-address) specified, try to detect ip-address")
-        host_ip_adress = get_ip_adress(network_interface)
+        host_ip_adress = get_default_ipv4(network_interface)
         print("ip-address detected: {ip_adress}")
     else:
         print("Host specified")
