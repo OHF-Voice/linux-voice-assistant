@@ -12,15 +12,23 @@ def call_all(*callables: Optional[Callable[[], None]]) -> None:
 
 
 def get_default_interface():
-    gateways = netifaces.gateways()
-
-    # Get default IPv4 gateway
-    default_gateway = gateways['default'][netifaces.AF_INET]
+    """Return the default network interface name, or None if not found."""
+    default_gateway = netifaces.default_gateway()
 
     if not default_gateway:
+        print("No default gateway found")
         return None
 
-    return default_gateway
+    # default_gateway is e.g. {InterfaceType.AF_INET: ('192.168.33.1', 'wlp0s20f3')}
+    gateway_info = default_gateway.get(netifaces.AF_INET)
+    if not gateway_info:
+        print("No default IPv4 gateway found")
+        return None
+
+    # gateway_info is a tuple: (gateway_ip, interface_name)
+    interface_name = gateway_info[1]
+    #print(f"Default interface: {interface_name}")
+    return interface_name
 
 
 def get_default_ipv4(interface: str):
