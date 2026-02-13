@@ -25,15 +25,6 @@ class HomeAssistantZeroconf:
         self.name = name or self.mac_address
         self.host_ip_address = host_ip_address
 
-        if not host:
-            test_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            test_sock.setblocking(False)
-            test_sock.connect((MDNS_TARGET_IP, 1))
-            host = test_sock.getsockname()[0]
-            _LOGGER.debug("Detected IP: %s", host)
-
-        assert host
-        self.host = host
         self._aiozc = AsyncZeroconf()
 
     async def register_server(self) -> None:
