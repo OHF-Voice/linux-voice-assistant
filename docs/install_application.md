@@ -35,12 +35,16 @@ Download the docker-compose.yml and .env.example file from the repository to a f
 ``` sh
 mkdir linux-voice-assistant
 cd linux-voice-assistant
-wget https://raw.githubusercontent.com/OHF-Voice/linux-voice-assistant/refs/tags/v1.0.0/docker-compose.yml
-wget https://raw.githubusercontent.com/OHF-Voice/linux-voice-assistant/refs/tags/v1.0.0/.env.example
+LVA_VERSION=$(curl -s https://api.github.com/repos/ohf-voice/linux-voice-assistant/releases/latest | jq -r .tag_name)
+echo "Installing version: " $LVA_VERSION
+wget https://raw.githubusercontent.com/ohf-voice/linux-voice-assistant/refs/tags/$LVA_VERSION/docker-compose.yml
+wget https://raw.githubusercontent.com/ohf-voice/linux-voice-assistant/refs/tags/$LVA_VERSION/.env.example
 mv .env.example .env
 ```
 
-💡 **Note:** Use the latest stable version of the files from the repository. We update this documentation only regulary.
+💡 **Note:** The LVA_VERSION variable downloads the latest available version of LVA. If you want another version, you can specify it with the LVA_VERSION variable.
+
+### Docker Image Tags
 
 | Tag | Description | Example |
 |-----|-------------|---------|
