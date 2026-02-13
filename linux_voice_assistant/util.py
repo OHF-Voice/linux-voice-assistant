@@ -22,13 +22,9 @@ def get_default_interface():
 
     return None
 
-def get_default_ipv4():
-    default = get_default_interface()
-
-    if not default:
+def get_default_ipv4(interface: str):
+    if not interface:
         return None
-
-    gateway_ip, interface = default
 
     addresses = netifaces.ifaddresses(interface)
     ipv4_info = addresses.get(netifaces.AF_INET)
