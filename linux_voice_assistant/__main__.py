@@ -170,12 +170,12 @@ async def main() -> None:
     # Resolve ip_address where the application will be listening
     if not args.host:
         print("No host (ip-address) specified, try to detect IP-Address")
-        host_ip_adress = get_default_ipv4(network_interface)
-        print(f"IP-Address detected: ", host_ip_adress)
+        host_ip_address = get_default_ipv4(network_interface)
+        print(f"IP-Address detected: ", host_ip_address)
     else:
         print("Host specified")
         print(f"Using host: ", args.host)
-        host_ip_adress = args.host
+        host_ip_address = args.host
 
     # Resolve mac
     mac_address = get_mac_address(interface=network_interface)
@@ -290,7 +290,7 @@ async def main() -> None:
         name=device_name,
         network_interface=network_interface,
         mac_address=get_mac_address(interface=network_interface),
-        ip_address=host_ip_adress,
+        ip_address=host_ip_address,
         audio_queue=Queue(),
         entities=[],
         available_wake_words=available_wake_words,
@@ -322,16 +322,16 @@ async def main() -> None:
 
     loop = asyncio.get_running_loop()
     server = await loop.create_server(
-        lambda: VoiceSatelliteProtocol(state), host=host_ip_adress, port=args.port
+        lambda: VoiceSatelliteProtocol(state), host=host_ip_address, port=args.port
     )
 
     # Auto discovery (zeroconf, mDNS)
-    discovery = HomeAssistantZeroconf(port=args.port, name=state.name, mac_address=state.mac_address)
+    discovery = HomeAssistantZeroconf(port=args.port, name=state.name, mac_address=state.mac_address, host_ip_address=host_ip_address)
     await discovery.register_server()
 
     try:
         async with server:
-            _LOGGER.info("Server started (host=%s, port=%s)", host_ip_adress, args.port)
+            _LOGGER.info("Server started (host=%s, port=%s)", host_ip_address, args.port)
             await server.serve_forever()
     except KeyboardInterrupt:
         pass
