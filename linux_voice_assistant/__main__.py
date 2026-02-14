@@ -164,8 +164,8 @@ async def main() -> None:
         print(f"Default interface detected:", network_interface)
     else:
         print("Network interface specified")
-        print(f"Using network interface: ", network_interface)
         network_interface = args.network_interface
+        print(f"Using network interface: ", network_interface)
 
     # Resolve ip_address where the application will be listening
     if not args.host:
