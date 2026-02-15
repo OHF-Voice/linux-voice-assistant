@@ -14,10 +14,10 @@ sudo apt update
 sudo apt install -y pipewire wireplumber pipewire-audio-client-libraries libspa-0.2-bluetooth pipewire-audio pipewire-pulse dfu-util
 ```
 
-Link the PipeWire configuration for ALSA applicationssudo ln -sf:
+Link the PipeWire configuration for ALSA applications:
 
 ``` sh
-ln -s /usr/share/alsa/alsa.conf.d/50-pipewire.conf /etc/alsa/conf.d/
+sudo ln -s /usr/share/alsa/alsa.conf.d/50-pipewire.conf /etc/alsa/conf.d/
 ```
 
 Allow services to run without an active user session (optional, for headless setups):
@@ -34,7 +34,7 @@ sudo touch /var/lib/systemd/linger/$USER
 Create the PipeWire configuration directory:
 
 ``` sh
-mkdir -p "/etc/pipewire"
+sudo mkdir -p "/etc/pipewire"
 ```
 
 Create the file `/etc/pipewire/pipewire.conf` with the following content (minimal configuration for voice assistant use):
@@ -83,8 +83,10 @@ context.modules = [
 
 Make sure that you only run Pulseaudio and there is no Pipewire installed.
 
+``` sh
 sudo apt remove --purge pipewire pipewire-pulse wireplumber
 sudo apt autoremove
+```
 
 Install Pulseaudio
 

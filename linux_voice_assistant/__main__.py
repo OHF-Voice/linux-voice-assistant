@@ -18,8 +18,10 @@ from pyopen_wakeword import OpenWakeWord, OpenWakeWordFeatures
 from .models import AvailableWakeWord, Preferences, ServerState, WakeWordType
 from .mpv_player import MpvMediaPlayer
 from .satellite import VoiceSatelliteProtocol
-from .util import get_mac
+from getmac import get_mac_address
 from .zeroconf import HomeAssistantZeroconf
+from .util import get_default_interface
+from .util import get_default_ipv4
 
 _LOGGER = logging.getLogger(__name__)
 _MODULE_DIR = Path(__file__).parent
@@ -33,7 +35,9 @@ _SOUNDS_DIR = _REPO_DIR / "sounds"
 
 async def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--name")
+    parser.add_argument(
+        "--name"
+    )
     parser.add_argument(
         "--audio-input-device",
         help="soundcard name for input device (see --list-input-devices)",
@@ -43,7 +47,11 @@ async def main() -> None:
         action="store_true",
         help="List audio input devices and exit",
     )
-    parser.add_argument("--audio-input-block-size", type=int, default=1024)
+    parser.add_argument(
+        "--audio-input-block-size", 
+        type=int, 
+        default=1024
+    )
     parser.add_argument(
         "--audio-output-device",
         help="MPV device name for output (see --list-output-devices). SendSpin will auto-match to sounddevice.",
@@ -60,9 +68,15 @@ async def main() -> None:
         help="Directory with wake word models (.tflite) and configs (.json)",
     )
     parser.add_argument(
-        "--wake-model", default="okay_nabu", help="Id of active wake model"
+        "--wake-model", 
+        default="okay_nabu", 
+        help="Id of active wake model"
     )
-    parser.add_argument("--stop-model", default="stop", help="Id of stop model")
+    parser.add_argument(
+        "--stop-model", 
+        default="stop", 
+        help="Id of stop model"
+    )
     parser.add_argument(
         "--download-dir",
         default=_REPO_DIR / "local",
@@ -74,12 +88,13 @@ async def main() -> None:
         type=float,
         help="Seconds before wake word can be activated again",
     )
-    #
     parser.add_argument(
-        "--wakeup-sound", default=str(_SOUNDS_DIR / "wake_word_triggered.flac")
+        "--wakeup-sound", 
+        default=str(_SOUNDS_DIR / "wake_word_triggered.flac")
     )
     parser.add_argument(
-        "--timer-finished-sound", default=str(_SOUNDS_DIR / "timer_finished.flac")
+        "--timer-finished-sound", 
+        default=str(_SOUNDS_DIR / "timer_finished.flac")
     )
     parser.add_argument(
         "--processing-sound",
@@ -96,17 +111,20 @@ async def main() -> None:
         default=str(_SOUNDS_DIR / "mute_switch_off.flac"),
         help="Sound to play when unmuting the assistant",
     )
-    #
     parser.add_argument("--preferences-file", default=_REPO_DIR / "preferences.json")
-    #
     parser.add_argument(
         "--host",
-        default="0.0.0.0",
-        help="Address for ESPHome server (default: 0.0.0.0)",
+        help="IP-Address for ESPHome server", # 0.0.0.0 is IPv4, None is all interfaces
+    )
+    parser.add_argument(
+        "--network-interface",
+        help="Network interface to use for ESPHome server (default: will be automatically detected)",
     )
     # Note that default port is also set in docker-entrypoint.sh
     parser.add_argument(
-        "--port", type=int, default=6053, help="Port for ESPHome server (default: 6053)"
+        "--port", type=int, 
+        default=6053, 
+        help="Port for ESPHome server (default: 6053)"
     )
     parser.add_argument(
         "--enable-thinking-sound",
@@ -149,9 +167,41 @@ async def main() -> None:
     logging.basicConfig(level=logging.DEBUG if args.debug else logging.INFO)
     _LOGGER.debug(args)
 
-    if not args.name:
-        parser.error("the following arguments are required: --name")
+    # Resolve network interface for mac-adress detection
+    if not args.network_interface:
+        print("No network interface specified, try to detect default interface")
+        network_interface = get_default_interface()
+        print(f"Default interface detected:", network_interface)
+    else:
+        print("Network interface specified")
+        network_interface = args.network_interface
+        print(f"Using network interface: ", network_interface)
 
+    # Resolve ip_address where the application will be listening
+    if not args.host:
+        print("No host (ip-address) specified, try to detect IP-Address")
+        host_ip_address = get_default_ipv4(network_interface)
+        print(f"IP-Address detected: ", host_ip_address)
+    else:
+        print("Host specified")
+        print(f"Using host: ", args.host)
+        host_ip_address = args.host
+
+    # Resolve mac
+    mac_address = get_mac_address(interface=network_interface)
+    mac_address_clean = mac_address.replace(":", "")
+
+    # Resolve name
+    if not args.name:
+        print("No name specified, try to autogenerate name")
+        device_name = f"lva-{mac_address_clean}"
+        print(f"Name autogenerated: {device_name}")
+    else:
+        print("Name specified")
+        print(f"Using name: {args.name}")
+        device_name = args.name
+
+    # Resolve download dir
     args.download_dir = Path(args.download_dir)
     args.download_dir.mkdir(parents=True, exist_ok=True)
 
@@ -247,8 +297,10 @@ async def main() -> None:
     assert stop_model is not None
 
     state = ServerState(
-        name=args.name,
-        mac_address=get_mac(),
+        name=device_name,
+        network_interface=network_interface,
+        mac_address=get_mac_address(interface=network_interface),
+        ip_address=host_ip_address,
         audio_queue=Queue(),
         entities=[],
         available_wake_words=available_wake_words,
@@ -301,15 +353,16 @@ async def main() -> None:
     loop = asyncio.get_running_loop()
     server = await loop.create_server(
         lambda: vsp, host=args.host, port=args.port
+        lambda: VoiceSatelliteProtocol(state), host=host_ip_address, port=args.port
     )
 
     # Auto discovery (zeroconf, mDNS)
-    discovery = HomeAssistantZeroconf(port=args.port, name=args.name)
+    discovery = HomeAssistantZeroconf(port=args.port, name=state.name, mac_address=state.mac_address, host_ip_address=host_ip_address)
     await discovery.register_server()
 
     try:
         async with server:
-            _LOGGER.info("Server started (host=%s, port=%s)", args.host, args.port)
+            _LOGGER.info("Server started (host=%s, port=%s)", host_ip_address, args.port)
             await server.serve_forever()
     except KeyboardInterrupt:
         pass

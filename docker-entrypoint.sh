@@ -1,31 +1,6 @@
 #!/bin/bash
 set -e
 
-### Generate name for this client
-# Get active interface
-IFACE=$(ip route | grep default | awk '{print $5}' | head -n 1)
-
-# Check if IFACE is empty
-if [ -z "$IFACE" ]; then
-    echo "No active network interface found."
-fi
-
-# Check if interface directory exists
-if [ ! -e "/sys/class/net/$IFACE/address" ]; then
-    echo "Interface $IFACE does not exist or has no MAC address."
-fi
-
-# Read MAC address and remove ':'
-MAC=$(cat /sys/class/net/$IFACE/address | tr -d ':')
-
-if [ -z "$MAC" ]; then
-    echo "Could not read MAC address."
-fi
-
-# Generate CLIENT_NAME from it
-TEMP_CLIENT_NAME="lva-${MAC}"
-
-
 ### Handlers
 # Handle parameters
 EXTRA_ARGS=()
@@ -34,7 +9,6 @@ if [ "$ENABLE_DEBUG" = "1" ]; then
   EXTRA_ARGS+=( "--debug" )
 fi
 
-CLIENT_NAME=${CLIENT_NAME:-$TEMP_CLIENT_NAME}
 if [ -n "${CLIENT_NAME}" ]; then
   EXTRA_ARGS+=( "--name" "$CLIENT_NAME" )
 fi
@@ -42,6 +16,15 @@ fi
 PREFERENCES_FILE=${PREFERENCES_FILE:-"/app/configuration/preferences.json"}
 if [ -n "${PREFERENCES_FILE}" ]; then
   EXTRA_ARGS+=( "--preferences-file" "$PREFERENCES_FILE" )
+fi
+
+if [ -n "${NETWORK_INTERFACE}" ]; then
+  EXTRA_ARGS+=( "--network-interface" "$NETWORK_INTERFACE" )
+fi
+
+# IP-ADDRESS
+if [ -n "${HOST}" ]; then
+  EXTRA_ARGS+=( "--host" "$HOST" )
 fi
 
 PORT=${PORT:-6053}
@@ -59,6 +42,38 @@ fi
 
 if [ "$ENABLE_THINKING_SOUND" = "1" ]; then
   EXTRA_ARGS+=( "--enable-thinking-sound" )
+fi
+
+if [ -n "${WAKE_MODEL}" ]; then
+  EXTRA_ARGS+=( "--wake-model" "$WAKE_MODEL" )
+fi
+
+if [ -n "${STOP_MODEL}" ]; then
+  EXTRA_ARGS+=( "--stop-model" "$STOP_MODEL" )
+fi
+
+if [ -n "${REFACTORY_SECONDS}" ]; then
+  EXTRA_ARGS+=( "--refractory-seconds" "$REFACTORY_SECONDS" )
+fi
+
+if [ -n "${WAKEUP_SOUND}" ]; then
+  EXTRA_ARGS+=( "--wakeup-sound" "$WAKEUP_SOUND" )
+fi
+
+if [ -n "${TIMER_FINISHED_SOUND}" ]; then
+  EXTRA_ARGS+=( "--timer-finished-sound" "$TIMER_FINISHED_SOUND" )
+fi
+
+if [ -n "${PROCESSING_SOUND}" ]; then
+  EXTRA_ARGS+=( "--processing-sound" "$PROCESSING_SOUND" )
+fi
+
+if [ -n "${MUTE_SOUND}" ]; then
+  EXTRA_ARGS+=( "--mute-sound" "$MUTE_SOUND" )
+fi
+
+if [ -n "${UNMUTE_SOUND}" ]; then
+  EXTRA_ARGS+=( "--unmute-sound" "$UNMUTE_SOUND" )
 fi
 
 
@@ -113,7 +128,9 @@ if [ "$LIST_DEVICES" = "1" ]; then
   ./script/run "$@" "${EXTRA_ARGS[@]}" --list-input-devices
   echo "list output devices"
   ./script/run "$@" "${EXTRA_ARGS[@]}" --list-output-devices
-else
-  echo "starting application"
-  exec ./script/run "$@" "${EXTRA_ARGS[@]}"
+  echo "wait 20s and then starting the application"
+  sleep 20
 fi
+
+echo "starting application"
+exec ./script/run "$@" "${EXTRA_ARGS[@]}"
