@@ -54,7 +54,7 @@ async def main() -> None:
     )
     parser.add_argument(
         "--audio-output-device",
-        help="mpv name for output device (see --list-output-devices)",
+        help="MPV device name for output (see --list-output-devices). SendSpin will auto-match to sounddevice.",
     )
     parser.add_argument(
         "--list-output-devices",
@@ -134,6 +134,22 @@ async def main() -> None:
     parser.add_argument(
         "--debug", action="store_true", help="Print DEBUG messages to console"
     )
+    #
+    # SendSpin client options
+    parser.add_argument(
+        "--sendspin-url",
+        help="SendSpin server WebSocket URL (e.g., ws://192.168.1.100:8928/sendspin)",
+    )
+    parser.add_argument(
+        "--sendspin-client-id",
+        help="Unique identifier for SendSpin client (default: linux-voice-assistant-<hostname>)",
+    )
+    parser.add_argument(
+        "--sendspin-static-delay-ms",
+        type=float,
+        default=0.0,
+        help="Static playback delay in milliseconds for SendSpin sync adjustment",
+    )
     args = parser.parse_args()
 
     if args.list_input_devices:
@@ -144,14 +160,8 @@ async def main() -> None:
         return
 
     if args.list_output_devices:
-        from mpv import MPV
-
-        player = MPV()
-        print("Output devices")
-        print("=" * 14)
-
-        for speaker in player.audio_device_list:  # type: ignore
-            print(speaker["name"] + ":", speaker["description"])
+        from .audio_device_util import list_output_devices
+        list_output_devices()
         return
 
     logging.basicConfig(level=logging.DEBUG if args.debug else logging.INFO)
@@ -320,8 +330,29 @@ async def main() -> None:
     )
     process_audio_thread.start()
 
+    vsp = VoiceSatelliteProtocol(state)
+    # Initialize SendSpin bridge if URL provided
+    if args.sendspin_url:
+        from .sendspin_bridge import SendspinBridge
+        from .audio_device_util import find_sounddevice_by_name
+
+        # Resolve MPV device name to sounddevice index
+        sounddevice_index = find_sounddevice_by_name(args.audio_output_device)
+
+        vsp.state.sendspin_bridge = SendspinBridge(
+            media_player_entity=vsp.state.media_player_entity,
+            client_id=args.sendspin_client_id,
+            client_name=args.name,
+            static_delay_ms=args.sendspin_static_delay_ms,
+            audio_device=sounddevice_index,
+        )
+        # Wire up the bridge to the entity for coordinated playback
+        vsp.state.media_player_entity.set_sendspin_bridge(state.sendspin_bridge)
+        await vsp.state.sendspin_bridge.start(server_url=args.sendspin_url)
+
     loop = asyncio.get_running_loop()
     server = await loop.create_server(
+        lambda: vsp, host=args.host, port=args.port
         lambda: VoiceSatelliteProtocol(state), host=host_ip_address, port=args.port
     )
 
@@ -336,6 +367,10 @@ async def main() -> None:
     except KeyboardInterrupt:
         pass
     finally:
+        # Stop SendSpin bridge
+        if state.sendspin_bridge:
+            await state.sendspin_bridge.disconnect()
+
         state.audio_queue.put_nowait(None)
         process_audio_thread.join()
 
@@ -413,7 +448,7 @@ def process_audio(state: ServerState, mic, block_size: int):
                         elif isinstance(wake_word, OpenWakeWord):
                             for oww_input in oww_inputs:
                                 for prob in wake_word.process_streaming(oww_input):
-                                    if prob > 0.5:
+                                    if prob > 0.995:
                                         activated = True
 
                         if activated and not state.muted:
