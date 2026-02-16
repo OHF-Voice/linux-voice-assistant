@@ -244,6 +244,7 @@ class VoiceSatelliteProtocol(APIServer):
             self.play_tts()
         elif event_type == VoiceAssistantEventType.VOICE_ASSISTANT_RUN_END:
             self._is_streaming_audio = False
+            self._pipeline_active = False
             if not self._tts_played:
                 self._tts_finished()
 
@@ -415,8 +416,13 @@ class VoiceSatelliteProtocol(APIServer):
             # Don't respond to wake words when muted (voice_assistant.stop behavior)
             return
 
+        if self._pipeline_active:
+            _LOGGER.debug("Ignoring wake word - pipeline already active")
+            return
+
         wake_word_phrase = wake_word.wake_word
         _LOGGER.debug("Detected wake word: %s", wake_word_phrase)
+        self._pipeline_active = True
         self.send_messages(
             [VoiceAssistantRequest(start=True, wake_word_phrase=wake_word_phrase)]
         )
@@ -454,6 +460,7 @@ class VoiceSatelliteProtocol(APIServer):
         self.state.music_player.unduck()
 
     def _tts_finished(self) -> None:
+        self._pipeline_active = False
         self.state.active_wake_words.discard(self.state.stop_word.id)
         self.send_messages([VoiceAssistantAnnounceFinished()])
 
