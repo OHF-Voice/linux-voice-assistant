@@ -12,8 +12,12 @@ if TYPE_CHECKING:
     from pymicro_wakeword import MicroWakeWord
     from pyopen_wakeword import OpenWakeWord
 
-    from .entity import ESPHomeEntity, MediaPlayerEntity
-    from .entity import ESPHomeEntity, MediaPlayerEntity, MuteSwitchEntity, ThinkingSoundEntity
+    from .entity import (
+        ESPHomeEntity,
+        MediaPlayerEntity,
+        MuteSwitchEntity,
+        ThinkingSoundEntity,
+    )
     from .mpv_player import MpvMediaPlayer
     from .satellite import VoiceSatelliteProtocol
 
@@ -55,10 +59,13 @@ class Preferences:
     active_wake_words: List[str] = field(default_factory=list)
     thinking_sound: int = 0  # 0 = disabled, 1 = enabled
 
+
 @dataclass
 class ServerState:
     name: str
     mac_address: str
+    ip_address: str
+    network_interface: str
     audio_queue: "Queue[Optional[bytes]]"
     entities: "List[ESPHomeEntity]"
     available_wake_words: "Dict[str, AvailableWakeWord]"
@@ -72,7 +79,7 @@ class ServerState:
     timer_finished_sound: str
     timer_alarm_repeats: int
     mute_sound: str
-    unmute_sound: str      
+    unmute_sound: str
     preferences: Preferences
     preferences_path: Path
     download_dir: Path
@@ -86,7 +93,7 @@ class ServerState:
     thinking_sound_enabled: bool = False
     muted: bool = False
     connected: bool = False
-    
+
     def save_preferences(self) -> None:
         """Save preferences as JSON."""
         _LOGGER.debug("Saving preferences: %s", self.preferences_path)

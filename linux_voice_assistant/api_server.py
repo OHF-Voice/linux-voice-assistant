@@ -39,7 +39,7 @@ class APIServer(asyncio.Protocol):
         self._writelines = None
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._loop_thread_id: Optional[int] = None
-        
+
     @abstractmethod
     def handle_message(self, msg: message.Message) -> Iterable[message.Message]:
         pass
@@ -93,7 +93,7 @@ class APIServer(asyncio.Protocol):
         ):
             self._loop.call_soon_threadsafe(self._writelines, packet_bytes)
             return
-                
+
         self._writelines(packet_bytes)
 
     def connection_made(self, transport) -> None:
@@ -105,7 +105,7 @@ class APIServer(asyncio.Protocol):
             self._loop = None
         else:
             self._loop_thread_id = threading.get_ident()
-            
+
     def data_received(self, data: bytes):
         if self._buffer is None:
             self._buffer = data
@@ -160,7 +160,7 @@ class APIServer(asyncio.Protocol):
         self._writelines = None
         self._loop = None
         self._loop_thread_id = None
-        
+
     def _read_varuint(self) -> int:
         """Read a varuint from the buffer or -1 if the buffer runs out of bytes."""
         if not self._buffer:

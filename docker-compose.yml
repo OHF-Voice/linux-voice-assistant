@@ -1,0 +1,60 @@
+---
+services:
+  # Fix permissions for wakeword_data and configuration volume
+  fix-permissions:
+    image: "ghcr.io/ohf-voice/linux-voice-assistant:latest"
+    entrypoint: []
+    command: "chown -R ${LVA_USER_ID}:${LVA_USER_GROUP} /app/local /app/configuration"
+    env_file: .env
+    group_add:
+      - audio
+    volumes:
+      # Wakeword data and configuration
+      - wakeword_data:/app/local
+      - configuration:/app/configuration
+    restart: "no"
+
+  # Linux Voice Assistant
+  linux-voice-assistant:
+    container_name: linux-voice-assistant
+    image: "ghcr.io/ohf-voice/linux-voice-assistant:latest"
+    restart: unless-stopped
+    network_mode: "host"
+    user: "${LVA_USER_ID}:${LVA_USER_GROUP}"
+    environment:
+      # Pulseaudio
+      - XDG_RUNTIME_DIR=${LVA_XDG_RUNTIME_DIR}
+      - PULSE_SERVER=${LVA_PULSE_SERVER}
+    env_file: .env
+    group_add:
+      - audio
+    # Priority for audio process
+    cap_add:
+      - SYS_NICE
+    volumes:
+      # Wakeword data and configuration
+      - wakeword_data:/app/local
+      - configuration:/app/configuration
+      # Time and zone
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+      # Pulseaudio
+      # /run/user/1000:/run/user/1000
+      - ${LVA_XDG_RUNTIME_DIR}:${LVA_XDG_RUNTIME_DIR}
+    depends_on:
+      - fix-permissions
+    # Health check for process
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "linux_voice_assistant"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 90s
+    #command:
+    #  - --additional-parameters-here
+    #  - --but-use-env-if-possible
+
+
+volumes:
+  wakeword_data:
+  configuration:

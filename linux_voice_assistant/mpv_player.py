@@ -1,94 +1,108 @@
-"""Media player using mpv in a subprocess."""
-
+# mpv_player.py
 import logging
-from collections.abc import Callable
-from threading import Lock
-from typing import List, Optional, Union
+from typing import Union, List, Callable, Optional
 
-from mpv import MPV
-
-_LOGGER = logging.getLogger(__name__)
+from .player.libmpv import LibMpvPlayer
 
 
 class MpvMediaPlayer:
-    def __init__(self, device: Optional[str] = None) -> None:
-        self.player = MPV()
+    """
+    Linux Voice Assistant MediaPlayer implementation based on libmpv.
 
-        if device:
-            self.player["audio-device"] = device
+    This class provides the MediaPlayer interface expected by LVA and
+    delegates all playback logic to LibMpvPlayer.
+    """
 
-        self.is_playing = False
-
-        self._playlist: List[str] = []
+    def __init__(self, device: str | None = None) -> None:
+        self._log = logging.getLogger(self.__class__.__name__)
+        self._player = LibMpvPlayer(device=device)
         self._done_callback: Optional[Callable[[], None]] = None
-        self._done_callback_lock = Lock()
 
-        self._duck_volume: int = 50
-        self._unduck_volume: int = 100
-
-        self.player.event_callback("end-file")(self._on_end_file)
+        self._log.debug("MpvMediaPlayer initialized (device=%s)", device)
 
     def play(
         self,
         url: Union[str, List[str]],
         done_callback: Optional[Callable[[], None]] = None,
-        stop_first: bool = True,
+        stop_first: bool = False,
     ) -> None:
-        self.stop()
+        """
+        Play a media URL.
 
-        if isinstance(url, str):
-            self._playlist = [url]
-        else:
-            self._playlist = url
+        Args:
+            url: Media URL or list of URLs (LVA currently uses a single URL).
+            done_callback: Optional callback invoked when playback finishes.
+            stop_first: Kept for API compatibility.
+        """
+        # LVA currently only uses single URLs
+        if isinstance(url, list):
+            self._log.debug("Received URL list, using first entry")
+            url = url[0]
 
-        next_url = self._playlist.pop(0)
-        _LOGGER.debug("Playing %s", next_url)
+        # Track is changing
+        if self._done_callback is not None:
+            self._log.debug(
+                "Stopping active playback before starting new media"
+            )
+            # Not self.stop() → this would call done_callback
+            self._player.stop(for_replacement=True)
+            self._done_callback = None
+
+        self._log.info("Playing media: %s", url)
+        self._log.debug(
+            "play(url=%s, stop_first=%s, done_callback=%s)",
+            url,
+            stop_first,
+            bool(done_callback),
+        )
 
         self._done_callback = done_callback
-        self.is_playing = True
-        self.player.play(next_url)
+        self._player.play(url, done_callback=done_callback, stop_first=stop_first)
 
     def pause(self) -> None:
-        self.player.pause = True
-        self.is_playing = False
+        """Pause playback."""
+        self._log.debug("pause() called")
+        self._player.pause()
 
     def resume(self) -> None:
-        self.player.pause = False
-        if self._playlist:
-            self.is_playing = True
+        """Resume playback."""
+        self._log.debug("resume() called")
+        self._player.resume()
 
     def stop(self) -> None:
-        self.player.stop()
-        self._playlist.clear()
+        """Stop playback and invoke the done callback if present."""
+        self._log.debug("stop() called")
 
-    def duck(self) -> None:
-        self.player.volume = self._duck_volume
+        self._player.stop()
 
-    def unduck(self) -> None:
-        self.player.volume = self._unduck_volume
-
-    def set_volume(self, volume: int) -> None:
-        volume = max(0, min(100, volume))
-        self.player.volume = volume
-
-        self._unduck_volume = volume
-        self._duck_volume = volume // 2
-
-    def _on_end_file(self, event) -> None:
-        if self._playlist:
-            self.player.play(self._playlist.pop(0))
-            return
-
-        self.is_playing = False
-
-        todo_callback: Optional[Callable[[], None]] = None
-        with self._done_callback_lock:
-            if self._done_callback:
-                todo_callback = self._done_callback
+        if self._done_callback:
+            self._log.debug("Invoking done_callback due to stop()")
+            try:
+                self._done_callback()
+            finally:
                 self._done_callback = None
 
-        if todo_callback:
-            try:
-                todo_callback()
-            except Exception:
-                _LOGGER.exception("Unexpected error running done callback")
+    def set_volume(self, volume: float) -> None:
+        """
+        Set playback volume.
+
+        Args:
+            volume: Volume in percent (0.0–100.0).
+        """
+        self._log.debug("set_volume(volume=%.2f)", volume)
+        self._player.set_volume(volume)
+
+    def duck(self, factor: float = 0.5) -> None:
+        """
+        Temporarily reduce volume.
+
+        Args:
+            factor: Volume multiplier (0.0–1.0).
+        """
+        self._log.debug("duck(factor=%.2f)", factor)
+        self._player.duck(factor)
+
+    def unduck(self) -> None:
+        """Restore volume after ducking."""
+        self._log.debug("unduck() called")
+        self._player.unduck()

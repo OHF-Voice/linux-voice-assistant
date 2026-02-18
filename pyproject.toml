@@ -26,12 +26,14 @@ classifiers = [
 requires-python = ">=3.9.0"
 dependencies = [
     "aioesphomeapi==42.7.0",
+    "netifaces2==0.0.22",
     "soundcard<1",
     "numpy>=2,<3",
     "pymicro-wakeword>=2,<3",
     "pyopen-wakeword>=1,<2",
     "python-mpv>=1,<2",
     "zeroconf<1",
+    "getmac<1",
 ]
 
 [project.optional-dependencies]
