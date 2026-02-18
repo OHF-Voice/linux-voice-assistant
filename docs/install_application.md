@@ -72,7 +72,7 @@ vim .env
 
 ### User ID:
 # This is used to set the correct permissions for the accessing the audio device and accessing the PulseAudio socket
-USERLVA_USER_ID00"
+LVA_USER_ID="1000"
 LVA_USER_GROUP="1000"
 
 ### Name for the client (optional):
@@ -82,8 +82,8 @@ LVA_USER_GROUP="1000"
 ### PulseAudio socket path on the host:
 # PulseAudio Server:    /run/user/1000/pulse
 # Pipewire Server:      /run/user/1000/pulse/native
-LVA_PULSE_SERVER="unix:/run/user/${USERLVA_USER_IDlse/native"
-LVA_XDG_RUNTIME_DIR="/run/user/${USERLVA_USER_ID
+LVA_PULSE_SERVER="unix:/run/user/${LVA_USER_ID}/pulse/native"
+LVA_XDG_RUNTIME_DIR="/run/user/${LVA_USER_ID}"
 
 ### Path to the preferences file (optional):
 # PREFERENCES_FILE="/app/configuration/preferences.json"
@@ -264,7 +264,7 @@ The following variables can be configured in the `.env` or in the service file:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `USERLVA_USER_ID` | `1000` | User ID for the container (usually 1000 for the first user) |
+| `LVA_USER_ID` | `1000` | User ID for the container (usually 1000 for the first user) |
 | `GROUP_ID` | `1000` | GROUP ID for the container (usually 1000 for the first users group) |
 | `CLIENT_NAME` | (optional) | Custom name for this voice assistant instance |
 | `LVA_PULSE_SERVER` | `unix:/run/user/${LVA_USER_ID}/pulse/native` | Path to the PulseAudio/PipeWire socket |
