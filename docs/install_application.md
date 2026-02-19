@@ -224,6 +224,8 @@ WantedBy=multi-user.target
 
 💡 **Note:** Replace `LVA_USER_ID` with your actual user id that you want to run the voice assistant. Do the same for `LVA_USER_GROUP`.
 
+💡 **Note:** You need to run Pipewire and LVA with the same user in oder to provide access to the audio socket. You can also add the group audio to the user which LVA is running on. `sudo usermod -a -G audio pi`
+
 Reload the systemd daemon and start the service:
 
 ``` sh
@@ -265,7 +267,7 @@ The following variables can be configured in the `.env` or in the service file:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `LVA_USER_ID` | `1000` | User ID for the container (usually 1000 for the first user) |
-| `GROUP_ID` | `1000` | GROUP ID for the container (usually 1000 for the first users group) |
+| `LVA_USER_GROUP` | `1000` | GROUP ID for the container (usually 1000 for the first users group) |
 | `CLIENT_NAME` | (optional) | Custom name for this voice assistant instance |
 | `LVA_PULSE_SERVER` | `unix:/run/user/${LVA_USER_ID}/pulse/native` | Path to the PulseAudio/PipeWire socket |
 | `LVA_XDG_RUNTIME_DIR` | `/run/user/${LVA_USER_ID}` | XDG runtime directory |
