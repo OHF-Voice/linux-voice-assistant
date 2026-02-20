@@ -35,6 +35,8 @@ sudo touch /var/lib/systemd/linger/$USER
 
 ### Configure PipeWire (optional):
 
+💡 **Note:** If you are not on a desktop system, which is already configured for PipeWire, you can configure it manually.
+
 Create the PipeWire configuration directory:
 
 ```sh
