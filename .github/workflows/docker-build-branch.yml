@@ -30,6 +30,11 @@ jobs:
           echo "REGISTRY_LOWER=$(echo '${{ env.REGISTRY }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
           echo "REPOSITORY_LOWER=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
 
+      - name: Create version files
+        run: |
+          echo "${{ env.CLEAN_BRANCH_NAME }}" > version.txt
+          echo "${{ github.sha }}" > version_githash.txt
+
       - name: Log in to the Container registry
         uses: docker/login-action@v3.1.0
         with:
