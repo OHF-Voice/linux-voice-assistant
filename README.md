@@ -23,15 +23,17 @@ Experimental Linux-Voice-Assistant for [Home Assistant](https://www.home-assista
 
 ### Hardware:
 
-You can for example use the Raspberry Pi Zero 2W with the [Satellite1 Hat Board](https://futureproofhomes.net/products/satellite1-top-microphone-board), the [Respeaker Lite](https://wiki.seeedstudio.com/reSpeaker_usb_v3/) or the [Respeaker 2Mic_Hat](https://wiki.seeedstudio.com/ReSpeaker_2_Mics_Pi_HAT/). A list for possible compatible hardware can be found in the [PiCompose documentation](https://github.com/florian-asche/PiCompose) but basically any microphone that works with [Pipewire](https://pipewire.org/) can be used with the prebuild image.
+You can for example use the Raspberry Pi Zero 2W with the [Satellite1 Hat Board](https://futureproofhomes.net/products/satellite1-top-microphone-board), the [Respeaker Lite](https://wiki.seeedstudio.com/reSpeaker_usb_v3/) or the [Respeaker 2Mic_Hat](https://wiki.seeedstudio.com/ReSpeaker_2_Mics_Pi_HAT/). 
+
+A list for possible compatible hardware can be found in the [PiCompose documentation](https://github.com/florian-asche/PiCompose) but basically any microphone that works with [Pipewire](https://pipewire.org/) can be used with the prebuild image.
 
 ### Software:
 
 #### Installation:
 
-We have different installation methods available (Docker, systemd), each with its own dedicated instructions.
+For Raspberry Pi users, we provide a prebuild image that can be flashed to a SD card. See [PiCompose](https://github.com/florian-asche/PiCompose).
 
-See [Linux-Voice-Assistant - Installation](docs/install.md). 
+For all other users we have different installation methods available (Docker, systemd), each with its own dedicated instructions. See [Linux-Voice-Assistant - Installation](docs/install.md). 
 
 #### Parameter overview:
 
