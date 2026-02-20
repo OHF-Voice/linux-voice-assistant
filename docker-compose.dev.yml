@@ -4,14 +4,16 @@ services:
   fix-permissions:
     image: "ghcr.io/ohf-voice/linux-voice-assistant:latest"
     entrypoint: []
-    command: "chown -R ${LVA_USER_ID}:${LVA_USER_GROUP} /app/local /app/configuration"
+    command: "chown -R ${LVA_USER_ID}:${LVA_USER_GROUP} /app/local /app/configuration /app/wakewords/custom /app/sounds/custom"
     env_file: .env
     group_add:
       - audio
     volumes:
       # Wakeword data and configuration
       - wakeword_data:/app/local
+      - wakeword_custom:/app/wakewords/custom
       - configuration:/app/configuration
+      - sounds_custom:/app/sounds/custom
     restart: "no"
 
   # Linux Voice Assistant
@@ -34,7 +36,9 @@ services:
     volumes:
       # Wakeword data and configuration
       - wakeword_data:/app/local
+      - wakeword_custom:/app/wakewords/custom
       - configuration:/app/configuration
+      - sounds_custom:/app/sounds/custom
       # Time and zone
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
@@ -59,4 +63,6 @@ services:
 
 volumes:
   wakeword_data:
+  wakeword_custom:
   configuration:
+  sounds_custom:
