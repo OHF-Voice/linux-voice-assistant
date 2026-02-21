@@ -50,6 +50,7 @@ jobs:
         run: |
           echo "${{ steps.meta.outputs.version }}" > version.txt
           echo "${{ github.sha }}" > version_githash.txt
+          ls -ltr
 
       - name: Build and push Docker image
         id: push
