@@ -4,11 +4,13 @@ import uuid
 # netifaces lib is from netifaces2
 import netifaces
 from collections.abc import Callable
+from importlib.metadata import version, PackageNotFoundError
 from pathlib import Path
 from typing import Optional
 
 # Cache for version to avoid repeated file reading
 _version_cache: Optional[str] = None
+_esphome_version_cache: Optional[str] = None
 
 
 def get_version() -> str:
@@ -37,6 +39,32 @@ def get_version() -> str:
         _version_cache = "unknown"
     
     return _version_cache
+
+
+def get_esphome_version() -> str:
+    """
+    Read the version of the installed aioesphomeapi package.
+    
+    This function uses importlib.metadata to safely retrieve the version
+    of an installed Python package without executing any code from the
+    package itself.
+    
+    Returns:
+        str: The version of aioesphomeapi (e.g., '42.7.0'), or 'unknown'
+             if the package is not installed or the version cannot be read.
+    """
+    global _esphome_version_cache
+    
+    if _esphome_version_cache is not None:
+        return _esphome_version_cache
+    
+    try:
+        _esphome_version_cache = version("aioesphomeapi")
+    except PackageNotFoundError:
+        _esphome_version_cache = "unknown"
+    
+    return _esphome_version_cache
+
 
 def call_all(*callables: Optional[Callable[[], None]]) -> None:
     for item in filter(None, callables):

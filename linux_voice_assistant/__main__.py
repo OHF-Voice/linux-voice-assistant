@@ -23,6 +23,7 @@ from .zeroconf import HomeAssistantZeroconf
 from .util import get_default_interface
 from .util import get_default_ipv4
 from .util import get_version
+from .util import get_esphome_version
 
 _LOGGER = logging.getLogger(__name__)
 _MODULE_DIR = Path(__file__).parent
@@ -200,6 +201,10 @@ async def main() -> None:
     version = get_version()
     print(f"Version: {version}")
 
+    # Resolve esphome version
+    esphome_version = get_esphome_version()
+    print(f"ESPHome api version: {esphome_version}")
+
     # Resolve download dir
     args.download_dir = Path(args.download_dir)
     args.download_dir.mkdir(parents=True, exist_ok=True)
@@ -302,6 +307,7 @@ async def main() -> None:
         mac_address=get_mac_address(interface=network_interface),
         ip_address=host_ip_address,
         version=version,
+        esphome_version=esphome_version,
         audio_queue=Queue(),
         entities=[],
         available_wake_words=available_wake_words,

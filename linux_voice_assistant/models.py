@@ -68,6 +68,7 @@ class ServerState:
     ip_address: str
     network_interface: str
     version: str
+    esphome_version: str
     audio_queue: "Queue[Optional[bytes]]"
     entities: "List[ESPHomeEntity]"
     available_wake_words: "Dict[str, AvailableWakeWord]"
