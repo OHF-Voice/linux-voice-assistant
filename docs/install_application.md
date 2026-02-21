@@ -188,12 +188,9 @@ Wants=network-online.target
 Type=simple
 User=pi
 WorkingDirectory=/home/pi/linux-voice-assistant
-
 Environment=PATH=/home/pi/linux-voice-assistant/.venv/bin:/usr/bin:/bin
 # Environment=ENABLE_DEBUG="1"
 # Environment=LIST_DEVICES="1"
-Environment=LVA_USER_ID="1000"
-Environment=LVA_USER_GROUP="1000"
 # Environment=CLIENT_NAME="My Voice Assistant Speaker"
 Environment=LVA_PULSE_SERVER="unix:/run/user/${LVA_USER_ID}/pulse/native"
 Environment=LVA_XDG_RUNTIME_DIR="/run/user/${LVA_USER_ID}"
@@ -222,7 +219,7 @@ WantedBy=multi-user.target
 
 💡 **Note:** We are using the `docker-entrypoint.sh` script to start the application. This script is located in the root of the repository. But there is no docker used. Only the start script is used.
 
-💡 **Note:** Replace `LVA_USER_ID` with your actual user id that you want to run the voice assistant. Do the same for `LVA_USER_GROUP`.
+💡 **Note:** Replace `pi` with your actual user that you want to run the voice assistant. You need to run Pipewire and LVA with the same user in order to provide access to the audio socket. You can also add the group audio to the user which LVA is running on. `sudo usermod -a -G audio pi`
 
 Reload the systemd daemon and start the service:
 
@@ -265,7 +262,7 @@ The following variables can be configured in the `.env` or in the service file:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `LVA_USER_ID` | `1000` | User ID for the container (usually 1000 for the first user) |
-| `GROUP_ID` | `1000` | GROUP ID for the container (usually 1000 for the first users group) |
+| `LVA_USER_GROUP` | `1000` | GROUP ID for the container (usually 1000 for the first users group) |
 | `CLIENT_NAME` | (optional) | Custom name for this voice assistant instance |
 | `LVA_PULSE_SERVER` | `unix:/run/user/${LVA_USER_ID}/pulse/native` | Path to the PulseAudio/PipeWire socket |
 | `LVA_XDG_RUNTIME_DIR` | `/run/user/${LVA_USER_ID}` | XDG runtime directory |
@@ -275,9 +272,10 @@ The following variables can be configured in the `.env` or in the service file:
 | `NETWORK_INTERFACE` | Autodetected | network card for server |
 | `HOST` | Autodetected | API server IP-Address, can be 0.0.0.0 for all interfaces, but only one network card works for MAC-ADDRESS and ESP protocol |
 | `PORT` | `6053` | API server port |
-| `AUDIO_INPUT_DEVICE` | `default` | Audio input device name |
-| `AUDIO_OUTPUT_DEVICE` | `default` | Audio output device name |
+| `AUDIO_INPUT_DEVICE` | Autodetected | Audio input device name |
+| `AUDIO_OUTPUT_DEVICE` | Autodetected | Audio output device name |
 | `ENABLE_THINKING_SOUND` | false | Set to "1" to enable thinking sound |
+| `WAKE_WORD_DIR` | `app/wakewords` | Path to the wake word directory |
 | `WAKE_MODEL` | `okay_nabu` | Wake word model to use |
 | `REFACTORY_SECONDS` | `2` | Refractory period in seconds after wake word |
 | `WAKEUP_SOUND` | `sounds/wake_word_triggered.flac` | Sound file for wake word triggered |
@@ -285,6 +283,14 @@ The following variables can be configured in the `.env` or in the service file:
 | `PROCESSING_SOUND` | `sounds/processing.wav` | Sound file for processing state |
 | `MUTE_SOUND` | `sounds/mute_switch_on.flac` | Sound file for mute on |
 | `UNMUTE_SOUND` | `sounds/mute_switch_off.flac` | Sound file for Configure Audio Devices
+
+
+### Use own soundfiles:
+
+If you want to use your own sounds, you can add them to the `sounds/custom` aka `/var/lib/docker/volumes/lva_sounds_custom/_data` directory and reference them in the `.env` file.
+
+
+### Wake Word:
 
 #### Available Wake Word Models:
 
@@ -300,13 +306,13 @@ The following wake word models are available:
 - `choo_choo_homie` - Choo Choo Homie wake word
 
 
-### Wake Word:
+### Custom Wake Word:
 
-💡 **Note:** The default value for this parameter is the `wakewords` directory in the repository.
+If you want to use your own wakewords, you can add them to the `wakewords/custom` aka `/var/lib/docker/volumes/lva_wakeword_custom/_data` directory and reference them in the `.env` file.
 
-Change the default wake word with `--wake-model <id>` where `<id>` is the name of a model in the `wakewords` directory. For example, `--wake-model hey_jarvis` will load `wakewords/hey_jarvis.tflite` by default.
+Change the default wake word with `WAKE_MODEL <id>` where `<id>` is the name of a model in the `wakewords` directory. For example, `WAKE_MODEL hey_jarvis` will load `app/wakewords/hey_jarvis.tflite` by default.
 
-You can include more wakeword directories by adding `--wake-word-dir <DIR>` where `<DIR>` contains either [microWakeWord][] or [openWakeWord][] config files and `.tflite` models. For example, `--wake-word-dir wakewords/openWakeWord` will include the default wake words for openWakeWord.
+You can include more wakeword directories by adding `WAKE_WORD_DIR <DIR>` where `<DIR>` contains either [microWakeWord][] or [openWakeWord][] config files and `.tflite` models. For example, `WAKE_WORD_DIR app/wakewords/openWakeWord` will include the default wake words for openWakeWord.
 
 If you want to add [other wakewords][wakewords-collection], make sure to create a small JSON config file to identify it as an openWakeWord model. For example, download the [GLaDOS][glados] model to `glados.tflite` and create `glados.json` with:
 
@@ -318,7 +324,7 @@ If you want to add [other wakewords][wakewords-collection], make sure to create 
 }
 ```
 
-Add `--wake-word-dir <DIR>` with the directory containing `glados.tflite` and `glados.json` to your command-line.
+Add `WAKE_WORD_DIR <DIR>` with the directory containing `glados.tflite` and `glados.json` to your command-line.
 
 #### Additional Wakewords:
 

@@ -63,9 +63,12 @@ class Preferences:
 @dataclass
 class ServerState:
     name: str
+    friendly_name: str
     mac_address: str
     ip_address: str
     network_interface: str
+    version: str
+    esphome_version: str
     audio_queue: "Queue[Optional[bytes]]"
     entities: "List[ESPHomeEntity]"
     available_wake_words: "Dict[str, AvailableWakeWord]"

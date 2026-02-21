@@ -54,6 +54,8 @@ COPY sounds/ ./sounds/
 COPY ../wakewords/ ./wakewords/
 COPY linux_voice_assistant/ ./linux_voice_assistant/
 COPY docker-entrypoint.sh ./
+COPY version.txt ./
+COPY version_githash.txt ./
 
 ### Run installation:
 RUN chmod +x docker-entrypoint.sh
