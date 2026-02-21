@@ -47,7 +47,7 @@ from pyopen_wakeword import OpenWakeWord
 from .api_server import APIServer
 from .entity import MediaPlayerEntity, MuteSwitchEntity, ThinkingSoundEntity
 from .models import AvailableWakeWord, ServerState, WakeWordType
-from .util import call_all
+from .util import call_all, run_command
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -227,11 +227,15 @@ class VoiceSatelliteProtocol(APIServer):
                 self._processing = True
                 self.duck()
                 self.state.tts_player.play(self.state.processing_sound)
+        elif event_type == VoiceAssistantEventType.VOICE_ASSISTANT_STT_START:
+            run_command(self.state.stt_start_command)
         elif event_type in (
             VoiceAssistantEventType.VOICE_ASSISTANT_STT_VAD_END,
             VoiceAssistantEventType.VOICE_ASSISTANT_STT_END,
         ):
             self._is_streaming_audio = False
+            if event_type == VoiceAssistantEventType.VOICE_ASSISTANT_STT_END:
+                run_command(self.state.stt_stop_command)
         elif event_type == VoiceAssistantEventType.VOICE_ASSISTANT_INTENT_PROGRESS:
             if data.get("tts_start_streaming") == "1":
                 # Start streaming early

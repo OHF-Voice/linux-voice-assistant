@@ -1,10 +1,14 @@
 """Utility methods."""
 
+import logging
+import subprocess
 import uuid
 # netifaces lib is from netifaces2
 import netifaces
 from collections.abc import Callable
 from typing import Optional
+
+_LOGGER = logging.getLogger(__name__)
 
 def call_all(*callables: Optional[Callable[[], None]]) -> None:
     for item in filter(None, callables):
@@ -42,3 +46,12 @@ def get_default_ipv4(interface: str):
         return None
 
     return ipv4_info[0]["addr"]
+
+
+def run_command(command: Optional[str]) -> None:
+    if not command:
+        return
+
+    _LOGGER.debug("Running %s", command)
+
+    subprocess.call(command, shell=True)

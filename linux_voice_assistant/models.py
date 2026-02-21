@@ -92,6 +92,8 @@ class ServerState:
     thinking_sound_enabled: bool = False
     muted: bool = False
     connected: bool = False
+    stt_start_command: Optional[str] = None
+    stt_stop_command: Optional[str] = None
 
     def save_preferences(self) -> None:
         """Save preferences as JSON."""

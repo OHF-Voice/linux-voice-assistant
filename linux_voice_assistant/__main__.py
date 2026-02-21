@@ -132,6 +132,18 @@ async def main() -> None:
         help="Enable thinking sound on startup",
     )
     parser.add_argument(
+        "--stt-start-command",
+        default=None,
+        type=str,
+        help="Command to run when the user starts speaking",
+    )
+    parser.add_argument(
+        "--stt-stop-command",
+        default=None,
+        type=str,
+        help="Command to run when the user stops speaking",
+    )
+    parser.add_argument(
         "--debug", action="store_true", help="Print DEBUG messages to console"
     )
     args = parser.parse_args()
@@ -308,6 +320,8 @@ async def main() -> None:
         preferences_path=preferences_path,
         refractory_seconds=args.refractory_seconds,
         download_dir=args.download_dir,
+        stt_start_command=args.stt_start_command,
+        stt_stop_command=args.stt_stop_command,
     )
 
     if args.enable_thinking_sound:
