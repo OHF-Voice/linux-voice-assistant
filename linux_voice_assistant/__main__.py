@@ -194,6 +194,7 @@ async def main() -> None:
 
     # Resolve version
     version = get_version()
+    print(f"Version: {version}")
 
     # Resolve download dir
     args.download_dir = Path(args.download_dir)
