@@ -63,6 +63,7 @@ class Preferences:
 @dataclass
 class ServerState:
     name: str
+    friendly_name: str
     mac_address: str
     ip_address: str
     network_interface: str
