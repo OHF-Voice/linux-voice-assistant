@@ -292,14 +292,14 @@ class VoiceSatelliteProtocol(APIServer):
             self.handle_timer_event(VoiceAssistantTimerEventType(msg.event_type), msg)
         elif isinstance(msg, DeviceInfoRequest):
             # Compute dynamic device name
-            base_name = re.sub(r"[\s-]+", "-", self.state.name.lower()).strip("-")
             mac_no_colon = self.state.mac_address.replace(":", "").lower()
-            mac_last6 = mac_no_colon[-6:]
-            device_name = f"{base_name}-{mac_last6}"
+            device_name = f"LVA-{mac_no_colon}"
 
             yield DeviceInfoResponse(
                 uses_password=False,
                 name=device_name,
+                friendly_name=self.state.name,
+                project_version=self.state.version,
                 mac_address=self.state.mac_address,
                 manufacturer="Open Home Foundation",
                 model="Linux Voice Assistant",

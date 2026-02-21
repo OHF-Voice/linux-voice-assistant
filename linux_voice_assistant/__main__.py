@@ -22,6 +22,7 @@ from getmac import get_mac_address
 from .zeroconf import HomeAssistantZeroconf
 from .util import get_default_interface
 from .util import get_default_ipv4
+from .util import get_version
 
 _LOGGER = logging.getLogger(__name__)
 _MODULE_DIR = Path(__file__).parent
@@ -191,6 +192,9 @@ async def main() -> None:
         print(f"Using name: {args.name}")
         device_name = args.name
 
+    # Resolve version
+    version = get_version()
+
     # Resolve download dir
     args.download_dir = Path(args.download_dir)
     args.download_dir.mkdir(parents=True, exist_ok=True)
@@ -291,6 +295,7 @@ async def main() -> None:
         network_interface=network_interface,
         mac_address=get_mac_address(interface=network_interface),
         ip_address=host_ip_address,
+        version=version,
         audio_queue=Queue(),
         entities=[],
         available_wake_words=available_wake_words,
