@@ -21,3 +21,5 @@ venv/
 
 # Docker
 .env
+version.txt
+version_githash.txt
