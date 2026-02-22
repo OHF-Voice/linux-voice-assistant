@@ -3,6 +3,7 @@ import logging
 from typing import Union, List, Callable, Optional
 
 from .player.libmpv import LibMpvPlayer
+from .player.state import PlayerState
 
 
 class MpvMediaPlayer:
@@ -39,13 +40,13 @@ class MpvMediaPlayer:
             self._log.debug("Received URL list, using first entry")
             url = url[0]
 
-        # Track is changing
+        # Track is changing - only stop for replacement if actually playing
         if self._done_callback is not None:
-            self._log.debug(
-                "Stopping active playback before starting new media"
-            )
-            # Not self.stop() → this would call done_callback
-            self._player.stop(for_replacement=True)
+            if self._player.state() != PlayerState.IDLE:
+                self._log.debug(
+                    "Stopping active playback before starting new media"
+                )
+                self._player.stop(for_replacement=True)
             self._done_callback = None
 
         self._log.info("Playing media: %s", url)
@@ -87,7 +88,7 @@ class MpvMediaPlayer:
         Set playback volume.
 
         Args:
-            volume: Volume in percent (0.0–100.0).
+            volume: Volume in percent (0.0-100.0).
         """
         self._log.debug("set_volume(volume=%.2f)", volume)
         self._player.set_volume(volume)
@@ -97,7 +98,7 @@ class MpvMediaPlayer:
         Temporarily reduce volume.
 
         Args:
-            factor: Volume multiplier (0.0–1.0).
+            factor: Volume multiplier (0.0-1.0).
         """
         self._log.debug("duck(factor=%.2f)", factor)
         self._player.duck(factor)
