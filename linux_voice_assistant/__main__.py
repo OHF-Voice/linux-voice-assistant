@@ -260,6 +260,11 @@ async def main() -> None:
     else:
         preferences = Preferences()
 
+    # Load volume from preferences on startup, and ensure it's between 0.0 and 1.0
+    initial_volume = preferences.volume if preferences.volume is not None else 1.0
+    initial_volume = max(0.0, min(1.0, float(initial_volume)))
+    preferences.volume = initial_volume
+
     if args.enable_thinking_sound:
         preferences.thinking_sound = 1
 
@@ -325,10 +330,15 @@ async def main() -> None:
         preferences_path=preferences_path,
         refractory_seconds=args.refractory_seconds,
         download_dir=args.download_dir,
+        volume=initial_volume,
     )
 
     if args.enable_thinking_sound:
         state.save_preferences()
+
+    initial_volume_percent = int(round(initial_volume * 100))
+    state.music_player.set_volume(initial_volume_percent)
+    state.tts_player.set_volume(initial_volume_percent)
 
     process_audio_thread = threading.Thread(
         target=process_audio,

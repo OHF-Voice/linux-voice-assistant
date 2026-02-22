@@ -57,6 +57,7 @@ class AvailableWakeWord:
 @dataclass
 class Preferences:
     active_wake_words: List[str] = field(default_factory=list)
+    volume: Optional[float] = None
     thinking_sound: int = 0  # 0 = disabled, 1 = enabled
 
 
@@ -95,6 +96,7 @@ class ServerState:
     thinking_sound_enabled: bool = False
     muted: bool = False
     connected: bool = False
+    volume: float = 1.0
 
     def save_preferences(self) -> None:
         """Save preferences as JSON."""
@@ -104,3 +106,22 @@ class ServerState:
             json.dump(
                 asdict(self.preferences), preferences_file, ensure_ascii=False, indent=4
             )
+
+    def persist_volume(self, volume: float) -> None:
+        """Persist the normalized media volume (0.0 - 1.0)."""
+        clamped_volume = max(0.0, min(1.0, volume))
+        _LOGGER.debug(f"persist_volume called: new={clamped_volume}, current={self.volume}, prefs={self.preferences.volume}")
+
+        if (
+            abs(self.volume - clamped_volume) < 0.0001
+            and self.preferences.volume is not None
+            and abs(self.preferences.volume - clamped_volume) < 0.0001
+        ):
+            _LOGGER.debug("Skipping save - volume unchanged")
+            return
+
+        self.volume = clamped_volume
+        self.preferences.volume = clamped_volume
+        _LOGGER.info(f"Saving volume {clamped_volume} to {self.preferences_path}")
+        self.save_preferences()
+        _LOGGER.info(f"Volume saved successfully")

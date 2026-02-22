@@ -92,12 +92,15 @@ class VoiceSatelliteProtocol(APIServer):
                 object_id="linux_voice_assistant_media_player",
                 music_player=state.music_player,
                 announce_player=state.tts_player,
+                initial_volume=state.volume,
             )
             self.state.entities.append(self.state.media_player_entity)
         elif self.state.media_player_entity not in self.state.entities:
             self.state.entities.append(self.state.media_player_entity)
 
         self.state.media_player_entity.server = self
+        self.state.media_player_entity.volume = state.volume
+        self.state.media_player_entity.previous_volume = state.volume
 
         # Add/update mute switch entity (like ESPHome Voice PE)
         mute_switch = self.state.mute_switch_entity
