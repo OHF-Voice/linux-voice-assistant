@@ -44,6 +44,12 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      - name: Create version files
+        run: |
+          echo "${{ env.CLEAN_BRANCH_NAME }}" > version.txt
+          echo "${{ github.sha }}" > version_githash.txt
+          ls -ltr
+
       - name: Build and push Docker image
         id: push
         uses: docker/build-push-action@v5.3.0

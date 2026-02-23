@@ -47,6 +47,8 @@ services:
       - ${LVA_XDG_RUNTIME_DIR}:${LVA_XDG_RUNTIME_DIR}
       # Mount source code for development
       - ./linux_voice_assistant:/app/linux_voice_assistant
+      - ./version.txt:/app/version.txt
+      - ./version_githash.txt:/app/version_githash.txt
     depends_on:
       - fix-permissions
     # Health check for process

@@ -92,12 +92,15 @@ class VoiceSatelliteProtocol(APIServer):
                 object_id="linux_voice_assistant_media_player",
                 music_player=state.music_player,
                 announce_player=state.tts_player,
+                initial_volume=state.volume,
             )
             self.state.entities.append(self.state.media_player_entity)
         elif self.state.media_player_entity not in self.state.entities:
             self.state.entities.append(self.state.media_player_entity)
 
         self.state.media_player_entity.server = self
+        self.state.media_player_entity.volume = state.volume
+        self.state.media_player_entity.previous_volume = state.volume
 
         # Add/update mute switch entity (like ESPHome Voice PE)
         mute_switch = self.state.mute_switch_entity
@@ -291,15 +294,15 @@ class VoiceSatelliteProtocol(APIServer):
         elif isinstance(msg, VoiceAssistantTimerEventResponse):
             self.handle_timer_event(VoiceAssistantTimerEventType(msg.event_type), msg)
         elif isinstance(msg, DeviceInfoRequest):
-            # Compute dynamic device name
-            base_name = re.sub(r"[\s-]+", "-", self.state.name.lower()).strip("-")
-            mac_no_colon = self.state.mac_address.replace(":", "").lower()
-            mac_last6 = mac_no_colon[-6:]
-            device_name = f"{base_name}-{mac_last6}"
+            _LOGGER.debug("Device info request")
 
             yield DeviceInfoResponse(
                 uses_password=False,
-                name=device_name,
+                name=self.state.name,
+                friendly_name=self.state.friendly_name,
+                project_name="Open Home Foundation.Linux Voice Assistant",
+                project_version=self.state.version,
+                esphome_version=self.state.esphome_version,
                 mac_address=self.state.mac_address,
                 manufacturer="Open Home Foundation",
                 model="Linux Voice Assistant",
