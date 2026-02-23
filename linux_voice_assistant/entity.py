@@ -195,8 +195,8 @@ class MediaPlayerEntity(ESPHomeEntity):
             self._log.warning("Unknown message type received: %s", type(msg))
 
     def _update_state(self, new_state: MediaPlayerState) -> MediaPlayerStateResponse:
-        self._log.debug("SET NEW STATE: %s = %s", self.state, new_state)
-        self._log.debug(self._get_state_message())
+        self._log.debug("SET NEW STATE: %s => %s", self.state, new_state)
+        self._log.debug("SET NEW STATE: %s => %s", self.state.name, new_state.name)
         self.state = new_state
         return self._get_state_message()
 

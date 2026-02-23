@@ -56,10 +56,24 @@ class LibMpvPlayer(AudioPlayer):
             done_callback: Optional callback invoked when playback finishes.
             stop_first: If True, start playback in paused state.
         """
-        self._done_callback = done_callback
-        self._mpv.pause = stop_first
         with self._state_lock:
+            # Suppress end-file event from previous idle state when starting new playback
+            ## Flow in _on_end_file():
+            ## 
+            ## First end-file event (when starting - IDLE→LOADING):
+            ## 
+            ## _suppress_end_event=True → Event is ignored
+            ## _suppress_end_event is reset to False
+            ## Second end-file event (when track finishes):
+            ## 
+            ## _suppress_end_event=False → Normal flow
+            ## State is set to IDLE
+            ## done_callback is invoked
+            ## The mechanism only suppresses the first event, after that everything works as expected.
+            self._suppress_end_event = True
+            self._done_callback = done_callback
             self._set_state(PlayerState.LOADING)
+        self._mpv.pause = stop_first
         self._mpv.play(url)
 
     def pause(self) -> None:
