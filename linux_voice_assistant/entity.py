@@ -83,6 +83,7 @@ class MediaPlayerEntity(ESPHomeEntity):
         done_callback: Optional[Callable[[], None]] = None,
     ) -> Iterable[message.Message]:
         if announcement:
+            self._log.debug("PLAY: announcement true")
             if self.music_player.is_playing:
                 # Announce, resume music
                 self.music_player.pause()
@@ -104,6 +105,7 @@ class MediaPlayerEntity(ESPHomeEntity):
                     ),
                 )
         else:
+            self._log.debug("PLAY: announcement false")
             # Music
             self.music_player.play(
                 url,
@@ -124,6 +126,7 @@ class MediaPlayerEntity(ESPHomeEntity):
             self._log.debug("MediaPlayerCommandRequest matched for this key")
 
             if msg.has_media_url:
+                self._log.debug("Executing PLAY")
                 self._log.debug("Message has media URL: %s", msg.media_url)
                 announcement = msg.has_announcement and msg.announcement
                 yield from self.play(msg.media_url, announcement=announcement)
@@ -192,6 +195,8 @@ class MediaPlayerEntity(ESPHomeEntity):
             self._log.warning("Unknown message type received: %s", type(msg))
 
     def _update_state(self, new_state: MediaPlayerState) -> MediaPlayerStateResponse:
+        self._log.debug("SET NEW STATE: %s = %s", self.state, new_state)
+        self._log.debug(self._get_state_message())
         self.state = new_state
         return self._get_state_message()
 
