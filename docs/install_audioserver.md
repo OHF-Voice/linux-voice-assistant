@@ -392,6 +392,12 @@ context.exec = [
 ]
 ```
 
+### Reboot
+
+After you have made the changes, reboot your system to apply the changes. 
+
+💡 **Note:** Offtopic but for systems with hardware like the Seeed 2-Mic Voice Card, you even have to reboot the system multiple times to make sure that the driver is installed and everything is loaded correctly.
+
 ## B) PulseAudio:
 
 Make sure that you only run Pulseaudio and there is no Pipewire installed.
@@ -420,6 +426,11 @@ Check if Pulseaudio is running
 pulseaudio --check
 pactl info
 ```
+
+### Reboot
+
+After you have made the changes, reboot your system to apply the changes. 
+
 
 ## Additional Information:
 
