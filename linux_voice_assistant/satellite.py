@@ -275,6 +275,7 @@ class VoiceSatelliteProtocol(APIServer):
                 data[arg.name] = arg.value
 
             self.handle_voice_event(VoiceAssistantEventType(msg.event_type), data)
+        # assist_satellite.announce HERE
         elif isinstance(msg, VoiceAssistantAnnounceRequest):
             _LOGGER.debug("Announcing: %s", msg.text)
 
