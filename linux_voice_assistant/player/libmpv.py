@@ -1,3 +1,4 @@
+import logging
 import threading
 from typing import Optional, Callable
 
@@ -18,6 +19,7 @@ class LibMpvPlayer(AudioPlayer):
     """
 
     def __init__(self, device: Optional[str] = None) -> None:
+        self._log = logging.getLogger(self.__class__.__name__)
         self._state: PlayerState = PlayerState.IDLE
         self._state_lock = threading.Lock()
 
@@ -37,8 +39,8 @@ class LibMpvPlayer(AudioPlayer):
 
         # Callback Handling
         self._done_callback: Optional[Callable[[], None]] = None
-        self._suppress_end_event = False
         self._mpv.event_callback("end-file")(self._on_end_file)
+        self._mpv.event_callback("start-file")(self._on_start_file)
 
     # -------- Playback control --------
 
@@ -57,20 +59,7 @@ class LibMpvPlayer(AudioPlayer):
             stop_first: If True, start playback in paused state.
         """
         with self._state_lock:
-            # Suppress end-file event from previous idle state when starting new playback
-            ## Flow in _on_end_file():
-            ## 
-            ## First end-file event (when starting - IDLE→LOADING):
-            ## 
-            ## _suppress_end_event=True → Event is ignored
-            ## _suppress_end_event is reset to False
-            ## Second end-file event (when track finishes):
-            ## 
-            ## _suppress_end_event=False → Normal flow
-            ## State is set to IDLE
-            ## done_callback is invoked
-            ## The mechanism only suppresses the first event, after that everything works as expected.
-            self._suppress_end_event = True
+            self._log.debug("play: current_state=%s", self._state)
             self._done_callback = done_callback
             self._set_state(PlayerState.LOADING)
         self._mpv.pause = stop_first
@@ -92,13 +81,13 @@ class LibMpvPlayer(AudioPlayer):
         """
         Stop playback.
 
-        If called for track replacement, suppresses end-of-playback handling
-        (state transition to IDLE and done callback) to allow seamless
-        playback transitions.
+        If called for track replacement, clears the callback to prevent
+        it from being invoked during the transition.
         """
         with self._state_lock:
             if for_replacement:
-                self._suppress_end_event = True
+                # Clear callback to prevent invocation during track transition
+                self._done_callback = None
             self._mpv.stop()
 
     def state(self) -> PlayerState:
@@ -147,8 +136,27 @@ class LibMpvPlayer(AudioPlayer):
         callback: Optional[Callable[[], None]] = None
 
         with self._state_lock:
-            if self._suppress_end_event:
-                self._suppress_end_event = False
+            # mpv events: event.data is a MpvEventEndFile object with a 'reason' attribute
+            # The reason is an integer constant (see mpv.END_FILE_REASON_*)
+            end_file_data = event.data
+            reason = getattr(end_file_data, "reason", -1) if end_file_data else -1
+            
+            # mpv END_FILE_REASON constants:
+            # 0 = eof (end of file), 1 = stop, 2 = abort, 3 = quit, 4 = error
+            is_eof = (reason == 0)
+            
+            self._log.debug(
+                "_on_end_file: reason=%s (is_eof=%s), state=%s, has_callback=%s",
+                reason,
+                is_eof,
+                self._state,
+                self._done_callback is not None,
+            )
+            
+            # Only process "eof" (reason=0) events as actual track completion.
+            # Other reasons are from track changes, stops, or errors.
+            if not is_eof:
+                self._log.debug("_on_end_file: ignoring non-eof event (reason=%s)", reason)
                 return
 
             self._set_state(PlayerState.IDLE)
@@ -156,11 +164,18 @@ class LibMpvPlayer(AudioPlayer):
             self._done_callback = None
 
         if callback is not None:
+            self._log.debug("_on_end_file: invoking callback")
             try:
                 callback()
             except RuntimeError:
                 # Callback errors must never break the player
                 pass
+
+    def _on_start_file(self, event) -> None:
+        """Called when mpv starts playing a file."""
+        with self._state_lock:
+            self._log.debug("_on_start_file: state=%s", self._state)
+            self._set_state(PlayerState.PLAYING)
 
     def _on_mpv_log(self, level: str, prefix: str, text: str) -> None:
         """
