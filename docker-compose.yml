@@ -5,7 +5,7 @@ services:
     image: "ghcr.io/ohf-voice/linux-voice-assistant:latest"
     entrypoint: []
     command: "chown -R ${LVA_USER_ID}:${LVA_USER_GROUP} /app/local /app/configuration /app/wakewords/custom /app/sounds/custom"
-    env_file: .env
+    env_file: ${ENV_FILE:-.env}
     group_add:
       - audio
     volumes:
@@ -27,7 +27,7 @@ services:
       # Pulseaudio
       - XDG_RUNTIME_DIR=${LVA_XDG_RUNTIME_DIR}
       - PULSE_SERVER=${LVA_PULSE_SERVER}
-    env_file: .env
+    env_file: ${ENV_FILE:-.env}
     group_add:
       - audio
     # Priority for audio process
