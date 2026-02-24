@@ -44,6 +44,10 @@ if [ "$ENABLE_THINKING_SOUND" = "1" ]; then
   EXTRA_ARGS+=( "--enable-thinking-sound" )
 fi
 
+if [ -n "${OPENWAKEWORD_THRESHOLD}" ]; then
+  EXTRA_ARGS+=( "--openwakeword-threshold" "$OPENWAKEWORD_THRESHOLD" )
+fi
+
 if [ -n "${WAKE_WORD_DIR}" ]; then
   EXTRA_ARGS+=( "--wake-word-dir" "$WAKE_WORD_DIR" )
 fi
