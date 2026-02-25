@@ -39,7 +39,7 @@ LVA_VERSION=$(curl -s https://api.github.com/repos/ohf-voice/linux-voice-assista
 echo "Installing version: " $LVA_VERSION
 wget https://raw.githubusercontent.com/ohf-voice/linux-voice-assistant/refs/tags/$LVA_VERSION/docker-compose.yml
 wget https://raw.githubusercontent.com/ohf-voice/linux-voice-assistant/refs/tags/$LVA_VERSION/.env.example
-mv .env.example .env
+cp .env.example .env
 ```
 
 💡 **Note:** The LVA_VERSION variable downloads the latest available version of LVA. If you want another version, you can specify it with the LVA_VERSION variable.
