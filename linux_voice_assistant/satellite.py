@@ -472,6 +472,7 @@ class VoiceSatelliteProtocol(APIServer):
 
     def _play_timer_finished(self) -> None:
         if not self._timer_finished:
+            _LOGGER.debug("Timer finished sound stopped")
             self.unduck()
             return
 

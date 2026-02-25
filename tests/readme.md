@@ -26,3 +26,6 @@ Start playing a playlist. Check if it is playing. Next track. Check if it is pla
 
 ### Pause
 
+## Timer
+
+Play music and then start a timer. Test if duck and unduck works.
