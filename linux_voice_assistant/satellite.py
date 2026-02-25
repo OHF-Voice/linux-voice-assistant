@@ -411,6 +411,7 @@ class VoiceSatelliteProtocol(APIServer):
         if self._timer_finished:
             # Stop timer instead
             self._timer_finished = False
+            self.unduck()
             self.state.tts_player.stop()
             _LOGGER.debug("Stopping timer finished sound")
             return
@@ -430,12 +431,14 @@ class VoiceSatelliteProtocol(APIServer):
 
     def stop(self) -> None:
         self.state.active_wake_words.discard(self.state.stop_word.id)
-        self.state.tts_player.stop()
 
         if self._timer_finished:
             self._timer_finished = False
+            self.unduck()
+            self.state.tts_player.stop()
             _LOGGER.debug("Stopping timer finished sound")
         else:
+            self.state.tts_player.stop()
             _LOGGER.debug("TTS response stopped manually")
             self._tts_finished()
 
