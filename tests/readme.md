@@ -28,4 +28,5 @@ Start playing a playlist. Check if it is playing. Next track. Check if it is pla
 
 ## Timer
 
-Play music and then start a timer. Test if duck and unduck works.
+Play music and then start a timer. Test if duck and unduck works. Test if unduck work when using wake word or stop word to stop the timer ringing.
+
