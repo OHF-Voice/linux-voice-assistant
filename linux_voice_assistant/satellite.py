@@ -432,15 +432,12 @@ class VoiceSatelliteProtocol(APIServer):
             [VoiceAssistantRequest(start=True, wake_word_phrase=wake_word_phrase)]
         )
         self.duck()
-        self.state.tts_player.play(self.state.wakeup_sound, done_callback=self._on_wakeup_sound_finished)
-    
-    def _on_wakeup_sound_finished(self) -> None:
-        """Callback invoked when the wakeup sound finishes playing."""
         self._is_streaming_audio = True
-        _LOGGER.debug("Wakeup sound finished, starting audio streaming")
+        self.state.tts_player.play(self.state.wakeup_sound)
 
     def stop(self) -> None:
         self.state.active_wake_words.discard(self.state.stop_word.id)
+        self._pipeline_active = False
 
         if self._timer_finished:
             self._timer_finished = False
@@ -478,6 +475,7 @@ class VoiceSatelliteProtocol(APIServer):
         if self._continue_conversation:
             self.send_messages([VoiceAssistantRequest(start=True)])
             self._is_streaming_audio = True
+            self._pipeline_active = True
             _LOGGER.debug("Continuing conversation")
         else:
             self.unduck()
@@ -506,6 +504,7 @@ class VoiceSatelliteProtocol(APIServer):
         self._tts_played = False
         self._continue_conversation = False
         self._timer_finished = False
+        self._pipeline_active = False
 
         # Stop any ongoing audio playback and wake/stop word processing.
         try:
