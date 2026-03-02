@@ -340,17 +340,24 @@ async def main() -> None:
     state.music_player.set_volume(initial_volume_percent)
     state.tts_player.set_volume(initial_volume_percent)
 
+    loop = asyncio.get_running_loop()
+    try:
+        server = await loop.create_server(
+            lambda: VoiceSatelliteProtocol(state), host=host_ip_address, port=args.port
+        )
+    except OSError as err:
+        message = err.strerror or str(err)
+        if err.errno == errno.EADDRINUSE:
+            message = "address already in use"
+        _LOGGER.exception("Error while attempting to bind on address (%s, %s): %s", host_ip_address, args.port, message)
+        sys.exit(1)
+
     process_audio_thread = threading.Thread(
         target=process_audio,
         args=(state, mic, args.audio_input_block_size),
         daemon=True,
     )
     process_audio_thread.start()
-
-    loop = asyncio.get_running_loop()
-    server = await loop.create_server(
-        lambda: VoiceSatelliteProtocol(state), host=host_ip_address, port=args.port
-    )
 
     # Auto discovery (zeroconf, mDNS)
     discovery = HomeAssistantZeroconf(port=args.port, name=state.name, mac_address=state.mac_address, host_ip_address=host_ip_address)
