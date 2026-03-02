@@ -218,6 +218,7 @@ class VoiceSatelliteProtocol(APIServer):
             self._tts_url = data.get("url")
             self._tts_played = False
             self._continue_conversation = False
+            self._pipeline_active = True
         elif (
             event_type == VoiceAssistantEventType.VOICE_ASSISTANT_INTENT_START
             and self.state.thinking_sound_enabled
