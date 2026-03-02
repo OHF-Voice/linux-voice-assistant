@@ -86,7 +86,7 @@ fi
 CP_MAX_RETRIES=30
 CP_RETRY_DELAY=1
 ### while maybe besser?
-echo "Checking port $PORT..."
+echo "Checking PulseAudio service status..."
 for i in $(seq 1 $CP_MAX_RETRIES); do
   # Check if PulseAudio is running
   if pactl info >/dev/null 2>&1; then
