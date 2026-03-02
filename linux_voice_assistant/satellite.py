@@ -438,7 +438,6 @@ class VoiceSatelliteProtocol(APIServer):
         """Callback invoked when the wakeup sound finishes playing."""        
         self._is_streaming_audio = True
         _LOGGER.debug("Wakeup sound finished, starting audio streaming")
-        self.state.tts_player.play(self.state.wakeup_sound)
 
     def stop(self) -> None:
         self.state.active_wake_words.discard(self.state.stop_word.id)
