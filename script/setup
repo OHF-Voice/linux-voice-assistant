@@ -10,6 +10,8 @@ _VENV_DIR = _PROGRAM_DIR / ".venv"
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--dev", action="store_true", help="Install dev requirements")
+parser.add_argument("--cxxflags", type=str, default="-O1 -g0", help="CXXFLAGS for compilation (default: -O1 -g0)")
+parser.add_argument("--makeflags", type=str, default="-j1", help="MAKEFLAGS for compilation (default: -j1)")
 args = parser.parse_args()
 
 # Create virtual environment
@@ -27,6 +29,13 @@ subprocess.check_call(pip + ["install", "-e", str(_PROGRAM_DIR)])
 
 if args.dev:
     # Install dev requirements
+    env = {}
+    if args.cxxflags:
+        env["CXXFLAGS"] = args.cxxflags
+    if args.makeflags:
+        env["MAKEFLAGS"] = args.makeflags
+    
     subprocess.check_call(
-        pip + ["install", "-e", f"{_PROGRAM_DIR}[dev]"]
+        pip + ["install", "-e", f"{_PROGRAM_DIR}[dev]"],
+        env={**dict(subprocess.environ), **env}
     )
