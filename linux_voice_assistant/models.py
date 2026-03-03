@@ -111,7 +111,10 @@ class ServerState:
         """Persist the normalized media volume (0.0 - 1.0)."""
         clamped_volume = max(0.0, min(1.0, volume))
         _LOGGER.debug(
-            f"persist_volume called: new={clamped_volume}, current={self.volume}, prefs={self.preferences.volume}"
+            "persist_volume called: new=%s, current=%s, prefs=%s",
+            clamped_volume,
+            self.volume,
+            self.preferences.volume,
         )
 
         if (
@@ -124,6 +127,6 @@ class ServerState:
 
         self.volume = clamped_volume
         self.preferences.volume = clamped_volume
-        _LOGGER.info(f"Saving volume {clamped_volume} to {self.preferences_path}")
+        _LOGGER.info("Saving volume %s to %s", clamped_volume, self.preferences_path)
         self.save_preferences()
-        _LOGGER.info(f"Volume saved successfully")
+        _LOGGER.info("Volume saved successfully")

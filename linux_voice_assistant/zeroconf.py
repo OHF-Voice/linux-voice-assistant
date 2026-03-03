@@ -2,7 +2,6 @@
 
 import logging
 import socket
-import uuid
 from typing import Optional
 
 _LOGGER = logging.getLogger(__name__)

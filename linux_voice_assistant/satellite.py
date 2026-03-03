@@ -4,7 +4,6 @@ import asyncio
 import hashlib
 import logging
 import posixpath
-import re
 import shutil
 import time
 from collections.abc import Iterable

@@ -171,20 +171,20 @@ async def main() -> None:
     if not args.network_interface:
         print("No network interface specified, try to detect default interface")
         network_interface = get_default_interface()
-        print(f"Default interface detected:", network_interface)
+        print(f"Default interface detected: {network_interface}")
     else:
         print("Network interface specified")
         network_interface = args.network_interface
-        print(f"Using network interface: ", network_interface)
+        print(f"Using network interface: {network_interface}")
 
     # Resolve ip_address where the application will be listening
     if not args.host:
         print("No host (ip-address) specified, try to detect IP-Address")
         host_ip_address = get_default_ipv4(network_interface)
-        print(f"IP-Address detected: ", host_ip_address)
+        print(f"IP-Address detected: {host_ip_address}")
     else:
         print("Host specified")
-        print(f"Using host: ", args.host)
+        print(f"Using host: {args.host}")
         host_ip_address = args.host
 
     # Resolve mac

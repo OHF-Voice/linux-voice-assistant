@@ -1,6 +1,5 @@
 """Utility methods."""
 
-import uuid
 from collections.abc import Callable
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
@@ -34,8 +33,8 @@ def get_version() -> str:
 
     try:
         # Sicher lesen: nur Rohtext, keine Evaluierung
-        version = version_file.read_text(encoding="utf-8").strip()
-        _version_cache = version if version else "unknown"
+        version_read = version_file.read_text(encoding="utf-8").strip()
+        _version_cache = version_read if version_read else "unknown"
     except (FileNotFoundError, PermissionError, OSError):
         _version_cache = "unknown"
 
