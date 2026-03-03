@@ -1,6 +1,6 @@
 # mpv_player.py
 import logging
-from typing import Union, List, Callable, Optional
+from typing import Callable, List, Optional, Union
 
 from .player.libmpv import LibMpvPlayer
 from .player.state import PlayerState
@@ -41,7 +41,7 @@ class MpvMediaPlayer:
             urls = [url]
         else:
             urls = list(url)  # Copy the list
-        
+
         if not urls:
             self._log.warning("play() called with empty URL list")
             return
@@ -54,14 +54,16 @@ class MpvMediaPlayer:
             self._done_callback = None
 
         self._log.info("Playing %d URL(s): %s", len(urls), urls[0])
-        
+
         # Store playlist and callback
         self._playlist = urls
         self._done_callback = done_callback
-        
+
         # Start playing first URL
         next_url = self._playlist.pop(0)
-        self._player.play(next_url, done_callback=self._on_track_finished, stop_first=stop_first)
+        self._player.play(
+            next_url, done_callback=self._on_track_finished, stop_first=stop_first
+        )
 
     def _on_track_finished(self) -> None:
         """Called when a track finishes - plays next or invokes done callback."""
@@ -69,12 +71,14 @@ class MpvMediaPlayer:
             # More tracks to play
             next_url = self._playlist.pop(0)
             self._log.debug("Playing next URL from playlist: %s", next_url)
-            self._player.play(next_url, done_callback=self._on_track_finished, stop_first=False)
+            self._player.play(
+                next_url, done_callback=self._on_track_finished, stop_first=False
+            )
         else:
             # Playlist finished
             callback = self._done_callback
             self._done_callback = None
-            
+
             if callback:
                 self._log.debug("Playlist finished, invoking done_callback")
                 try:

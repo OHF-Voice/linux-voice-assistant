@@ -1,30 +1,32 @@
 #!/usr/bin/env python3
 import argparse
 import asyncio
+import errno
 import json
 import logging
 import sys
 import threading
 import time
-import errno
 from pathlib import Path
 from queue import Queue
 from typing import Dict, List, Optional, Set, Union
 
 import numpy as np
 import soundcard as sc
+from getmac import get_mac_address
 from pymicro_wakeword import MicroWakeWord, MicroWakeWordFeatures
 from pyopen_wakeword import OpenWakeWord, OpenWakeWordFeatures
 
 from .models import AvailableWakeWord, Preferences, ServerState, WakeWordType
 from .mpv_player import MpvMediaPlayer
 from .satellite import VoiceSatelliteProtocol
-from getmac import get_mac_address
+from .util import (
+    get_default_interface,
+    get_default_ipv4,
+    get_esphome_version,
+    get_version,
+)
 from .zeroconf import HomeAssistantZeroconf
-from .util import get_default_interface
-from .util import get_default_ipv4
-from .util import get_version
-from .util import get_esphome_version
 
 _LOGGER = logging.getLogger(__name__)
 _MODULE_DIR = Path(__file__).parent
@@ -38,10 +40,7 @@ _SOUNDS_DIR = _REPO_DIR / "sounds"
 
 async def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--name",
-        help="Real name for the device"
-    )
+    parser.add_argument("--name", help="Real name for the device")
     parser.add_argument(
         "--audio-input-device",
         help="Name for the audio input device (see --list-input-devices)",
@@ -52,9 +51,9 @@ async def main() -> None:
         help="List audio input devices and exit",
     )
     parser.add_argument(
-        "--audio-input-block-size", 
-        type=int, 
-        default=1024
+        "--audio-input-block-size",
+        type=int,
+        default=1024,
         # todo
     )
     parser.add_argument(
@@ -73,15 +72,14 @@ async def main() -> None:
         help="Directory with wake word models (.tflite) and configuration (.json)",
     )
     parser.add_argument(
-        "--wake-model", 
-        default="okay_nabu", 
-        help="File name of the first active wake model"
+        "--wake-model",
+        default="okay_nabu",
+        help="File name of the first active wake model",
     )
     parser.add_argument(
-        "--stop-model", 
-        default="stop", 
-        help="File name of the stop model"
+        "--stop-model", default="stop", help="File name of the stop model"
     )
+    parser.add_argument("--stop-model", default="stop", help="Id of stop model")
     parser.add_argument(
         "--download-dir",
         default=_REPO_DIR / "local",
@@ -94,14 +92,14 @@ async def main() -> None:
         help="Seconds before wake word can be activated again",
     )
     parser.add_argument(
-        "--wakeup-sound", 
+        "--wakeup-sound",
         default=str(_SOUNDS_DIR / "wake_word_triggered.flac"),
-        help="Directory and file name for wake sound (when you say the wake word)"
+        help="Directory and file name for wake sound (when you say the wake word)",
     )
     parser.add_argument(
-        "--timer-finished-sound", 
+        "--timer-finished-sound",
         default=str(_SOUNDS_DIR / "timer_finished.flac"),
-        help="Directory and file name for timer finished sound"
+        help="Directory and file name for timer finished sound",
     )
     parser.add_argument(
         "--processing-sound",
@@ -119,13 +117,13 @@ async def main() -> None:
         help="Sound to play when unmuting the assistant",
     )
     parser.add_argument(
-        "--preferences-file", 
+        "--preferences-file",
         default=_REPO_DIR / "preferences.json",
-        help="Directory and file name for the file where the preferences are stored in JSON format"
+        help="Directory and file name for the file where the preferences are stored in JSON format",
     )
     parser.add_argument(
         "--host",
-        help="Optional host IP address to bind to (default: Autodetected by network interface)", # 0.0.0.0 is IPv4, None is all interfaces
+        help="Optional host IP address to bind to (default: Autodetected by network interface)",  # 0.0.0.0 is IPv4, None is all interfaces
     )
     parser.add_argument(
         "--network-interface",
@@ -133,9 +131,10 @@ async def main() -> None:
     )
     # Note that default port is also set in docker-entrypoint.sh
     parser.add_argument(
-        "--port", type=int, 
-        default=6053, 
-        help="Port the application is listenening on (default: 6053)"
+        "--port",
+        type=int,
+        default=6053,
+        help="Port the application is listenening on (default: 6053)",
     )
     parser.add_argument(
         "--enable-thinking-sound",
@@ -143,9 +142,7 @@ async def main() -> None:
         help="Enable thinking finish sound, when the assistant is done thinking and needed more time to process",
     )
     parser.add_argument(
-        "--debug", 
-        action="store_true", 
-        help="Add this to enable debug logging"
+        "--debug", action="store_true", help="Add this to enable debug logging"
     )
     args = parser.parse_args()
 
@@ -355,24 +352,39 @@ async def main() -> None:
     max_attempts = 15
     attempt = 1
     server = None
-    
+
     while attempt <= max_attempts:
         try:
             server = await loop.create_server(
-                lambda: VoiceSatelliteProtocol(state), host=host_ip_address, port=args.port
+                lambda: VoiceSatelliteProtocol(state),
+                host=host_ip_address,
+                port=args.port,
             )
             break  # connect successful, exit the loop
         except OSError as err:
             message = err.strerror or str(err)
             if err.errno == errno.EADDRINUSE:
                 message = "address already in use"
-            
+
             if attempt < max_attempts:
-                _LOGGER.warning("Attempt %d/%d failed to bind on address (%s, %s): %s. Retrying in 1 second...", attempt, max_attempts, host_ip_address, args.port, message)
+                _LOGGER.warning(
+                    "Attempt %d/%d failed to bind on address (%s, %s): %s. Retrying in 1 second...",
+                    attempt,
+                    max_attempts,
+                    host_ip_address,
+                    args.port,
+                    message,
+                )
                 await asyncio.sleep(1)
                 attempt += 1
             else:
-                _LOGGER.exception("All %d attempts failed to bind on address (%s, %s): %s", max_attempts, host_ip_address, args.port, message)
+                _LOGGER.exception(
+                    "All %d attempts failed to bind on address (%s, %s): %s",
+                    max_attempts,
+                    host_ip_address,
+                    args.port,
+                    message,
+                )
                 sys.exit(1)
 
     process_audio_thread = threading.Thread(
@@ -383,12 +395,19 @@ async def main() -> None:
     process_audio_thread.start()
 
     # Auto discovery (zeroconf, mDNS)
-    discovery = HomeAssistantZeroconf(port=args.port, name=state.name, mac_address=state.mac_address, host_ip_address=host_ip_address)
+    discovery = HomeAssistantZeroconf(
+        port=args.port,
+        name=state.name,
+        mac_address=state.mac_address,
+        host_ip_address=host_ip_address,
+    )
     await discovery.register_server()
 
     try:
         async with server:
-            _LOGGER.info("Server started (host=%s, port=%s)", host_ip_address, args.port)
+            _LOGGER.info(
+                "Server started (host=%s, port=%s)", host_ip_address, args.port
+            )
             await server.serve_forever()
     except KeyboardInterrupt:
         pass

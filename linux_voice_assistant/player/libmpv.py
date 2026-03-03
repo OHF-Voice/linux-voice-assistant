@@ -1,6 +1,6 @@
 import logging
 import threading
-from typing import Optional, Callable
+from typing import Callable, Optional
 
 import mpv
 
@@ -24,8 +24,8 @@ class LibMpvPlayer(AudioPlayer):
         self._state_lock = threading.Lock()
 
         # Volume handling
-        self._user_volume: float = 100.0   # 0.0 – 100.0
-        self._duck_factor: float = 1.0     # 0.0 – 1.0
+        self._user_volume: float = 100.0  # 0.0 – 100.0
+        self._duck_factor: float = 1.0  # 0.0 – 1.0
 
         # mpv setup
         self._mpv = mpv.MPV(
@@ -146,11 +146,11 @@ class LibMpvPlayer(AudioPlayer):
             # The reason is an integer constant (see mpv.END_FILE_REASON_*)
             end_file_data = event.data
             reason = getattr(end_file_data, "reason", -1) if end_file_data else -1
-            
+
             # mpv END_FILE_REASON constants:
             # 0 = eof (end of file), 1 = stop, 2 = abort, 3 = quit, 4 = error
-            is_eof = (reason == 0)
-            
+            is_eof = reason == 0
+
             self._log.debug(
                 "_on_end_file: reason=%s (is_eof=%s), state=%s, has_callback=%s",
                 reason,
@@ -158,11 +158,13 @@ class LibMpvPlayer(AudioPlayer):
                 self._state,
                 self._done_callback is not None,
             )
-            
+
             # Only process "eof" (reason=0) events as actual track completion.
             # Other reasons are from track changes, stops, or errors.
             if not is_eof:
-                self._log.debug("_on_end_file: ignoring non-eof event (reason=%s)", reason)
+                self._log.debug(
+                    "_on_end_file: ignoring non-eof event (reason=%s)", reason
+                )
                 return
 
             self._set_state(PlayerState.IDLE)

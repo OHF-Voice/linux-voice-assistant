@@ -431,13 +431,16 @@ class VoiceSatelliteProtocol(APIServer):
         self._pipeline_active = True
         self.duck()
         self.state.tts_player.play(
-            self.state.wakeup_sound, 
-            done_callback=lambda: self._on_wakeup_sound_finished(wake_word_phrase)
+            self.state.wakeup_sound,
+            done_callback=lambda: self._on_wakeup_sound_finished(wake_word_phrase),
         )
-    
+
     def _on_wakeup_sound_finished(self, wake_word_phrase: str) -> None:
         """Callback invoked when the wakeup sound finishes playing."""
-        _LOGGER.debug("Wakeup sound finished, starting audio streaming with wake word: %s", wake_word_phrase)
+        _LOGGER.debug(
+            "Wakeup sound finished, starting audio streaming with wake word: %s",
+            wake_word_phrase,
+        )
         self.send_messages(
             [VoiceAssistantRequest(start=True, wake_word_phrase=wake_word_phrase)]
         )

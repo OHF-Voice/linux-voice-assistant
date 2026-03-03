@@ -1,7 +1,7 @@
+import logging
 from abc import abstractmethod
 from collections.abc import Iterable
 from typing import Callable, List, Optional, Union
-import logging
 
 # pylint: disable=no-name-in-module
 from aioesphomeapi.api_pb2 import (  # type: ignore[attr-defined]
@@ -73,7 +73,7 @@ class MediaPlayerEntity(ESPHomeEntity):
         self.music_player = music_player
         self.announce_player = announce_player
         self._on_volume_changed = on_volume_changed
-        self.apply_volume_from_state(initial_volume)         
+        self.apply_volume_from_state(initial_volume)
         self._log = logging.getLogger(f"{self.__class__.__name__}[{self.key}]")
 
     def play(
@@ -172,11 +172,16 @@ class MediaPlayerEntity(ESPHomeEntity):
             elif msg.has_volume:
                 self._log.debug("Message has volume: %.2f", msg.volume)
                 self._apply_volume(msg.volume, persist=True)
-                if hasattr(self.server, "state") and getattr(self.server, "state", None) is not None:
+                if (
+                    hasattr(self.server, "state")
+                    and getattr(self.server, "state", None) is not None
+                ):
                     self._log.debug("Persisting volume to preferences")
                     self.server.state.persist_volume(self.volume)
                 else:
-                    self._log.warning("Cannot persist volume - server.state not available")
+                    self._log.warning(
+                        "Cannot persist volume - server.state not available"
+                    )
                 yield self._update_state(self.state)
 
         elif isinstance(msg, ListEntitiesRequest):
@@ -244,6 +249,7 @@ class MediaPlayerEntity(ESPHomeEntity):
 
         if self._on_volume_changed and persist:
             self._on_volume_changed(normalized)
+
 
 # -----------------------------------------------------------------------------
 
