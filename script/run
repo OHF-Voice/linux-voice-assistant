@@ -14,4 +14,5 @@ if _VENV_DIR.exists():
 else:
     python_exe = "python3"
 
-subprocess.check_call([python_exe, "-m", "linux_voice_assistant"] + sys.argv[1:])
+result = subprocess.run([python_exe, "-m", "linux_voice_assistant"] + sys.argv[1:])
+sys.exit(result.returncode)
