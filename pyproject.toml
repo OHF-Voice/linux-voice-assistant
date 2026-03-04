@@ -17,13 +17,11 @@ classifiers = [
     "Intended Audience :: Developers",
     "Topic :: Text Processing :: Linguistic",
     "License :: OSI Approved :: Apache Software License",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
 ]
-requires-python = ">=3.9.0"
+requires-python = ">=3.11.0"
 dependencies = [
     "aioesphomeapi==42.7.0",
     "netifaces2==0.0.22",
@@ -85,26 +83,6 @@ multi_line_output = 3
 include_trailing_comma = true
 force_grid_wrap = 0
 use_parentheses = true
-
-[tool.flake8]
-max-line-length = 200
-max-complexity = 18
-select = "E9,F63,F7,F82"
-ignore = "E203,E501,W503"
-exclude = [
-  ".eggs",
-  ".git",
-  ".hg",
-  ".mypy_cache",
-  ".tox",
-  ".venv",
-  "_build",
-  "buck-out",
-  "build",
-  "dist",
-  "__pycache__",
-  "*.pyc",
-]
 
 [tool.pylint."MESSAGES CONTROL"]
 disable = [
