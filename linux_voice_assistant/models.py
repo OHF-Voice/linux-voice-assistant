@@ -104,7 +104,10 @@ class ServerState:
         self.preferences_path.parent.mkdir(parents=True, exist_ok=True)
         with open(self.preferences_path, "w", encoding="utf-8") as preferences_file:
             json.dump(
-                asdict(self.preferences), preferences_file, ensure_ascii=False, indent=4
+                asdict(self.preferences),
+                preferences_file,
+                ensure_ascii=False,
+                indent=4,
             )
 
     def persist_volume(self, volume: float) -> None:
@@ -112,11 +115,7 @@ class ServerState:
         clamped_volume = max(0.0, min(1.0, volume))
         _LOGGER.debug(f"persist_volume called: new={clamped_volume}, current={self.volume}, prefs={self.preferences.volume}")
 
-        if (
-            abs(self.volume - clamped_volume) < 0.0001
-            and self.preferences.volume is not None
-            and abs(self.preferences.volume - clamped_volume) < 0.0001
-        ):
+        if abs(self.volume - clamped_volume) < 0.0001 and self.preferences.volume is not None and abs(self.preferences.volume - clamped_volume) < 0.0001:
             _LOGGER.debug("Skipping save - volume unchanged")
             return
 

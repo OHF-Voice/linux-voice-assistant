@@ -18,7 +18,8 @@ MDNS_TARGET_IP = "224.0.0.251"
 
 class HomeAssistantZeroconf:
     def __init__(
-        self, port: int,
+        self,
+        port: int,
         mac_address: str,
         host_ip_address: str,
         name: Optional[str] = None,

@@ -61,7 +61,7 @@ exclude = ["tests", "tests.*"]
 
 [tool.black]
 line-length = 200
-target-version = ['py39', 'py310', 'py311', 'py312', 'py313']
+target-version = ['py312', 'py313']
 include = '\.pyi?$'
 exclude = '''
 /(

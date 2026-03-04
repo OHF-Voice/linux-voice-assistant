@@ -81,16 +81,9 @@ class APIServer(asyncio.Protocol):
         if self._writelines is None or not msgs:
             return
 
-        packets = [
-            (PROTO_TO_MESSAGE_TYPE[msg.__class__], msg.SerializeToString())
-            for msg in msgs
-        ]
+        packets = [(PROTO_TO_MESSAGE_TYPE[msg.__class__], msg.SerializeToString()) for msg in msgs]
         packet_bytes = make_plain_text_packets(packets)
-        if (
-            self._loop is not None
-            and self._loop_thread_id is not None
-            and threading.get_ident() != self._loop_thread_id
-        ):
+        if self._loop is not None and self._loop_thread_id is not None and threading.get_ident() != self._loop_thread_id:
             self._loop.call_soon_threadsafe(self._writelines, packet_bytes)
             return
 

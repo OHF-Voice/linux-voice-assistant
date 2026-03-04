@@ -125,7 +125,7 @@ async def main() -> None:
     )
     parser.add_argument(
         "--host",
-        help="Optional host IP address to bind to (default: Autodetected by network interface)", # 0.0.0.0 is IPv4, None is all interfaces
+        help="Optional host IP address to bind to (default: Autodetected by network interface)",  # 0.0.0.0 is IPv4, None is all interfaces
     )
     parser.add_argument(
         "--network-interface",
@@ -356,18 +356,15 @@ async def main() -> None:
     max_attempts = 15
     attempt = 1
     server = None
-    
+
     while attempt <= max_attempts:
         try:
-            server = await loop.create_server(
-                lambda: VoiceSatelliteProtocol(state), host=host_ip_address, port=args.port
-            )
+            server = await loop.create_server(lambda: VoiceSatelliteProtocol(state), host=host_ip_address, port=args.port)
             break  # connect successful, exit the loop
         except OSError as err:
             message = err.strerror or str(err)
             if err.errno == errno.EADDRINUSE:
                 message = "address already in use"
-            
             if attempt < max_attempts:
                 _LOGGER.warning("Attempt %d/%d failed to bind on address (%s, %s): %s. Retrying in 1 second...", attempt, max_attempts, host_ip_address, args.port, message)
                 await asyncio.sleep(1)
@@ -421,11 +418,7 @@ def process_audio(state: ServerState, mic, block_size: int):
         with mic.recorder(samplerate=16000, channels=1, blocksize=block_size) as mic_in:
             while True:
                 audio_chunk_array = mic_in.record(block_size).reshape(-1)
-                audio_chunk = (
-                    (np.clip(audio_chunk_array, -1.0, 1.0) * 32767.0)
-                    .astype("<i2")  # little-endian 16-bit signed
-                    .tobytes()
-                )
+                audio_chunk = (np.clip(audio_chunk_array, -1.0, 1.0) * 32767.0).astype("<i2").tobytes()  # little-endian 16-bit signed
 
                 if state.satellite is None:
                     continue
@@ -433,11 +426,7 @@ def process_audio(state: ServerState, mic, block_size: int):
                 if (not wake_words) or (state.wake_words_changed and state.wake_words):
                     # Update list of wake word models to process
                     state.wake_words_changed = False
-                    wake_words = [
-                        ww
-                        for ww in state.wake_words.values()
-                        if ww.id in state.active_wake_words
-                    ]
+                    wake_words = [ww for ww in state.wake_words.values() if ww.id in state.active_wake_words]
 
                     has_oww = False
                     for wake_word in wake_words:
@@ -477,9 +466,7 @@ def process_audio(state: ServerState, mic, block_size: int):
                         if activated and not state.muted:
                             # Check refractory
                             now = time.monotonic()
-                            if (last_active is None) or (
-                                (now - last_active) > state.refractory_seconds
-                            ):
+                            if (last_active is None) or ((now - last_active) > state.refractory_seconds):
                                 state.satellite.wakeup(wake_word)
                                 last_active = now
 
@@ -489,11 +476,7 @@ def process_audio(state: ServerState, mic, block_size: int):
                         if state.stop_word.process_streaming(micro_input):
                             stopped = True
 
-                    if (
-                        stopped
-                        and (state.stop_word.id in state.active_wake_words)
-                        and not state.muted
-                    ):
+                    if stopped and (state.stop_word.id in state.active_wake_words) and not state.muted:
                         state.satellite.stop()
                 except Exception:
                     _LOGGER.exception("Unexpected error handling audio")

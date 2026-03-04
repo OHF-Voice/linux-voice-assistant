@@ -41,7 +41,7 @@ class MpvMediaPlayer:
             urls = [url]
         else:
             urls = list(url)  # Copy the list
-        
+
         if not urls:
             self._log.warning("play() called with empty URL list")
             return
@@ -54,11 +54,11 @@ class MpvMediaPlayer:
             self._done_callback = None
 
         self._log.info("Playing %d URL(s): %s", len(urls), urls[0])
-        
+
         # Store playlist and callback
         self._playlist = urls
         self._done_callback = done_callback
-        
+
         # Start playing first URL
         next_url = self._playlist.pop(0)
         self._player.play(next_url, done_callback=self._on_track_finished, stop_first=stop_first)
@@ -74,7 +74,7 @@ class MpvMediaPlayer:
             # Playlist finished
             callback = self._done_callback
             self._done_callback = None
-            
+
             if callback:
                 self._log.debug("Playlist finished, invoking done_callback")
                 try:
