@@ -24,8 +24,8 @@ class LibMpvPlayer(AudioPlayer):
         self._state_lock = threading.Lock()
 
         # Volume handling
-        self._user_volume: float = 100.0    # 0.0 – 100.0
-        self._duck_factor: float = 1.0      # 0.0 – 1.0
+        self._user_volume: float = 100.0  # 0.0 – 100.0
+        self._duck_factor: float = 1.0  # 0.0 – 1.0
 
         # mpv setup
         self._mpv = mpv.MPV(
