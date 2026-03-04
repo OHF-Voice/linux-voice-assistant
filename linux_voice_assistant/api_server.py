@@ -5,7 +5,7 @@ import logging
 import threading
 from abc import abstractmethod
 from collections.abc import Iterable
-from typing import TYPE_CHECKING, List, Optional
+from typing import TYPE_CHECKING, Optional
 
 # pylint: disable=no-name-in-module
 from aioesphomeapi._frame_helper.packets import make_plain_text_packets
