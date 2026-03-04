@@ -1,6 +1,6 @@
 import logging
 import threading
-from typing import Optional, Callable
+from typing import Callable, Optional
 
 import mpv
 

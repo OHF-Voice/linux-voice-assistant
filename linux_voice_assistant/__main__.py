@@ -1,30 +1,32 @@
 #!/usr/bin/env python3
 import argparse
 import asyncio
+import errno
 import json
 import logging
 import sys
 import threading
 import time
-import errno
 from pathlib import Path
 from queue import Queue
 from typing import Dict, List, Optional, Set, Union
 
 import numpy as np
 import soundcard as sc
+from getmac import get_mac_address
 from pymicro_wakeword import MicroWakeWord, MicroWakeWordFeatures
 from pyopen_wakeword import OpenWakeWord, OpenWakeWordFeatures
 
 from .models import AvailableWakeWord, Preferences, ServerState, WakeWordType
 from .mpv_player import MpvMediaPlayer
 from .satellite import VoiceSatelliteProtocol
-from getmac import get_mac_address
+from .util import (
+    get_default_interface,
+    get_default_ipv4,
+    get_esphome_version,
+    get_version,
+)
 from .zeroconf import HomeAssistantZeroconf
-from .util import get_default_interface
-from .util import get_default_ipv4
-from .util import get_version
-from .util import get_esphome_version
 
 _LOGGER = logging.getLogger(__name__)
 _MODULE_DIR = Path(__file__).parent

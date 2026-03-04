@@ -1,6 +1,6 @@
 # mpv_player.py
 import logging
-from typing import Union, List, Callable, Optional
+from typing import Callable, List, Optional, Union
 
 from .player.libmpv import LibMpvPlayer
 from .player.state import PlayerState

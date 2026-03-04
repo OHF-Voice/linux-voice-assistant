@@ -1,7 +1,7 @@
+import logging
 from abc import abstractmethod
 from collections.abc import Iterable
 from typing import Callable, List, Optional, Union
-import logging
 
 # pylint: disable=no-name-in-module
 from aioesphomeapi.api_pb2 import (  # type: ignore[attr-defined]

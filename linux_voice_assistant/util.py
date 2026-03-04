@@ -1,13 +1,13 @@
 """Utility methods."""
 
 import uuid
+from collections.abc import Callable
+from importlib.metadata import PackageNotFoundError, version
+from pathlib import Path
+from typing import Optional
 
 # netifaces lib is from netifaces2
 import netifaces
-from collections.abc import Callable
-from importlib.metadata import version, PackageNotFoundError
-from pathlib import Path
-from typing import Optional
 
 # Cache for version to avoid repeated file reading
 _version_cache: Optional[str] = None
