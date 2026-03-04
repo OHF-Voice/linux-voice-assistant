@@ -40,10 +40,11 @@ async def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--name"
+        help="Real name for the device"
     )
     parser.add_argument(
         "--audio-input-device",
-        help="soundcard name for input device (see --list-input-devices)",
+        help="Name for the audio input device (see --list-input-devices)",
     )
     parser.add_argument(
         "--list-input-devices",
@@ -54,10 +55,11 @@ async def main() -> None:
         "--audio-input-block-size", 
         type=int, 
         default=1024
+        # todo
     )
     parser.add_argument(
         "--audio-output-device",
-        help="mpv name for output device (see --list-output-devices)",
+        help="Name for the audio output device (see --list-output-devices)",
     )
     parser.add_argument(
         "--list-output-devices",
@@ -68,22 +70,22 @@ async def main() -> None:
         "--wake-word-dir",
         default=[_WAKEWORDS_DIR],
         action="append",
-        help="Directory with wake word models (.tflite) and configs (.json)",
+        help="Directory with wake word models (.tflite) and configuration (.json)",
     )
     parser.add_argument(
         "--wake-model", 
         default="okay_nabu", 
-        help="Id of active wake model"
+        help="File name of the first active wake model"
     )
     parser.add_argument(
         "--stop-model", 
         default="stop", 
-        help="Id of stop model"
+        help="File name of the stop model"
     )
     parser.add_argument(
         "--download-dir",
         default=_REPO_DIR / "local",
-        help="Directory to download custom wake word models, etc.",
+        help="Directory to download custom wake word models to",
     )
     parser.add_argument(
         "--refractory-seconds",
@@ -94,10 +96,12 @@ async def main() -> None:
     parser.add_argument(
         "--wakeup-sound", 
         default=str(_SOUNDS_DIR / "wake_word_triggered.flac")
+        help="Directory and file name for wake sound (when you say the wake word)"
     )
     parser.add_argument(
         "--timer-finished-sound", 
         default=str(_SOUNDS_DIR / "timer_finished.flac")
+        help="Directory and file name for timer finished sound
     )
     parser.add_argument(
         "--processing-sound",
@@ -114,33 +118,39 @@ async def main() -> None:
         default=str(_SOUNDS_DIR / "mute_switch_off.flac"),
         help="Sound to play when unmuting the assistant",
     )
-    parser.add_argument("--preferences-file", default=_REPO_DIR / "preferences.json")
+    parser.add_argument(
+        "--preferences-file", 
+        default=_REPO_DIR / "preferences.json"
+        help="Directory and file name for the file where the preferences are stored in JSON format"
+        )
     parser.add_argument(
         "--host",
-        help="IP-Address for ESPHome server", # 0.0.0.0 is IPv4, None is all interfaces
+        help="Optional host IP address to bind to (default: Autodetected by network interface)", # 0.0.0.0 is IPv4, None is all interfaces
     )
     parser.add_argument(
         "--network-interface",
-        help="Network interface to use for ESPHome server (default: will be automatically detected)",
+        help="Network interface the application will be listening on (default: will be automatically detected by gateway)",
     )
     # Note that default port is also set in docker-entrypoint.sh
     parser.add_argument(
         "--port", type=int, 
         default=6053, 
-        help="Port for ESPHome server (default: 6053)"
+        help="Port the application is listenening on (default: 6053)"
     )
     parser.add_argument(
         "--enable-thinking-sound",
         action="store_true",
-        help="Enable thinking sound on startup",
+        help="Enable thinking finish sound, when the assistant is done thinking and needed more time to process",
     )
     parser.add_argument(
-        "--debug", action="store_true", help="Print DEBUG messages to console"
+        "--debug", 
+        action="store_true", 
+        help="Add this to enable debug logging"
     )
     args = parser.parse_args()
 
     if args.list_input_devices:
-        print("Input devices")
+        print("Audio Input devices:")
         print("=" * 13)
         for idx, mic in enumerate(sc.all_microphones()):
             print(f"[{idx}]", mic.name)
@@ -150,7 +160,7 @@ async def main() -> None:
         from mpv import MPV
 
         player = MPV()
-        print("Output devices")
+        print("Audio output devices:")
         print("=" * 14)
 
         for speaker in player.audio_device_list:  # type: ignore
