@@ -413,6 +413,18 @@ Install Pulseaudio
 sudo apt install pulseaudio pulseaudio-utils dfu-util
 ```
 
+Configure pulse
+
+```sh
+sudo vi /etc/pulse/daemon.conf
+```
+
+Change the following lines in the file:
+
+```sh
+ default-sample-rate = 48000
+```
+
 Enable and start Pulseaudio
 
 ```sh
