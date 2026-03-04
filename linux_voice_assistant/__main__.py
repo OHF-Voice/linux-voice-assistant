@@ -39,7 +39,7 @@ _SOUNDS_DIR = _REPO_DIR / "sounds"
 async def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--name"
+        "--name",
         help="Real name for the device"
     )
     parser.add_argument(
@@ -95,13 +95,13 @@ async def main() -> None:
     )
     parser.add_argument(
         "--wakeup-sound", 
-        default=str(_SOUNDS_DIR / "wake_word_triggered.flac")
+        default=str(_SOUNDS_DIR / "wake_word_triggered.flac"),
         help="Directory and file name for wake sound (when you say the wake word)"
     )
     parser.add_argument(
         "--timer-finished-sound", 
-        default=str(_SOUNDS_DIR / "timer_finished.flac")
-        help="Directory and file name for timer finished sound
+        default=str(_SOUNDS_DIR / "timer_finished.flac"),
+        help="Directory and file name for timer finished sound"
     )
     parser.add_argument(
         "--processing-sound",
@@ -120,9 +120,9 @@ async def main() -> None:
     )
     parser.add_argument(
         "--preferences-file", 
-        default=_REPO_DIR / "preferences.json"
+        default=_REPO_DIR / "preferences.json",
         help="Directory and file name for the file where the preferences are stored in JSON format"
-        )
+    )
     parser.add_argument(
         "--host",
         help="Optional host IP address to bind to (default: Autodetected by network interface)", # 0.0.0.0 is IPv4, None is all interfaces
