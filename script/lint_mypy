@@ -9,7 +9,7 @@ _PROGRAM_DIR = _DIR.parent
 _VENV_DIR = _PROGRAM_DIR / ".venv"
 _MODULE_DIR = _PROGRAM_DIR / "linux_voice_assistant"
 
-_LINT_DIRS = [_PROGRAM_DIR]
+_LINT_DIRS = [_MODULE_DIR]
 
 if _VENV_DIR.exists():
     context = venv.EnvBuilder().ensure_directories(_VENV_DIR)
@@ -18,4 +18,4 @@ else:
     python_exe = "python3"
 
 # Mypy Ausführung
-subprocess.check_call([python_exe, "-m", "mypy"] + [str(_MODULE_DIR)])
+subprocess.check_call([python_exe, "-m", "mypy"] + _LINT_DIRS)
