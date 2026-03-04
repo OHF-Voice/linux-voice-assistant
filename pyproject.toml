@@ -106,7 +106,7 @@ exclude = [
   "*.pyc",
 ]
 
-[tool.pylint.messages_control]
+[tool.pylint."MESSAGES CONTROL"]
 disable = [
   "abstract-method",
   "cyclic-import",
@@ -138,8 +138,13 @@ disable = [
   "missing-class-docstring",
   "missing-function-docstring",
   "import-error",
-  "consider-using-with"
+  "consider-using-with",
+  "R0917",
+  "C0301",
 ]
+
+[tool.pylint."DESIGN"]
+max-args = 50
 
 [tool.pylint.format]
 expected-line-ending-format = "LF"
