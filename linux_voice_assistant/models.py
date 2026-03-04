@@ -123,4 +123,4 @@ class ServerState:
         self.preferences.volume = clamped_volume
         _LOGGER.info(f"Saving volume {clamped_volume} to {self.preferences_path}")
         self.save_preferences()
-        _LOGGER.info(f"Volume saved successfully")
+        _LOGGER.info("Volume saved successfully")

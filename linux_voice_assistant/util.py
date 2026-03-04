@@ -1,6 +1,5 @@
 """Utility methods."""
 
-import uuid
 from collections.abc import Callable
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
