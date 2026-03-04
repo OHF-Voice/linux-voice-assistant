@@ -60,7 +60,7 @@ include = ["linux_voice_assistant"]
 exclude = ["tests", "tests.*"]
 
 [tool.black]
-line-length = 88
+line-length = 200
 target-version = ['py39', 'py310', 'py311', 'py312', 'py313']
 include = '\.pyi?$'
 exclude = '''
@@ -80,14 +80,14 @@ exclude = '''
 
 [tool.isort]
 profile = "black"
-line_length = 88
+line_length = 200
 multi_line_output = 3
 include_trailing_comma = true
 force_grid_wrap = 0
 use_parentheses = true
 
 [tool.flake8]
-max-line-length = 88
+max-line-length = 200
 max-complexity = 18
 select = "E9,F63,F7,F82"
 ignore = "E203,E501,W503"
