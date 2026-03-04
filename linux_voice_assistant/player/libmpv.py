@@ -4,8 +4,8 @@ from typing import Callable, Optional
 
 import mpv
 
-from .base import AudioPlayer
-from .state import PlayerState
+from linux_voice_assistant.player.base import AudioPlayer
+from linux_voice_assistant.player.state import PlayerState
 
 
 class LibMpvPlayer(AudioPlayer):
