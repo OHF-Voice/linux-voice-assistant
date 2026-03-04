@@ -20,6 +20,7 @@ from aioesphomeapi.api_pb2 import (  # type: ignore[attr-defined]
     ListEntitiesDoneResponse,
     ListEntitiesRequest,
     MediaPlayerCommandRequest,
+    SelectCommandRequest,
     SubscribeHomeAssistantStatesRequest,
     SwitchCommandRequest,
     VoiceAssistantAnnounceFinished,
@@ -45,7 +46,7 @@ from pymicro_wakeword import MicroWakeWord
 from pyopen_wakeword import OpenWakeWord
 
 from .api_server import APIServer
-from .entity import MediaPlayerEntity, MuteSwitchEntity, ThinkingSoundEntity
+from .entity import MediaPlayerEntity, MuteSwitchEntity, ThinkingSoundEntity, WakeWordSensitivityEntity
 from .models import AvailableWakeWord, ServerState, WakeWordType
 from .util import call_all
 
@@ -53,6 +54,13 @@ _LOGGER = logging.getLogger(__name__)
 
 PROTO_TO_MESSAGE_TYPE = {v: k for k, v in MESSAGE_TYPE_TO_PROTO.items()}
 
+
+# Sensitivity presets — MWW float cutoff, OWW probability threshold
+SENSITIVITY_PRESETS = {
+    "Slightly sensitive":   {"mww": 0.85, "oww": 0.70},
+    "Moderately sensitive": {"mww": 0.70, "oww": 0.50},
+    "Very sensitive":       {"mww": 0.55, "oww": 0.35},
+}
 
 class VoiceSatelliteProtocol(APIServer):
 
@@ -168,6 +176,8 @@ class VoiceSatelliteProtocol(APIServer):
         )
         thinking_sound_switch.sync_with_state()
 
+        # ---- Instance variables ----
+
         self._is_streaming_audio = False
         self._tts_url: Optional[str] = None
         self._tts_played = False
@@ -177,6 +187,69 @@ class VoiceSatelliteProtocol(APIServer):
         self._pipeline_active = False
         self._external_wake_words: Dict[str, VoiceAssistantExternalWakeWord] = {}
         self._disconnect_event = asyncio.Event()
+
+        # ---- Sensitivity setup (after instance vars) ----
+
+        saved = getattr(self.state.preferences, "wake_word_sensitivity", "Slightly sensitive")
+        self.state.wake_word_sensitivity = saved
+        self._setup_sensitivity_entity()
+        self._apply_sensitivity(self.state.wake_word_sensitivity)
+
+        # ---- Set satellite last, so audio thread never sees a partial object ----
+        self.state.satellite = self
+
+    # ---- Sensitivity ----
+
+    def _setup_sensitivity_entity(self) -> None:
+        existing = [e for e in self.state.entities if isinstance(e, WakeWordSensitivityEntity)]
+        if existing:
+            entity = existing[0]
+            for extra in existing[1:]:
+                self.state.entities.remove(extra)
+        else:
+            entity = WakeWordSensitivityEntity(
+                server=self,
+                key=len(self.state.entities),
+                name="Wake word sensitivity",
+                object_id="wake_word_sensitivity",
+                get_sensitivity=lambda: self.state.wake_word_sensitivity,
+                set_sensitivity=self._set_sensitivity,
+            )
+            self.state.entities.append(entity)
+
+        entity.server = self
+        entity.update_get_sensitivity(lambda: self.state.wake_word_sensitivity)
+        entity.update_set_sensitivity(self._set_sensitivity)
+        entity.sync_with_state()
+        self.state.sensitivity_entity = entity
+
+    def _set_sensitivity(self, level: str) -> None:
+        if level not in SENSITIVITY_PRESETS:
+            _LOGGER.warning("Unknown sensitivity level: %s", level)
+            return
+        self.state.wake_word_sensitivity = level
+        self.state.preferences.wake_word_sensitivity = level
+        self.state.save_preferences()
+        self._apply_sensitivity(level)
+        _LOGGER.info("Wake word sensitivity set to: %s", level)
+
+    def _apply_sensitivity(self, level: str) -> None:
+        preset = SENSITIVITY_PRESETS.get(level, SENSITIVITY_PRESETS["Slightly sensitive"])
+        mww_cutoff = preset["mww"]
+        oww_cutoff = preset["oww"]
+
+        for ww in self.state.wake_words.values():
+            if isinstance(ww, MicroWakeWord):
+                try:
+                    ww.probability_cutoff = mww_cutoff
+                    _LOGGER.debug("MWW cutoff set to %.2f for %s", mww_cutoff, ww.id)
+                except Exception:
+                    _LOGGER.exception("Failed to set MWW cutoff for %s", ww.id)
+
+        self.state.oww_probability_cutoff = oww_cutoff
+        _LOGGER.debug("OWW threshold set to %.2f", oww_cutoff)
+
+    # ---- Other setters ----
 
     def _set_thinking_sound_enabled(self, new_state: bool) -> None:
         self.state.thinking_sound_enabled = bool(new_state)
@@ -324,6 +397,7 @@ class VoiceSatelliteProtocol(APIServer):
                 SubscribeHomeAssistantStatesRequest,
                 MediaPlayerCommandRequest,
                 SwitchCommandRequest,
+                SelectCommandRequest,
             ),
         ):
             for entity in self.state.entities:

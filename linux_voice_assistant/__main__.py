@@ -316,6 +316,10 @@ async def main() -> None:
 
     assert stop_model is not None
 
+    # After loading wake models, before creating ServerState:
+    initial_sensitivity = preferences.wake_word_sensitivity \
+        if hasattr(preferences, "wake_word_sensitivity") else "Slightly sensitive"
+
     state = ServerState(
         name=device_name,
         friendly_name=friendly_name,
@@ -330,6 +334,8 @@ async def main() -> None:
         wake_words=wake_models,
         active_wake_words=active_wake_words,
         stop_word=stop_model,
+        wake_word_sensitivity=initial_sensitivity,
+        oww_probability_cutoff=SENSITIVITY_PRESETS[initial_sensitivity]["oww"],        
         music_player=MpvMediaPlayer(device=args.audio_output_device),
         tts_player=MpvMediaPlayer(device=args.audio_output_device),
         wakeup_sound=args.wakeup_sound,
