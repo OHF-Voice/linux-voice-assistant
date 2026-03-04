@@ -79,3 +79,23 @@ The Docker images are built using GitHub Actions, which provides:
 - Regular updates and maintenance
 
 The documentation for the build process can be found in the [GitHub Actions Workflows](.github/workflow.md) file.
+
+## Development:
+
+To use tools like format, lint and test you need to install some local pips. You can do that with:
+
+``` sh
+./script/setup --dev
+```
+
+Then you can use the following commands:
+
+``` sh
+./script/format
+./script/lint
+./script/test
+```
+
+## License
+
+This project is licensed under the Apache 2.0 License - see the [LICENSE](LICENSE) file for details.

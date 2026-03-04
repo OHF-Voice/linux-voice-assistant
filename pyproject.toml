@@ -43,6 +43,7 @@ dev = [
     "mypy",
     "pylint",
     "pytest",
+    "isort",
 ]
 
 [project.urls]
@@ -56,3 +57,88 @@ include-package-data = true
 [tool.setuptools.packages.find]
 include = ["linux_voice_assistant"]
 exclude = ["tests", "tests.*"]
+
+[tool.black]
+line-length = 88
+target-version = ['py39', 'py310', 'py311', 'py312', 'py313']
+include = '\.pyi?$'
+exclude = '''
+/(
+  \.eggs
+| \.git
+| \.hg
+| \.mypy_cache
+| \.tox
+| \.venv
+| _build
+| buck-out
+| build
+| dist
+)/
+'''
+
+[tool.isort]
+profile = "black"
+line_length = 88
+multi_line_output = 3
+include_trailing_comma = true
+force_grid_wrap = 0
+use_parentheses = true
+
+[tool.flake8]
+max-line-length = 88
+max-complexity = 18
+select = "E9,F63,F7,F82"
+ignore = "E203,E501,W503"
+exclude = [
+  ".eggs",
+  ".git",
+  ".hg",
+  ".mypy_cache",
+  ".tox",
+  ".venv",
+  "_build",
+  "buck-out",
+  "build",
+  "dist",
+  "__pycache__",
+  "*.pyc",
+]
+
+[tool.pylint.messages_control]
+disable = [
+  "abstract-method",
+  "cyclic-import",
+  "duplicate-code",
+  "global-statement",
+  "import-outside-toplevel",
+  "inconsistent-return-statements",
+  "locally-disabled",
+  "not-context-manager",
+  "too-few-public-methods",
+  "too-many-arguments",
+  "too-many-branches",
+  "too-many-instance-attributes",
+  "too-many-lines",
+  "too-many-locals",
+  "too-many-public-methods",
+  "too-many-return-statements",
+  "too-many-statements",
+  "too-many-boolean-expressions",
+  "unnecessary-pass",
+  "unused-argument",
+  "broad-except",
+  "too-many-nested-blocks",
+  "invalid-name",
+  "unused-import",
+  "fixme",
+  "useless-super-delegation",
+  "missing-module-docstring",
+  "missing-class-docstring",
+  "missing-function-docstring",
+  "import-error",
+  "consider-using-with"
+]
+
+[tool.pylint.format]
+expected-line-ending-format = "LF"

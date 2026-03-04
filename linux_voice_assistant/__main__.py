@@ -39,7 +39,7 @@ _SOUNDS_DIR = _REPO_DIR / "sounds"
 async def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--name"
+        "--name",
         help="Real name for the device"
     )
     parser.add_argument(

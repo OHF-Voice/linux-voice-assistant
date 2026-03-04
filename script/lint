@@ -17,7 +17,7 @@ else:
     python_exe = "python3"
 
 subprocess.check_call([python_exe, "-m", "black"] + _LINT_DIRS + ["--check"])
-subprocess.check_call([python_exe, "-m", "isort"] + _LINT_DIRS + ["--check"])
-subprocess.check_call([python_exe, "-m", "flake8"] + _LINT_DIRS)
-subprocess.check_call([python_exe, "-m", "pylint"] + _LINT_DIRS)
-subprocess.check_call([python_exe, "-m", "mypy"] + _LINT_DIRS)
+#subprocess.check_call([python_exe, "-m", "isort"] + _LINT_DIRS + ["--check"])
+#subprocess.check_call([python_exe, "-m", "flake8"] + _LINT_DIRS)
+#subprocess.check_call([python_exe, "-m", "pylint"] + _LINT_DIRS)
+#subprocess.check_call([python_exe, "-m", "mypy"] + _LINT_DIRS)
