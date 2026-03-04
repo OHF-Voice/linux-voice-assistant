@@ -2,9 +2,11 @@ name: Lint Checks
 
 on:
   push:
-    branches: [ main, develop ]
+    tags-ignore:
+      - "**"
   pull_request:
-    branches: [ main, develop ]
+    tags-ignore:
+      - "**"
 
 jobs:
   lint_black:
