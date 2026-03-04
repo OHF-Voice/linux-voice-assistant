@@ -96,7 +96,7 @@ def get_default_ipv4(interface: str):
         return None
 
     addresses = netifaces.ifaddresses(interface)
-    ipv4_info = addresses.get(netifaces.AF_INET)
+    ipv4_info = addresses.get(netifaces.AF_INET)  # type: ignore
 
     if not ipv4_info:
         return None

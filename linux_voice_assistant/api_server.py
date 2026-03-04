@@ -77,7 +77,7 @@ class APIServer(asyncio.Protocol):
 
             self.send_messages(msgs)
 
-    def send_messages(self, msgs: List[message.Message]):
+    def send_messages(self, msgs: Iterable[message.Message]):
         if self._writelines is None or not msgs:
             return
 

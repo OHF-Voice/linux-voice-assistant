@@ -13,7 +13,7 @@ from typing import Dict, List, Optional, Set, Union
 
 import numpy as np
 import soundcard as sc
-from getmac import get_mac_address
+from getmac import get_mac_address  # type: ignore
 from pymicro_wakeword import MicroWakeWord, MicroWakeWordFeatures
 from pyopen_wakeword import OpenWakeWord, OpenWakeWordFeatures
 
@@ -387,9 +387,9 @@ async def main() -> None:
     await discovery.register_server()
 
     try:
-        async with server:
+        async with server:  # type: ignore
             _LOGGER.info("Server started (host=%s, port=%s)", host_ip_address, args.port)
-            await server.serve_forever()
+            await server.serve_forever()  # type: ignore
     except KeyboardInterrupt:
         pass
     finally:
