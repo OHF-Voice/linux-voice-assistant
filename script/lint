@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$SCRIPT_DIR/.."
+
+echo "Running all linting checks..."
+
+# Run each lint script
+echo "=== Running Black ==="
+"$SCRIPT_DIR/lint_black"
+BLACK_EXIT=$?
+
+echo -e "\n=== Running isort ==="
+"$SCRIPT_DIR/lint_isort"
+ISORT_EXIT=$?
+
+echo -e "\n=== Running flake8 ==="
+"$SCRIPT_DIR/lint_flake8"
+FLAKE8_EXIT=$?
+
+echo -e "\n=== Running pylint ==="
+"$SCRIPT_DIR/lint_pylint"
+PYLINT_EXIT=$?
+
+echo -e "\n=== Running mypy ==="
+"$SCRIPT_DIR/lint_mypy"
+MYPY_EXIT=$?
+
+# Check if any linting failed
+if [ $BLACK_EXIT -ne 0 ] || [ $ISORT_EXIT -ne 0 ] || [ $FLAKE8_EXIT -ne 0 ] || [ $PYLINT_EXIT -ne 0 ] || [ $MYPY_EXIT -ne 0 ]; then
+    echo -e "\n❌ Linting failed!"
+    exit 1
+else
+    echo -e "\n✅ All linting checks passed!"
+    exit 0
+fi

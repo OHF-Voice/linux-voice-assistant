@@ -82,25 +82,58 @@ The documentation for the build process can be found in the [GitHub Actions Work
 
 ## Development:
 
-Checks:
+### Code Quality Checks:
 
-- Black: Code-Formatierung (88 Zeichen pro Zeile, PEP 8)
-- isort: Import-Sortierung passend zu Black
-- flake8: Style- und Syntax-Checks
-- pylint: Code-Qualitätschecks
-- mypy: Statische Typanalyse
+The project uses the following tools to ensure code quality:
+- **Black**: Code formatting (88 characters per line, PEP 8 compliant)
+- **isort**: Import sorting compatible with Black
+- **flake8**: Style and syntax checks
+- **pylint**: Code quality checks
+- **mypy**: Static type analysis
 
-To use tools like format, lint and test you need to install some local pips. You can do that with:
+### Setup:
+
+To use the development tools (linting, testing, etc.), you need to install the required dependencies:
 
 ``` sh
 ./script/setup --dev
 source .venv/bin/activate
 ```
 
-Then you can use the following commands:
+### Linting Commands:
 
+#### Run all linting checks:
 ``` sh
-./script/lint
+./script/lint...
+```
+
+#### Individual linting commands (with auto-fix support):
+
+| Script | Description | Auto-fix Available? |
+|--------|-------------|---------------------|
+| `./script/lint_black` | Checks Python code formatting with Black | Yes, use `--auto` flag |
+| `./script/lint_flake8` | Runs style and syntax checks with flake8 | No |
+| `./script/lint_isort` | Checks import sorting with isort | Yes, use `--auto` flag |
+| `./script/lint_mypy` | Runs static type analysis with mypy | No |
+| `./script/lint_pylint` | Runs code quality checks with pylint | Yes, use `--auto` flag |
+
+#### Examples:
+
+Run a specific lint check:
+``` sh
+./script/lint_black
+```
+
+Auto-fix formatting issues (Black + isort):
+``` sh
+./script/lint_black --auto
+./script/lint_isort --auto
+```
+
+### Testing:
+
+Run the test suite:
+``` sh
 ./script/test
 ```
 
