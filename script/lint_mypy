@@ -18,4 +18,4 @@ else:
     python_exe = "python3"
 
 # Mypy Ausführung
-subprocess.check_call([python_exe, "-m", "mypy"] + _MODULE_DIR)
+subprocess.check_call([python_exe, "-m", "mypy"] + [str(_MODULE_DIR)])
