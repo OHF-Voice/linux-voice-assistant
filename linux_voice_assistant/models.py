@@ -6,7 +6,7 @@ from dataclasses import asdict, dataclass, field
 from enum import Enum
 from pathlib import Path
 from queue import Queue
-from typing import TYPE_CHECKING, Dict, List, Optional, Set, Union
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Union
 
 if TYPE_CHECKING:
     from pymicro_wakeword import MicroWakeWord
@@ -91,12 +91,15 @@ class ServerState:
     satellite: "Optional[VoiceSatelliteProtocol]" = None
     mute_switch_entity: "Optional[MuteSwitchEntity]" = None
     thinking_sound_entity: "Optional[ThinkingSoundEntity]" = None
-    wake_words_changed: bool = False
+    sensitivity_entity: "Optional[Any]" = None   # WakeWordSensitivityEntity 
+    wake_words_changed: bool = False    
     refractory_seconds: float = 2.0
     thinking_sound_enabled: bool = False
     muted: bool = False
     connected: bool = False
     volume: float = 1.0
+    wake_word_sensitivity: str = "Slightly sensitive"
+    oww_probability_cutoff: float = 0.7          # Dynamic threshold for OpenWakeWord      
 
     def save_preferences(self) -> None:
         """Save preferences as JSON."""
