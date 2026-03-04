@@ -2,6 +2,7 @@
 import subprocess
 import venv
 from pathlib import Path
+import sys
 
 _DIR = Path(__file__).parent
 _PROGRAM_DIR = _DIR.parent
@@ -16,8 +17,22 @@ if _VENV_DIR.exists():
 else:
     python_exe = "python3"
 
-subprocess.check_call([python_exe, "-m", "black"] + _LINT_DIRS + ["--check"])
-#subprocess.check_call([python_exe, "-m", "isort"] + _LINT_DIRS + ["--check"])
-#subprocess.check_call([python_exe, "-m", "flake8"] + _LINT_DIRS)
-#subprocess.check_call([python_exe, "-m", "pylint"] + _LINT_DIRS)
-#subprocess.check_call([python_exe, "-m", "mypy"] + _LINT_DIRS)
+# Überprüfen, ob --auto angegeben wurde
+auto_fix = "--auto" in sys.argv
+
+if auto_fix:
+    # Automatisch formatieren und Fehler korrigieren
+    subprocess.check_call([python_exe, "-m", "black"] + _LINT_DIRS)
+    subprocess.check_call([python_exe, "-m", "isort"] + _LINT_DIRS)
+    subprocess.check_call([python_exe, "-m", "pylint"] + _LINT_DIRS + ["--fix"])
+    # Autopep8 kann manche Flake8-Fehler beheben
+    subprocess.check_call([python_exe, "-m", "autopep8"] + _LINT_DIRS + ["--in-place", "--recursive"])
+else:
+    # Nur prüfen, ob Formatierung korrekt ist
+    subprocess.check_call([python_exe, "-m", "black"] + _LINT_DIRS + ["--check"])
+    subprocess.check_call([python_exe, "-m", "isort"] + _LINT_DIRS + ["--check"])
+    subprocess.check_call([python_exe, "-m", "pylint"] + _LINT_DIRS)
+
+# Linting und Typanalyse durchführen
+subprocess.check_call([python_exe, "-m", "flake8"] + _LINT_DIRS)
+subprocess.check_call([python_exe, "-m", "mypy"] + _LINT_DIRS)

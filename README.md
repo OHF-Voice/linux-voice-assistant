@@ -82,16 +82,24 @@ The documentation for the build process can be found in the [GitHub Actions Work
 
 ## Development:
 
+Checks:
+
+- Black: Code-Formatierung (88 Zeichen pro Zeile, PEP 8)
+- isort: Import-Sortierung passend zu Black
+- flake8: Style- und Syntax-Checks
+- pylint: Code-Qualitätschecks
+- mypy: Statische Typanalyse
+
 To use tools like format, lint and test you need to install some local pips. You can do that with:
 
 ``` sh
 ./script/setup --dev
+source .venv/bin/activate
 ```
 
 Then you can use the following commands:
 
 ``` sh
-./script/format
 ./script/lint
 ./script/test
 ```
