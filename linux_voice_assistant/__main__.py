@@ -6,6 +6,7 @@ import logging
 import sys
 import threading
 import time
+import errno
 from pathlib import Path
 from queue import Queue
 from typing import Dict, List, Optional, Set, Union
@@ -340,17 +341,36 @@ async def main() -> None:
     state.music_player.set_volume(initial_volume_percent)
     state.tts_player.set_volume(initial_volume_percent)
 
+    loop = asyncio.get_running_loop()
+    max_attempts = 15
+    attempt = 1
+    server = None
+    
+    while attempt <= max_attempts:
+        try:
+            server = await loop.create_server(
+                lambda: VoiceSatelliteProtocol(state), host=host_ip_address, port=args.port
+            )
+            break  # connect successful, exit the loop
+        except OSError as err:
+            message = err.strerror or str(err)
+            if err.errno == errno.EADDRINUSE:
+                message = "address already in use"
+            
+            if attempt < max_attempts:
+                _LOGGER.warning("Attempt %d/%d failed to bind on address (%s, %s): %s. Retrying in 1 second...", attempt, max_attempts, host_ip_address, args.port, message)
+                await asyncio.sleep(1)
+                attempt += 1
+            else:
+                _LOGGER.exception("All %d attempts failed to bind on address (%s, %s): %s", max_attempts, host_ip_address, args.port, message)
+                sys.exit(1)
+
     process_audio_thread = threading.Thread(
         target=process_audio,
         args=(state, mic, args.audio_input_block_size),
         daemon=True,
     )
     process_audio_thread.start()
-
-    loop = asyncio.get_running_loop()
-    server = await loop.create_server(
-        lambda: VoiceSatelliteProtocol(state), host=host_ip_address, port=args.port
-    )
 
     # Auto discovery (zeroconf, mDNS)
     discovery = HomeAssistantZeroconf(port=args.port, name=state.name, mac_address=state.mac_address, host_ip_address=host_ip_address)
