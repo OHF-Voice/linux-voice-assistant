@@ -1,5 +1,7 @@
 # Changelog
 
+tbc
+
 ## Unreleased
 
 - Add support for custom/external wake words

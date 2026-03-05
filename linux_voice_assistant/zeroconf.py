@@ -2,7 +2,6 @@
 
 import logging
 import socket
-import uuid
 from typing import Optional
 
 _LOGGER = logging.getLogger(__name__)
@@ -18,7 +17,11 @@ MDNS_TARGET_IP = "224.0.0.251"
 
 class HomeAssistantZeroconf:
     def __init__(
-        self, port: int, mac_address: str, host_ip_address: str, name: Optional[str] = None, host: Optional[str] = None
+        self,
+        port: int,
+        mac_address: str,
+        host_ip_address: str,
+        name: Optional[str] = None,
     ) -> None:
         self.port = port
         self.mac_address = mac_address
@@ -45,4 +48,3 @@ class HomeAssistantZeroconf:
         )
         await self._aiozc.async_register_service(service_info)
         _LOGGER.debug("Zeroconf discovery enabled: %s", service_info)
-

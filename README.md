@@ -79,3 +79,64 @@ The Docker images are built using GitHub Actions, which provides:
 - Regular updates and maintenance
 
 The documentation for the build process can be found in the [GitHub Actions Workflows](.github/workflow.md) file.
+
+## Development:
+
+### Code Quality Checks:
+
+The project uses the following tools to ensure code quality:
+- **Black**: Code formatting (88 characters per line, PEP 8 compliant)
+- **isort**: Import sorting compatible with Black
+- **flake8**: Style and syntax checks
+- **pylint**: Code quality checks
+- **mypy**: Static type analysis
+
+### Setup:
+
+To use the development tools (linting, testing, etc.), you need to install the required dependencies:
+
+``` sh
+./script/setup --dev
+source .venv/bin/activate
+```
+
+### Linting Commands:
+
+#### Run all linting checks:
+``` sh
+./script/lint...
+```
+
+#### Individual linting commands (with auto-fix support):
+
+| Script | Description | Auto-fix Available? |
+|--------|-------------|---------------------|
+| `./script/lint_black` | Checks Python code formatting with Black | Yes, use `--auto` flag |
+| `./script/lint_flake8` | Runs style and syntax checks with flake8 | No |
+| `./script/lint_isort` | Checks import sorting with isort | Yes, use `--auto` flag |
+| `./script/lint_mypy` | Runs static type analysis with mypy | No |
+| `./script/lint_pylint` | Runs code quality checks with pylint | Yes, use `--auto` flag |
+
+#### Examples:
+
+Run a specific lint check:
+``` sh
+./script/lint_black
+```
+
+Auto-fix formatting issues (Black + isort):
+``` sh
+./script/lint_black --auto
+./script/lint_isort --auto
+```
+
+### Testing:
+
+Run the test suite:
+``` sh
+./script/test
+```
+
+## License
+
+This project is licensed under the Apache 2.0 License - see the [LICENSE](LICENSE) file for details.
