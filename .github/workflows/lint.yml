@@ -2,11 +2,13 @@ name: Lint Checks
 
 on:
   push:
-    tags-ignore:
-      - "**"
+    branches:
+      - "main"
+    tags:
+    - "v[0-9]+.[0-9]+.[0-9]+"              # For releases, e.g. v1.2.0
+    - "v[0-9]+.[0-9]+.[0-9]+-[a-zA-Z0-9]+" # For prereleases, e.g. v1.3.0-alpha1
   pull_request:
-    tags-ignore:
-      - "**"
+    types: [opened, synchronize, reopened]
 
 jobs:
   lint_black:
