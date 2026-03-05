@@ -2,6 +2,7 @@
 import argparse
 import subprocess
 import venv
+import os
 from pathlib import Path
 
 _DIR = Path(__file__).parent
@@ -37,5 +38,5 @@ if args.dev:
     
     subprocess.check_call(
         pip + ["install", "-e", f"{_PROGRAM_DIR}[dev]"],
-        env={**dict(subprocess.environ), **env}
+        env={**dict(os.environ), **env}
     )
