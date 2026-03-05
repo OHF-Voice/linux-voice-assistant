@@ -20,6 +20,13 @@ builder = venv.EnvBuilder(with_pip=True)
 context = builder.ensure_directories(_VENV_DIR)
 builder.create(_VENV_DIR)
 
+# Set environment variables
+env = {}
+if args.cxxflags:
+    env["CXXFLAGS"] = args.cxxflags
+if args.makeflags:
+    env["MAKEFLAGS"] = args.makeflags
+
 # Upgrade dependencies
 pip = [context.env_exe, "-m", "pip"]
 subprocess.check_call(pip + ["install", "--upgrade", "pip"])
@@ -28,14 +35,9 @@ subprocess.check_call(pip + ["install", "--upgrade", "setuptools", "wheel"])
 # Install requirements
 subprocess.check_call(pip + ["install", "-e", str(_PROGRAM_DIR)])
 
+
+# Install dev requirements
 if args.dev:
-    # Install dev requirements
-    env = {}
-    if args.cxxflags:
-        env["CXXFLAGS"] = args.cxxflags
-    if args.makeflags:
-        env["MAKEFLAGS"] = args.makeflags
-    
     subprocess.check_call(
         pip + ["install", "-e", f"{_PROGRAM_DIR}[dev]"],
         env={**dict(os.environ), **env}
