@@ -8,7 +8,7 @@ This project uses three separate Docker build workflows that automatically build
 |----------|---------|--------------|
 | [docker-build-release.yml](.github/workflows/docker-build-release.yml) | Tags: `v1.2.0`, `v1.2.0-alpha1` | `1.2.0`, `1.2`, `latest` |
 | [docker-build-nightly.yml](.github/workflows/docker-build-nightly.yml) | Push to `main` | `nightly` |
-| [docker-build-branch.yml](.github/workflows/docker-build-branch.yml) | All other branches | Branch name |
+| [docker-build-pr.yml](.github/workflows/docker-build-pr.yml) | Pull requests | `pr-<pr-number>` |
 
 ## Detailed Description
 
@@ -40,17 +40,16 @@ Automatically builds nightly images from the main branch.
 ghcr.io/ohf-voice/linux-voice-assistant:nightly
 ```
 
-### Branch Workflow (`docker-build-branch.yml`)
+### PR Workflow (`docker-build-pr.yml`)
 
-Builds images for all other branches.
+Builds images for pull requests using the PR number as tag.
 
 **Triggers:**
-- Push to all branches except `main`
-- No tags
+- Pull request opened, synchronized, or reopened
 
 **Image Tag:**
 ```
-ghcr.io/ohf-voice/linux-voice-assistant:<branch-name>
+ghcr.io/ohf-voice/linux-voice-assistant:pr-<pr-number>
 ```
 
 ## Multi-Architecture Support
