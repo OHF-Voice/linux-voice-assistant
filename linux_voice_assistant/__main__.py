@@ -143,6 +143,12 @@ async def main() -> None:
         help="Enable thinking finish sound, when the assistant is done thinking and needed more time to process",
     )
     parser.add_argument(
+        "--wake-word-sensitivity",
+        default="Slightly sensitive",
+        choices=SENSITIVITY_PRESETS.keys(),
+        help="Sensitivity for wake word detection (default: Slightly sensitive)",
+    )    
+    parser.add_argument(
         "--debug", 
         action="store_true", 
         help="Add this to enable debug logging"
@@ -317,8 +323,8 @@ async def main() -> None:
     assert stop_model is not None
 
     # After loading wake models, before creating ServerState:
-    initial_sensitivity = preferences.wake_word_sensitivity \
-        if hasattr(preferences, "wake_word_sensitivity") else "Slightly sensitive"
+    initial_sensitivity = getattr(preferences, "wake_word_sensitivity", None) \
+        or args.wake_word_sensitivity
 
     state = ServerState(
         name=device_name,
