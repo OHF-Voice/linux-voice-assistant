@@ -170,6 +170,16 @@ Install the application:
 script/setup
 ```
 
+💡 **Note:** For hardware with limited performance (like Raspberry Pi Zero 2W or other SBCs), you may need to adjust compilation parameters to ensure the build process completes successfully. The script supports custom `CXXFLAGS` and `MAKEFLAGS`:
+
+- `--cxxflags`: Custom C++ compilation flags (default: `-O1 -g0`)
+- `--makeflags`: Custom make flags (default: `-j1`)
+
+For example, to optimize for low-performance hardware:
+``` sh
+script/setup --cxxflags="-O1 -g0" --makeflags="-j1"
+```
+
 Create a systemd service for the application:
 
 ``` sh
