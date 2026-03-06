@@ -4,7 +4,7 @@ services:
   fix-permissions:
     image: "ghcr.io/ohf-voice/linux-voice-assistant:latest"
     entrypoint: []
-    command: "chown -R ${LVA_USER_ID}:${LVA_USER_GROUP} /app/local /app/configuration /app/wakewords/custom /app/sounds/custom"
+    command: "chown -R ${LVA_USER_ID}:${LVA_USER_GROUP} /tmp/cookie /app/local /app/configuration /app/wakewords/custom /app/sounds/custom"
     env_file: ${ENV_FILE:-.env}
     group_add:
       - audio

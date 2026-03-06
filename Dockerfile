@@ -63,7 +63,6 @@ RUN ./script/setup
 
 # create hotfix cookie file
 RUN mkdir -p /tmp/pulse \
-    && chown -R pi:pi /tmp/pulse \
     && chmod 600 /tmp/cookie
 
 ### Set ports for ESPHome API:
