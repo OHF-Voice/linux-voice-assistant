@@ -1,30 +1,32 @@
 #!/usr/bin/env python3
 import argparse
 import asyncio
+import errno
 import json
 import logging
 import sys
 import threading
 import time
-import errno
 from pathlib import Path
 from queue import Queue
 from typing import Dict, List, Optional, Set, Union
 
 import numpy as np
 import soundcard as sc
+from getmac import get_mac_address  # type: ignore
 from pymicro_wakeword import MicroWakeWord, MicroWakeWordFeatures
 from pyopen_wakeword import OpenWakeWord, OpenWakeWordFeatures
 
 from .models import AvailableWakeWord, Preferences, ServerState, WakeWordType
 from .mpv_player import MpvMediaPlayer
 from .satellite import VoiceSatelliteProtocol
-from getmac import get_mac_address
+from .util import (
+    get_default_interface,
+    get_default_ipv4,
+    get_esphome_version,
+    get_version,
+)
 from .zeroconf import HomeAssistantZeroconf
-from .util import get_default_interface
-from .util import get_default_ipv4
-from .util import get_version
-from .util import get_esphome_version
 
 _LOGGER = logging.getLogger(__name__)
 _MODULE_DIR = Path(__file__).parent
@@ -40,7 +42,7 @@ async def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--name",
-        help="Real name for the device"
+        help="Real name for the device",
     )
     parser.add_argument(
         "--audio-input-device",
@@ -52,9 +54,9 @@ async def main() -> None:
         help="List audio input devices and exit",
     )
     parser.add_argument(
-        "--audio-input-block-size", 
-        type=int, 
-        default=1024
+        "--audio-input-block-size",
+        type=int,
+        default=1024,
         # todo
     )
     parser.add_argument(
@@ -73,14 +75,14 @@ async def main() -> None:
         help="Directory with wake word models (.tflite) and configuration (.json)",
     )
     parser.add_argument(
-        "--wake-model", 
-        default="okay_nabu", 
-        help="File name of the first active wake model"
+        "--wake-model",
+        default="okay_nabu",
+        help="File name of the first active wake model",
     )
     parser.add_argument(
-        "--stop-model", 
-        default="stop", 
-        help="File name of the stop model"
+        "--stop-model",
+        default="stop",
+        help="File name of the stop model",
     )
     parser.add_argument(
         "--download-dir",
@@ -94,14 +96,14 @@ async def main() -> None:
         help="Seconds before wake word can be activated again",
     )
     parser.add_argument(
-        "--wakeup-sound", 
+        "--wakeup-sound",
         default=str(_SOUNDS_DIR / "wake_word_triggered.flac"),
-        help="Directory and file name for wake sound (when you say the wake word)"
+        help="Directory and file name for wake sound (when you say the wake word)",
     )
     parser.add_argument(
-        "--timer-finished-sound", 
+        "--timer-finished-sound",
         default=str(_SOUNDS_DIR / "timer_finished.flac"),
-        help="Directory and file name for timer finished sound"
+        help="Directory and file name for timer finished sound",
     )
     parser.add_argument(
         "--processing-sound",
@@ -119,13 +121,13 @@ async def main() -> None:
         help="Sound to play when unmuting the assistant",
     )
     parser.add_argument(
-        "--preferences-file", 
+        "--preferences-file",
         default=_REPO_DIR / "preferences.json",
-        help="Directory and file name for the file where the preferences are stored in JSON format"
+        help="Directory and file name for the file where the preferences are stored in JSON format",
     )
     parser.add_argument(
         "--host",
-        help="Optional host IP address to bind to (default: Autodetected by network interface)", # 0.0.0.0 is IPv4, None is all interfaces
+        help="Optional host IP address to bind to (default: Autodetected by network interface)",  # 0.0.0.0 is IPv4, None is all interfaces
     )
     parser.add_argument(
         "--network-interface",
@@ -133,9 +135,10 @@ async def main() -> None:
     )
     # Note that default port is also set in docker-entrypoint.sh
     parser.add_argument(
-        "--port", type=int, 
-        default=6053, 
-        help="Port the application is listenening on (default: 6053)"
+        "--port",
+        type=int,
+        default=6053,
+        help="Port the application is listenening on (default: 6053)",
     )
     parser.add_argument(
         "--enable-thinking-sound",
@@ -180,20 +183,20 @@ async def main() -> None:
     if not args.network_interface:
         print("No network interface specified, try to detect default interface")
         network_interface = get_default_interface()
-        print(f"Default interface detected:", network_interface)
+        print(f"Default interface detected: {network_interface}")
     else:
         print("Network interface specified")
         network_interface = args.network_interface
-        print(f"Using network interface: ", network_interface)
+        print(f"Using network interface: {network_interface}")
 
     # Resolve ip_address where the application will be listening
     if not args.host:
         print("No host (ip-address) specified, try to detect IP-Address")
         host_ip_address = get_default_ipv4(network_interface)
-        print(f"IP-Address detected: ", host_ip_address)
+        print(f"IP-Address detected: {host_ip_address}")
     else:
         print("Host specified")
-        print(f"Using host: ", args.host)
+        print(f"Using host: {args.host}")
         host_ip_address = args.host
 
     # Resolve mac
@@ -367,18 +370,15 @@ async def main() -> None:
     max_attempts = 15
     attempt = 1
     server = None
-    
+
     while attempt <= max_attempts:
         try:
-            server = await loop.create_server(
-                lambda: VoiceSatelliteProtocol(state), host=host_ip_address, port=args.port
-            )
+            server = await loop.create_server(lambda: VoiceSatelliteProtocol(state), host=host_ip_address, port=args.port)
             break  # connect successful, exit the loop
         except OSError as err:
             message = err.strerror or str(err)
             if err.errno == errno.EADDRINUSE:
                 message = "address already in use"
-            
             if attempt < max_attempts:
                 _LOGGER.warning("Attempt %d/%d failed to bind on address (%s, %s): %s. Retrying in 1 second...", attempt, max_attempts, host_ip_address, args.port, message)
                 await asyncio.sleep(1)
@@ -399,9 +399,9 @@ async def main() -> None:
     await discovery.register_server()
 
     try:
-        async with server:
+        async with server:  # type: ignore
             _LOGGER.info("Server started (host=%s, port=%s)", host_ip_address, args.port)
-            await server.serve_forever()
+            await server.serve_forever()  # type: ignore
     except KeyboardInterrupt:
         pass
     finally:
@@ -432,11 +432,7 @@ def process_audio(state: ServerState, mic, block_size: int):
         with mic.recorder(samplerate=16000, channels=1, blocksize=block_size) as mic_in:
             while True:
                 audio_chunk_array = mic_in.record(block_size).reshape(-1)
-                audio_chunk = (
-                    (np.clip(audio_chunk_array, -1.0, 1.0) * 32767.0)
-                    .astype("<i2")  # little-endian 16-bit signed
-                    .tobytes()
-                )
+                audio_chunk = (np.clip(audio_chunk_array, -1.0, 1.0) * 32767.0).astype("<i2").tobytes()  # little-endian 16-bit signed
 
                 if state.satellite is None:
                     continue
@@ -444,11 +440,7 @@ def process_audio(state: ServerState, mic, block_size: int):
                 if (not wake_words) or (state.wake_words_changed and state.wake_words):
                     # Update list of wake word models to process
                     state.wake_words_changed = False
-                    wake_words = [
-                        ww
-                        for ww in state.wake_words.values()
-                        if ww.id in state.active_wake_words
-                    ]
+                    wake_words = [ww for ww in state.wake_words.values() if ww.id in state.active_wake_words]
 
                     has_oww = False
                     for wake_word in wake_words:
@@ -488,9 +480,7 @@ def process_audio(state: ServerState, mic, block_size: int):
                         if activated and not state.muted:
                             # Check refractory
                             now = time.monotonic()
-                            if (last_active is None) or (
-                                (now - last_active) > state.refractory_seconds
-                            ):
+                            if (last_active is None) or ((now - last_active) > state.refractory_seconds):
                                 state.satellite.wakeup(wake_word)
                                 last_active = now
 
@@ -500,11 +490,7 @@ def process_audio(state: ServerState, mic, block_size: int):
                         if state.stop_word.process_streaming(micro_input):
                             stopped = True
 
-                    if (
-                        stopped
-                        and (state.stop_word.id in state.active_wake_words)
-                        and not state.muted
-                    ):
+                    if stopped and (state.stop_word.id in state.active_wake_words) and not state.muted:
                         state.satellite.stop()
                 except Exception:
                     _LOGGER.exception("Unexpected error handling audio")
