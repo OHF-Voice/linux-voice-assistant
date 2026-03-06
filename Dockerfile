@@ -27,7 +27,7 @@ LABEL \
 # - iproute2:           For ss command in entrypoint (port check)
 # - procps:             For pgrep in healthcheck
 RUN apt-get update && \
-apt-get install --yes --no-install-recommends \
+    apt-get install --yes --no-install-recommends \
     avahi-utils \
     pulseaudio-utils \
     alsa-utils \
@@ -63,7 +63,8 @@ RUN ./script/setup
 
 # create hotfix cookie file
 RUN mkdir -p /tmp/pulse \
-    && chmod 600 /tmp/cookie
+    && touch /tmp/pulse/cookie \
+    && chmod 600 /tmp/pulse/cookie
 
 ### Set ports for ESPHome API:
 EXPOSE 6053
