@@ -5,6 +5,11 @@ services:
     image: "ghcr.io/ohf-voice/linux-voice-assistant:latest"
     entrypoint: []
     command: "chown -R ${LVA_USER_ID}:${LVA_USER_GROUP} /tmp/cookie /app/local /app/configuration /app/wakewords/custom /app/sounds/custom"
+    environment:
+      # Pulseaudio
+      - XDG_RUNTIME_DIR=${LVA_XDG_RUNTIME_DIR}
+      - PULSE_SERVER=${LVA_PULSE_SERVER}
+      - PULSE_COOKIE=/tmp/pulse/cookie
     env_file: ${ENV_FILE:-.env}
     group_add:
       - audio
