@@ -4,12 +4,12 @@ services:
   fix-permissions:
     image: "ghcr.io/ohf-voice/linux-voice-assistant:latest"
     entrypoint: []
-    command: "chown -R ${LVA_USER_ID}:${LVA_USER_GROUP} /tmp/cookie /app/local /app/configuration /app/wakewords/custom /app/sounds/custom"
+    command: "chown -R ${LVA_USER_ID}:${LVA_USER_GROUP} /app/local /app/configuration /app/wakewords/custom /app/sounds/custom"
     environment:
       # Pulseaudio
       - XDG_RUNTIME_DIR=${LVA_XDG_RUNTIME_DIR}
       - PULSE_SERVER=${LVA_PULSE_SERVER}
-      - PULSE_COOKIE=/tmp/pulse/cookie
+      - PULSE_COOKIE=${LVA_PULSE_COOKIE}
     env_file: ${ENV_FILE:-.env}
     group_add:
       - audio
@@ -32,7 +32,7 @@ services:
       # Pulseaudio
       - XDG_RUNTIME_DIR=${LVA_XDG_RUNTIME_DIR}
       - PULSE_SERVER=${LVA_PULSE_SERVER}
-      - PULSE_COOKIE=/tmp/pulse/cookie
+      - PULSE_COOKIE=${LVA_PULSE_COOKIE}
     env_file: ${ENV_FILE:-.env}
     group_add:
       - audio

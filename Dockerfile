@@ -61,11 +61,6 @@ COPY version_githash.txt ./
 RUN chmod +x docker-entrypoint.sh
 RUN ./script/setup
 
-# create hotfix cookie file
-RUN mkdir -p /tmp/pulse \
-    && touch /tmp/pulse/cookie \
-    && chmod 600 /tmp/pulse/cookie
-
 ### Set ports for ESPHome API:
 EXPOSE 6053
 
