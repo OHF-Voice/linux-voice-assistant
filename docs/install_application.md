@@ -204,6 +204,7 @@ Environment=PATH=/home/pi/linux-voice-assistant/.venv/bin:/usr/bin:/bin
 # Environment=CLIENT_NAME="My Voice Assistant Speaker"
 Environment=LVA_PULSE_SERVER="unix:/run/user/${LVA_USER_ID}/pulse/native"
 Environment=LVA_XDG_RUNTIME_DIR="/run/user/${LVA_USER_ID}"
+Environment=LVA_PULSE_COOKIE="/home/pi/linux-voice-assistant/tmp_pulse_cookie"
 Environment=PREFERENCES_FILE="/home/pi/linux-voice-assistant/preferences.json"
 # Environment=NETWORK_INTERFACE="eth0"
 # Environment=HOST="0.0.0.0"
@@ -276,6 +277,7 @@ The following variables can be configured in the `.env` or in the service file:
 | `CLIENT_NAME` | (optional) | Custom name for this voice assistant instance |
 | `LVA_PULSE_SERVER` | `unix:/run/user/${LVA_USER_ID}/pulse/native` | Path to the PulseAudio/PipeWire socket |
 | `LVA_XDG_RUNTIME_DIR` | `/run/user/${LVA_USER_ID}` | XDG runtime directory |
+| `LVA_PULSE_COOKIE` | `/app/configuration/tmp_pulse_cookie` | Cookie file for PulseAudio if you use encryption. By default disabled. We use a tmp file to avoid errors if the file is not found |
 | `ENABLE_DEBUG` | (optional) | Set to "1" to enable debug mode |
 | `LIST_DEVICES` | (optional) | Set to "1" to list audio devices instead of starting |
 | `PREFERENCES_FILE` | (optional) | Path to a custom preferences JSON file |

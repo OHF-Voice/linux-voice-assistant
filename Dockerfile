@@ -27,7 +27,7 @@ LABEL \
 # - iproute2:           For ss command in entrypoint (port check)
 # - procps:             For pgrep in healthcheck
 RUN apt-get update && \
-apt-get install --yes --no-install-recommends \
+    apt-get install --yes --no-install-recommends \
     avahi-utils \
     pulseaudio-utils \
     alsa-utils \
