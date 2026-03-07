@@ -81,6 +81,14 @@ if [ -n "${UNMUTE_SOUND}" ]; then
 fi
 
 
+# Add cookie file for pulseaudio to prevent errors
+if [ ! -f "$PULSE_COOKIE" ]; then
+  echo "Creating PulseAudio cookie file"
+  touch "$PULSE_COOKIE"
+  chmod 600 "$PULSE_COOKIE"
+fi
+
+
 ### Wait for PulseAudio
 # Wait for PulseAudio to be available before starting the application
 CP_MAX_RETRIES=30
