@@ -224,8 +224,6 @@ async def main() -> None:
     esphome_version = get_esphome_version()
     print(f"ESPHome api version: {esphome_version}")
 
-    # MICROPHONE PARAMETERS
-
     # Resolve download dir
     args.download_dir = Path(args.download_dir)
     args.download_dir.mkdir(parents=True, exist_ok=True)
@@ -271,8 +269,6 @@ async def main() -> None:
 
     _LOGGER.debug("Available wake words: %s", list(sorted(available_wake_words.keys())))
 
-    # END MICROPHONE PARAMETERS
-
     # Load preferences
     preferences_path = Path(args.preferences_file)
     if preferences_path.exists():
@@ -290,8 +286,6 @@ async def main() -> None:
 
     if args.enable_thinking_sound:
         preferences.thinking_sound = 1
-
-    # MICROPHONE INITIALIZATION
 
     # Load wake/stop models
     active_wake_words: Set[str] = set()
@@ -329,8 +323,6 @@ async def main() -> None:
         break
 
     assert stop_model is not None
-
-    # END MICROPHONE INITIALIZATION
 
     state = ServerState(
         name=device_name,
@@ -389,7 +381,6 @@ async def main() -> None:
                 _LOGGER.exception("All %d attempts failed to bind on address (%s, %s): %s", max_attempts, host_ip_address, args.port, message)
                 sys.exit(1)
 
-    # THREAD FOR INPUT ONLY
     process_audio_thread = threading.Thread(
         target=process_audio,
         args=(state, mic, args.audio_input_block_size),
@@ -409,9 +400,7 @@ async def main() -> None:
         pass
     finally:
         state.audio_queue.put_nowait(None)
-        # THREAD FOR INPUT ONLY
         process_audio_thread.join()
-        # END THREAD FOR INPUT
 
     _LOGGER.debug("Server stopped")
 
