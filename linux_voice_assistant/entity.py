@@ -105,9 +105,7 @@ class MediaPlayerEntity(ESPHomeEntity):
                 self.announce_player.play(
                     url,
                     done_callback=lambda: call_all(
-                        self.server.send_messages(
-                            [self._update_state(MediaPlayerState.IDLE)]
-                        ),
+                        self.server.send_messages([self._update_state(MediaPlayerState.IDLE)]),
                         done_callback,
                     ),
                 )
@@ -117,9 +115,7 @@ class MediaPlayerEntity(ESPHomeEntity):
             self.music_player.play(
                 url,
                 done_callback=lambda: call_all(
-                    self.server.send_messages(
-                        [self._update_state(MediaPlayerState.IDLE)]
-                    ),
+                    self.server.send_messages([self._update_state(MediaPlayerState.IDLE)]),
                     done_callback,
                 ),
             )
@@ -328,15 +324,11 @@ class ThinkingSoundEntity(ESPHomeEntity):
         self._set_thinking_sound_enabled = set_thinking_sound_enabled
         self._switch_state = self._get_thinking_sound_enabled()  # Sync internal state
 
-    def update_get_thinking_sound_enabled(
-        self, get_thinking_sound_enabled: Callable[[], bool]
-    ) -> None:
+    def update_get_thinking_sound_enabled(self, get_thinking_sound_enabled: Callable[[], bool]) -> None:
         # Update the callback used to read the thinking sound enabled state.
         self._get_thinking_sound_enabled = get_thinking_sound_enabled
 
-    def update_set_thinking_sound_enabled(
-        self, set_thinking_sound_enabled: Callable[[bool], None]
-    ) -> None:
+    def update_set_thinking_sound_enabled(self, set_thinking_sound_enabled: Callable[[bool], None]) -> None:
         # Update the callback used to change the thinking sound enabled state.
         self._set_thinking_sound_enabled = set_thinking_sound_enabled
 
@@ -402,9 +394,7 @@ class WakeWordSensitivityEntity(ESPHomeEntity):
             if msg.state in WAKE_WORD_SENSITIVITY_OPTIONS:
                 self._state = msg.state
                 self._set_sensitivity(msg.state)
-                yield SelectStateResponse(
-                    key=self.key, state=self._state, missing_state=False
-                )
+                yield SelectStateResponse(key=self.key, state=self._state, missing_state=False)
         elif isinstance(msg, ListEntitiesRequest):
             yield ListEntitiesSelectResponse(
                 object_id=self.object_id,
@@ -416,6 +406,4 @@ class WakeWordSensitivityEntity(ESPHomeEntity):
             )
         elif isinstance(msg, SubscribeHomeAssistantStatesRequest):
             self.sync_with_state()
-            yield SelectStateResponse(
-                key=self.key, state=self._state, missing_state=False
-            )
+            yield SelectStateResponse(key=self.key, state=self._state, missing_state=False)
