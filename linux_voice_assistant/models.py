@@ -6,7 +6,7 @@ from dataclasses import asdict, dataclass, field
 from enum import Enum
 from pathlib import Path
 from queue import Queue
-from typing import TYPE_CHECKING, Dict, List, Optional, Set, Union
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Union
 
 if TYPE_CHECKING:
     from pymicro_wakeword import MicroWakeWord
@@ -101,7 +101,7 @@ class ServerState:
     connected: bool = False
     volume: float = 1.0
     wake_word_sensitivity: str = "Slightly sensitive"
-    oww_probability_cutoff: float = 0.7          # Dynamic threshold for OpenWakeWord
+    oww_probability_cutoff: float = 0.7  # Dynamic threshold for OpenWakeWord
 
     def save_preferences(self) -> None:
         """Save preferences as JSON."""
@@ -125,11 +125,7 @@ class ServerState:
             self.preferences.volume,
         )
 
-        if (
-            abs(self.volume - clamped_volume) < 0.0001
-            and self.preferences.volume is not None
-            and abs(self.preferences.volume - clamped_volume) < 0.0001
-        ):
+        if abs(self.volume - clamped_volume) < 0.0001 and self.preferences.volume is not None and abs(self.preferences.volume - clamped_volume) < 0.0001:
             _LOGGER.debug("Skipping save - volume unchanged")
             return
 
