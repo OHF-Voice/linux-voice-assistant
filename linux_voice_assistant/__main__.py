@@ -19,7 +19,7 @@ from pyopen_wakeword import OpenWakeWord, OpenWakeWordFeatures
 
 from .models import AvailableWakeWord, Preferences, ServerState, WakeWordType
 from .mpv_player import MpvMediaPlayer
-from .satellite import VoiceSatelliteProtocol
+from .satellite import SENSITIVITY_PRESETS, VoiceSatelliteProtocol
 from .util import (
     get_default_interface,
     get_default_ipv4,
@@ -148,13 +148,13 @@ async def main() -> None:
     parser.add_argument(
         "--wake-word-sensitivity",
         default="Slightly sensitive",
-        choices=SENSITIVITY_PRESETS.keys(),
-        help="Sensitivity for wake word detection (default: Slightly sensitive)",
-    )    
+        choices=list(SENSITIVITY_PRESETS.keys()),
+        help="Default wake word sensitivity level (default: Slightly sensitive)",
+    )
     parser.add_argument(
-        "--debug", 
-        action="store_true", 
-        help="Add this to enable debug logging"
+        "--debug",
+        action="store_true",
+        help="Add this to enable debug logging",
     )
     args = parser.parse_args()
 
@@ -277,8 +277,15 @@ async def main() -> None:
         with open(preferences_path, "r", encoding="utf-8") as preferences_file:
             preferences_dict = json.load(preferences_file)
             preferences = Preferences(**preferences_dict)
+        # Saved value wins; arg is the fallback for fresh installs or missing key
+        initial_sensitivity = (
+            preferences_dict.get("wake_word_sensitivity") or args.wake_word_sensitivity
+        )
     else:
         preferences = Preferences()
+        initial_sensitivity = args.wake_word_sensitivity
+
+    preferences.wake_word_sensitivity = initial_sensitivity
 
     # Load volume from preferences on startup, and ensure it's between 0.0 and 1.0
     initial_volume = preferences.volume if preferences.volume is not None else 1.0
@@ -325,10 +332,6 @@ async def main() -> None:
 
     assert stop_model is not None
 
-    # After loading wake models, before creating ServerState:
-    initial_sensitivity = getattr(preferences, "wake_word_sensitivity", None) \
-        or args.wake_word_sensitivity
-
     state = ServerState(
         name=device_name,
         friendly_name=friendly_name,
@@ -343,8 +346,6 @@ async def main() -> None:
         wake_words=wake_models,
         active_wake_words=active_wake_words,
         stop_word=stop_model,
-        wake_word_sensitivity=initial_sensitivity,
-        oww_probability_cutoff=SENSITIVITY_PRESETS[initial_sensitivity]["oww"],        
         music_player=MpvMediaPlayer(device=args.audio_output_device),
         tts_player=MpvMediaPlayer(device=args.audio_output_device),
         wakeup_sound=args.wakeup_sound,
@@ -357,10 +358,18 @@ async def main() -> None:
         refractory_seconds=args.refractory_seconds,
         download_dir=args.download_dir,
         volume=initial_volume,
+        wake_word_sensitivity=initial_sensitivity,
+        oww_probability_cutoff=SENSITIVITY_PRESETS[initial_sensitivity]["oww"],
     )
 
     if args.enable_thinking_sound:
         state.save_preferences()
+
+    # Apply MWW sensitivity cutoffs immediately at startup
+    mww_cutoff = SENSITIVITY_PRESETS[initial_sensitivity]["mww"]
+    for ww in wake_models.values():
+        if isinstance(ww, MicroWakeWord):
+            ww.probability_cutoff = mww_cutoff
 
     initial_volume_percent = int(round(initial_volume * 100))
     state.music_player.set_volume(initial_volume_percent)
@@ -373,18 +382,35 @@ async def main() -> None:
 
     while attempt <= max_attempts:
         try:
-            server = await loop.create_server(lambda: VoiceSatelliteProtocol(state), host=host_ip_address, port=args.port)
+            server = await loop.create_server(
+                lambda: VoiceSatelliteProtocol(state),
+                host=host_ip_address,
+                port=args.port,
+            )
             break  # connect successful, exit the loop
         except OSError as err:
-            message = err.strerror or str(err)
+            msg = err.strerror or str(err)
             if err.errno == errno.EADDRINUSE:
-                message = "address already in use"
+                msg = "address already in use"
             if attempt < max_attempts:
-                _LOGGER.warning("Attempt %d/%d failed to bind on address (%s, %s): %s. Retrying in 1 second...", attempt, max_attempts, host_ip_address, args.port, message)
+                _LOGGER.warning(
+                    "Attempt %d/%d failed to bind on address (%s, %s): %s. Retrying in 1 second...",
+                    attempt,
+                    max_attempts,
+                    host_ip_address,
+                    args.port,
+                    msg,
+                )
                 await asyncio.sleep(1)
                 attempt += 1
             else:
-                _LOGGER.exception("All %d attempts failed to bind on address (%s, %s): %s", max_attempts, host_ip_address, args.port, message)
+                _LOGGER.exception(
+                    "All %d attempts failed to bind on address (%s, %s): %s",
+                    max_attempts,
+                    host_ip_address,
+                    args.port,
+                    msg,
+                )
                 sys.exit(1)
 
     process_audio_thread = threading.Thread(
@@ -395,7 +421,12 @@ async def main() -> None:
     process_audio_thread.start()
 
     # Auto discovery (zeroconf, mDNS)
-    discovery = HomeAssistantZeroconf(port=args.port, name=state.name, mac_address=state.mac_address, host_ip_address=host_ip_address)
+    discovery = HomeAssistantZeroconf(
+        port=args.port,
+        name=state.name,
+        mac_address=state.mac_address,
+        host_ip_address=host_ip_address,
+    )
     await discovery.register_server()
 
     try:
@@ -432,7 +463,11 @@ def process_audio(state: ServerState, mic, block_size: int):
         with mic.recorder(samplerate=16000, channels=1, blocksize=block_size) as mic_in:
             while True:
                 audio_chunk_array = mic_in.record(block_size).reshape(-1)
-                audio_chunk = (np.clip(audio_chunk_array, -1.0, 1.0) * 32767.0).astype("<i2").tobytes()  # little-endian 16-bit signed
+                audio_chunk = (
+                    (np.clip(audio_chunk_array, -1.0, 1.0) * 32767.0)
+                    .astype("<i2")
+                    .tobytes()
+                )  # little-endian 16-bit signed
 
                 if state.satellite is None:
                     continue
@@ -440,7 +475,11 @@ def process_audio(state: ServerState, mic, block_size: int):
                 if (not wake_words) or (state.wake_words_changed and state.wake_words):
                     # Update list of wake word models to process
                     state.wake_words_changed = False
-                    wake_words = [ww for ww in state.wake_words.values() if ww.id in state.active_wake_words]
+                    wake_words = [
+                        ww
+                        for ww in state.wake_words.values()
+                        if ww.id in state.active_wake_words
+                    ]
 
                     has_oww = False
                     for wake_word in wake_words:
@@ -472,15 +511,20 @@ def process_audio(state: ServerState, mic, block_size: int):
                                 if wake_word.process_streaming(micro_input):
                                     activated = True
                         elif isinstance(wake_word, OpenWakeWord):
+                            oww_threshold = getattr(
+                                state, "oww_probability_cutoff", 0.70
+                            )
                             for oww_input in oww_inputs:
                                 for prob in wake_word.process_streaming(oww_input):
-                                    if prob > 0.5:
+                                    if prob > oww_threshold:
                                         activated = True
 
                         if activated and not state.muted:
                             # Check refractory
                             now = time.monotonic()
-                            if (last_active is None) or ((now - last_active) > state.refractory_seconds):
+                            if (last_active is None) or (
+                                (now - last_active) > state.refractory_seconds
+                            ):
                                 state.satellite.wakeup(wake_word)
                                 last_active = now
 
@@ -490,7 +534,11 @@ def process_audio(state: ServerState, mic, block_size: int):
                         if state.stop_word.process_streaming(micro_input):
                             stopped = True
 
-                    if stopped and (state.stop_word.id in state.active_wake_words) and not state.muted:
+                    if (
+                        stopped
+                        and (state.stop_word.id in state.active_wake_words)
+                        and not state.muted
+                    ):
                         state.satellite.stop()
                 except Exception:
                     _LOGGER.exception("Unexpected error handling audio")
