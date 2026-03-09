@@ -278,9 +278,7 @@ async def main() -> None:
             preferences_dict = json.load(preferences_file)
             preferences = Preferences(**preferences_dict)
         # Saved value wins; arg is the fallback for fresh installs or missing key
-        initial_sensitivity = (
-            preferences_dict.get("wake_word_sensitivity") or args.wake_word_sensitivity
-        )
+        initial_sensitivity = preferences_dict.get("wake_word_sensitivity") or args.wake_word_sensitivity
     else:
         preferences = Preferences()
         initial_sensitivity = args.wake_word_sensitivity
@@ -463,11 +461,7 @@ def process_audio(state: ServerState, mic, block_size: int):
         with mic.recorder(samplerate=16000, channels=1, blocksize=block_size) as mic_in:
             while True:
                 audio_chunk_array = mic_in.record(block_size).reshape(-1)
-                audio_chunk = (
-                    (np.clip(audio_chunk_array, -1.0, 1.0) * 32767.0)
-                    .astype("<i2")
-                    .tobytes()
-                )  # little-endian 16-bit signed
+                audio_chunk = (np.clip(audio_chunk_array, -1.0, 1.0) * 32767.0).astype("<i2").tobytes()  # little-endian 16-bit signed
 
                 if state.satellite is None:
                     continue
@@ -475,11 +469,7 @@ def process_audio(state: ServerState, mic, block_size: int):
                 if (not wake_words) or (state.wake_words_changed and state.wake_words):
                     # Update list of wake word models to process
                     state.wake_words_changed = False
-                    wake_words = [
-                        ww
-                        for ww in state.wake_words.values()
-                        if ww.id in state.active_wake_words
-                    ]
+                    wake_words = [ww for ww in state.wake_words.values() if ww.id in state.active_wake_words]
 
                     has_oww = False
                     for wake_word in wake_words:
@@ -511,9 +501,7 @@ def process_audio(state: ServerState, mic, block_size: int):
                                 if wake_word.process_streaming(micro_input):
                                     activated = True
                         elif isinstance(wake_word, OpenWakeWord):
-                            oww_threshold = getattr(
-                                state, "oww_probability_cutoff", 0.70
-                            )
+                            oww_threshold = getattr(state, "oww_probability_cutoff", 0.70)
                             for oww_input in oww_inputs:
                                 for prob in wake_word.process_streaming(oww_input):
                                     if prob > oww_threshold:
@@ -522,9 +510,7 @@ def process_audio(state: ServerState, mic, block_size: int):
                         if activated and not state.muted:
                             # Check refractory
                             now = time.monotonic()
-                            if (last_active is None) or (
-                                (now - last_active) > state.refractory_seconds
-                            ):
+                            if (last_active is None) or ((now - last_active) > state.refractory_seconds):
                                 state.satellite.wakeup(wake_word)
                                 last_active = now
 
@@ -534,11 +520,7 @@ def process_audio(state: ServerState, mic, block_size: int):
                         if state.stop_word.process_streaming(micro_input):
                             stopped = True
 
-                    if (
-                        stopped
-                        and (state.stop_word.id in state.active_wake_words)
-                        and not state.muted
-                    ):
+                    if stopped and (state.stop_word.id in state.active_wake_words) and not state.muted:
                         state.satellite.stop()
                 except Exception:
                     _LOGGER.exception("Unexpected error handling audio")
