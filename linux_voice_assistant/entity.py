@@ -7,15 +7,15 @@ from typing import Callable, List, Optional, Union
 from aioesphomeapi.api_pb2 import (  # type: ignore[attr-defined]
     ListEntitiesMediaPlayerResponse,
     ListEntitiesRequest,
-    ListEntitiesSwitchResponse,
     ListEntitiesSelectResponse,
+    ListEntitiesSwitchResponse,
     MediaPlayerCommandRequest,
     MediaPlayerStateResponse,
+    SelectCommandRequest,
+    SelectStateResponse,
     SubscribeHomeAssistantStatesRequest,
     SwitchCommandRequest,
     SwitchStateResponse,
-    SelectCommandRequest,
-    SelectStateResponse,    
 )
 from aioesphomeapi.model import (
     EntityCategory,
@@ -39,8 +39,12 @@ SUPPORTED_MEDIA_PLAYER_FEATURES = (
     | MediaPlayerEntityFeature.MEDIA_ANNOUNCE
 )
 
+WAKE_WORD_SENSITIVITY_OPTIONS = [
+    "Slightly sensitive",
+    "Moderately sensitive",
+    "Very sensitive",
+]
 
-WAKE_WORD_SENSITIVITY_OPTIONS = ["Slightly sensitive", "Moderately sensitive", "Very sensitive"]
 
 class ESPHomeEntity:
     def __init__(self, server: APIServer) -> None:
@@ -101,7 +105,9 @@ class MediaPlayerEntity(ESPHomeEntity):
                 self.announce_player.play(
                     url,
                     done_callback=lambda: call_all(
-                        self.server.send_messages([self._update_state(MediaPlayerState.IDLE)]),
+                        self.server.send_messages(
+                            [self._update_state(MediaPlayerState.IDLE)]
+                        ),
                         done_callback,
                     ),
                 )
@@ -111,7 +117,9 @@ class MediaPlayerEntity(ESPHomeEntity):
             self.music_player.play(
                 url,
                 done_callback=lambda: call_all(
-                    self.server.send_messages([self._update_state(MediaPlayerState.IDLE)]),
+                    self.server.send_messages(
+                        [self._update_state(MediaPlayerState.IDLE)]
+                    ),
                     done_callback,
                 ),
             )
@@ -173,7 +181,7 @@ class MediaPlayerEntity(ESPHomeEntity):
                 self._apply_volume(msg.volume, persist=True)
                 if hasattr(self.server, "state") and getattr(self.server, "state", None) is not None:
                     self._log.debug("Persisting volume to preferences")
-                    self.server.state.persist_volume(self.volume)
+                    self.server.state.persist_volume(self.volume)  # type: ignore[attr-defined]
                 else:
                     self._log.warning("Cannot persist volume - server.state not available")
                 yield self._update_state(self.state)
@@ -320,11 +328,15 @@ class ThinkingSoundEntity(ESPHomeEntity):
         self._set_thinking_sound_enabled = set_thinking_sound_enabled
         self._switch_state = self._get_thinking_sound_enabled()  # Sync internal state
 
-    def update_get_thinking_sound_enabled(self, get_thinking_sound_enabled: Callable[[], bool]) -> None:
+    def update_get_thinking_sound_enabled(
+        self, get_thinking_sound_enabled: Callable[[], bool]
+    ) -> None:
         # Update the callback used to read the thinking sound enabled state.
         self._get_thinking_sound_enabled = get_thinking_sound_enabled
 
-    def update_set_thinking_sound_enabled(self, set_thinking_sound_enabled: Callable[[bool], None]) -> None:
+    def update_set_thinking_sound_enabled(
+        self, set_thinking_sound_enabled: Callable[[bool], None]
+    ) -> None:
         # Update the callback used to change the thinking sound enabled state.
         self._set_thinking_sound_enabled = set_thinking_sound_enabled
 
@@ -365,6 +377,7 @@ class WakeWordSensitivityEntity(ESPHomeEntity):
         set_sensitivity: Callable[[str], None],
     ) -> None:
         ESPHomeEntity.__init__(self, server)
+
         self.key = key
         self.name = name
         self.object_id = object_id
@@ -372,21 +385,26 @@ class WakeWordSensitivityEntity(ESPHomeEntity):
         self._set_sensitivity = set_sensitivity
         self._state = self._get_sensitivity()
 
-    def sync_with_state(self) -> None:
-        self._state = self._get_sensitivity()
-
     def update_get_sensitivity(self, get_sensitivity: Callable[[], str]) -> None:
+        # Update the callback used to read the sensitivity state.
         self._get_sensitivity = get_sensitivity
 
     def update_set_sensitivity(self, set_sensitivity: Callable[[str], None]) -> None:
+        # Update the callback used to change the sensitivity state.
         self._set_sensitivity = set_sensitivity
 
+    def sync_with_state(self) -> None:
+        # Sync internal state with the actual sensitivity value.
+        self._state = self._get_sensitivity()
+
     def handle_message(self, msg: message.Message) -> Iterable[message.Message]:
-        if isinstance(msg, SelectCommandRequest) and msg.key == self.key:
+        if isinstance(msg, SelectCommandRequest) and (msg.key == self.key):
             if msg.state in WAKE_WORD_SENSITIVITY_OPTIONS:
                 self._state = msg.state
                 self._set_sensitivity(msg.state)
-                yield SelectStateResponse(key=self.key, state=self._state, missing_state=False)
+                yield SelectStateResponse(
+                    key=self.key, state=self._state, missing_state=False
+                )
         elif isinstance(msg, ListEntitiesRequest):
             yield ListEntitiesSelectResponse(
                 object_id=self.object_id,
@@ -394,7 +412,10 @@ class WakeWordSensitivityEntity(ESPHomeEntity):
                 name=self.name,
                 options=WAKE_WORD_SENSITIVITY_OPTIONS,
                 entity_category=EntityCategory.CONFIG,
+                icon="mdi:microphone-sensitivity",
             )
         elif isinstance(msg, SubscribeHomeAssistantStatesRequest):
             self.sync_with_state()
-            yield SelectStateResponse(key=self.key, state=self._state, missing_state=False)
+            yield SelectStateResponse(
+                key=self.key, state=self._state, missing_state=False
+            )
