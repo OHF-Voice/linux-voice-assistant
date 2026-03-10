@@ -23,9 +23,11 @@ Experimental Linux-Voice-Assistant for [Home Assistant](https://www.home-assista
 
 ### Hardware:
 
-You can for example use the Raspberry Pi Zero 2W with the [Satellite1 Hat Board](https://futureproofhomes.net/products/satellite1-top-microphone-board), the [Respeaker Lite](https://wiki.seeedstudio.com/reSpeaker_usb_v3/) or the [Respeaker 2Mic_Hat](https://wiki.seeedstudio.com/ReSpeaker_2_Mics_Pi_HAT/). 
+A more extensive list for possible compatible hardware can be found in the [PiCompose documentation](https://github.com/florian-asche/PiCompose) but basically any microphone that works with [PipeWire (multimedia framework for Linux)](https://pipewire.org/) can in theory be used for voice input with the prebuild image from there, you should however preferably use a far-field microphone-array solution if want better result. Suggest try example the [Respeaker 2Mic_Hat](https://wiki.seeedstudio.com/ReSpeaker_2_Mics_Pi_HAT/) (microphone-array boards) if on a budget and just want something simple to test using project.
 
-A list for possible compatible hardware can be found in the [PiCompose documentation](https://github.com/florian-asche/PiCompose) but basically any microphone that works with [Pipewire](https://pipewire.org/) can be used with the prebuild image.
+For an all-in-in one setup two recommended solution is to use a Raspberry Pi Zero 2W SBC (Single Board Computer) in combination with the [Satellite1 Hat Board](https://futureproofhomes.net/products/satellite1-top-microphone-board) or the [Respeaker Lite](https://wiki.seeedstudio.com/reSpeaker_usb_v3/). Those have microphone-array designed for far-field voice capture with the added benefit of using an onboard XMOS DSP microcontroller with custom firmware which does advanced audio pre-processing for microphone cleanup that result in very good voice recognition capabilities (as it runs algorithms for Noise Suppression, Acoustic Echo Cancellation, Interference Cancellation, and Automatic Gain Control).
+
+As for the minimum required compute performance on these satellites the target reference hardware for testing is currently a 64-bit ARM-based SBC based on Raspberry Pi RP3A0 SiP (System-in-Package); which means the Raspberry Pi Zero 2 W, Raspberry Pi Compute Module 3E (Raspberry Pi CM3E), or other development boards that uses the Compute Module Zero" (Raspberry Pi CM0), as all of which have similar specifications to the Raspberry Pi 3 B/B+ but with a CPU running at a lower frequency.
 
 ### Software:
 
