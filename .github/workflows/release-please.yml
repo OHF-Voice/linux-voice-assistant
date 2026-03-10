@@ -1,17 +1,22 @@
-# .github/workflows/release-please.yml
+# .github/workflows/release.yml
 on:
   push:
-    branches:
-      - main
-
-permissions:
-  contents: write
-  pull-requests: write
+    tags:
+      - "v*"
 
 jobs:
-  release-please:
+  release:
     runs-on: ubuntu-latest
     steps:
-      - uses: googleapis/release-please-action@v4
+      - uses: actions/checkout@v4
+
+      - name: Update changelog
+        uses: orhun/git-cliff-action@v3
         with:
-          release-type: python
+          args: --tag ${{ github.ref_name }} --prepend CHANGELOG.md
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}   # ← your tag name becomes the release name
+          body_path: CHANGELOG.md
