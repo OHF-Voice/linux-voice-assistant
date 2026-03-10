@@ -6,7 +6,7 @@ from dataclasses import asdict, dataclass, field
 from enum import Enum
 from pathlib import Path
 from queue import Queue
-from typing import TYPE_CHECKING, Dict, List, Optional, Set, Union
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Union
 
 if TYPE_CHECKING:
     from pymicro_wakeword import MicroWakeWord
@@ -19,6 +19,7 @@ if TYPE_CHECKING:
         ThinkingSoundEntity,
     )
     from .mpv_player import MpvMediaPlayer
+    from .peripheral_api import PeripheralAPIServer
     from .satellite import VoiceSatelliteProtocol
 
 _LOGGER = logging.getLogger(__name__)
@@ -91,6 +92,11 @@ class ServerState:
     satellite: "Optional[VoiceSatelliteProtocol]" = None
     mute_switch_entity: "Optional[MuteSwitchEntity]" = None
     thinking_sound_entity: "Optional[ThinkingSoundEntity]" = None
+
+    # Optional peripheral WebSocket API (LEDs, buttons, HAT boards).
+    # Assigned in __main__ before the event loop starts.
+    peripheral_api: "Optional[Any]" = None  # PeripheralAPIServer at runtime
+
     wake_words_changed: bool = False
     refractory_seconds: float = 2.0
     thinking_sound_enabled: bool = False
@@ -120,7 +126,11 @@ class ServerState:
             self.preferences.volume,
         )
 
-        if abs(self.volume - clamped_volume) < 0.0001 and self.preferences.volume is not None and abs(self.preferences.volume - clamped_volume) < 0.0001:
+        if (
+            abs(self.volume - clamped_volume) < 0.0001
+            and self.preferences.volume is not None
+            and abs(self.preferences.volume - clamped_volume) < 0.0001
+        ):
             _LOGGER.debug("Skipping save - volume unchanged")
             return
 
@@ -129,3 +139,12 @@ class ServerState:
         _LOGGER.info("Saving volume %s to %s", clamped_volume, self.preferences_path)
         self.save_preferences()
         _LOGGER.info("Volume saved successfully")
+
+        # Notify peripheral container (thread-safe; may be called from mpv callbacks)
+        api = self.peripheral_api
+        if api is not None:
+            from .peripheral_api import LVAEvent  # local import avoids circular dep
+
+            api.emit_event_sync(
+                LVAEvent.VOLUME_CHANGED, {"volume": round(clamped_volume, 3)}
+            )
