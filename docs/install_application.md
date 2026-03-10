@@ -202,8 +202,8 @@ Environment=PATH=/home/pi/linux-voice-assistant/.venv/bin:/usr/bin:/bin
 # Environment=ENABLE_DEBUG="1"
 # Environment=LIST_DEVICES="1"
 # Environment=CLIENT_NAME="My Voice Assistant Speaker"
-Environment=LVA_PULSE_SERVER="unix:/run/user/${LVA_USER_ID}/pulse/native"
-Environment=LVA_XDG_RUNTIME_DIR="/run/user/${LVA_USER_ID}"
+Environment=LVA_PULSE_SERVER="/run/user/<replace_with_your_user_id>/pulse/native"
+Environment=LVA_XDG_RUNTIME_DIR="/run/user/<replace_with_your_user_id>"
 Environment=LVA_PULSE_COOKIE="/home/pi/linux-voice-assistant/tmp_pulse_cookie"
 Environment=PREFERENCES_FILE="/home/pi/linux-voice-assistant/preferences.json"
 # Environment=NETWORK_INTERFACE="eth0"
@@ -275,7 +275,7 @@ The following variables can be configured in the `.env` or in the service file:
 | `LVA_USER_ID` | `1000` | User ID for the container (usually 1000 for the first user) |
 | `LVA_USER_GROUP` | `1000` | GROUP ID for the container (usually 1000 for the first users group) |
 | `CLIENT_NAME` | (optional) | Custom name for this voice assistant instance |
-| `LVA_PULSE_SERVER` | `unix:/run/user/${LVA_USER_ID}/pulse/native` | Path to the PulseAudio/PipeWire socket |
+| `LVA_PULSE_SERVER` | `/run/user/${LVA_USER_ID}/pulse/native` | Path to the PulseAudio/PipeWire socket (In some cases a `:unix`infront of the path is needed) |
 | `LVA_XDG_RUNTIME_DIR` | `/run/user/${LVA_USER_ID}` | XDG runtime directory |
 | `LVA_PULSE_COOKIE` | `/app/configuration/tmp_pulse_cookie` | Cookie file for PulseAudio if you use encryption. By default disabled. We use a tmp file to avoid errors if the file is not found |
 | `ENABLE_DEBUG` | (optional) | Set to "1" to enable debug mode |
