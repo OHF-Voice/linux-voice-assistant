@@ -44,6 +44,8 @@ cp .env.example .env
 
 💡 **Note:** The LVA_VERSION variable downloads the latest available version of LVA. If you want another version, you can specify it with the LVA_VERSION variable.
 
+You can change the used version in the docker-compose.yml.
+
 ### Docker Image Tags
 
 | Tag | Description | Example |
@@ -59,44 +61,7 @@ Edit the .env file and change the values to your needs:
 vim .env
 ```
 
-```ini
-# Linux-Voice-Assistant - Docker Environment Configuration
-# Copy this file to .env and customize for your setup by 'cp .env.example .env'
-
-### Enable debug mode (optional):
-# ENABLE_DEBUG="1"
-
-### List audio devices (optional):
-# if enabled normal startup is disabled
-# LIST_DEVICES="1"
-
-### User ID:
-# This is used to set the correct permissions for the accessing the audio device and accessing the PulseAudio socket
-LVA_USER_ID="1000"
-LVA_USER_GROUP="1000"
-
-### Name for the client (optional):
-# by default it uses the HOSTNAME variable from the piCompose environment which includes the MAC from the network card
-# CLIENT_NAME="My Voice Assistant Speaker"
-
-### PulseAudio socket path on the host:
-# PulseAudio Server:    /run/user/1000/pulse
-# Pipewire Server:      /run/user/1000/pulse/native
-LVA_PULSE_SERVER="unix:/run/user/${LVA_USER_ID}/pulse/native"
-LVA_XDG_RUNTIME_DIR="/run/user/${LVA_USER_ID}"
-
-### Path to the preferences file (optional):
-# PREFERENCES_FILE="/app/configuration/preferences.json"
-
-### Port for the api (optional):
-# PORT="6053"
-
-### Audio input device (optional):
-
-[...]
-```
-
-Please use the original file from the repository. You can change various settings, for example the audio sounds which are played when the wake word is detected or when the timer is finished.
+You can change various settings, for example the audio sounds which are played when the wake word is detected or when the timer is finished. You also need to set the correct user and group id, and the pulseaudio server in the `.env`file.
 
 💡 **Note:** You can exit vim with `:wq` or `:q!` if you dont want to save the changes.
 
@@ -202,9 +167,9 @@ Environment=PATH=/home/pi/linux-voice-assistant/.venv/bin:/usr/bin:/bin
 # Environment=ENABLE_DEBUG="1"
 # Environment=LIST_DEVICES="1"
 # Environment=CLIENT_NAME="My Voice Assistant Speaker"
-Environment=LVA_PULSE_SERVER="/run/user/<replace_with_your_user_id>/pulse/native"
-Environment=LVA_XDG_RUNTIME_DIR="/run/user/<replace_with_your_user_id>"
-Environment=LVA_PULSE_COOKIE="/home/pi/linux-voice-assistant/tmp_pulse_cookie"
+Environment=PULSE_SERVER="/run/user/<replace_with_your_user_id>/pulse/native"
+Environment=XDG_RUNTIME_DIR="/run/user/<replace_with_your_user_id>"
+Environment=PULSE_COOKIE="/home/pi/linux-voice-assistant/tmp_pulse_cookie"
 Environment=PREFERENCES_FILE="/home/pi/linux-voice-assistant/preferences.json"
 # Environment=NETWORK_INTERFACE="eth0"
 # Environment=HOST="0.0.0.0"
@@ -296,6 +261,7 @@ The following variables can be configured in the `.env` or in the service file:
 | `MUTE_SOUND` | `sounds/mute_switch_on.flac` | Sound file for mute on |
 | `UNMUTE_SOUND` | `sounds/mute_switch_off.flac` | Sound file for Configure Audio Devices
 
+💡 **Note:** For the systemd installation some variables set in the service need to be without `LVA_` prefix.
 
 ### Use own soundfiles:
 
