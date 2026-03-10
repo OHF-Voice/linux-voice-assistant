@@ -87,6 +87,6 @@
 - Fix mpv pause state when loading new media
 - Fix issues with audio handling
 
-## [1.0.0] - 2024-09-16
+## 1.0.0
 
 - Initial release
