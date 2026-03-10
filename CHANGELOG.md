@@ -1,6 +1,6 @@
 # Changelog
 
-## [1.1.6] - 2025-03-04
+## 1.1.6
 
 ### Bug Fixes
 - Start listening after wakeup sound
@@ -13,7 +13,7 @@
 - Help output on application parameters
 - Added default sample rate to pulse documentation
 
-## [1.1.5] - 2025-02-27
+## 1.1.5
 
 ### Bug Fixes
 - Fix timer finished sound not looping
@@ -28,7 +28,7 @@
 - Allow portainer stack to point directly to docker-compose.yml
 - Improve documentation
 
-## [1.1.4] - 2025-02-20
+## 1.1.4
 
 ### Improvements
 - Added custom paths to docker for wakeword and sounds
@@ -37,7 +37,7 @@
 - Updated documentation regarding wakeword and sounds
 - Documentation corrections
 
-## [1.1.3] - 2025-02-14
+## 1.1.3
 
 ### Bug Fixes
 - Hotfix: typo in network-interface output order causing application crash
@@ -45,7 +45,7 @@
 ### Documentation
 - Correct LVA_USER_ID variable name
 
-## [1.1.2] - 2025-02-13
+## 1.1.2
 
 ### Breaking Changes
 - MAC address detection has been fixed. After updating, it may be necessary 
@@ -66,12 +66,12 @@
 - Fix client-name validation (no spaces allowed)
 - Fix example configuration
 
-## [1.1.1] - 2025-02-10
+## 1.1.1
 
 ### Bug Fixes
 - Handle STOP command correctly in media_player
 
-## [1.1.0] - 2025-02-10
+## 1.1.0
 
 ### Features
 - Support custom/external wake words
