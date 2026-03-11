@@ -118,7 +118,6 @@ for i in $(seq 1 $CP_MAX_RETRIES); do
   echo "⏳ PulseAudio not running yet, retrying in $CP_RETRY_DELAY s..."
   sleep $CP_RETRY_DELAY
 done
-echo "✅ PulseAudio is running"
 
 
 ### Start application
