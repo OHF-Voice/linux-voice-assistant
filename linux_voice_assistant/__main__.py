@@ -173,7 +173,7 @@ async def main() -> None:
     logging.basicConfig(level=logging.DEBUG if args.debug else logging.INFO)
     _LOGGER.debug(args)
 
-    # Resolve network interface for mac-adress detection
+    # Resolve network interface for mac-address detection
     if not args.network_interface:
         print("No network interface specified, try to detect default interface")
         network_interface = get_default_interface()
