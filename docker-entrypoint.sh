@@ -81,12 +81,20 @@ if [ -n "${UNMUTE_SOUND}" ]; then
 fi
 
 
+# Add cookie file for pulseaudio to prevent errors
+if [ ! -f "$PULSE_COOKIE" ]; then
+  echo "Creating PulseAudio cookie file"
+  touch "$PULSE_COOKIE"
+  chmod 600 "$PULSE_COOKIE"
+fi
+
+
 ### Wait for PulseAudio
 # Wait for PulseAudio to be available before starting the application
 CP_MAX_RETRIES=30
 CP_RETRY_DELAY=1
 ### while maybe besser?
-echo "Checking port $PORT..."
+echo "Checking PulseAudio service status..."
 for i in $(seq 1 $CP_MAX_RETRIES); do
   # Check if PulseAudio is running
   if pactl info >/dev/null 2>&1; then
@@ -102,28 +110,7 @@ for i in $(seq 1 $CP_MAX_RETRIES); do
   echo "⏳ PulseAudio not running yet, retrying in $CP_RETRY_DELAY s..."
   sleep $CP_RETRY_DELAY
 done
-
-
-### Check port availability
-# PORT variable is used from env
-PA_MAX_RETRIES=30
-PA_RETRY_DELAY=2
-echo "Checking port $PORT..."
-for i in $(seq 1 $PA_MAX_RETRIES); do
-  # Wait for port to be free (in case of rapid restarts)
-  if ! ss -tln | grep -q ":${PORT} "; then
-      echo "Port $PORT is available"
-      break
-  fi
-
-  if [ $i -eq $PA_MAX_RETRIES ]; then
-      echo "ERROR: Port $PORT still in use after $((PA_MAX_RETRIES * PA_RETRY_DELAY)) seconds"
-      exit 2
-  fi
-
-  echo "Attempt $i/$PA_MAX_RETRIES: Port $PORT in use, waiting ${PA_RETRY_DELAY}s..."
-  sleep $PA_RETRY_DELAY
-done
+echo "✅ PulseAudio is running"
 
 
 ### Start application

@@ -1,3 +1,4 @@
+import logging
 from abc import abstractmethod
 from collections.abc import Iterable
 from typing import TYPE_CHECKING, Callable, List, Optional, Union
@@ -74,12 +75,9 @@ class MediaPlayerEntity(ESPHomeEntity):
         self.previous_volume = 1.0
         self.music_player = music_player
         self.announce_player = announce_player
-<<<<<<< sendspin
         self.sendspin_bridge: Optional["SendspinBridge"] = None
-=======
         self._on_volume_changed = on_volume_changed
         self.apply_volume_from_state(initial_volume)         
->>>>>>> main
         self._log = logging.getLogger(f"{self.__class__.__name__}[{self.key}]")
 
     def set_sendspin_bridge(self, bridge: "SendspinBridge") -> None:
@@ -128,6 +126,7 @@ class MediaPlayerEntity(ESPHomeEntity):
             self._stop_sendspin_if_playing()
 
         if announcement:
+            self._log.debug("PLAY: announcement true")
             if self.music_player.is_playing:
                 # HA music playing: pause it, play announcement, then resume both
                 self.music_player.pause()
@@ -148,6 +147,7 @@ class MediaPlayerEntity(ESPHomeEntity):
                         lambda: self._safe_send_state(MediaPlayerState.PAUSED),
                         done_callback,
                     ),
+                    done_callback=lambda: call_all(self.music_player.resume, done_callback),
                 )
             else:
                 # Nothing was playing, just announce then go idle
@@ -155,6 +155,7 @@ class MediaPlayerEntity(ESPHomeEntity):
                     url,
                     done_callback=lambda: call_all(
                         lambda: self._safe_send_state(MediaPlayerState.IDLE),
+                        self.server.send_messages([self._update_state(MediaPlayerState.IDLE)]),
                         done_callback,
                     ),
                 )
@@ -164,6 +165,12 @@ class MediaPlayerEntity(ESPHomeEntity):
                 url,
                 done_callback=lambda: call_all(
                     lambda: self._safe_send_state(MediaPlayerState.IDLE),
+            self._log.debug("PLAY: announcement false")
+            # Music
+            self.music_player.play(
+                url,
+                done_callback=lambda: call_all(
+                    self.server.send_messages([self._update_state(MediaPlayerState.IDLE)]),
                     done_callback,
                 ),
             )
@@ -177,6 +184,7 @@ class MediaPlayerEntity(ESPHomeEntity):
             self._log.debug("MediaPlayerCommandRequest matched for this key")
 
             if msg.has_media_url:
+                self._log.debug("Executing PLAY")
                 self._log.debug("Message has media URL: %s", msg.media_url)
                 announcement = msg.has_announcement and msg.announcement
                 yield from self.play(msg.media_url, announcement=announcement)
@@ -221,7 +229,6 @@ class MediaPlayerEntity(ESPHomeEntity):
 
             elif msg.has_volume:
                 self._log.debug("Message has volume: %.2f", msg.volume)
-<<<<<<< sendspin
                 volume = int(msg.volume * 100)
                 self.music_player.set_volume(volume)
                 self.announce_player.set_volume(volume)
@@ -229,14 +236,12 @@ class MediaPlayerEntity(ESPHomeEntity):
                 if self.sendspin_bridge:
                     self.sendspin_bridge.set_volume(volume, self.muted)
                 self.volume = msg.volume
-=======
                 self._apply_volume(msg.volume, persist=True)
                 if hasattr(self.server, "state") and getattr(self.server, "state", None) is not None:
                     self._log.debug("Persisting volume to preferences")
                     self.server.state.persist_volume(self.volume)
                 else:
                     self._log.warning("Cannot persist volume - server.state not available")
->>>>>>> main
                 yield self._update_state(self.state)
 
         elif isinstance(msg, ListEntitiesRequest):
@@ -255,6 +260,8 @@ class MediaPlayerEntity(ESPHomeEntity):
             self._log.warning("Unknown message type received: %s", type(msg))
 
     def _update_state(self, new_state: MediaPlayerState) -> MediaPlayerStateResponse:
+        self._log.debug("SET NEW STATE: %s => %s", self.state, new_state)
+        self._log.debug("SET NEW STATE: %s => %s", self.state.name, new_state.name)
         self.state = new_state
         return self._get_state_message()
 
@@ -310,6 +317,7 @@ class MediaPlayerEntity(ESPHomeEntity):
         if self._on_volume_changed and persist:
             self._on_volume_changed(normalized)
 
+
 # -----------------------------------------------------------------------------
 
 
@@ -330,9 +338,7 @@ class MuteSwitchEntity(ESPHomeEntity):
         self.object_id = object_id
         self._get_muted = get_muted
         self._set_muted = set_muted
-        self._switch_state = (
-            self._get_muted()
-        )  # Sync internal state with actual muted value on init
+        self._switch_state = self._get_muted()  # Sync internal state with actual muted value on init
 
     def update_set_muted(self, set_muted: Callable[[bool], None]) -> None:
         # Update the callback used to change the mute state.
@@ -387,15 +393,11 @@ class ThinkingSoundEntity(ESPHomeEntity):
         self._set_thinking_sound_enabled = set_thinking_sound_enabled
         self._switch_state = self._get_thinking_sound_enabled()  # Sync internal state
 
-    def update_get_thinking_sound_enabled(
-        self, get_thinking_sound_enabled: Callable[[], bool]
-    ) -> None:
+    def update_get_thinking_sound_enabled(self, get_thinking_sound_enabled: Callable[[], bool]) -> None:
         # Update the callback used to read the thinking sound enabled state.
         self._get_thinking_sound_enabled = get_thinking_sound_enabled
 
-    def update_set_thinking_sound_enabled(
-        self, set_thinking_sound_enabled: Callable[[bool], None]
-    ) -> None:
+    def update_set_thinking_sound_enabled(self, set_thinking_sound_enabled: Callable[[bool], None]) -> None:
         # Update the callback used to change the thinking sound enabled state.
         self._set_thinking_sound_enabled = set_thinking_sound_enabled
 

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 import asyncio
+import errno
 import json
 import logging
 import sys
@@ -12,18 +13,20 @@ from typing import Dict, List, Optional, Set, Union
 
 import numpy as np
 import soundcard as sc
+from getmac import get_mac_address  # type: ignore
 from pymicro_wakeword import MicroWakeWord, MicroWakeWordFeatures
 from pyopen_wakeword import OpenWakeWord, OpenWakeWordFeatures
 
 from .models import AvailableWakeWord, Preferences, ServerState, WakeWordType
 from .mpv_player import MpvMediaPlayer
 from .satellite import VoiceSatelliteProtocol
-from getmac import get_mac_address
+from .util import (
+    get_default_interface,
+    get_default_ipv4,
+    get_esphome_version,
+    get_version,
+)
 from .zeroconf import HomeAssistantZeroconf
-from .util import get_default_interface
-from .util import get_default_ipv4
-from .util import get_version
-from .util import get_esphome_version
 
 _LOGGER = logging.getLogger(__name__)
 _MODULE_DIR = Path(__file__).parent
@@ -38,11 +41,12 @@ _SOUNDS_DIR = _REPO_DIR / "sounds"
 async def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--name"
+        "--name",
+        help="Real name for the device",
     )
     parser.add_argument(
         "--audio-input-device",
-        help="soundcard name for input device (see --list-input-devices)",
+        help="Name for the audio input device (see --list-input-devices)",
     )
     parser.add_argument(
         "--list-input-devices",
@@ -50,13 +54,14 @@ async def main() -> None:
         help="List audio input devices and exit",
     )
     parser.add_argument(
-        "--audio-input-block-size", 
-        type=int, 
-        default=1024
+        "--audio-input-block-size",
+        type=int,
+        default=1024,
+        # todo
     )
     parser.add_argument(
         "--audio-output-device",
-        help="MPV device name for output (see --list-output-devices). SendSpin will auto-match to sounddevice.",
+        help="Name for the audio output device (see --list-output-devices). SendSpin will auto-match to sounddevice.",
     )
     parser.add_argument(
         "--list-output-devices",
@@ -67,22 +72,22 @@ async def main() -> None:
         "--wake-word-dir",
         default=[_WAKEWORDS_DIR],
         action="append",
-        help="Directory with wake word models (.tflite) and configs (.json)",
+        help="Directory with wake word models (.tflite) and configuration (.json)",
     )
     parser.add_argument(
-        "--wake-model", 
-        default="okay_nabu", 
-        help="Id of active wake model"
+        "--wake-model",
+        default="okay_nabu",
+        help="File name of the first active wake model",
     )
     parser.add_argument(
-        "--stop-model", 
-        default="stop", 
-        help="Id of stop model"
+        "--stop-model",
+        default="stop",
+        help="File name of the stop model",
     )
     parser.add_argument(
         "--download-dir",
         default=_REPO_DIR / "local",
-        help="Directory to download custom wake word models, etc.",
+        help="Directory to download custom wake word models to",
     )
     parser.add_argument(
         "--refractory-seconds",
@@ -91,12 +96,14 @@ async def main() -> None:
         help="Seconds before wake word can be activated again",
     )
     parser.add_argument(
-        "--wakeup-sound", 
-        default=str(_SOUNDS_DIR / "wake_word_triggered.flac")
+        "--wakeup-sound",
+        default=str(_SOUNDS_DIR / "wake_word_triggered.flac"),
+        help="Directory and file name for wake sound (when you say the wake word)",
     )
     parser.add_argument(
-        "--timer-finished-sound", 
-        default=str(_SOUNDS_DIR / "timer_finished.flac")
+        "--timer-finished-sound",
+        default=str(_SOUNDS_DIR / "timer_finished.flac"),
+        help="Directory and file name for timer finished sound",
     )
     parser.add_argument(
         "--processing-sound",
@@ -113,28 +120,35 @@ async def main() -> None:
         default=str(_SOUNDS_DIR / "mute_switch_off.flac"),
         help="Sound to play when unmuting the assistant",
     )
-    parser.add_argument("--preferences-file", default=_REPO_DIR / "preferences.json")
+    parser.add_argument(
+        "--preferences-file",
+        default=_REPO_DIR / "preferences.json",
+        help="Directory and file name for the file where the preferences are stored in JSON format",
+    )
     parser.add_argument(
         "--host",
-        help="IP-Address for ESPHome server", # 0.0.0.0 is IPv4, None is all interfaces
+        help="Optional host IP address to bind to (default: Autodetected by network interface)",  # 0.0.0.0 is IPv4, None is all interfaces
     )
     parser.add_argument(
         "--network-interface",
-        help="Network interface to use for ESPHome server (default: will be automatically detected)",
+        help="Network interface the application will be listening on (default: will be automatically detected by gateway)",
     )
     # Note that default port is also set in docker-entrypoint.sh
     parser.add_argument(
-        "--port", type=int, 
-        default=6053, 
-        help="Port for ESPHome server (default: 6053)"
+        "--port",
+        type=int,
+        default=6053,
+        help="Port the application is listenening on (default: 6053)",
     )
     parser.add_argument(
         "--enable-thinking-sound",
         action="store_true",
-        help="Enable thinking sound on startup",
+        help="Enable thinking finish sound, when the assistant is done thinking and needed more time to process",
     )
     parser.add_argument(
-        "--debug", action="store_true", help="Print DEBUG messages to console"
+        "--debug",
+        action="store_true",
+        help="Add this to enable debug logging",
     )
     #
     # SendSpin client options
@@ -155,7 +169,7 @@ async def main() -> None:
     args = parser.parse_args()
 
     if args.list_input_devices:
-        print("Input devices")
+        print("Audio Input devices:")
         print("=" * 13)
         for idx, mic in enumerate(sc.all_microphones()):
             print(f"[{idx}]", mic.name)
@@ -164,29 +178,37 @@ async def main() -> None:
     if args.list_output_devices:
         from .audio_device_util import list_output_devices
         list_output_devices()
+        from mpv import MPV
+
+        player = MPV()
+        print("Audio output devices:")
+        print("=" * 14)
+
+        for speaker in player.audio_device_list:  # type: ignore
+            print(speaker["name"] + ":", speaker["description"])
         return
 
     logging.basicConfig(level=logging.DEBUG if args.debug else logging.INFO)
     _LOGGER.debug(args)
 
-    # Resolve network interface for mac-adress detection
+    # Resolve network interface for mac-address detection
     if not args.network_interface:
         print("No network interface specified, try to detect default interface")
         network_interface = get_default_interface()
-        print(f"Default interface detected:", network_interface)
+        print(f"Default interface detected: {network_interface}")
     else:
         print("Network interface specified")
         network_interface = args.network_interface
-        print(f"Using network interface: ", network_interface)
+        print(f"Using network interface: {network_interface}")
 
     # Resolve ip_address where the application will be listening
     if not args.host:
         print("No host (ip-address) specified, try to detect IP-Address")
         host_ip_address = get_default_ipv4(network_interface)
-        print(f"IP-Address detected: ", host_ip_address)
+        print(f"IP-Address detected: {host_ip_address}")
     else:
         print("Host specified")
-        print(f"Using host: ", args.host)
+        print(f"Using host: {args.host}")
         host_ip_address = args.host
 
     # Resolve mac
@@ -350,6 +372,27 @@ async def main() -> None:
     state.music_player.set_volume(initial_volume_percent)
     state.tts_player.set_volume(initial_volume_percent)
 
+    loop = asyncio.get_running_loop()
+    max_attempts = 15
+    attempt = 1
+    server = None
+
+    while attempt <= max_attempts:
+        try:
+            server = await loop.create_server(lambda: VoiceSatelliteProtocol(state), host=host_ip_address, port=args.port)
+            break  # connect successful, exit the loop
+        except OSError as err:
+            message = err.strerror or str(err)
+            if err.errno == errno.EADDRINUSE:
+                message = "address already in use"
+            if attempt < max_attempts:
+                _LOGGER.warning("Attempt %d/%d failed to bind on address (%s, %s): %s. Retrying in 1 second...", attempt, max_attempts, host_ip_address, args.port, message)
+                await asyncio.sleep(1)
+                attempt += 1
+            else:
+                _LOGGER.exception("All %d attempts failed to bind on address (%s, %s): %s", max_attempts, host_ip_address, args.port, message)
+                sys.exit(1)
+
     process_audio_thread = threading.Thread(
         target=process_audio,
         args=(state, mic, args.audio_input_block_size),
@@ -388,9 +431,9 @@ async def main() -> None:
     await discovery.register_server()
 
     try:
-        async with server:
+        async with server:  # type: ignore
             _LOGGER.info("Server started (host=%s, port=%s)", host_ip_address, args.port)
-            await server.serve_forever()
+            await server.serve_forever()  # type: ignore
     except KeyboardInterrupt:
         pass
     finally:
@@ -425,11 +468,7 @@ def process_audio(state: ServerState, mic, block_size: int):
         with mic.recorder(samplerate=16000, channels=1, blocksize=block_size) as mic_in:
             while True:
                 audio_chunk_array = mic_in.record(block_size).reshape(-1)
-                audio_chunk = (
-                    (np.clip(audio_chunk_array, -1.0, 1.0) * 32767.0)
-                    .astype("<i2")  # little-endian 16-bit signed
-                    .tobytes()
-                )
+                audio_chunk = (np.clip(audio_chunk_array, -1.0, 1.0) * 32767.0).astype("<i2").tobytes()  # little-endian 16-bit signed
 
                 if state.satellite is None:
                     continue
@@ -437,11 +476,7 @@ def process_audio(state: ServerState, mic, block_size: int):
                 if (not wake_words) or (state.wake_words_changed and state.wake_words):
                     # Update list of wake word models to process
                     state.wake_words_changed = False
-                    wake_words = [
-                        ww
-                        for ww in state.wake_words.values()
-                        if ww.id in state.active_wake_words
-                    ]
+                    wake_words = [ww for ww in state.wake_words.values() if ww.id in state.active_wake_words]
 
                     has_oww = False
                     for wake_word in wake_words:
@@ -481,9 +516,7 @@ def process_audio(state: ServerState, mic, block_size: int):
                         if activated and not state.muted:
                             # Check refractory
                             now = time.monotonic()
-                            if (last_active is None) or (
-                                (now - last_active) > state.refractory_seconds
-                            ):
+                            if (last_active is None) or ((now - last_active) > state.refractory_seconds):
                                 state.satellite.wakeup(wake_word)
                                 last_active = now
 
@@ -493,11 +526,7 @@ def process_audio(state: ServerState, mic, block_size: int):
                         if state.stop_word.process_streaming(micro_input):
                             stopped = True
 
-                    if (
-                        stopped
-                        and (state.stop_word.id in state.active_wake_words)
-                        and not state.muted
-                    ):
+                    if stopped and (state.stop_word.id in state.active_wake_words) and not state.muted:
                         state.satellite.stop()
                 except Exception:
                     _LOGGER.exception("Unexpected error handling audio")

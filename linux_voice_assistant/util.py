@@ -1,12 +1,12 @@
 """Utility methods."""
 
-import uuid
-# netifaces lib is from netifaces2
-import netifaces
 from collections.abc import Callable
-from importlib.metadata import version, PackageNotFoundError
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Optional
+
+# netifaces lib is from netifaces2
+import netifaces
 
 # Cache for version to avoid repeated file reading
 _version_cache: Optional[str] = None
@@ -16,53 +16,53 @@ _esphome_version_cache: Optional[str] = None
 def get_version() -> str:
     """
     Read the version from version.txt file.
-    
+
     This function reads the content safely without risk of code injection,
     as it only reads raw text and performs no evaluation.
-    
+
     Returns:
-        str: The version from version.txt or 'unknown' if the file
-             does not exist or cannot be read.
+        str:    The version from version.txt or 'unknown' if the file
+                does not exist or cannot be read.
     """
     global _version_cache
-    
+
     if _version_cache is not None:
         return _version_cache
-    
+
     version_file = Path(__file__).parent.parent / "version.txt"
-    
+
     try:
         # Sicher lesen: nur Rohtext, keine Evaluierung
-        version = version_file.read_text(encoding="utf-8").strip()
-        _version_cache = version if version else "unknown"
+        file_version = version_file.read_text(encoding="utf-8").strip()
+        _version_cache = file_version if file_version else "unknown"
     except (FileNotFoundError, PermissionError, OSError):
         _version_cache = "unknown"
-    
+
     return _version_cache
 
 
 def get_esphome_version() -> str:
     """
     Read the version of the installed aioesphomeapi package.
-    
+
     This function uses importlib.metadata to safely retrieve the version
     of an installed Python package without executing any code from the
     package itself.
-    
+
     Returns:
-        str: The version of aioesphomeapi (e.g., '42.7.0'), or 'unknown'
-             if the package is not installed or the version cannot be read.
+        str:    The version of aioesphomeapi (e.g., '42.7.0'), or 'unknown'
+                if the package is not installed or the version cannot be read.
     """
     global _esphome_version_cache
-    
+
     if _esphome_version_cache is not None:
         return _esphome_version_cache
-    
+
     try:
         _esphome_version_cache = version("aioesphomeapi")
     except PackageNotFoundError:
         _esphome_version_cache = "unknown"
-    
+
     return _esphome_version_cache
 
 
@@ -87,7 +87,7 @@ def get_default_interface():
 
     # gateway_info is a tuple: (gateway_ip, interface_name)
     interface_name = gateway_info[1]
-    #print(f"Default interface: {interface_name}")
+    # print(f"Default interface: {interface_name}")
     return interface_name
 
 
@@ -96,7 +96,7 @@ def get_default_ipv4(interface: str):
         return None
 
     addresses = netifaces.ifaddresses(interface)
-    ipv4_info = addresses.get(netifaces.AF_INET)
+    ipv4_info = addresses.get(netifaces.AF_INET)  # type: ignore
 
     if not ipv4_info:
         return None

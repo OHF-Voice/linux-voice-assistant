@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
-from .state import PlayerState
+
+from linux_voice_assistant.player.state import PlayerState
 
 
 class AudioPlayer(ABC):
