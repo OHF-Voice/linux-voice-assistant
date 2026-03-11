@@ -4,7 +4,11 @@
 
 An experimental Linux-Voice-Assistant software for [Home Assistant](https://www.home-assistant.io/) remote voice control and interaction.
 
-This project let you a build Linux-based hardware satellites designed to use [Assist](https://www.home-assistant.io/voice_control/) for Home Assistant. This allows you to experiment making a custom [assist satellite](https://www.home-assistant.io/integrations/assist_satellite/) running on relativly powerful hardware that have the possibility to do onboard voice/audio processing (as an alternative to satellite hardware based on microcontrollers with limited compute resources on on-device processes).
+This project enables you to build a Linux-based voice assistant designed to use [Assist](https://www.home-assistant.io/voice_control/) for Home Assistant. It allows you to create your own smart speaker that runs on any x64 or ARM64 hardware capable of handling local audio processing (using PulseAudio).
+
+Unlike simpler voice satellites that run on microcontrollers with very limited compute power, this setup can perform local wake word detection (OWW/MWW) and process some data on-device. 
+
+Because it runs on a full Linux system and offers access significantly more local computing resources for additional features and other integrations on the same satellite, this approach also provides greater flexibility for customization (such as for example experiment with using PipeWire).
 
 [![A project from the Open Home Foundation](https://www.openhomefoundation.org/badges/ohf-project.png)](https://www.openhomefoundation.org/)
 
