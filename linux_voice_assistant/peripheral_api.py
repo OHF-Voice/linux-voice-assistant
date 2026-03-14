@@ -45,6 +45,8 @@ Commands accepted from the peripheral container
   volume_up
   volume_down
   stop_timer_ringing
+  stop_media_player
+  stop_speaking
 """
 
 from __future__ import annotations
@@ -96,6 +98,8 @@ class LVACommand(str, Enum):
     VOLUME_UP = "volume_up"
     VOLUME_DOWN = "volume_down"
     STOP_TIMER_RINGING = "stop_timer_ringing"
+    STOP_MEDIA_PLAYER = "stop_media_player"
+    STOP_SPEAKING = "stop_speaking"
 
 
 # ---------------------------------------------------------------------------
@@ -288,6 +292,33 @@ class PeripheralAPIServer:
                 state.tts_player.stop()
                 satellite.unduck()
                 await self.emit_event(LVAEvent.IDLE)
+
+        elif command == LVACommand.STOP_MEDIA_PLAYER:
+            state.music_player.stop()
+            if state.media_player_entity is not None:
+                from aioesphomeapi.model import MediaPlayerState  # type: ignore[import]
+                from aioesphomeapi.api_pb2 import MediaPlayerStateResponse  # type: ignore[attr-defined]
+
+                state.media_player_entity.state = MediaPlayerState.IDLE
+                if satellite is not None:
+                    satellite.send_messages(
+                        [
+                            MediaPlayerStateResponse(
+                                key=state.media_player_entity.key,
+                                state=MediaPlayerState.IDLE,
+                                volume=state.media_player_entity.volume,
+                                muted=state.media_player_entity.muted,
+                            )
+                        ]
+                    )
+
+        elif command == LVACommand.STOP_SPEAKING:
+            # Stop TTS/announcement playback and clean up pipeline state.
+            # Delegates to satellite.stop() which handles unducking, clearing
+            # the stop word, sending VoiceAssistantAnnounceFinished, and
+            # emitting TTS_FINISHED + IDLE to peripherals.
+            if satellite is not None:
+                satellite.stop()
 
     # ------------------------------------------------------------------
     # Helpers
