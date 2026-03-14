@@ -42,8 +42,6 @@
 
 - **Keyed dispatch for SwitchCommandRequest** (`satellite.py`): `SwitchCommandRequest` messages are now routed by key to the matching entity only, fixing incorrect dispatch to multiple entities.
 
-- **API server handshake stability** (`api_server.py`): Added print statement at connection start (`connection_made`) for debugging; cleaned up logging to reduce noise while maintaining observability.
-
 ### Logging cleanup (per spec)
 
 - Applied logging specification cleanup across `satellite.py`, `api_server.py`, `entity.py`, and `models.py` to reduce log spam while preserving essential debugging information.
