@@ -17,6 +17,8 @@ if TYPE_CHECKING:
         MediaPlayerEntity,
         MuteSwitchEntity,
         ThinkingSoundEntity,
+        WakeWordLibrarySelectEntity,
+        WakeWordSensitivitySelectEntity,
     )
     from .mpv_player import MpvMediaPlayer
     from .satellite import VoiceSatelliteProtocol
@@ -59,6 +61,9 @@ class Preferences:
     active_wake_words: List[str] = field(default_factory=list)
     volume: Optional[float] = None
     thinking_sound: int = 0  # 0 = disabled, 1 = enabled
+    wake_word_library: Optional[str] = None  # "microWakeWord" or "openWakeWord"
+    wake_word_sensitivity: Optional[float] = None  # 0.5, 0.7, 0.9, or None for "Model default"
+    muted: bool = False  # persist mute state across restarts
 
 
 @dataclass
@@ -91,6 +96,10 @@ class ServerState:
     satellite: "Optional[VoiceSatelliteProtocol]" = None
     mute_switch_entity: "Optional[MuteSwitchEntity]" = None
     thinking_sound_entity: "Optional[ThinkingSoundEntity]" = None
+    wake_word_library_select_entity: "Optional[WakeWordLibrarySelectEntity]" = None
+    wake_word_sensitivity_select_entity: "Optional[WakeWordSensitivitySelectEntity]" = None
+    oww_probability_cutoff: float = 0.5
+    micro_default_cutoffs: Dict[str, float] = field(default_factory=dict)
     wake_words_changed: bool = False
     refractory_seconds: float = 2.0
     thinking_sound_enabled: bool = False
@@ -126,6 +135,6 @@ class ServerState:
 
         self.volume = clamped_volume
         self.preferences.volume = clamped_volume
-        _LOGGER.info("Saving volume %s to %s", clamped_volume, self.preferences_path)
+        _LOGGER.debug("Saving volume %s to %s", clamped_volume, self.preferences_path)
         self.save_preferences()
-        _LOGGER.info("Volume saved successfully")
+        _LOGGER.debug("Volume saved successfully")

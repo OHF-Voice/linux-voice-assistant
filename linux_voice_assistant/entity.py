@@ -7,11 +7,14 @@ from typing import Callable, List, Optional, Union
 from aioesphomeapi.api_pb2 import (  # type: ignore[attr-defined]
     ListEntitiesMediaPlayerResponse,
     ListEntitiesRequest,
+    ListEntitiesSelectResponse,
     ListEntitiesSwitchResponse,
     MediaPlayerCommandRequest,
     MediaPlayerStateResponse,
     SubscribeHomeAssistantStatesRequest,
+    SelectCommandRequest,
     SwitchCommandRequest,
+    SelectStateResponse,
     SwitchStateResponse,
 )
 from aioesphomeapi.model import (
@@ -186,7 +189,7 @@ class MediaPlayerEntity(ESPHomeEntity):
             self._log.debug("SubscribeHomeAssistantStatesRequest received")
             yield self._get_state_message()
         else:
-            self._log.warning("Unknown message type received: %s", type(msg))
+            self._log.debug("Unknown message type received: %s", type(msg))
 
     def _update_state(self, new_state: MediaPlayerState) -> MediaPlayerStateResponse:
         self._log.debug("SET NEW STATE: %s => %s", self.state, new_state)
@@ -347,3 +350,204 @@ class ThinkingSoundEntity(ESPHomeEntity):
             # Always return our internal switch state
             self.sync_with_state()
             yield SwitchStateResponse(key=self.key, state=self._switch_state)
+
+
+# -----------------------------------------------------------------------------
+
+
+class WakeWordLibrarySelectEntity(ESPHomeEntity):
+    """Select entity for choosing the wake word library (dynamic discovery from wakewords subdirectories)."""
+
+    def __init__(
+        self,
+        server: APIServer,
+        key: int,
+        name: str,
+        object_id: str,
+        get_library: "Callable[[], str]",
+        set_library: "Callable[[str], None]",
+        on_library_changed: "Callable[[], None]",
+        get_options: "Callable[[], list[str]]" = None,
+    ) -> None:
+        ESPHomeEntity.__init__(self, server)
+
+        self.key = key
+        self.name = name
+        self.object_id = object_id
+        self._get_library = get_library
+        self._set_library = set_library
+        self._on_library_changed = on_library_changed
+        self._get_options = get_options
+        # Default fallback options if no get_options provided
+        self._fallback_options = ["microWakeWord", "openWakeWord"]
+        self._log = logging.getLogger(f"{self.__class__.__name__}[{self.key}]")
+        # Track if we've logged the warning about missing preference
+        self._warned_missing_preference = False
+
+    def _get_effective_options(self) -> list[str]:
+        """Get the current options list, computing dynamically if a getter is provided."""
+        if self._get_options is not None:
+            return self._get_options()
+        return self._fallback_options
+
+    def handle_message(self, msg: message.Message) -> "Iterable[message.Message]":
+        if isinstance(msg, SelectCommandRequest) and (msg.key == self.key):
+            # User selected a new library - update and trigger reconnect
+            new_library = msg.state
+            options = self._get_effective_options()
+            self._log.info("Wake word library change requested: %s", new_library)
+
+            if new_library in options:
+                self._set_library(new_library)
+                self._log.info("Wake word library set to: %s", new_library)
+
+                # Trigger callback to force reconnect
+                if self._on_library_changed:
+                    self._on_library_changed()
+
+                # Return the new state
+                yield SelectStateResponse(key=self.key, state=new_library)
+            else:
+                self._log.warning("Invalid wake word library option: %s", new_library)
+
+        elif isinstance(msg, ListEntitiesRequest):
+            options = self._get_effective_options()
+            # Get current library preference
+            current_library = self._get_library()
+
+            # Check if current preference is in the discovered options
+            if current_library not in options:
+                # Current preference is not valid - log warning once and pick fallback
+                if not self._warned_missing_preference:
+                    self._log.warning(
+                        "Saved wake word library '%s' not in discovered options %s. "
+                        "Falling back to first available library.",
+                        current_library, options
+                    )
+                    self._warned_missing_preference = True
+
+                # Use first available option (or openWakeWord as safe default)
+                if options:
+                    fallback = "openWakeWord" if "openWakeWord" in options else options[0]
+                    self._log.info("Using fallback wake word library: %s", fallback)
+                else:
+                    fallback = "openWakeWord"
+            else:
+                fallback = None
+
+            yield ListEntitiesSelectResponse(
+                object_id=self.object_id,
+                key=self.key,
+                name=self.name,
+                icon="mdi:library",
+                options=options,
+                entity_category=EntityCategory.CONFIG,
+            )
+        elif isinstance(msg, SubscribeHomeAssistantStatesRequest):
+            # Return current state
+            current_library = self._get_library()
+            yield SelectStateResponse(key=self.key, state=current_library)
+
+    def update_get_library(self, get_library: "Callable[[], str]") -> None:
+        """Update the callback used to read the library state."""
+        self._get_library = get_library
+
+    def update_set_library(self, set_library: "Callable[[str], None]") -> None:
+        """Update the callback used to change the library state."""
+        self._set_library = set_library
+
+    def update_on_library_changed(self, on_library_changed: "Callable[[], None]") -> None:
+        """Update the callback invoked when the library changes."""
+        self._on_library_changed = on_library_changed
+
+    def update_get_options(self, get_options: "Callable[[], list[str]]") -> None:
+        """Update the callback used to get the dynamic options list."""
+        self._get_options = get_options
+        # Reset warning flag when options are updated
+        self._warned_missing_preference = False
+
+# -----------------------------------------------------------------------------
+
+
+class WakeWordSensitivitySelectEntity(ESPHomeEntity):
+    """Select entity for choosing wake word sensitivity (applies to both microWakeWord and openWakeWord)."""
+
+    # Sensitivity options mapping to probability cutoffs
+    SENSITIVITY_OPTIONS = ["Model default", "Slightly sensitive", "Moderately sensitive", "Very sensitive"]
+    # Cutoff values for openWakeWord: Model default uses 0.5
+    OWW_CUTOFF_MAP = {
+        "Model default": 0.5,
+        "Very sensitive": 0.5,
+        "Moderately sensitive": 0.7,
+        "Slightly sensitive": 0.9,
+    }
+
+    def __init__(
+        self,
+        server: APIServer,
+        key: int,
+        name: str,
+        object_id: str,
+        get_sensitivity: "callable[[], str]",
+        set_sensitivity: "callable[[str], None]",
+        on_sensitivity_changed: "callable[[], None]",
+    ) -> None:
+        ESPHomeEntity.__init__(self, server)
+
+        self.key = key
+        self.name = name
+        self.object_id = object_id
+        self._get_sensitivity = get_sensitivity
+        self._set_sensitivity = set_sensitivity
+        self._on_sensitivity_changed = on_sensitivity_changed
+        self._options = self.SENSITIVITY_OPTIONS
+        self._log = logging.getLogger(f"{self.__class__.__name__}[{self.key}]")
+
+    def handle_message(self, msg: message.Message) -> "Iterable[message.Message]":
+        if isinstance(msg, SelectCommandRequest) and (msg.key == self.key):
+            new_sensitivity = msg.state
+            self._log.info("Wake word sensitivity change requested: %s", new_sensitivity)
+
+            if new_sensitivity in self._options:
+                self._set_sensitivity(new_sensitivity)
+                self._log.info("Wake word sensitivity set to: %s", new_sensitivity)
+
+                # Trigger callback to apply sensitivity changes immediately
+                if self._on_sensitivity_changed:
+                    self._on_sensitivity_changed()
+
+                # Return the new state
+                yield SelectStateResponse(key=self.key, state=new_sensitivity)
+            else:
+                self._log.warning("Invalid wake word sensitivity option: %s", new_sensitivity)
+
+        elif isinstance(msg, ListEntitiesRequest):
+            yield ListEntitiesSelectResponse(
+                object_id=self.object_id,
+                key=self.key,
+                name=self.name,
+                icon="mdi:format-list-bulleted",
+                options=self._options,
+                entity_category=EntityCategory.CONFIG,
+            )
+        elif isinstance(msg, SubscribeHomeAssistantStatesRequest):
+            # Return current state
+            current_sensitivity = self._get_sensitivity()
+            yield SelectStateResponse(key=self.key, state=current_sensitivity)
+
+    def update_get_sensitivity(self, get_sensitivity: "callable[[], str]") -> None:
+        """Update the callback used to read the sensitivity state."""
+        self._get_sensitivity = get_sensitivity
+
+    def update_set_sensitivity(self, set_sensitivity: "callable[[str], None]") -> None:
+        """Update the callback used to change the sensitivity state."""
+        self._set_sensitivity = set_sensitivity
+
+    def update_on_sensitivity_changed(self, on_sensitivity_changed: "callable[[], None]") -> None:
+        """Update the callback invoked when the sensitivity changes."""
+        self._on_sensitivity_changed = on_sensitivity_changed
+
+    @staticmethod
+    def get_oww_cutoff(sensitivity: str) -> float:
+        """Get the openWakeWord probability cutoff for a given sensitivity level."""
+        return WakeWordSensitivitySelectEntity.OWW_CUTOFF_MAP.get(sensitivity, 0.5)

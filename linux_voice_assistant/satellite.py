@@ -20,6 +20,7 @@ from aioesphomeapi.api_pb2 import (  # type: ignore[attr-defined]
     ListEntitiesRequest,
     MediaPlayerCommandRequest,
     SubscribeHomeAssistantStatesRequest,
+    SelectCommandRequest,
     SwitchCommandRequest,
     VoiceAssistantAnnounceFinished,
     VoiceAssistantAnnounceRequest,
@@ -44,7 +45,7 @@ from pymicro_wakeword import MicroWakeWord
 from pyopen_wakeword import OpenWakeWord
 
 from .api_server import APIServer
-from .entity import MediaPlayerEntity, MuteSwitchEntity, ThinkingSoundEntity
+from .entity import MediaPlayerEntity, MuteSwitchEntity, ThinkingSoundEntity, WakeWordLibrarySelectEntity, WakeWordSensitivitySelectEntity
 from .models import AvailableWakeWord, ServerState, WakeWordType
 from .util import call_all
 
@@ -147,6 +148,64 @@ class VoiceSatelliteProtocol(APIServer):
         thinking_sound_switch.update_set_thinking_sound_enabled(self._set_thinking_sound_enabled)
         thinking_sound_switch.sync_with_state()
 
+        # Add/update wake word library select entity
+        existing_wake_word_library_selects = [e for e in self.state.entities if isinstance(e, WakeWordLibrarySelectEntity)]
+        if existing_wake_word_library_selects:
+            self.state.wake_word_library_select_entity = existing_wake_word_library_selects[0]
+            for extra in existing_wake_word_library_selects[1:]:
+                self.state.entities.remove(extra)
+
+        wake_word_library_select = self.state.wake_word_library_select_entity
+        if wake_word_library_select is None:
+            wake_word_library_select = WakeWordLibrarySelectEntity(
+                server=self,
+                key=len(state.entities),
+                name="Wake word library",
+                object_id="wake_word_library",
+                get_library=lambda: getattr(self.state.preferences, 'wake_word_library', None) or 'openWakeWord',
+                set_library=self._on_wake_word_library_set,
+                on_library_changed=self._on_wake_word_library_changed,
+                get_options=lambda: self._get_wake_word_library_options(),
+            )
+            self.state.entities.append(wake_word_library_select)
+            self.state.wake_word_library_select_entity = wake_word_library_select
+        elif wake_word_library_select not in self.state.entities:
+            self.state.entities.append(wake_word_library_select)
+
+        wake_word_library_select.server = self
+        wake_word_library_select.update_get_library(lambda: getattr(self.state.preferences, 'wake_word_library', None) or 'openWakeWord')
+        wake_word_library_select.update_set_library(self._on_wake_word_library_set)
+        wake_word_library_select.update_on_library_changed(self._on_wake_word_library_changed)
+        wake_word_library_select.update_get_options(lambda: self._get_wake_word_library_options())
+
+        # Add/update wake word sensitivity select entity
+        existing_wake_word_sensitivity_selects = [e for e in self.state.entities if isinstance(e, WakeWordSensitivitySelectEntity)]
+        if existing_wake_word_sensitivity_selects:
+            self.state.wake_word_sensitivity_select_entity = existing_wake_word_sensitivity_selects[0]
+            for extra in existing_wake_word_sensitivity_selects[1:]:
+                self.state.entities.remove(extra)
+
+        wake_word_sensitivity_select = self.state.wake_word_sensitivity_select_entity
+        if wake_word_sensitivity_select is None:
+            wake_word_sensitivity_select = WakeWordSensitivitySelectEntity(
+                server=self,
+                key=len(state.entities),
+                name="Wake word sensitivity",
+                object_id="wake_word_sensitivity",
+                get_sensitivity=lambda: self._get_sensitivity_string(),
+                set_sensitivity=self._on_wake_word_sensitivity_set,
+                on_sensitivity_changed=self._on_wake_word_sensitivity_changed,
+            )
+            self.state.entities.append(wake_word_sensitivity_select)
+            self.state.wake_word_sensitivity_select_entity = wake_word_sensitivity_select
+        elif wake_word_sensitivity_select not in self.state.entities:
+            self.state.entities.append(wake_word_sensitivity_select)
+
+        wake_word_sensitivity_select.server = self
+        wake_word_sensitivity_select.update_get_sensitivity(lambda: self._get_sensitivity_string())
+        wake_word_sensitivity_select.update_set_sensitivity(self._on_wake_word_sensitivity_set)
+        wake_word_sensitivity_select.update_on_sensitivity_changed(self._on_wake_word_sensitivity_changed)
+
         self._is_streaming_audio = False
         self._tts_url: Optional[str] = None
         self._tts_played = False
@@ -174,17 +233,139 @@ class VoiceSatelliteProtocol(APIServer):
         if self.state.muted:
             # voice_assistant.stop behavior
             _LOGGER.debug("Muting voice assistant (voice_assistant.stop)")
+            # Cancel streaming audio
             self._is_streaming_audio = False
+            # Stop any ongoing TTS playback
             self.state.tts_player.stop()
             # Stop any ongoing voice processing
             self.state.stop_word.is_active = False  # type: ignore
+            # Play mute sound
             self.state.tts_player.play(self.state.mute_sound)
+            # Reset pipeline and publish idle/ready state
+            self._pipeline_active = False
+            self._tts_finished()
         else:
             # voice_assistant.start_continuous behavior
             _LOGGER.debug("Unmuting voice assistant (voice_assistant.start_continuous)")
             self.state.tts_player.play(self.state.unmute_sound)
             # Resume normal operation - wake word detection will be active again
             pass
+
+        # Persist muted state to preferences
+        self.state.preferences.muted = self.state.muted
+        self.state.save_preferences()
+        _LOGGER.debug("Persisted muted state: %s", self.state.muted)
+
+    def _on_wake_word_library_set(self, library: str) -> None:
+        """Set wake word library preference and recompute available wake words."""
+        _LOGGER.info("Setting wake word library to: %s", library)
+        self.state.preferences.wake_word_library = library
+        self.state.save_preferences()
+
+        # Recompute available wake words based on new library
+        from .util import scan_wake_words_for_library
+        new_available = scan_wake_words_for_library(library, self.state.download_dir)
+        _LOGGER.debug("Recomputed available wake words for library %s: %d models",
+                     library, len(new_available))
+        self.state.available_wake_words = new_available
+
+    def _on_wake_word_library_changed(self) -> None:
+        """Callback when wake word library selection changes - force deferred reconnect."""
+        _LOGGER.info("Wake word library changed to %s with %d models, scheduling deferred reconnect to refresh HA wake word dropdowns", self.state.preferences.wake_word_library, len(self.state.available_wake_words))
+        # Schedule transport close after response is sent (deferred close)
+        # This allows the SelectStateResponse to be sent to HA before we disconnect
+        if self._transport is not None and self._loop is not None:
+            self._loop.call_later(0.5, self._deferred_library_reconnect)
+        else:
+            _LOGGER.warning("Cannot schedule deferred reconnect - transport or loop not available")
+
+    def _get_wake_word_library_options(self) -> list[str]:
+        """Discover available wake word libraries dynamically from wakewords subdirectories."""
+        from .util import discover_wake_word_libraries
+        libraries = discover_wake_word_libraries(self.state.download_dir)
+        if not libraries:
+            _LOGGER.warning("No valid wake word libraries discovered, using fallback options")
+            return ["microWakeWord", "openWakeWord"]
+        return libraries
+
+    def _deferred_library_reconnect(self) -> None:
+        """Deferred method to close transport and force reconnect."""
+        if self._transport is not None:
+            _LOGGER.info("Executing deferred reconnect - closing transport")
+            self._transport.close()
+            self._transport = None
+
+    def _get_sensitivity_string(self) -> str:
+        """Convert numeric sensitivity to string for HA entity display."""
+        sensitivity_numeric = getattr(self.state.preferences, 'wake_word_sensitivity', None)
+        numeric_to_string = {
+            0.5: "Very sensitive",
+            0.7: "Moderately sensitive",
+            0.9: "Slightly sensitive",
+            None: "Model default",
+        }
+        return numeric_to_string.get(sensitivity_numeric, "Slightly sensitive")
+
+    def _on_wake_word_sensitivity_set(self, sensitivity: str) -> None:
+        """Set wake word sensitivity preference."""
+
+        # Convert string sensitivity to numeric before saving
+        # String: "Model default" -> None, "Very sensitive" -> 0.5, "Moderately sensitive" -> 0.7, "Slightly sensitive" -> 0.9
+        sensitivity_string_to_numeric = {
+            "Model default": None,
+            "Very sensitive": 0.5,
+            "Moderately sensitive": 0.7,
+            "Slightly sensitive": 0.9,
+        }
+        sensitivity_numeric = sensitivity_string_to_numeric.get(sensitivity, 0.9)
+
+        # Save numeric value to preferences (will be overwritten if already numeric)
+        self.state.preferences.wake_word_sensitivity = sensitivity_numeric
+        self.state.save_preferences()
+
+        # Determine effective sensitivity (default to Slightly sensitive if None/null)
+        effective_sensitivity = sensitivity if sensitivity else 'Slightly sensitive'
+
+        # Get cutoff for openWakeWord
+        oww_cutoff = WakeWordSensitivitySelectEntity.get_oww_cutoff(effective_sensitivity)
+        self.state.oww_probability_cutoff = oww_cutoff
+
+        # Get cutoff for microWakeWord
+        # Model default uses the per-model default from JSON; explicit levels use 0.5/0.7/0.9
+        micro_cutoff = None
+        if effective_sensitivity == 'Model default':
+            # Restore default cutoffs for all microWakeWord models
+            micro_cutoff = None  # Signal to restore defaults
+        else:
+            # Map sensitivity to probability cutoff
+            micro_cutoff_map = {
+                'Very sensitive': 0.5,
+                'Moderately sensitive': 0.7,
+                'Slightly sensitive': 0.9,
+            }
+            micro_cutoff = micro_cutoff_map.get(effective_sensitivity, 0.5)
+
+        # Apply to microWakeWord instances
+        micro_overridden = 0
+        micro_restored = 0
+        for wake_word in self.state.wake_words.values():
+            if isinstance(wake_word, MicroWakeWord):
+                if micro_cutoff is not None:
+                    # Override with explicit sensitivity
+                    wake_word.probability_cutoff = micro_cutoff
+                    micro_overridden += 1
+                else:
+                    # Restore default from stored value
+                    if wake_word.id in self.state.micro_default_cutoffs:
+                        wake_word.probability_cutoff = self.state.micro_default_cutoffs[wake_word.id]
+                        micro_restored += 1
+
+        _LOGGER.debug("Applied sensitivity '%s': openWakeWord cutoff=%.1f, microWakeWord overridden=%d, microWakeWord restored=%d",
+                      effective_sensitivity, oww_cutoff, micro_overridden, micro_restored)
+
+    def _on_wake_word_sensitivity_changed(self) -> None:
+        """Callback when wake word sensitivity changes - already applied in set method."""
+        _LOGGER.debug("Wake word sensitivity change callback - already applied in set method")
 
     def handle_voice_event(self, event_type: VoiceAssistantEventType, data: Dict[str, str]) -> None:
         _LOGGER.debug("Voice event: type=%s, data=%s", event_type.name, data)
@@ -285,13 +466,26 @@ class VoiceSatelliteProtocol(APIServer):
                     VoiceAssistantFeature.VOICE_ASSISTANT | VoiceAssistantFeature.API_AUDIO | VoiceAssistantFeature.ANNOUNCE | VoiceAssistantFeature.START_CONVERSATION | VoiceAssistantFeature.TIMERS
                 ),
             )
+        elif isinstance(msg, SelectCommandRequest):
+            # Route SelectCommandRequest by key to matching entity only
+            msg_key = msg.key
+            for entity in self.state.entities:
+                if hasattr(entity, "key") and entity.key == msg_key:
+                    yield from entity.handle_message(msg)
+                    break
+        elif isinstance(msg, SwitchCommandRequest):
+            # Route SwitchCommandRequest by key to matching entity only
+            msg_key = msg.key
+            for entity in self.state.entities:
+                if hasattr(entity, "key") and entity.key == msg_key:
+                    yield from entity.handle_message(msg)
+                    break
         elif isinstance(
             msg,
             (
                 ListEntitiesRequest,
                 SubscribeHomeAssistantStatesRequest,
                 MediaPlayerCommandRequest,
-                SwitchCommandRequest,
             ),
         ):
             for entity in self.state.entities:
@@ -323,26 +517,42 @@ class VoiceSatelliteProtocol(APIServer):
 
                 self._external_wake_words[eww.id] = eww
 
+            # Use ordered list from preferences to preserve slot order (slot 0/slot 1)
+            ordered_active_wake_words = []
+            if self.state.preferences.active_wake_words:
+                for ww_id in self.state.preferences.active_wake_words:
+                    # Only include wake words that are actually loaded
+                    if ww_id in self.state.wake_words and ww_id in self.state.active_wake_words:
+                        ordered_active_wake_words.append(ww_id)
             yield VoiceAssistantConfigurationResponse(
                 available_wake_words=available_wake_words,
-                active_wake_words=[ww.id for ww in self.state.wake_words.values() if ww.id in self.state.active_wake_words],
+                active_wake_words=ordered_active_wake_words,
                 max_active_wake_words=2,
             )
-            _LOGGER.info("Connected to Home Assistant")
         elif isinstance(msg, VoiceAssistantSetConfiguration):
-            # Change active wake words
-            active_wake_words: Set[str] = set()
+            # Change active wake words - preserve ordered list from HA (slot 0/slot 1)
+            from .util import map_legacy_model_id
+            active_wake_words_ordered: List[str] = []
+            active_wake_words_set: Set[str] = set()
 
             for wake_word_id in msg.active_wake_words:
-                if wake_word_id in self.state.wake_words:
-                    # Already active
-                    active_wake_words.add(wake_word_id)
+                # Map legacy model ID to canonical ID while preserving order
+                canonical_id = map_legacy_model_id(wake_word_id)
+
+                if canonical_id in self.state.wake_words:
+                    # Already active - add to ordered list if not already present
+                    if canonical_id not in active_wake_words_set:
+                        active_wake_words_ordered.append(canonical_id)
+                        active_wake_words_set.add(canonical_id)
                     continue
 
-                model_info = self.state.available_wake_words.get(wake_word_id)
+                model_info = self.state.available_wake_words.get(canonical_id)
                 if not model_info:
                     # Check external wake words (may require download)
                     external_wake_word = self._external_wake_words.get(wake_word_id)
+                    if not external_wake_word:
+                        # Try with canonical_id as fallback
+                        external_wake_word = self._external_wake_words.get(canonical_id)
                     if not external_wake_word:
                         continue
 
@@ -350,19 +560,26 @@ class VoiceSatelliteProtocol(APIServer):
                     if not model_info:
                         continue
 
-                    self.state.available_wake_words[wake_word_id] = model_info
+                    self.state.available_wake_words[canonical_id] = model_info
 
                 _LOGGER.debug("Loading wake word: %s", model_info.wake_word_path)
-                self.state.wake_words[wake_word_id] = model_info.load()
+                self.state.wake_words[canonical_id] = model_info.load()
+                active_wake_words_ordered.append(canonical_id)
+                active_wake_words_set.add(canonical_id)
+                # Note: No break here - loop processes all wake words in the list
 
-                _LOGGER.info("Wake word set: %s", wake_word_id)
-                active_wake_words.add(wake_word_id)
-                break
+            _LOGGER.debug("Received ordered active_wake_words from HA: %s", msg.active_wake_words)
+            # Warn about HA's 1-item list limitation (no slot indices, cannot represent holes)
+            if len(msg.active_wake_words) == 1:
+                _LOGGER.warning(
+                    "HA sent 1-item active_wake_words list: %s. HA/ESPHome API has no slot indices - cannot set Wake word 2 (slot 1) without Wake word (slot 0). LVA interprets 1-item list as Wake word (slot 0).",
+                    msg.active_wake_words
+                )
+            _LOGGER.debug("Persisted ordered active_wake_words: %s", active_wake_words_ordered)
+            self.state.active_wake_words = active_wake_words_set
+            _LOGGER.debug("Active wake words (set): %s", active_wake_words_set)
 
-            self.state.active_wake_words = active_wake_words
-            _LOGGER.debug("Active wake words: %s", active_wake_words)
-
-            self.state.preferences.active_wake_words = list(active_wake_words)
+            self.state.preferences.active_wake_words = active_wake_words_ordered
             self.state.save_preferences()
             self.state.wake_words_changed = True
 

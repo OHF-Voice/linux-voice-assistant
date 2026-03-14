@@ -235,7 +235,16 @@ async def main() -> None:
         mic = sc.default_microphone()
 
     # Load available wake words
-    wake_word_dirs = [Path(ww_dir) for ww_dir in args.wake_word_dir]
+    wake_word_dirs = []
+    for ww_dir in args.wake_word_dir:
+        ww_path = Path(ww_dir)
+        # Add the main directory
+        wake_word_dirs.append(ww_path)
+        # Also add all immediate subdirectories (e.g., microWakeWord, openWakeWord)
+        if ww_path.exists():
+            for subdir in ww_path.iterdir():
+                if subdir.is_dir():
+                    wake_word_dirs.append(subdir)
     wake_word_dirs.append(args.download_dir / "external_wake_words")
     available_wake_words: Dict[str, AvailableWakeWord] = {}
 
@@ -274,6 +283,22 @@ async def main() -> None:
     else:
         preferences = Preferences()
 
+    # Convert wake_word_sensitivity from string to numeric if needed
+    # String values: "Model default" -> None, "Slightly sensitive" -> 0.9, "Moderately sensitive" -> 0.7, "Very sensitive" -> 0.5
+    if isinstance(preferences.wake_word_sensitivity, str):
+        _LOGGER.debug("Converting string wake_word_sensitivity '%s' to numeric", preferences.wake_word_sensitivity)
+        sensitivity_string_to_numeric = {
+            "Model default": None,
+            "Very sensitive": 0.5,
+            "Moderately sensitive": 0.7,
+            "Slightly sensitive": 0.9,
+        }
+        preferences.wake_word_sensitivity = sensitivity_string_to_numeric.get(preferences.wake_word_sensitivity, 0.9)
+
+    # Restore muted state from preferences
+    if hasattr(preferences, 'muted') and preferences.muted:
+        _LOGGER.debug("Restoring muted state from preferences: %s", preferences.muted)
+
     # Load volume from preferences on startup, and ensure it's between 0.0 and 1.0
     initial_volume = preferences.volume if preferences.volume is not None else 1.0
     initial_volume = max(0.0, min(1.0, float(initial_volume)))
@@ -285,26 +310,46 @@ async def main() -> None:
     # Load wake/stop models
     active_wake_words: Set[str] = set()
     wake_models: Dict[str, Union[MicroWakeWord, OpenWakeWord]] = {}
-    if preferences.active_wake_words:
-        # Load preferred models
-        for wake_word_id in preferences.active_wake_words:
+    if preferences.active_wake_words is not None:
+        # Check for explicit empty list (user selected "No wake word")
+        if not preferences.active_wake_words:
+            # Empty list means explicit "no wake word" - do NOT fall back to defaults
+            _LOGGER.info("Active wake words disabled (preferences.active_wake_words is empty list)")
+        else:
+            # Load preferred models (map legacy IDs to canonical IDs)
+            from .util import map_legacy_model_id
+            for wake_word_id in preferences.active_wake_words:
+                # Map legacy model ID (e.g., "hey_jarvis_v0.1") to canonical ID (e.g., "hey_jarvis")
+                canonical_id = map_legacy_model_id(wake_word_id)
+                wake_word = available_wake_words.get(canonical_id)
+                if wake_word is None:
+                    _LOGGER.warning("Unrecognized wake word id: %s (mapped from %s)", canonical_id, wake_word_id)
+                    continue
+
+                _LOGGER.debug("Loading wake model: %s (from preference %s)", canonical_id, wake_word_id)
+                wake_models[canonical_id] = wake_word.load()
+                active_wake_words.add(canonical_id)
+    else:
+        # preferences.active_wake_words is None - fall back to CLI default
+        if not wake_models:
+            # Load default model (map legacy ID to canonical ID)
+            from .util import map_legacy_model_id
+            wake_word_id = map_legacy_model_id(args.wake_model)
             wake_word = available_wake_words.get(wake_word_id)
             if wake_word is None:
-                _LOGGER.warning("Unrecognized wake word id: %s", wake_word_id)
-                continue
+                _LOGGER.error("Default wake model not found: %s (from CLI arg %s)", wake_word_id, args.wake_model)
+                sys.exit(1)
 
-            _LOGGER.debug("Loading wake model: %s", wake_word_id)
+            _LOGGER.debug("Loading wake model: %s (from CLI arg %s)", wake_word_id, args.wake_model)
             wake_models[wake_word_id] = wake_word.load()
             active_wake_words.add(wake_word_id)
-
-    if not wake_models:
-        # Load default model
-        wake_word_id = args.wake_model
-        wake_word = available_wake_words[wake_word_id]
-
-        _LOGGER.debug("Loading wake model: %s", wake_word_id)
-        wake_models[wake_word_id] = wake_word.load()
-        active_wake_words.add(wake_word_id)
+    # Store default probability cutoffs for microWakeWord models
+    from pymicro_wakeword import MicroWakeWord
+    micro_default_cutoffs: Dict[str, float] = {}
+    for wake_word_id, wake_word in wake_models.items():
+        if isinstance(wake_word, MicroWakeWord):
+            micro_default_cutoffs[wake_word_id] = wake_word.probability_cutoff
+            _LOGGER.debug("Stored default probability_cutoff for %s: %.2f", wake_word_id, wake_word.probability_cutoff)
 
     # TODO: allow openWakeWord for "stop"
     stop_model: Optional[MicroWakeWord] = None
@@ -344,8 +389,14 @@ async def main() -> None:
         preferences_path=preferences_path,
         refractory_seconds=args.refractory_seconds,
         download_dir=args.download_dir,
+        micro_default_cutoffs=micro_default_cutoffs,
         volume=initial_volume,
     )
+
+    # Restore muted state from preferences if present
+    if hasattr(preferences, 'muted') and preferences.muted:
+        state.muted = True
+        _LOGGER.info("Restored muted state from preferences: %s", state.muted)
 
     if args.enable_thinking_sound:
         state.save_preferences()
@@ -362,6 +413,20 @@ async def main() -> None:
     while attempt <= max_attempts:
         try:
             server = await loop.create_server(lambda: VoiceSatelliteProtocol(state), host=host_ip_address, port=args.port)
+
+            # Apply wake word sensitivity at startup (convert numeric to string for entity)
+            # Numeric: 0.5=Very sensitive, 0.7=Moderately sensitive, 0.9=Slightly sensitive, None=Model default
+            sensitivity_numeric = getattr(state.preferences, 'wake_word_sensitivity', None)
+            numeric_to_string = {
+                0.5: "Very sensitive",
+                0.7: "Moderately sensitive",
+                0.9: "Slightly sensitive",
+                None: "Model default",
+            }
+            sensitivity_string = numeric_to_string.get(sensitivity_numeric, "Slightly sensitive")
+            if state.satellite is not None:
+                state.satellite._on_wake_word_sensitivity_set(sensitivity_string)
+
             break  # connect successful, exit the loop
         except OSError as err:
             message = err.strerror or str(err)
@@ -462,7 +527,7 @@ def process_audio(state: ServerState, mic, block_size: int):
                         elif isinstance(wake_word, OpenWakeWord):
                             for oww_input in oww_inputs:
                                 for prob in wake_word.process_streaming(oww_input):
-                                    if prob > 0.5:
+                                    if prob > state.oww_probability_cutoff:
                                         activated = True
 
                         if activated and not state.muted:
