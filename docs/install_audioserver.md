@@ -89,7 +89,7 @@ context.properties = {
 
     ## Properties for the DSP configuration.
     #default.clock.rate          = 16000
-    default.clock.allowed-rates = [ 16000 44100 48000 88200 96000 176400 192000 ]
+    #default.clock.allowed-rates = [ 16000 44100 48000 88200 96000 176400 192000 ]
     #default.clock.quantum       = 1024
     #default.clock.min-quantum   = 32
     #default.clock.max-quantum   = 2048
