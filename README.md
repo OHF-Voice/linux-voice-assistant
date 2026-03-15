@@ -2,17 +2,23 @@
 
 [![CI](https://github.com/OHF-Voice/linux-voice-assistant/actions/workflows/docker-build-release.yml/badge.svg)](https://github.com/OHF-Voice/linux-voice-assistant/actions/workflows/docker-build-release.yml) [![GitHub Package Version](https://img.shields.io/github/v/tag/OHF-Voice/linux-voice-assistant?label=version)](https://github.com/OHF-Voice/linux-voice-assistant/pkgs/container/linux-voice-assistant) [![GitHub License](https://img.shields.io/github/license/OHF-Voice/linux-voice-assistant)](https://github.com/OHF-Voice/linux-voice-assistant/blob/main/LICENSE.md) [![GitHub last commit](https://img.shields.io/github/last-commit/OHF-Voice/linux-voice-assistant)](https://github.com/OHF-Voice/linux-voice-assistant/commits) [![GitHub Container Registry](https://img.shields.io/badge/Container%20Registry-GHCR-blue)](https://github.com/OHF-Voice/linux-voice-assistant/pkgs/container/linux-voice-assistant)
 
-Experimental Linux-Voice-Assistant for [Home Assistant](https://www.home-assistant.io/) that uses the [ESPHome](https://esphome.io/) protocol/API (via [aioesphomeapi](https://github.com/esphome/aioesphomeapi)).
+An experimental Linux-Voice-Assistant software for [Home Assistant](https://www.home-assistant.io/) remote voice control and interaction.
+
+This project enables you to build a Linux-based voice assistant designed to use [Assist](https://www.home-assistant.io/voice_control/) for Home Assistant. It allows you to create your own smart speaker that runs on any x64 or ARM64 hardware capable of handling local audio processing (using PulseAudio).
+
+Unlike simpler voice satellites that run on microcontrollers with very limited compute power, this setup can perform local wake word detection (OWW/MWW) and process some data on-device. 
+
+Because it runs on a full Linux system and offers access significantly more local computing resources for additional features and other integrations on the same satellite, this approach also provides greater flexibility for customization (such as for example experiment with using PipeWire).
 
 [![A project from the Open Home Foundation](https://www.openhomefoundation.org/badges/ohf-project.png)](https://www.openhomefoundation.org/)
 
 ## Features:
 
-- Works with [Home Assistant](https://www.home-assistant.io/integrations/esphome/)
-- Local wake word detection using integrated [OpenWakeWord](https://github.com/dscripka/openWakeWord) or [MicroWakeWord](https://github.com/kahrendt/microWakeWord)
+- Works with [Home Assistant](https://www.home-assistant.io/integrations/esphome/) using the [ESPHome](https://esphome.io/) protocol/API (via [aioesphomeapi](https://github.com/esphome/aioesphomeapi))
+- Feature local on-device wake word detection using integrated [OpenWakeWord](https://github.com/dscripka/openWakeWord) or [MicroWakeWord](https://github.com/kahrendt/microWakeWord)
+- Supports multiple wake words and languages
 - Supports multiple architectures (linux/amd64 and linux/aarch64)
 - Automated builds with artifact attestation for security
-- Supports multiple wake words and languages
 - Supports announcments, start/continue conversation, and timers
 - Tested with Python 3.13 and Python 3.11.
 - Prebuild docker image available on [GitHub Container Registry](https://github.com/OHF-Voice/linux-voice-assistant/pkgs/container/linux-voice-assistant)
@@ -23,9 +29,15 @@ Experimental Linux-Voice-Assistant for [Home Assistant](https://www.home-assista
 
 ### Hardware:
 
-You can for example use the Raspberry Pi Zero 2W with the [Satellite1 Hat Board](https://futureproofhomes.net/products/satellite1-top-microphone-board), the [Respeaker Lite](https://wiki.seeedstudio.com/reSpeaker_usb_v3/) or the [Respeaker 2Mic_Hat](https://wiki.seeedstudio.com/ReSpeaker_2_Mics_Pi_HAT/). 
+A more extensive list for possible compatible hardware can be found in the [PiCompose documentation](https://github.com/florian-asche/PiCompose) but basically any microphone that works with [PipeWire (multimedia framework for Linux)](https://pipewire.org/) can in theory be used for voice input with the prebuild image from there, you should however preferably use a far-field microphone-array solution if want better result. 
 
-A list for possible compatible hardware can be found in the [PiCompose documentation](https://github.com/florian-asche/PiCompose) but basically any microphone that works with [Pipewire](https://pipewire.org/) can be used with the prebuild image.
+Two solutions recommended for test setups today is to use a Raspberry Pi Zero 2 W SBC (Single Board Computer with built-in WiFi) in combination with the [Satellite1 Hat Board](https://futureproofhomes.net/products/satellite1-top-microphone-board) or the [Respeaker Lite](https://wiki.seeedstudio.com/reSpeaker_usb_v3/). Those have microphone-array designed for far-field voice capture with the added benefit of using an onboard XMOS DSP microcontroller with custom firmware which does advanced audio pre-processing for microphone cleanup that result in very good voice recognition capabilities (as it runs algorithms for Noise Suppression, Acoustic Echo Cancellation, Interference Cancellation, and Automatic Gain Control). 
+
+Alternativly if on a lower budget then suggest could try other untested microphone-array boards like example the [reSpeaker 2-Mics Pi HAT V2.0](https://wiki.seeedstudio.com/ReSpeaker_2_Mics_Pi_HAT/) (which uses a much more basic audio codec chip).
+
+As for the minimum required compute performance on these satellites the target reference hardware for testing is currently a 64-bit ARM-based SBC based on Raspberry Pi RP3A0 SiP (System-in-Package); which means the Raspberry Pi Zero 2 W, Raspberry Pi Compute Module 3E (Raspberry Pi CM3E), or other development boards that uses the Compute Module Zero" (Raspberry Pi CM0), as all of which have similar specifications to the Raspberry Pi 3 B/B+ but with a CPU running at a lower frequency.
+
+But you can also install LVA on AMD64 devices, for example on your Linux desktop computer.
 
 ### Software:
 
