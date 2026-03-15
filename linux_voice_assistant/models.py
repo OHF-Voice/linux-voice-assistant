@@ -80,6 +80,7 @@ class ServerState:
     music_player: "MpvMediaPlayer"
     tts_player: "MpvMediaPlayer"
     wakeup_sound: str
+    start_listening_sound: str
     processing_sound: str
     timer_finished_sound: str
     mute_sound: str
