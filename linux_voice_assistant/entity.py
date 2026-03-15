@@ -7,9 +7,12 @@ from typing import Callable, List, Optional, Union
 from aioesphomeapi.api_pb2 import (  # type: ignore[attr-defined]
     ListEntitiesMediaPlayerResponse,
     ListEntitiesRequest,
+    ListEntitiesSelectResponse,
     ListEntitiesSwitchResponse,
     MediaPlayerCommandRequest,
     MediaPlayerStateResponse,
+    SelectCommandRequest,
+    SelectStateResponse,
     SubscribeHomeAssistantStatesRequest,
     SwitchCommandRequest,
     SwitchStateResponse,
@@ -35,6 +38,12 @@ SUPPORTED_MEDIA_PLAYER_FEATURES = (
     | MediaPlayerEntityFeature.VOLUME_MUTE
     | MediaPlayerEntityFeature.MEDIA_ANNOUNCE
 )
+
+WAKE_WORD_SENSITIVITY_OPTIONS = [
+    "Slightly sensitive",
+    "Moderately sensitive",
+    "Very sensitive",
+]
 
 
 class ESPHomeEntity:
@@ -168,7 +177,7 @@ class MediaPlayerEntity(ESPHomeEntity):
                 self._apply_volume(msg.volume, persist=True)
                 if hasattr(self.server, "state") and getattr(self.server, "state", None) is not None:
                     self._log.debug("Persisting volume to preferences")
-                    self.server.state.persist_volume(self.volume)
+                    self.server.state.persist_volume(self.volume)  # type: ignore[attr-defined]
                 else:
                     self._log.warning("Cannot persist volume - server.state not available")
                 yield self._update_state(self.state)
@@ -347,3 +356,54 @@ class ThinkingSoundEntity(ESPHomeEntity):
             # Always return our internal switch state
             self.sync_with_state()
             yield SwitchStateResponse(key=self.key, state=self._switch_state)
+
+
+class WakeWordSensitivityEntity(ESPHomeEntity):
+    def __init__(
+        self,
+        server: APIServer,
+        key: int,
+        name: str,
+        object_id: str,
+        get_sensitivity: Callable[[], str],
+        set_sensitivity: Callable[[str], None],
+    ) -> None:
+        ESPHomeEntity.__init__(self, server)
+
+        self.key = key
+        self.name = name
+        self.object_id = object_id
+        self._get_sensitivity = get_sensitivity
+        self._set_sensitivity = set_sensitivity
+        self._state = self._get_sensitivity()
+
+    def update_get_sensitivity(self, get_sensitivity: Callable[[], str]) -> None:
+        # Update the callback used to read the sensitivity state.
+        self._get_sensitivity = get_sensitivity
+
+    def update_set_sensitivity(self, set_sensitivity: Callable[[str], None]) -> None:
+        # Update the callback used to change the sensitivity state.
+        self._set_sensitivity = set_sensitivity
+
+    def sync_with_state(self) -> None:
+        # Sync internal state with the actual sensitivity value.
+        self._state = self._get_sensitivity()
+
+    def handle_message(self, msg: message.Message) -> Iterable[message.Message]:
+        if isinstance(msg, SelectCommandRequest) and (msg.key == self.key):
+            if msg.state in WAKE_WORD_SENSITIVITY_OPTIONS:
+                self._state = msg.state
+                self._set_sensitivity(msg.state)
+                yield SelectStateResponse(key=self.key, state=self._state, missing_state=False)
+        elif isinstance(msg, ListEntitiesRequest):
+            yield ListEntitiesSelectResponse(
+                object_id=self.object_id,
+                key=self.key,
+                name=self.name,
+                options=WAKE_WORD_SENSITIVITY_OPTIONS,
+                entity_category=EntityCategory.CONFIG,
+                icon="mdi:microphone-sensitivity",
+            )
+        elif isinstance(msg, SubscribeHomeAssistantStatesRequest):
+            self.sync_with_state()
+            yield SelectStateResponse(key=self.key, state=self._state, missing_state=False)

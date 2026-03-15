@@ -19,6 +19,7 @@ from aioesphomeapi.api_pb2 import (  # type: ignore[attr-defined]
     ListEntitiesDoneResponse,
     ListEntitiesRequest,
     MediaPlayerCommandRequest,
+    SelectCommandRequest,
     SubscribeHomeAssistantStatesRequest,
     SwitchCommandRequest,
     VoiceAssistantAnnounceFinished,
@@ -44,13 +45,24 @@ from pymicro_wakeword import MicroWakeWord
 from pyopen_wakeword import OpenWakeWord
 
 from .api_server import APIServer
-from .entity import MediaPlayerEntity, MuteSwitchEntity, ThinkingSoundEntity
+from .entity import (
+    MediaPlayerEntity,
+    MuteSwitchEntity,
+    ThinkingSoundEntity,
+    WakeWordSensitivityEntity,
+)
 from .models import AvailableWakeWord, ServerState, WakeWordType
 from .util import call_all
 
 _LOGGER = logging.getLogger(__name__)
 
 PROTO_TO_MESSAGE_TYPE = {v: k for k, v in MESSAGE_TYPE_TO_PROTO.items()}
+
+SENSITIVITY_PRESETS = {
+    "Slightly sensitive": {"mww": 0.85, "oww": 0.70},
+    "Moderately sensitive": {"mww": 0.70, "oww": 0.50},
+    "Very sensitive": {"mww": 0.55, "oww": 0.35},
+}
 
 
 class VoiceSatelliteProtocol(APIServer):
@@ -59,7 +71,6 @@ class VoiceSatelliteProtocol(APIServer):
         super().__init__(state.name)
 
         self.state = state
-        self.state.satellite = self
         self.state.connected = False
 
         existing_media_players = [entity for entity in self.state.entities if isinstance(entity, MediaPlayerEntity)]
@@ -147,6 +158,10 @@ class VoiceSatelliteProtocol(APIServer):
         thinking_sound_switch.update_set_thinking_sound_enabled(self._set_thinking_sound_enabled)
         thinking_sound_switch.sync_with_state()
 
+        # Add/update wake word sensitivity entity
+        self._setup_sensitivity_entity()
+        self._apply_sensitivity(self.state.wake_word_sensitivity)
+
         self._is_streaming_audio = False
         self._tts_url: Optional[str] = None
         self._tts_played = False
@@ -156,6 +171,58 @@ class VoiceSatelliteProtocol(APIServer):
         self._pipeline_active = False
         self._external_wake_words: Dict[str, VoiceAssistantExternalWakeWord] = {}
         self._disconnect_event = asyncio.Event()
+
+        # Must be last — prevents race with audio thread
+        self.state.satellite = self
+
+    def _setup_sensitivity_entity(self) -> None:
+        existing = [entity for entity in self.state.entities if isinstance(entity, WakeWordSensitivityEntity)]
+        if existing:
+            sensitivity_entity = existing[0]
+            for extra in existing[1:]:
+                self.state.entities.remove(extra)
+        else:
+            sensitivity_entity = WakeWordSensitivityEntity(
+                server=self,
+                key=len(self.state.entities),
+                name="Wake word sensitivity",
+                object_id="wake_word_sensitivity",
+                get_sensitivity=lambda: self.state.wake_word_sensitivity,
+                set_sensitivity=self._set_sensitivity,
+            )
+            self.state.entities.append(sensitivity_entity)
+
+        sensitivity_entity.server = self
+        sensitivity_entity.update_get_sensitivity(lambda: self.state.wake_word_sensitivity)
+        sensitivity_entity.update_set_sensitivity(self._set_sensitivity)
+        sensitivity_entity.sync_with_state()
+        self.state.sensitivity_entity = sensitivity_entity
+
+    def _set_sensitivity(self, level: str) -> None:
+        if level not in SENSITIVITY_PRESETS:
+            _LOGGER.warning("Unknown sensitivity level: %s", level)
+            return
+        self.state.wake_word_sensitivity = level
+        self.state.preferences.wake_word_sensitivity = level
+        self.state.save_preferences()
+        self._apply_sensitivity(level)
+        _LOGGER.info("Wake word sensitivity set to: %s", level)
+
+    def _apply_sensitivity(self, level: str) -> None:
+        preset = SENSITIVITY_PRESETS.get(level, SENSITIVITY_PRESETS["Slightly sensitive"])
+        mww_cutoff = preset["mww"]
+        oww_cutoff = preset["oww"]
+
+        for ww in self.state.wake_words.values():
+            if isinstance(ww, MicroWakeWord):
+                try:
+                    ww.probability_cutoff = mww_cutoff
+                    _LOGGER.debug("MWW cutoff set to %.2f for %s", mww_cutoff, ww.id)
+                except Exception:  # pylint: disable=broad-except
+                    _LOGGER.exception("Failed to set MWW cutoff for %s", ww.id)
+
+        self.state.oww_probability_cutoff = oww_cutoff
+        _LOGGER.debug("OWW threshold set to %.2f", oww_cutoff)
 
     def _set_thinking_sound_enabled(self, new_state: bool) -> None:
         self.state.thinking_sound_enabled = bool(new_state)
@@ -292,6 +359,7 @@ class VoiceSatelliteProtocol(APIServer):
                 SubscribeHomeAssistantStatesRequest,
                 MediaPlayerCommandRequest,
                 SwitchCommandRequest,
+                SelectCommandRequest,
             ),
         ):
             for entity in self.state.entities:
@@ -401,7 +469,10 @@ class VoiceSatelliteProtocol(APIServer):
 
     def _on_wakeup_sound_finished(self, wake_word_phrase: str) -> None:
         """Callback invoked when the wakeup sound finishes playing."""
-        _LOGGER.debug("Wakeup sound finished, starting audio streaming with wake word: %s", wake_word_phrase)
+        _LOGGER.debug(
+            "Wakeup sound finished, starting audio streaming with wake word: %s",
+            wake_word_phrase,
+        )
         self.send_messages(
             [VoiceAssistantRequest(start=True, wake_word_phrase=wake_word_phrase)],
         )
@@ -512,7 +583,12 @@ class VoiceSatelliteProtocol(APIServer):
             for i, entity in enumerate(self.state.entities):
                 entity_states = list(entity.handle_message(SubscribeHomeAssistantStatesRequest()))
                 states.extend(entity_states)
-                _LOGGER.debug("Entity %d (%s) returned %d state messages", i, type(entity).__name__, len(entity_states))
+                _LOGGER.debug(
+                    "Entity %d (%s) returned %d state messages",
+                    i,
+                    type(entity).__name__,
+                    len(entity_states),
+                )
             _LOGGER.debug("Total state messages to send: %d", len(states))
             self.send_messages(states)
             for i, msg in enumerate(states):

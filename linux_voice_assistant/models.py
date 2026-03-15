@@ -17,6 +17,7 @@ if TYPE_CHECKING:
         MediaPlayerEntity,
         MuteSwitchEntity,
         ThinkingSoundEntity,
+        WakeWordSensitivityEntity,
     )
     from .mpv_player import MpvMediaPlayer
     from .satellite import VoiceSatelliteProtocol
@@ -59,6 +60,7 @@ class Preferences:
     active_wake_words: List[str] = field(default_factory=list)
     volume: Optional[float] = None
     thinking_sound: int = 0  # 0 = disabled, 1 = enabled
+    wake_word_sensitivity: str = "Slightly sensitive"
 
 
 @dataclass
@@ -91,12 +93,15 @@ class ServerState:
     satellite: "Optional[VoiceSatelliteProtocol]" = None
     mute_switch_entity: "Optional[MuteSwitchEntity]" = None
     thinking_sound_entity: "Optional[ThinkingSoundEntity]" = None
+    sensitivity_entity: "Optional[WakeWordSensitivityEntity]" = None
     wake_words_changed: bool = False
     refractory_seconds: float = 2.0
     thinking_sound_enabled: bool = False
     muted: bool = False
     connected: bool = False
     volume: float = 1.0
+    wake_word_sensitivity: str = "Slightly sensitive"
+    oww_probability_cutoff: float = 0.7  # Dynamic threshold for OpenWakeWord
 
     def save_preferences(self) -> None:
         """Save preferences as JSON."""
