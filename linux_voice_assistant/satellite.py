@@ -522,6 +522,38 @@ class VoiceSatelliteProtocol(APIServer):
         self._is_streaming_audio = True
         self._emit(LVAEvent.LISTENING)
 
+    def start_listening(self) -> None:
+        """
+        Manually start the voice pipeline from a button press.
+
+        Plays ``start_listening_sound`` first, then sends
+        ``VoiceAssistantRequest`` and begins streaming audio — identical flow
+        to ``wakeup()`` but without a wake-word phrase and using the dedicated
+        button-press sound instead of the wake-word chime.
+        """
+        if self.state.muted:
+            return
+
+        if self._pipeline_active:
+            _LOGGER.debug("Ignoring start_listening - pipeline already active")
+            return
+
+        _LOGGER.debug("Button start_listening triggered")
+        self._pipeline_active = True
+        self._emit(LVAEvent.WAKE_WORD_DETECTED)
+        self.duck()
+        self.state.tts_player.play(
+            self.state.start_listening_sound,
+            done_callback=self._on_start_listening_sound_finished,
+        )
+
+    def _on_start_listening_sound_finished(self) -> None:
+        """Callback invoked when the start-listening chime finishes; begin STT streaming."""
+        _LOGGER.debug("Start-listening sound finished, starting audio streaming")
+        self.send_messages([VoiceAssistantRequest(start=True, wake_word_phrase="")])
+        self._is_streaming_audio = True
+        self._emit(LVAEvent.LISTENING)
+
     def stop(self) -> None:
         self.state.active_wake_words.discard(self.state.stop_word.id)
         self._pipeline_active = False
