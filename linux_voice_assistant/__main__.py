@@ -101,6 +101,11 @@ async def main() -> None:
         help="Directory and file name for wake sound (when you say the wake word)",
     )
     parser.add_argument(
+        "--start-listening-sound",
+        default=str(_SOUNDS_DIR / "start_listening_sound.flac")
+        help="Directory and file name and sound for start listening button (when you press button to talk)",
+    )
+    parser.add_argument(
         "--timer-finished-sound",
         default=str(_SOUNDS_DIR / "timer_finished.flac"),
         help="Directory and file name for timer finished sound",
@@ -363,6 +368,8 @@ async def main() -> None:
         music_player=MpvMediaPlayer(device=args.audio_output_device),
         tts_player=MpvMediaPlayer(device=args.audio_output_device),
         wakeup_sound=args.wakeup_sound,
+        start_listening_sound=args.start_listening_sound,
+        
         timer_finished_sound=args.timer_finished_sound,
         processing_sound=args.processing_sound,
         mute_sound=args.mute_sound,
