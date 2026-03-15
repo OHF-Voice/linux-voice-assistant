@@ -54,7 +54,6 @@ PROTO_TO_MESSAGE_TYPE = {v: k for k, v in MESSAGE_TYPE_TO_PROTO.items()}
 
 
 class VoiceSatelliteProtocol(APIServer):
-
     def __init__(self, state: ServerState) -> None:
         super().__init__(state.name)
 
@@ -434,10 +433,16 @@ class VoiceSatelliteProtocol(APIServer):
     def duck(self) -> None:
         _LOGGER.debug("Ducking music")
         self.state.music_player.duck()
+        # Also duck SendSpin streaming audio
+        if self.state.sendspin_bridge:
+            self.state.sendspin_bridge.duck()
 
     def unduck(self) -> None:
         _LOGGER.debug("Unducking music")
         self.state.music_player.unduck()
+        # Also unduck SendSpin streaming audio
+        if self.state.sendspin_bridge:
+            self.state.sendspin_bridge.unduck()
 
     def _tts_finished(self) -> None:
         self._pipeline_active = False
