@@ -236,19 +236,7 @@ class PeripheralAPIServer:
         if command == LVACommand.START_LISTENING:
             if satellite is None or state.muted:
                 return
-            if getattr(satellite, "_is_streaming_audio", False):
-                return
-            # pylint: disable=no-name-in-module
-            from aioesphomeapi.api_pb2 import (  # type: ignore[attr-defined]
-                VoiceAssistantRequest,
-            )
-
-            satellite.send_messages(
-                [VoiceAssistantRequest(start=True, wake_word_phrase="")]
-            )
-            satellite._is_streaming_audio = True  # pylint: disable=protected-access
-            satellite.duck()
-            await self.emit_event(LVAEvent.LISTENING)
+            satellite.start_listening()  # plays sound, then starts pipeline
 
         elif command == LVACommand.STOP_LISTENING:
             if satellite is not None:
