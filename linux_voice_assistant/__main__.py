@@ -195,7 +195,7 @@ async def main() -> None:
 
     # Resolve mac
     if not (mac_address := get_mac_address(interface=network_interface)):
-        mac_address = 'ee:ee:ee:ee:ee'
+        mac_address = "ee:ee:ee:ee:ee"
     mac_address_clean = mac_address.replace(":", "").lower()
 
     # Resolve name
