@@ -1,5 +1,32 @@
 # Changelog
 
+## 1.1.9
+
+### Improvements
+- Cookie file and other default parameters by @florian-asche in https://github.com/OHF-Voice/linux-voice-assistant/pull/231
+
+## 1.1.8
+
+### Features
+- Add changelog generator based on release information by @florian-asche in https://github.com/OHF-Voice/linux-voice-assistant/pull/226
+
+## 1.1.7
+
+### Exciting New Features 🎉
+- Add linting scripts and pipeline by @florian-asche in https://github.com/OHF-Voice/linux-voice-assistant/pull/201
+  
+### Other Changes
+- add build flag option for low end devices by @florian-asche in https://github.com/OHF-Voice/linux-voice-assistant/pull/189
+- replaced branch build by PR build only by @florian-asche in https://github.com/OHF-Voice/linux-voice-assistant/pull/203
+- Change when lint pipeline will start by @florian-asche in https://github.com/OHF-Voice/linux-voice-assistant/pull/204
+- fix(script): use os.environ instead of subprocess.environ in setup script by @florian-asche in https://github.com/OHF-Voice/linux-voice-assistant/pull/205
+- docs: add documentation for low power device setup and improve setup script by @florian-asche in https://github.com/OHF-Voice/linux-voice-assistant/pull/206
+- fix: cookie error (#127) by @florian-asche in https://github.com/OHF-Voice/linux-voice-assistant/pull/210
+- fix(config): remove unix: prefix from default pulseaudio socket path … by @florian-asche in https://github.com/OHF-Voice/linux-voice-assistant/pull/221
+- Update the changelog file automatically on each release by @omaramin-2000 in https://github.com/OHF-Voice/linux-voice-assistant/pull/224
+- Enhance hardware compatibility details in README by @Hedda in https://github.com/OHF-Voice/linux-voice-assistant/pull/222
+- add changelog based on release notes by @florian-asche in https://github.com/OHF-Voice/linux-voice-assistant/pull/225
+
 ## 1.1.6
 
 ### Bug Fixes
