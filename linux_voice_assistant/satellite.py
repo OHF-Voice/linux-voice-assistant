@@ -159,7 +159,7 @@ class VoiceSatelliteProtocol(APIServer):
                 max_value=31.0,
                 get_value=lambda: float(self.state.mic_auto_gain),
                 set_value=self.state.persist_mic_gain,
-                icon="mdi:amplifier",
+                icon=" mdi:microphone-plus",
             )
             self.state.entities.append(self.state.mic_gain_entity)
         elif self.state.mic_gain_entity not in self.state.entities:
@@ -181,7 +181,7 @@ class VoiceSatelliteProtocol(APIServer):
                 max_value=4.0,
                 get_value=lambda: float(self.state.mic_noise_suppression),
                 set_value=self.state.persist_mic_noise,
-                icon="mdi:filter-variant",
+                icon="mdi:waveform",
             )
             self.state.entities.append(self.state.mic_noise_suppression_entity)
         elif self.state.mic_noise_suppression_entity not in self.state.entities:
