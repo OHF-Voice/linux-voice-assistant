@@ -33,6 +33,7 @@ dependencies = [
     "zeroconf<1",
     "getmac<1",
     "types-protobuf",
+    "webrtc_noise_gain",
 ]
 
 [project.optional-dependencies]
