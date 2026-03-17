@@ -299,11 +299,21 @@ class VoiceSatelliteProtocol(APIServer):
     ) -> None:
         _LOGGER.debug("Timer event: type=%s", event_type.name)
 
+        # Build countdown data from the protobuf message fields.
+        # total_seconds: the original timer duration.
+        # seconds_left:  remaining seconds at the time of this event.
+        timer_data = {
+            "id": msg.id,
+            "name": msg.name,
+            "total_seconds": msg.total_seconds,
+            "seconds_left": msg.seconds_left,
+        }
+
         if event_type == VoiceAssistantTimerEventType.VOICE_ASSISTANT_TIMER_STARTED:
-            self._emit(LVAEvent.TIMER_TICKING)
+            self._emit(LVAEvent.TIMER_TICKING, timer_data)
 
         elif event_type == VoiceAssistantTimerEventType.VOICE_ASSISTANT_TIMER_UPDATED:
-            self._emit(LVAEvent.TIMER_UPDATED)
+            self._emit(LVAEvent.TIMER_UPDATED, timer_data)
 
         elif event_type == VoiceAssistantTimerEventType.VOICE_ASSISTANT_TIMER_CANCELLED:
             self._emit(LVAEvent.IDLE)
@@ -313,7 +323,7 @@ class VoiceSatelliteProtocol(APIServer):
                 self.state.active_wake_words.add(self.state.stop_word.id)
                 self._timer_finished = True
                 self.duck()
-                self._emit(LVAEvent.TIMER_RINGING)
+                self._emit(LVAEvent.TIMER_RINGING, timer_data)
                 self._play_timer_finished()
 
     # ------------------------------------------------------------------
