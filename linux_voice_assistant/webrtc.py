@@ -44,8 +44,3 @@ class WebRTCProcessor:
             processed_output += out_frame
 
         return processed_output
-
-    @staticmethod
-    def to_float(audio_bytes: bytes) -> np.ndarray:
-        """Helper to convert processed bytes back to float32 for wake word engines."""
-        return np.frombuffer(audio_bytes, dtype=np.int16).astype(np.float32) / 32768.0
