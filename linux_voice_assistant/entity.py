@@ -6,10 +6,19 @@ from typing import Callable, List, Optional, Union
 # pylint: disable=no-name-in-module
 from aioesphomeapi.api_pb2 import (  # type: ignore[attr-defined]
     ListEntitiesMediaPlayerResponse,
+<<<<<<< HEAD
+=======
+    ListEntitiesNumberResponse,
+>>>>>>> 1e91567 (Add WebRTC noise suppression and AGC)
     ListEntitiesRequest,
     ListEntitiesSwitchResponse,
     MediaPlayerCommandRequest,
     MediaPlayerStateResponse,
+<<<<<<< HEAD
+=======
+    NumberCommandRequest,
+    NumberStateResponse,
+>>>>>>> 1e91567 (Add WebRTC noise suppression and AGC)
     SubscribeHomeAssistantStatesRequest,
     SwitchCommandRequest,
     SwitchStateResponse,
@@ -116,6 +125,13 @@ class MediaPlayerEntity(ESPHomeEntity):
     def handle_message(self, msg: message.Message) -> Iterable[message.Message]:
         self._log.debug("handle_message called with msg: %s", msg)
 
+<<<<<<< HEAD
+=======
+        # Suppress warning for irrelevant NumberCommandRequest
+        if isinstance(msg, NumberCommandRequest):
+            return
+
+>>>>>>> 1e91567 (Add WebRTC noise suppression and AGC)
         if isinstance(msg, MediaPlayerCommandRequest) and (msg.key == self.key):
             self._log.debug("MediaPlayerCommandRequest matched for this key")
 
@@ -347,3 +363,68 @@ class ThinkingSoundEntity(ESPHomeEntity):
             # Always return our internal switch state
             self.sync_with_state()
             yield SwitchStateResponse(key=self.key, state=self._switch_state)
+<<<<<<< HEAD
+=======
+
+
+class MicSettingEntity(ESPHomeEntity):
+    def __init__(
+        self,
+        server: APIServer,
+        key: int,
+        name: str,
+        object_id: str,
+        min_value: float,
+        max_value: float,
+        get_value: Callable[[], float],
+        set_value: Callable[[float], None],
+        icon: str = "mdi:microphone",
+    ) -> None:
+        ESPHomeEntity.__init__(self, server)
+        self.key = key
+        self.name = name
+        self.object_id = object_id
+        self.min_value = min_value
+        self.max_value = max_value
+        self._get_value = get_value
+        self._set_value = set_value
+        self._state = self._get_value()
+        self.icon = icon
+
+    def sync_with_state(self) -> None:
+        """Sync internal state with the actual value."""
+        self._state = self._get_value()
+
+    def handle_message(self, msg: message.Message) -> Iterable[message.Message]:
+        if isinstance(msg, NumberCommandRequest) and (msg.key == self.key):
+            # 1. User moved the slider in Home Assistant
+            new_val = msg.state
+            self._state = new_val
+            self._set_value(new_val)
+            # 2. Confirm the new state back to HA
+            yield NumberStateResponse(key=self.key, state=new_val)
+
+        elif isinstance(msg, ListEntitiesRequest):
+            # Discovery: Tell HA about the slider's range and icon
+            yield ListEntitiesNumberResponse(
+                object_id=self.object_id,
+                key=self.key,
+                name=self.name,
+                min_value=self.min_value,
+                max_value=self.max_value,
+                step=1.0,
+                entity_category=EntityCategory.CONFIG,
+                icon=self.icon,
+            )
+
+        elif isinstance(msg, SubscribeHomeAssistantStatesRequest):
+            # Initial Sync: Send the current saved value to the UI
+            self.sync_with_state()
+            yield NumberStateResponse(key=self.key, state=self._state)
+
+    def update_get_value(self, get_value: Callable[[], float]) -> None:
+        self._get_value = get_value
+
+    def update_set_value(self, set_value: Callable[[float], None]) -> None:
+        self._set_value = set_value
+>>>>>>> 1e91567 (Add WebRTC noise suppression and AGC)

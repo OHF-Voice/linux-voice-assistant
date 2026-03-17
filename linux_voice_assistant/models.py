@@ -15,6 +15,10 @@ if TYPE_CHECKING:
     from .entity import (
         ESPHomeEntity,
         MediaPlayerEntity,
+<<<<<<< HEAD
+=======
+        MicSettingEntity,
+>>>>>>> 1e91567 (Add WebRTC noise suppression and AGC)
         MuteSwitchEntity,
         ThinkingSoundEntity,
     )
@@ -59,6 +63,11 @@ class Preferences:
     active_wake_words: List[str] = field(default_factory=list)
     volume: Optional[float] = None
     thinking_sound: int = 0  # 0 = disabled, 1 = enabled
+<<<<<<< HEAD
+=======
+    mic_auto_gain: int = 0
+    mic_noise_suppression: int = 0
+>>>>>>> 1e91567 (Add WebRTC noise suppression and AGC)
 
 
 @dataclass
@@ -91,12 +100,22 @@ class ServerState:
     satellite: "Optional[VoiceSatelliteProtocol]" = None
     mute_switch_entity: "Optional[MuteSwitchEntity]" = None
     thinking_sound_entity: "Optional[ThinkingSoundEntity]" = None
+<<<<<<< HEAD
+=======
+    mic_gain_entity: "Optional[MicSettingEntity]" = None
+    mic_noise_suppression_entity: "Optional[MicSettingEntity]" = None
+>>>>>>> 1e91567 (Add WebRTC noise suppression and AGC)
     wake_words_changed: bool = False
     refractory_seconds: float = 2.0
     thinking_sound_enabled: bool = False
     muted: bool = False
     connected: bool = False
     volume: float = 1.0
+<<<<<<< HEAD
+=======
+    mic_auto_gain: int = 0
+    mic_noise_suppression: int = 0
+>>>>>>> 1e91567 (Add WebRTC noise suppression and AGC)
 
     def save_preferences(self) -> None:
         """Save preferences as JSON."""
@@ -129,3 +148,26 @@ class ServerState:
         _LOGGER.info("Saving volume %s to %s", clamped_volume, self.preferences_path)
         self.save_preferences()
         _LOGGER.info("Volume saved successfully")
+<<<<<<< HEAD
+=======
+
+    def persist_mic_gain(self, gain: float) -> None:
+        """Persist the microphone auto gain value."""
+        gain_int = int(gain)
+        if self.mic_auto_gain == gain_int and self.preferences.mic_auto_gain == gain_int:
+            return
+
+        self.mic_auto_gain = gain_int
+        self.preferences.mic_auto_gain = gain_int
+        self.save_preferences()
+
+    def persist_mic_noise(self, noise: float) -> None:
+        """Persist the microphone noise suppression value."""
+        noise_int = int(noise)
+        if self.mic_noise_suppression == noise_int and self.preferences.mic_noise_suppression == noise_int:
+            return
+
+        self.mic_noise_suppression = noise_int
+        self.preferences.mic_noise_suppression = noise_int
+        self.save_preferences()
+>>>>>>> 1e91567 (Add WebRTC noise suppression and AGC)
