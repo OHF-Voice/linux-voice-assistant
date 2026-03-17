@@ -431,12 +431,14 @@ def process_audio(state: ServerState, mic, block_size: int):
         with mic.recorder(samplerate=16000, channels=1, blocksize=block_size) as mic_in:
             while True:
                 audio_chunk_array = mic_in.record(block_size).reshape(-1)
+                # little-endian 16-bit signed
                 audio_chunk = (np.clip(audio_chunk_array, -1.0, 1.0) * 32767.0).astype("<i2").tobytes()
 
                 if state.satellite is None:
                     continue
 
                 if (not wake_words) or (state.wake_words_changed and state.wake_words):
+                    # Update list of wake word models to process
                     state.wake_words_changed = False
                     wake_words = [ww for ww in state.wake_words.values() if ww.id in state.active_wake_words]
 
@@ -488,11 +490,12 @@ def process_audio(state: ServerState, mic, block_size: int):
                                         activated = True
 
                         if activated and not state.muted:
+                            # Check refractory
                             now = time.monotonic()
                             if (last_active is None) or ((now - last_active) > state.refractory_seconds):
                                 state.satellite.wakeup(wake_word)
                                 last_active = now
-
+                    # Always process to keep state correct
                     stopped = False
                     for micro_input in micro_inputs:
                         if state.stop_word.process_streaming(micro_input):
