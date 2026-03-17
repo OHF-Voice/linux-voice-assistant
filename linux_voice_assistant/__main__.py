@@ -292,6 +292,12 @@ async def main() -> None:
             _LOGGER.exception("Extras for webrtc are not installed")
             sys.exit(1)
 
+    if args.mic_auto_gain:
+        preferences.mic_auto_gain = args.mic_auto_gain
+
+    if args.mic_noise_suppression:
+        preferences.mic_noise_suppression = args.mic_noise_suppression
+
     # Load wake/stop models
     active_wake_words: Set[str] = set()
     wake_models: Dict[str, Union[MicroWakeWord, OpenWakeWord]] = {}
@@ -355,6 +361,8 @@ async def main() -> None:
         refractory_seconds=args.refractory_seconds,
         download_dir=args.download_dir,
         volume=initial_volume,
+        mic_auto_gain=preferences.mic_auto_gain,
+        mic_noise_suppression=preferences.mic_noise_suppression,
     )
 
     if args.enable_thinking_sound or args.mic_auto_gain or args.mic_noise_suppression:
