@@ -211,7 +211,7 @@ async def main() -> None:
 
     device_name = f"lva-{mac_address_clean}"
 
-    print(f"Device name  : {device_name}")
+    print(f"Device name: {device_name}")
 
     # Resolve version
     version = get_version()
