@@ -19,10 +19,7 @@ from aioesphomeapi.api_pb2 import (  # type: ignore[attr-defined]
     ListEntitiesDoneResponse,
     ListEntitiesRequest,
     MediaPlayerCommandRequest,
-<<<<<<< HEAD
-=======
     NumberCommandRequest,
->>>>>>> 1e91567 (Add WebRTC noise suppression and AGC)
     SubscribeHomeAssistantStatesRequest,
     SwitchCommandRequest,
     VoiceAssistantAnnounceFinished,
@@ -48,11 +45,7 @@ from pymicro_wakeword import MicroWakeWord
 from pyopen_wakeword import OpenWakeWord
 
 from .api_server import APIServer
-<<<<<<< HEAD
-from .entity import MediaPlayerEntity, MuteSwitchEntity, ThinkingSoundEntity
-=======
 from .entity import MediaPlayerEntity, MicSettingEntity, MuteSwitchEntity, ThinkingSoundEntity
->>>>>>> 1e91567 (Add WebRTC noise suppression and AGC)
 from .models import AvailableWakeWord, ServerState, WakeWordType
 from .util import call_all
 
@@ -155,8 +148,6 @@ class VoiceSatelliteProtocol(APIServer):
         thinking_sound_switch.update_set_thinking_sound_enabled(self._set_thinking_sound_enabled)
         thinking_sound_switch.sync_with_state()
 
-<<<<<<< HEAD
-=======
         # Mic Gain
         if self.state.mic_gain_entity is None:
             self.state.mic_gain_entity = MicSettingEntity(
@@ -201,7 +192,6 @@ class VoiceSatelliteProtocol(APIServer):
         self.state.mic_noise_suppression_entity.update_set_value(self.state.persist_mic_noise)
         self.state.mic_noise_suppression_entity.sync_with_state()
 
->>>>>>> 1e91567 (Add WebRTC noise suppression and AGC)
         self._is_streaming_audio = False
         self._tts_url: Optional[str] = None
         self._tts_played = False
@@ -347,10 +337,7 @@ class VoiceSatelliteProtocol(APIServer):
                 SubscribeHomeAssistantStatesRequest,
                 MediaPlayerCommandRequest,
                 SwitchCommandRequest,
-<<<<<<< HEAD
-=======
                 NumberCommandRequest,
->>>>>>> 1e91567 (Add WebRTC noise suppression and AGC)
             ),
         ):
             for entity in self.state.entities:
@@ -557,15 +544,12 @@ class VoiceSatelliteProtocol(APIServer):
         if self.state.mute_switch_entity is not None:
             self.state.mute_switch_entity.sync_with_state()
 
-<<<<<<< HEAD
-=======
         if self.state.mic_gain_entity is not None:
             self.state.mic_gain_entity.sync_with_state()
 
         if self.state.mic_noise_suppression_entity is not None:
             self.state.mic_noise_suppression_entity.sync_with_state()
 
->>>>>>> 1e91567 (Add WebRTC noise suppression and AGC)
         _LOGGER.info("Disconnected from Home Assistant; waiting for reconnection")
 
     def process_packet(self, msg_type: int, packet_data: bytes) -> None:

@@ -6,19 +6,13 @@ from typing import Callable, List, Optional, Union
 # pylint: disable=no-name-in-module
 from aioesphomeapi.api_pb2 import (  # type: ignore[attr-defined]
     ListEntitiesMediaPlayerResponse,
-<<<<<<< HEAD
-=======
     ListEntitiesNumberResponse,
->>>>>>> 1e91567 (Add WebRTC noise suppression and AGC)
     ListEntitiesRequest,
     ListEntitiesSwitchResponse,
     MediaPlayerCommandRequest,
     MediaPlayerStateResponse,
-<<<<<<< HEAD
-=======
     NumberCommandRequest,
     NumberStateResponse,
->>>>>>> 1e91567 (Add WebRTC noise suppression and AGC)
     SubscribeHomeAssistantStatesRequest,
     SwitchCommandRequest,
     SwitchStateResponse,
@@ -125,13 +119,10 @@ class MediaPlayerEntity(ESPHomeEntity):
     def handle_message(self, msg: message.Message) -> Iterable[message.Message]:
         self._log.debug("handle_message called with msg: %s", msg)
 
-<<<<<<< HEAD
-=======
         # Suppress warning for irrelevant NumberCommandRequest
         if isinstance(msg, NumberCommandRequest):
             return
 
->>>>>>> 1e91567 (Add WebRTC noise suppression and AGC)
         if isinstance(msg, MediaPlayerCommandRequest) and (msg.key == self.key):
             self._log.debug("MediaPlayerCommandRequest matched for this key")
 
@@ -363,8 +354,6 @@ class ThinkingSoundEntity(ESPHomeEntity):
             # Always return our internal switch state
             self.sync_with_state()
             yield SwitchStateResponse(key=self.key, state=self._switch_state)
-<<<<<<< HEAD
-=======
 
 
 class MicSettingEntity(ESPHomeEntity):
@@ -427,4 +416,3 @@ class MicSettingEntity(ESPHomeEntity):
 
     def update_set_value(self, set_value: Callable[[float], None]) -> None:
         self._set_value = set_value
->>>>>>> 1e91567 (Add WebRTC noise suppression and AGC)
