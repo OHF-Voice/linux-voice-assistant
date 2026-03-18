@@ -1,8 +1,8 @@
 name: Build PR
 
 on:
-  pull_request_review:
-    types: [submitted]
+  pull_request_target:
+    types: [opened, synchronize, reopened]
 
 env:
   REGISTRY: ghcr.io
@@ -11,6 +11,7 @@ jobs:
   build-and-push-image:
     runs-on: ubuntu-latest
     if: github.event.review.state == 'approved'
+    environment: build-pr
     permissions:
       contents: read
       packages: write
@@ -18,8 +19,10 @@ jobs:
       attestations: write
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - name: Checkout PR code
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
 
       - name: Extract PR information
         id: extract_pr
