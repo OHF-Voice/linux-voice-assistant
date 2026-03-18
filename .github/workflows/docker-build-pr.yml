@@ -1,8 +1,8 @@
 name: Build PR
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened]
+  pull_request_review:
+    types: [submitted]
 
 env:
   REGISTRY: ghcr.io
@@ -10,6 +10,9 @@ env:
 jobs:
   build-and-push-image:
     runs-on: ubuntu-latest
+    if: github.event.review.state == 'approved'
+    environment:
+      name: pr-build
     permissions:
       contents: read
       packages: write
