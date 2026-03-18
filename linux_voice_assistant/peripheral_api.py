@@ -26,9 +26,9 @@ Feedback events emitted by LVA
               retries connecting.
   idle
   muted
-  timer_ticking
-  timer_updated
-  timer_ringing
+  timer_ticking   data: {"id": str, "name": str, "total_seconds": int, "seconds_left": int}
+  timer_updated   data: {"id": str, "name": str, "total_seconds": int, "seconds_left": int}
+  timer_ringing   data: {"id": str, "name": str, "total_seconds": int, "seconds_left": int}
   media_player_playing  Emitted when HA sends music/media to the music_player
                         (non-announcement playback). Not emitted for TTS or
                         voice pipeline announcements — those use tts_speaking.
