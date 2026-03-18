@@ -1,7 +1,5 @@
 import logging
 
-import numpy as np
-
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -12,7 +10,7 @@ class WebRTCProcessor:
         self.apm = AudioProcessor(agc_level, ns_level)
         self.agc_level = agc_level
         self.ns_level = ns_level
-        self._buffer = b""
+        self._buffer = bytearray()
         self.FRAME_SIZE_BYTES = 320  # 160 samples * 2 bytes (16-bit PCM)
 
     def update_settings(self, agc_level: int, ns_level: int):
@@ -30,17 +28,14 @@ class WebRTCProcessor:
         Buffer and process audio.
         Returns processed bytes (may be shorter than input if buffering).
         """
-        self._buffer += raw_bytes
-        processed_output = b""
+        self._buffer.extend(raw_bytes)
+        processed_chunks: list[bytes] = []
 
         while len(self._buffer) >= self.FRAME_SIZE_BYTES:
-            frame = self._buffer[: self.FRAME_SIZE_BYTES]
-            self._buffer = self._buffer[self.FRAME_SIZE_BYTES :]
+            frame = bytes(self._buffer[: self.FRAME_SIZE_BYTES])
+            del self._buffer[: self.FRAME_SIZE_BYTES]  # drain in-place
 
-            # WebRTC processing
             result = self.apm.Process10ms(frame)
-            out_frame = result.audio
+            processed_chunks.append(result.audio)
 
-            processed_output += out_frame
-
-        return processed_output
+        return b"".join(processed_chunks)

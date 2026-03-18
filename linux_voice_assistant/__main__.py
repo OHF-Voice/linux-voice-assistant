@@ -292,10 +292,10 @@ async def main() -> None:
             _LOGGER.exception("Extras for webrtc are not installed")
             sys.exit(1)
 
-    if args.mic_auto_gain:
+    if args.mic_auto_gain > 0:
         preferences.mic_auto_gain = args.mic_auto_gain
 
-    if args.mic_noise_suppression:
+    if args.mic_noise_suppression > 0:
         preferences.mic_noise_suppression = args.mic_noise_suppression
 
     # Load wake/stop models
@@ -464,7 +464,7 @@ def process_audio(state: ServerState, mic, block_size: int):
                 agc = state.preferences.mic_auto_gain or 0
                 ns = state.preferences.mic_noise_suppression or 0
 
-                if agc or ns:
+                if agc > 0 or ns > 0:
                     if webrtc is None:
                         webrtc = WebRTCProcessor(agc_level=agc, ns_level=ns)
                     else:
