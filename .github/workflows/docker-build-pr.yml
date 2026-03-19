@@ -1,7 +1,7 @@
 name: Build PR
 
 on:
-  pull_request:
+  pull_request_target:
     types: [opened, synchronize, reopened]
 
 env:
@@ -10,6 +10,7 @@ env:
 jobs:
   build-and-push-image:
     runs-on: ubuntu-latest
+    if: github.event.review.state == 'approved'
     permissions:
       contents: read
       packages: write
@@ -17,13 +18,15 @@ jobs:
       attestations: write
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - name: Checkout PR code
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
 
       - name: Extract PR information
         id: extract_pr
         run: |
-          echo "PR_NUMBER=${{ github.event.number }}" >> $GITHUB_ENV
+          echo "PR_NUMBER=${{ github.event.pull_request.number }}" >> $GITHUB_ENV
           echo "REGISTRY_LOWER=$(echo '${{ env.REGISTRY }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
           echo "REPOSITORY_LOWER=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
 
@@ -55,13 +58,13 @@ jobs:
           platforms: linux/amd64,linux/aarch64
           push: true
           tags: |
-            ${{ env.REGISTRY_LOWER }}/${{ env.REPOSITORY_LOWER }}:pr-${{ env.PR_NUMBER }}
+            ${{ env.REGISTRY_LOWER }}/linux-voice-assistant-pr:${{ env.PR_NUMBER }}
           labels: |
             pr=${{ env.PR_NUMBER }}
 
       - name: Generate artifact attestation
         uses: actions/attest-build-provenance@v1.4.4
         with:
-          subject-name: ${{ env.REGISTRY }}/${{ github.repository }}
+          subject-name: ${{ env.REGISTRY }}/linux-voice-assistant-pr
           subject-digest: ${{ steps.push.outputs.digest }}
           push-to-registry: true
