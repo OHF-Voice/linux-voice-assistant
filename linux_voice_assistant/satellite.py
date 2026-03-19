@@ -20,9 +20,9 @@ from aioesphomeapi.api_pb2 import (  # type: ignore[attr-defined]
     ListEntitiesRequest,
     MediaPlayerCommandRequest,
     NumberCommandRequest,
+    SelectCommandRequest,
     SubscribeHomeAssistantStatesRequest,
     SwitchCommandRequest,
-    SelectCommandRequest,
     VoiceAssistantAnnounceFinished,
     VoiceAssistantAnnounceRequest,
     VoiceAssistantAudio,
@@ -159,7 +159,7 @@ class VoiceSatelliteProtocol(APIServer):
                 min_value=0.0,
                 max_value=31.0,
                 get_value=lambda: float(self.state.mic_auto_gain),
-                set_value=self.state.persist_mic_gain,
+                set_value=lambda val: self.state.persist_mic_gain(float(val)),
                 icon="mdi:microphone-plus",
             )
             self.state.entities.append(self.state.mic_gain_entity)
@@ -168,7 +168,7 @@ class VoiceSatelliteProtocol(APIServer):
 
         self.state.mic_gain_entity.server = self
         self.state.mic_gain_entity.update_get_value(lambda: float(self.state.mic_auto_gain))
-        self.state.mic_gain_entity.update_set_value(self.state.persist_mic_gain)
+        self.state.mic_gain_entity.update_set_value(lambda val: self.state.persist_mic_gain(float(val)))  # type: ignore[arg-type]
         self.state.mic_gain_entity.sync_with_state()
 
         # Mic Noise Suppression
@@ -178,8 +178,8 @@ class VoiceSatelliteProtocol(APIServer):
         def _get_noise_label() -> str:
             return _NOISE_OPTIONS[max(0, min(4, self.state.mic_noise_suppression))]
 
-        def _set_noise_label(label: str) -> None:
-            self.state.persist_mic_noise(float(_NOISE_TO_INT.get(label, 0)))
+        def _set_noise_label(label: Union[float, str]) -> None:
+            self.state.persist_mic_noise(float(_NOISE_TO_INT.get(str(label), 0)))
 
         if self.state.mic_noise_suppression_entity is None:
             self.state.mic_noise_suppression_entity = MicSettingEntity(
@@ -341,14 +341,7 @@ class VoiceSatelliteProtocol(APIServer):
             )
         elif isinstance(
             msg,
-            (
-                ListEntitiesRequest,
-                SubscribeHomeAssistantStatesRequest,
-                MediaPlayerCommandRequest,
-                SwitchCommandRequest,
-                NumberCommandRequest,
-                SelectCommandRequest
-            ),
+            (ListEntitiesRequest, SubscribeHomeAssistantStatesRequest, MediaPlayerCommandRequest, SwitchCommandRequest, NumberCommandRequest, SelectCommandRequest),
         ):
             for entity in self.state.entities:
                 yield from entity.handle_message(msg)

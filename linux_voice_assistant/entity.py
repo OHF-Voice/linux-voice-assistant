@@ -8,17 +8,17 @@ from aioesphomeapi.api_pb2 import (  # type: ignore[attr-defined]
     ListEntitiesMediaPlayerResponse,
     ListEntitiesNumberResponse,
     ListEntitiesRequest,
+    ListEntitiesSelectResponse,
     ListEntitiesSwitchResponse,
     MediaPlayerCommandRequest,
     MediaPlayerStateResponse,
     NumberCommandRequest,
     NumberStateResponse,
+    SelectCommandRequest,
+    SelectStateResponse,
     SubscribeHomeAssistantStatesRequest,
     SwitchCommandRequest,
     SwitchStateResponse,
-    ListEntitiesSelectResponse,
-    SelectCommandRequest,
-    SelectStateResponse
 )
 from aioesphomeapi.model import (
     EntityCategory,
