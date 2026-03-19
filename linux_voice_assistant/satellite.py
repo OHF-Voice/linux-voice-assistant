@@ -172,7 +172,7 @@ class VoiceSatelliteProtocol(APIServer):
         self.state.mic_gain_entity.sync_with_state()
 
         # Mic Noise Suppression
-        _NOISE_OPTIONS = ["Off", "Low", "Medium", "High", "Maximum"]
+        _NOISE_OPTIONS = ["Off", "Low", "Medium", "High", "Max"]
         _NOISE_TO_INT = {label: i for i, label in enumerate(_NOISE_OPTIONS)}
 
         def _get_noise_label() -> str:
