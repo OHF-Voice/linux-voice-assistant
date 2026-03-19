@@ -22,6 +22,7 @@ from aioesphomeapi.api_pb2 import (  # type: ignore[attr-defined]
     NumberCommandRequest,
     SubscribeHomeAssistantStatesRequest,
     SwitchCommandRequest,
+    SelectCommandRequest,
     VoiceAssistantAnnounceFinished,
     VoiceAssistantAnnounceRequest,
     VoiceAssistantAudio,
@@ -171,16 +172,24 @@ class VoiceSatelliteProtocol(APIServer):
         self.state.mic_gain_entity.sync_with_state()
 
         # Mic Noise Suppression
+        _NOISE_OPTIONS = ["Off", "Low", "Medium", "High", "Maximum"]
+        _NOISE_TO_INT = {label: i for i, label in enumerate(_NOISE_OPTIONS)}
+
+        def _get_noise_label() -> str:
+            return _NOISE_OPTIONS[max(0, min(4, self.state.mic_noise_suppression))]
+
+        def _set_noise_label(label: str) -> None:
+            self.state.persist_mic_noise(float(_NOISE_TO_INT.get(label, 0)))
+
         if self.state.mic_noise_suppression_entity is None:
             self.state.mic_noise_suppression_entity = MicSettingEntity(
                 server=self,
                 key=len(self.state.entities),
                 name="Mic Noise Suppression",
                 object_id="mic_noise",
-                min_value=0.0,
-                max_value=4.0,
-                get_value=lambda: float(self.state.mic_noise_suppression),
-                set_value=self.state.persist_mic_noise,
+                options=_NOISE_OPTIONS,
+                get_value=_get_noise_label,
+                set_value=_set_noise_label,
                 icon="mdi:waveform",
             )
             self.state.entities.append(self.state.mic_noise_suppression_entity)
@@ -188,8 +197,8 @@ class VoiceSatelliteProtocol(APIServer):
             self.state.entities.append(self.state.mic_noise_suppression_entity)
 
         self.state.mic_noise_suppression_entity.server = self
-        self.state.mic_noise_suppression_entity.update_get_value(lambda: float(self.state.mic_noise_suppression))
-        self.state.mic_noise_suppression_entity.update_set_value(self.state.persist_mic_noise)
+        self.state.mic_noise_suppression_entity.update_get_value(_get_noise_label)
+        self.state.mic_noise_suppression_entity.update_set_value(_set_noise_label)
         self.state.mic_noise_suppression_entity.sync_with_state()
 
         self._is_streaming_audio = False
@@ -338,6 +347,7 @@ class VoiceSatelliteProtocol(APIServer):
                 MediaPlayerCommandRequest,
                 SwitchCommandRequest,
                 NumberCommandRequest,
+                SelectCommandRequest
             ),
         ):
             for entity in self.state.entities:

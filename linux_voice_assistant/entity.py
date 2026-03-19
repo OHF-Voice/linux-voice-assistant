@@ -16,6 +16,9 @@ from aioesphomeapi.api_pb2 import (  # type: ignore[attr-defined]
     SubscribeHomeAssistantStatesRequest,
     SwitchCommandRequest,
     SwitchStateResponse,
+    ListEntitiesSelectResponse,
+    SelectCommandRequest,
+    SelectStateResponse
 )
 from aioesphomeapi.model import (
     EntityCategory,
@@ -120,7 +123,7 @@ class MediaPlayerEntity(ESPHomeEntity):
         self._log.debug("handle_message called with msg: %s", msg)
 
         # Suppress warning for irrelevant NumberCommandRequest
-        if isinstance(msg, NumberCommandRequest):
+        if isinstance(msg, (NumberCommandRequest, SelectCommandRequest)):
             return
 
         if isinstance(msg, MediaPlayerCommandRequest) and (msg.key == self.key):
@@ -363,16 +366,18 @@ class MicSettingEntity(ESPHomeEntity):
         key: int,
         name: str,
         object_id: str,
-        min_value: float,
-        max_value: float,
-        get_value: Callable[[], float],
-        set_value: Callable[[float], None],
+        get_value: Callable[[], Union[float, str]],
+        set_value: Callable[[Union[float, str]], None],
+        min_value: float = 0.0,
+        max_value: float = 1.0,
+        options: Optional[List[str]] = None,
         icon: str = "mdi:microphone",
     ) -> None:
         ESPHomeEntity.__init__(self, server)
         self.key = key
         self.name = name
         self.object_id = object_id
+        self.options = options  # If present, this behaves as a Dropdown
         self.min_value = min_value
         self.max_value = max_value
         self._get_value = get_value
@@ -385,34 +390,53 @@ class MicSettingEntity(ESPHomeEntity):
         self._state = self._get_value()
 
     def handle_message(self, msg: message.Message) -> Iterable[message.Message]:
-        if isinstance(msg, NumberCommandRequest) and (msg.key == self.key):
-            # 1. User moved the slider in Home Assistant
-            new_val = msg.state
-            self._state = new_val
-            self._set_value(new_val)
-            # 2. Confirm the new state back to HA
-            yield NumberStateResponse(key=self.key, state=new_val)
+        # --- 1. HANDLE COMMANDS FROM HOME ASSISTANT ---
+        if self.options:
+            if isinstance(msg, SelectCommandRequest) and (msg.key == self.key):
+                new_val = msg.state
+                self._state = new_val
+                self._set_value(new_val)
+                yield SelectStateResponse(key=self.key, state=new_val)
+        else:
+            if isinstance(msg, NumberCommandRequest) and (msg.key == self.key):
+                new_val = msg.state
+                self._state = new_val
+                self._set_value(new_val)
+                yield NumberStateResponse(key=self.key, state=new_val)
 
-        elif isinstance(msg, ListEntitiesRequest):
-            # Discovery: Tell HA about the slider's range and icon
-            yield ListEntitiesNumberResponse(
-                object_id=self.object_id,
-                key=self.key,
-                name=self.name,
-                min_value=self.min_value,
-                max_value=self.max_value,
-                step=1.0,
-                entity_category=EntityCategory.CONFIG,
-                icon=self.icon,
-            )
+        # --- 2. DISCOVERY (TELL HA WHAT TYPE TO SHOW) ---
+        if isinstance(msg, ListEntitiesRequest):
+            if self.options:
+                yield ListEntitiesSelectResponse(
+                    object_id=self.object_id,
+                    key=self.key,
+                    name=self.name,
+                    options=self.options,
+                    entity_category=EntityCategory.CONFIG,
+                    icon=self.icon,
+                )
+            else:
+                yield ListEntitiesNumberResponse(
+                    object_id=self.object_id,
+                    key=self.key,
+                    name=self.name,
+                    min_value=self.min_value,
+                    max_value=self.max_value,
+                    step=1.0,
+                    entity_category=EntityCategory.CONFIG,
+                    icon=self.icon,
+                )
 
+        # --- 3. INITIAL SYNC / STATE UPDATES ---
         elif isinstance(msg, SubscribeHomeAssistantStatesRequest):
-            # Initial Sync: Send the current saved value to the UI
             self.sync_with_state()
-            yield NumberStateResponse(key=self.key, state=self._state)
+            if self.options:
+                yield SelectStateResponse(key=self.key, state=str(self._state))
+            else:
+                yield NumberStateResponse(key=self.key, state=float(self._state))
 
-    def update_get_value(self, get_value: Callable[[], float]) -> None:
+    def update_get_value(self, get_value: Callable[[], Union[float, str]]) -> None:
         self._get_value = get_value
 
-    def update_set_value(self, set_value: Callable[[float], None]) -> None:
+    def update_set_value(self, set_value: Callable[[Union[float, str]], None]) -> None:
         self._set_value = set_value
