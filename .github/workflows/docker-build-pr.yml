@@ -11,7 +11,6 @@ jobs:
   build-and-push-image:
     runs-on: ubuntu-latest
     if: github.event.review.state == 'approved'
-    environment: build-pr
     permissions:
       contents: read
       packages: write
