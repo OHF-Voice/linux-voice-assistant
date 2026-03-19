@@ -4,12 +4,12 @@ services:
   fix-permissions:
     image: "ghcr.io/ohf-voice/linux-voice-assistant:latest"
     entrypoint: []
-    command: "chown -R ${LVA_USER_ID}:${LVA_USER_GROUP} /app/local /app/configuration /app/wakewords/custom /app/sounds/custom"
+    command: "chown -R ${LVA_USER_ID:-1000}:${LVA_USER_GROUP:-1000} /app/local /app/configuration /app/wakewords/custom /app/sounds/custom"
     environment:
       # Pulseaudio
-      - XDG_RUNTIME_DIR=${LVA_XDG_RUNTIME_DIR}
-      - PULSE_SERVER=${LVA_PULSE_SERVER}
-      - PULSE_COOKIE=${LVA_PULSE_COOKIE}
+      - XDG_RUNTIME_DIR=${LVA_XDG_RUNTIME_DIR:-/run/user/1000}
+      - PULSE_SERVER=${LVA_PULSE_SERVER:-/run/user/1000/pulse/native}
+      - PULSE_COOKIE=${LVA_PULSE_COOKIE:-/run/user/1000/pulse/cookie}
     env_file: ${ENV_FILE:-.env}
     group_add:
       - audio
@@ -27,12 +27,12 @@ services:
     image: "ghcr.io/ohf-voice/linux-voice-assistant:latest"
     restart: unless-stopped
     network_mode: "host"
-    user: "${LVA_USER_ID}:${LVA_USER_GROUP}"
+    user: "${LVA_USER_ID:-1000}:${LVA_USER_GROUP:-1000}"
     environment:
       # Pulseaudio
-      - XDG_RUNTIME_DIR=${LVA_XDG_RUNTIME_DIR}
-      - PULSE_SERVER=${LVA_PULSE_SERVER}
-      - PULSE_COOKIE=${LVA_PULSE_COOKIE}
+      - XDG_RUNTIME_DIR=${LVA_XDG_RUNTIME_DIR:-/run/user/1000}
+      - PULSE_SERVER=${LVA_PULSE_SERVER:-/run/user/1000/pulse/native}
+      - PULSE_COOKIE=${LVA_PULSE_COOKIE:-/run/user/1000/pulse/cookie}
     env_file: .env
     group_add:
       - audio
@@ -50,7 +50,7 @@ services:
       - /etc/timezone:/etc/timezone:ro
       # Pulseaudio
       # /run/user/1000:/run/user/1000
-      - ${LVA_XDG_RUNTIME_DIR}:${LVA_XDG_RUNTIME_DIR}
+      - ${LVA_XDG_RUNTIME_DIR:-/run/user/1000}:${LVA_XDG_RUNTIME_DIR:-/run/user/1000}
       # Mount source code for development
       - ./linux_voice_assistant:/app/linux_voice_assistant
       - ./docker-entrypoint.sh:/app/docker-entrypoint.sh
