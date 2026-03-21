@@ -63,9 +63,9 @@ usage: __main__.py [-h] [--name NAME] [--audio-input-device AUDIO_INPUT_DEVICE] 
 | `--audio-input-device` | Soundcard name for input device | Autodetected |
 | `--audio-input-block-size` | Audio input block size in samples | 1024 |
 | `--audio-output-device` | mpv name for output device | Autodetected |
-| `--wake-word-dir` | Directory with wake word models (.tflite) and configs (.json) | `wakewords/` |
 | `--mic-auto-gain` | Add WebRTC Gain to Mic | 0 |
 | `--mic-noise-suppression` | Add WebRTC Noise Suppresion to Mic | 0 |
+| `--wake-word-dir` | Directory with wake word models (.tflite) and configs (.json) | `wakewords/` |
 | `--wake-model` | ID of active wake word model | `okay_nabu` |
 | `--stop-model` | ID of stop model | `stop` |
 | `--download-dir` | Directory to download custom wake word models, etc. | `local/` |

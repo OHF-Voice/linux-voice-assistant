@@ -176,6 +176,8 @@ Environment=PREFERENCES_FILE="/home/pi/linux-voice-assistant/preferences.json"
 # Environment=PORT="6053"
 # Environment=AUDIO_INPUT_DEVICE="default"
 # Environment=AUDIO_OUTPUT_DEVICE="default"
+# Environment=MIC_AUTO_GAIN="0"
+# Environment=MIC_NOISE_SUPPRESSION="0"
 # Environment=ENABLE_THINKING_SOUND="1"
 # Environment=WAKE-MODEL="okay_nabu"
 # Environment=REFACTORY_SECONDS="2"
@@ -251,6 +253,8 @@ The following variables can be configured in the `.env` or in the service file:
 | `PORT` | `6053` | API server port |
 | `AUDIO_INPUT_DEVICE` | Autodetected | Audio input device name |
 | `AUDIO_OUTPUT_DEVICE` | Autodetected | Audio output device name |
+| `MIC_AUTO_GAIN` | Add WebRTC Gain to Mic | 0 |
+| `MIC_NOISE_SUPPRESSION` | Add WebRTC Noise Suppresion to Mic | 0 |
 | `ENABLE_THINKING_SOUND` | false | Set to "1" to enable thinking sound |
 | `WAKE_WORD_DIR` | `app/wakewords` | Path to the wake word directory |
 | `WAKE_MODEL` | `okay_nabu` | Wake word model to use |
