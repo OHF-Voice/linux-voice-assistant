@@ -80,10 +80,6 @@ usage: __main__.py [-h] [--name NAME] [--audio-input-device AUDIO_INPUT_DEVICE] 
 | `--enable-thinking-sound` | Enable thinking sound on startup | False |
 | `--debug` | Print DEBUG messages to console | False |
 
-## Adding Acoustic Echo Cancellation
-
-Acoustic Echo Cancellation (AEC) is a type of sound processing used to cancel out the noise coming out of your speaker and going into your mic. In LVA this functionality can be useful to allow LVA to listen to wake words even when audio is playing, particularly when a timer is playing. PulseAudio and PipeWire already provide built-in modules for AEC. To enable AEC, see [Linux-Voice-Assistant - Enabling AEC](docs/enabling_aec.md). 
-
 ## Build Information:
 
 Image builds can be tracked in this repository's `Actions` tab, and utilize [artifact attestation](https://docs.github.com/en/actions/security-guides/using-artifact-attestations-to-establish-provenance-for-builds) to certify provenance.
