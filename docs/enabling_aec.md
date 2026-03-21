@@ -9,9 +9,27 @@ Acoustic Echo Cancellation (AEC) is a type of sound processing used to cancel ou
 pactl load-module module-echo-cancel source_name=aec_mic aec_method=webrtc
 ```
 
-### PipeWire
+To make permanent, add to `/etc/pulse/default.pa`:
+```
+load-module module-echo-cancel source_name=aec_mic aec_method=webrtc
+```
 
-Inside of `pipewire.conf.d` add:
+### PipeWire
+```sh
+pw-cli load-module libpipewire-module-echo-cancel '{ aec.method=webrtc source.props={ node.name=aec_mic } }'
+```
+
+To make permanent, add the following to the `context.modules` section of `/etc/pipewire/pipewire.conf`:
+```
+{ name = libpipewire-module-echo-cancel
+    args = {
+      aec.method = webrtc
+      source.props = { node.name = aec_mic }
+    }
+}
+```
+
+Or if you are using a standard PipeWire installation without a custom `pipewire.conf`, create a new file inside `pipewire.conf.d/`:
 ```
 context.modules = [
   { name = libpipewire-module-echo-cancel
@@ -38,9 +56,13 @@ pactl load-module module-echo-cancel source_name=aec_mic aec_method=webrtc sourc
 ```
 
 ### PipeWire
+```sh
+pw-cli load-module libpipewire-module-echo-cancel '{ aec.method=webrtc source.props={ node.name=aec_mic node.description="Echo Cancelled Mic" } sink.props={ node.name=aec_sink } capture.props={ node.name=<your-mic-node-name> } playback.props={ node.name=<your-speaker-node-name> } }'
 ```
-context.modules = [
-  { name = libpipewire-module-echo-cancel
+
+To make permanent, add to `context.modules` in `/etc/pipewire/pipewire.conf` or a file in `pipewire.conf.d/`:
+```
+{ name = libpipewire-module-echo-cancel
     args = {
       aec.method = webrtc
       source.props = {
@@ -57,6 +79,5 @@ context.modules = [
         node.name = <your-speaker-node-name>
       }
     }
-  }
-]
+}
 ```
