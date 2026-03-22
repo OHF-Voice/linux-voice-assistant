@@ -120,6 +120,33 @@ for i in $(seq 1 $CP_MAX_RETRIES); do
 done
 
 
+### Echo Cancellation
+# Loads PulseAudio/PipeWire echo-cancel module to filter speaker output from
+# mic input. Works with both PulseAudio and PipeWire (via compatibility layer).
+if [ "${ENABLE_ECHO_CANCEL}" = "1" ]; then
+  _ec_loaded=0
+  if pactl list modules short 2>/dev/null | grep -q module-echo-cancel; then
+    echo "✅ Echo cancellation module already loaded"
+    _ec_loaded=1
+  else
+    if pactl load-module module-echo-cancel aec_method=webrtc; then
+      echo "✅ Echo cancellation enabled"
+      _ec_loaded=1
+    else
+      echo "⚠️  Failed to load echo cancellation module (continuing without it)"
+    fi
+  fi
+
+  if [ "${_ec_loaded}" = "1" ]; then
+    # Point audio devices to the echo-cancelled virtual devices.
+    # PulseAudio creates descriptions like "... (echo cancelled with ...)",
+    # so "echo cancelled" substring matches them via soundcard library.
+    AUDIO_INPUT_DEVICE="echo cancelled"
+    AUDIO_OUTPUT_DEVICE="echo cancelled"
+  fi
+fi
+
+
 ### Start application
 if [ "$LIST_DEVICES" = "1" ]; then
   echo "list input devices"

@@ -414,6 +414,12 @@ def process_audio(state: ServerState, mic, block_size: int):
     has_oww = False
 
     last_active: Optional[float] = None
+    stop_count: int = 0
+    # Each audio block is ~64ms (1024 samples @ 16kHz).
+    # Threshold of 3 consecutive detections (~192ms) filters single-frame
+    # false positives from speaker feedback while still responding quickly
+    # to a real spoken "stop" (~300-400ms).
+    stop_threshold: int = 3
 
     try:
         _LOGGER.debug("Opening audio input device: %s", mic.name)
@@ -473,13 +479,22 @@ def process_audio(state: ServerState, mic, block_size: int):
                                 last_active = now
 
                     # Always process to keep state correct
-                    stopped = False
+                    any_stopped = False
                     for micro_input in micro_inputs:
                         if state.stop_word.process_streaming(micro_input):
-                            stopped = True
+                            any_stopped = True
 
-                    if stopped and (state.stop_word.id in state.active_wake_words) and not state.muted:
+                    # Require consecutive detections to filter out false positives
+                    # caused by TTS speaker audio feeding back into the microphone.
+                    if any_stopped and (state.stop_word.id in state.active_wake_words):
+                        stop_count += 1
+                    else:
+                        stop_count = 0
+
+                    if stop_count >= stop_threshold and not state.muted:
+                        _LOGGER.debug("Stop word detected (consecutive=%d)", stop_count)
                         state.satellite.stop()
+                        stop_count = 0
                 except Exception:
                     _LOGGER.exception("Unexpected error handling audio")
     except Exception:
