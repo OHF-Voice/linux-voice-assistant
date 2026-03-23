@@ -212,8 +212,10 @@ async def main() -> None:
         host_ip_address = args.host
 
     # Resolve mac
-    mac_address = get_mac_address(interface=network_interface)
-    mac_address_clean = mac_address.replace(":", "")
+    if not (mac_address := get_mac_address(interface=network_interface)):
+        print("No Mac address was found, app stopped.")
+        sys.exit(1)
+    mac_address_clean = mac_address.replace(":", "").lower()
 
     # Resolve name
     if not args.name:
@@ -225,8 +227,8 @@ async def main() -> None:
         print(f"Using friendly name: {args.name}")
         friendly_name = args.name
 
-    mac_no_colon = mac_address.replace(":", "").lower()
-    device_name = f"lva-{mac_no_colon}"
+    device_name = f"lva-{mac_address_clean}"
+
     print(f"Device name: {device_name}")
 
     # Resolve version
@@ -341,7 +343,7 @@ async def main() -> None:
         name=device_name,
         friendly_name=friendly_name,
         network_interface=network_interface,
-        mac_address=get_mac_address(interface=network_interface),
+        mac_address=mac_address,
         ip_address=host_ip_address,
         version=version,
         esphome_version=esphome_version,
@@ -527,6 +529,7 @@ def process_audio(state: ServerState, mic, block_size: int):
                             stopped = True
 
                     if stopped and (state.stop_word.id in state.active_wake_words) and not state.muted:
+                        _LOGGER.debug("Stop word detected")
                         state.satellite.stop()
                 except Exception:
                     _LOGGER.exception("Unexpected error handling audio")
