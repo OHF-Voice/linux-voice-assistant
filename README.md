@@ -64,7 +64,7 @@ usage: __main__.py [-h] [--name NAME] [--audio-input-device AUDIO_INPUT_DEVICE] 
 | `--audio-input-block-size` | Audio input block size in samples | 1024 |
 | `--audio-output-device` | mpv name for output device | Autodetected |
 | `--mic-auto-gain` | Add WebRTC Gain to Mic | 0 |
-| `--mic-noise-suppression` | Add WebRTC Noise Suppresion to Mic | 0 |
+| `--mic-noise-suppression` | Add WebRTC Noise Suppression to Mic | 0 |
 | `--wake-word-dir` | Directory with wake word models (.tflite) and configs (.json) | `wakewords/` |
 | `--wake-model` | ID of active wake word model | `okay_nabu` |
 | `--stop-model` | ID of stop model | `stop` |
@@ -81,6 +81,8 @@ usage: __main__.py [-h] [--name NAME] [--audio-input-device AUDIO_INPUT_DEVICE] 
 | `--port` | Port for ESPHome server | 6053 |
 | `--enable-thinking-sound` | Enable thinking sound on startup | False |
 | `--debug` | Print DEBUG messages to console | False |
+
+💡 **Note:** There is a detailed explaination on the gain and noise suppression flags in the [audio options](docs/audio_options.md) file.
 
 ## Build Information:
 
