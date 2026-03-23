@@ -102,20 +102,20 @@ fi
 CP_MAX_RETRIES=30
 CP_RETRY_DELAY=1
 ### while maybe besser?
-echo "Checking PulseAudio service status..."
+echo "Checking audio service status..."
 for i in $(seq 1 $CP_MAX_RETRIES); do
-  # Check if PulseAudio is running
-  if pactl info >/dev/null 2>&1; then
-    echo "✅ PulseAudio is running"
+  # Check if PulseAudio or PipeWire-pulse is running
+  if pactl info >/dev/null 2>&1 || pw-cli info 0 >/dev/null 2>&1; then
+    echo "✅ Audio server is running"
     break
   fi
 
   if [ $i -eq $CP_MAX_RETRIES ]; then
-      echo "❌ PulseAudio did not start after $CP_MAX_RETRIES seconds"
+      echo "❌ Audio server did not start after $CP_MAX_RETRIES seconds"
       exit 2
   fi
 
-  echo "⏳ PulseAudio not running yet, retrying in $CP_RETRY_DELAY s..."
+  echo "⏳ Audio server not running yet, retrying in $CP_RETRY_DELAY s..."
   sleep $CP_RETRY_DELAY
 done
 
