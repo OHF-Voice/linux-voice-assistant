@@ -15,7 +15,7 @@ PipeWire is a multimedia server that provides low-latency audio/video handling. 
 sudo apt update
 
 # Install PipeWire and related packages
-sudo apt install -y pipewire wireplumber pipewire-audio-client-libraries libspa-0.2-bluetooth pipewire-audio pipewire-pulse dfu-util
+sudo apt install -y pipewire wireplumber pipewire-audio-client-libraries libspa-0.2-bluetooth pipewire-audio pipewire-pulse dfu-util pulseaudio-utils
 ```
 
 Link the PipeWire configuration for ALSA applications:
@@ -35,30 +35,15 @@ sudo touch /var/lib/systemd/linger/$USER
 
 ### Configure PipeWire (optional):
 
+💡 **Note:** If you are not on a desktop system, which is already configured for PipeWire, you can configure it manually.
 💡 **Note:** LVA records audio at 16kHz. By default PipeWire may run at a different sample rate (typically 48kHz) and will resample automatically. Setting `default.clock.rate = 16000` avoids this resampling overhead, which is particularly beneficial on low-power hardware such as a Raspberry Pi.
 
-There are 2 ways to configure PipeWire:
+LVA is meant to be configured system wide. So only that method has been documented.
 
-1. [System-wide Configuration](#a1-system-wide-configuration)
-2. [User-level Configuration](#a2-user-level-configuration)
-
-#### A.1) System-wide Configuration
+#### System-wide Configuration
 ```sh
 sudo mkdir -p /etc/pipewire/pipewire.conf.d
 sudo vi /etc/pipewire/pipewire.conf.d/linux-voice-assistant.conf
-```
-
-Add the following content:
-```
-context.properties = {
-    default.clock.rate = 16000
-}
-```
-
-#### A.2) User-level Configuration
-```sh
-mkdir -p ~/.config/pipewire/pipewire.conf.d
-vi ~/.config/pipewire/pipewire.conf.d/linux-voice-assistant.conf
 ```
 
 Add the following content:
