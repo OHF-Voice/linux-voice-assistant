@@ -484,3 +484,7 @@ sudo alsamixer
 ```
 
 💡 **Note:** Replace `$LVA_USER_ID` with your actual user id that you want to run the voice assistant.
+
+## Adding Acoustic Echo Cancellation
+
+Acoustic Echo Cancellation (AEC) is a type of sound processing used to cancel out the noise coming out of your speaker and going into your mic. In LVA this functionality can be useful to allow LVA to listen to wake words even when audio is playing, particularly when a timer is playing. PulseAudio and PipeWire already provide built-in modules for AEC. To enable AEC, see [Linux-Voice-Assistant - Enabling AEC](docs/enabling_aec.md). 
