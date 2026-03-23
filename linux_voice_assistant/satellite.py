@@ -274,9 +274,12 @@ class VoiceSatelliteProtocol(APIServer):
             self.play_tts()
         elif event_type == VoiceAssistantEventType.VOICE_ASSISTANT_RUN_END:
             self._is_streaming_audio = False
-            self._pipeline_active = False
             if not self._tts_played:
+                self._pipeline_active = False
                 self._tts_finished()
+            # When TTS is playing, keep _pipeline_active = True to block
+            # false wake word detections from speaker audio feedback.
+            # _tts_finished() callback will clear it when playback ends.
 
             self._tts_played = False
 
@@ -466,9 +469,10 @@ class VoiceSatelliteProtocol(APIServer):
             self.state.tts_player.stop()
             _LOGGER.debug("Stopping timer finished sound")
         else:
+            # tts_player.stop() invokes the done_callback (_tts_finished),
+            # so we don't call _tts_finished() again explicitly.
             self.state.tts_player.stop()
             _LOGGER.debug("TTS response stopped manually")
-            self._tts_finished()
 
     def play_tts(self) -> None:
         if (not self._tts_url) or self._tts_played:
