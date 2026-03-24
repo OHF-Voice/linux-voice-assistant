@@ -461,34 +461,35 @@ class VoiceSatelliteProtocol(APIServer):
 
         _LOGGER.debug("TTS response finished")
 
-    def _play_timer_finished(self) -> None:
-        if not self._timer_finished:
-            _LOGGER.debug("Timer finished sound stopped")
+def _play_timer_finished(self) -> None:
+    if not self._timer_finished:
+        _LOGGER.debug("Timer finished sound stopped")
+        self.unduck()
+        self._timer_ring_start = None
+        return
+
+    # Auto-stop after timer_max_ring_seconds
+    if self._timer_ring_start is not None:
+        elapsed = time.monotonic() - self._timer_ring_start
+        if elapsed >= self.state.timer_max_ring_seconds:
+            _LOGGER.info(
+                "Timer auto-stopped after %.0f seconds (max=%.0f)",
+                elapsed,
+                self.state.timer_max_ring_seconds,
+            )
+            self._timer_finished = False
+            self._timer_ring_start = None
+            self.state.active_wake_words.discard(self.state.stop_word.id)
             self.unduck()
             return
 
-        # Auto-stop after timer_max_ring_seconds
-        if self._timer_ring_start is not None:
-            elapsed = time.monotonic() - self._timer_ring_start
-            if elapsed >= self.state.timer_max_ring_seconds:
-                _LOGGER.info(
-                    "Timer auto-stopped after %.0f seconds (max=%.0f)",
-                    elapsed,
-                    self.state.timer_max_ring_seconds,
-                )
-                self._timer_finished = False
-                self._timer_ring_start = None
-                self.state.active_wake_words.discard(self.state.stop_word.id)
-                self.unduck()
-                return
-        
-        self.state.tts_player.play(
-            self.state.timer_finished_sound,
-            done_callback=lambda: call_all(
-                lambda: time.sleep(1.0),
-                self._play_timer_finished,
-            ),
-        )
+    self.state.tts_player.play(
+        self.state.timer_finished_sound,
+        done_callback=lambda: call_all(
+            lambda: time.sleep(1.0),
+            self._play_timer_finished,
+        ),
+    )
 
     def connection_lost(self, exc):
         super().connection_lost(exc)
