@@ -176,7 +176,7 @@ class VoiceSatelliteProtocol(APIServer):
             # voice_assistant.stop behavior
             _LOGGER.debug("Muting voice assistant (voice_assistant.stop)")
             self._is_streaming_audio = False
-            self.state.tts_player.
+            self.state.tts_player.stop()
             # Stop any ongoing voice processing
             self.state.stop_word.is_active = False  # type: ignore
             self.state.tts_player.play(self.state.mute_sound)
@@ -383,7 +383,7 @@ class VoiceSatelliteProtocol(APIServer):
             # Stop timer instead
             self._timer_finished = False
             self.unduck()
-            self.state.tts_player.
+            self.state.tts_player.stop()
             _LOGGER.debug("Stopping timer finished sound")
             return
 
@@ -420,12 +420,12 @@ class VoiceSatelliteProtocol(APIServer):
             self._timer_finished = False
             self._timer_ring_start = None
             self.unduck()
-            self.state.tts_player.
+            self.state.tts_player.stop()
             _LOGGER.debug("Stopping timer finished sound")
         else:
-            # tts_player. invokes the done_callback (_tts_finished),
+            # tts_player.stop() invokes the done_callback (_tts_finished),
             # so we don't call _tts_finished() again explicitly.
-            self.state.tts_player.
+            self.state.tts_player.stop()
             _LOGGER.debug("TTS response stopped manually")
 
     def play_tts(self) -> None:
@@ -467,7 +467,7 @@ class VoiceSatelliteProtocol(APIServer):
             self.unduck()
             self._timer_ring_start = None
             return
-            
+
         # Auto-stop after timer_max_ring_seconds
         if self._timer_ring_start is not None:
             elapsed = time.monotonic() - self._timer_ring_start
@@ -504,12 +504,12 @@ class VoiceSatelliteProtocol(APIServer):
 
         # Stop any ongoing audio playback and wake/stop word processing.
         try:
-            self.state.music_player.
+            self.state.music_player.stop()
         except Exception:  # pragma: no cover - defensive safety net
             _LOGGER.exception("Failed to stop music player during disconnect")
 
         try:
-            self.state.tts_player.
+            self.state.tts_player.stop()
         except Exception:  # pragma: no cover - defensive safety net
             _LOGGER.exception("Failed to stop TTS player during disconnect")
 
