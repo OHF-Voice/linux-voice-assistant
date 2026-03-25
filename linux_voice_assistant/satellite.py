@@ -482,7 +482,7 @@ class VoiceSatelliteProtocol(APIServer):
                 self.state.active_wake_words.discard(self.state.stop_word.id)
                 self.unduck()
                 return
-    
+
         self.state.tts_player.play(
             self.state.timer_finished_sound,
             done_callback=lambda: call_all(
