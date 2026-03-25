@@ -104,6 +104,7 @@ class ServerState:
     muted: bool = False
     connected: bool = False
     volume: float = 1.0
+    timer_max_ring_seconds: float = 900.0
 
     def save_preferences(self) -> None:
         """Save preferences as JSON."""

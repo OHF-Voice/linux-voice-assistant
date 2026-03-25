@@ -174,6 +174,7 @@ class VoiceSatelliteProtocol(APIServer):
         self._tts_played = False
         self._continue_conversation = False
         self._timer_finished = False
+        self._timer_ring_start: Optional[float] = None
         self._processing = False
         self._pipeline_active = False
         self._external_wake_words: Dict[str, VoiceAssistantExternalWakeWord] = {}
@@ -280,9 +281,13 @@ class VoiceSatelliteProtocol(APIServer):
 
         elif event_type == VoiceAssistantEventType.VOICE_ASSISTANT_RUN_END:
             self._is_streaming_audio = False
-            self._pipeline_active = False
             if not self._tts_played:
+                self._pipeline_active = False
                 self._tts_finished()
+            # When TTS is playing, keep _pipeline_active = True to block
+            # false wake word detections from speaker audio feedback.
+            # _tts_finished() callback will clear it when playback ends.
+
             self._tts_played = False
 
         elif event_type == VoiceAssistantEventType.VOICE_ASSISTANT_ERROR:
@@ -322,6 +327,7 @@ class VoiceSatelliteProtocol(APIServer):
             if not self._timer_finished:
                 self.state.active_wake_words.add(self.state.stop_word.id)
                 self._timer_finished = True
+                self._timer_ring_start = time.monotonic()
                 self.duck()
                 self._emit(LVAEvent.TIMER_RINGING, timer_data)
                 self._play_timer_finished()
@@ -570,14 +576,16 @@ class VoiceSatelliteProtocol(APIServer):
 
         if self._timer_finished:
             self._timer_finished = False
+            self._timer_ring_start = None 
             self.unduck()
             self.state.tts_player.stop()
             self._emit(LVAEvent.IDLE)
             _LOGGER.debug("Stopping timer finished sound")
         else:
+            # tts_player.stop() invokes the done_callback (_tts_finished),
+            # so we don't call _tts_finished() again explicitly.
             self.state.tts_player.stop()
             _LOGGER.debug("TTS response stopped manually")
-            self._tts_finished()
 
     # ------------------------------------------------------------------
     # TTS
@@ -632,8 +640,24 @@ class VoiceSatelliteProtocol(APIServer):
         if not self._timer_finished:
             _LOGGER.debug("Timer finished sound stopped")
             self.unduck()
+            self._timer_ring_start = None
             return
-
+    
+        # Auto-stop after timer_max_ring_seconds
+        if self._timer_ring_start is not None:
+            elapsed = time.monotonic() - self._timer_ring_start
+            if elapsed >= self.state.timer_max_ring_seconds:
+                _LOGGER.info(
+                    "Timer auto-stopped after %.0f seconds (max=%.0f)",
+                    elapsed,
+                    self.state.timer_max_ring_seconds,
+                )
+                self._timer_finished = False
+                self._timer_ring_start = None
+                self.state.active_wake_words.discard(self.state.stop_word.id)
+                self.unduck()
+                return
+    
         self.state.tts_player.play(
             self.state.timer_finished_sound,
             done_callback=lambda: call_all(
