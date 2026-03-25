@@ -146,6 +146,12 @@ async def main() -> None:
         help="Enable thinking finish sound, when the assistant is done thinking and needed more time to process",
     )
     parser.add_argument(
+        "--timer-max-ring-seconds",
+        type=float,
+        default=900.0,  # 15 minutes
+        help="Seconds before a ringing timer auto-stops (default: 900)",
+    )      
+    parser.add_argument(
         "--debug",
         action="store_true",
         help="Add this to enable debug logging",
@@ -365,6 +371,7 @@ async def main() -> None:
         refractory_seconds=args.refractory_seconds,
         download_dir=args.download_dir,
         volume=initial_volume,
+        timer_max_ring_seconds=args.timer_max_ring_seconds,
     )
 
     if args.enable_thinking_sound:
