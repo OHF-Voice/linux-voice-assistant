@@ -150,7 +150,7 @@ async def main() -> None:
         type=float,
         default=900.0,  # 15 minutes
         help="Seconds before a ringing timer auto-stops (default: 900)",
-    )      
+    )
     parser.add_argument(
         "--debug",
         action="store_true",

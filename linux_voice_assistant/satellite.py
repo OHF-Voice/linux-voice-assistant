@@ -418,7 +418,7 @@ class VoiceSatelliteProtocol(APIServer):
 
         if self._timer_finished:
             self._timer_finished = False
-            self._timer_ring_start = None 
+            self._timer_ring_start = None
             self.unduck()
             self.state.tts_player.stop()
             _LOGGER.debug("Stopping timer finished sound")
@@ -467,7 +467,7 @@ class VoiceSatelliteProtocol(APIServer):
             self.unduck()
             self._timer_ring_start = None
             return
-    
+
         # Auto-stop after timer_max_ring_seconds
         if self._timer_ring_start is not None:
             elapsed = time.monotonic() - self._timer_ring_start
@@ -482,7 +482,7 @@ class VoiceSatelliteProtocol(APIServer):
                 self.state.active_wake_words.discard(self.state.stop_word.id)
                 self.unduck()
                 return
-    
+
         self.state.tts_player.play(
             self.state.timer_finished_sound,
             done_callback=lambda: call_all(
