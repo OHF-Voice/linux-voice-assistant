@@ -57,6 +57,12 @@ context.properties = {
 ```sh
 systemctl --user restart pipewire pipewire-pulse wireplumber
 ```
+If you are running inside a container then you have to use the following commands:
+```
+pkill -f pipewire; pkill -f wireplumber; pkill -f pipewire-pulse
+pipewire & pipewire-pulse & wireplumber &
+
+```
 
 💡 **Note:** In certain cases where hardware drivers need to be installed, a system reboot may be required. For hardware such as the Seeed 2-Mic Voice Card, multiple reboots may be needed to ensure the driver is installed and loaded correctly.
 
