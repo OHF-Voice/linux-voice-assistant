@@ -104,6 +104,7 @@ class ServerState:
     volume: float = 1.0
     mic_auto_gain: int = 0
     mic_noise_suppression: int = 0
+    timer_max_ring_seconds: float = 900.0
 
     def save_preferences(self) -> None:
         """Save preferences as JSON."""
