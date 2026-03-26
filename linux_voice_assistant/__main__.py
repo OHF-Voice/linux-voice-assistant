@@ -152,6 +152,12 @@ async def main() -> None:
         help="Default wake word sensitivity level (default: Slightly sensitive)",
     )
     parser.add_argument(
+        "--timer-max-ring-seconds",
+        type=float,
+        default=900.0,  # 15 minutes
+        help="Seconds before a ringing timer auto-stops (default: 900)",
+    )
+    parser.add_argument(
         "--debug",
         action="store_true",
         help="Add this to enable debug logging",
@@ -360,6 +366,7 @@ async def main() -> None:
         volume=initial_volume,
         wake_word_sensitivity=initial_sensitivity,
         oww_probability_cutoff=SENSITIVITY_PRESETS[initial_sensitivity]["oww"],
+        timer_max_ring_seconds=args.timer_max_ring_seconds,
     )
 
     if args.enable_thinking_sound:

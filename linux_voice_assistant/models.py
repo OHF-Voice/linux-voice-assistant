@@ -102,6 +102,7 @@ class ServerState:
     volume: float = 1.0
     wake_word_sensitivity: str = "Slightly sensitive"
     oww_probability_cutoff: float = 0.7  # Dynamic threshold for OpenWakeWord
+    timer_max_ring_seconds: float = 900.0
 
     def save_preferences(self) -> None:
         """Save preferences as JSON."""

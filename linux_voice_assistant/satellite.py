@@ -167,6 +167,7 @@ class VoiceSatelliteProtocol(APIServer):
         self._tts_played = False
         self._continue_conversation = False
         self._timer_finished = False
+        self._timer_ring_start: Optional[float] = None
         self._processing = False
         self._pipeline_active = False
         self._external_wake_words: Dict[str, VoiceAssistantExternalWakeWord] = {}
@@ -308,6 +309,7 @@ class VoiceSatelliteProtocol(APIServer):
             if not self._timer_finished:
                 self.state.active_wake_words.add(self.state.stop_word.id)
                 self._timer_finished = True
+                self._timer_ring_start = time.monotonic()
                 self.duck()
                 self._play_timer_finished()
 
@@ -487,6 +489,7 @@ class VoiceSatelliteProtocol(APIServer):
 
         if self._timer_finished:
             self._timer_finished = False
+            self._timer_ring_start = None
             self.unduck()
             self.state.tts_player.stop()
             _LOGGER.debug("Stopping timer finished sound")
@@ -533,7 +536,23 @@ class VoiceSatelliteProtocol(APIServer):
         if not self._timer_finished:
             _LOGGER.debug("Timer finished sound stopped")
             self.unduck()
+            self._timer_ring_start = None
             return
+
+        # Auto-stop after timer_max_ring_seconds
+        if self._timer_ring_start is not None:
+            elapsed = time.monotonic() - self._timer_ring_start
+            if elapsed >= self.state.timer_max_ring_seconds:
+                _LOGGER.info(
+                    "Timer auto-stopped after %.0f seconds (max=%.0f)",
+                    elapsed,
+                    self.state.timer_max_ring_seconds,
+                )
+                self._timer_finished = False
+                self._timer_ring_start = None
+                self.state.active_wake_words.discard(self.state.stop_word.id)
+                self.unduck()
+                return
 
         self.state.tts_player.play(
             self.state.timer_finished_sound,
