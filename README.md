@@ -82,9 +82,9 @@ usage: __main__.py [-h] [--name NAME] [--audio-input-device AUDIO_INPUT_DEVICE] 
 | `--enable-thinking-sound` | Enable thinking sound on startup | False |
 | `--debug` | Print DEBUG messages to console | False |
 
-💡 **Note:** There is a detailed explaination on the gain and noise suppression flags in the [audio options](docs/audio_options.md) file.
+💡 **Note:** There is a detailed explanation on the gain and noise suppression flags in the [audio options](docs/audio_options.md) file.
 
-## Build Information:
+## Build Information
 
 Image builds can be tracked in this repository's `Actions` tab, and utilize [artifact attestation](https://docs.github.com/en/actions/security-guides/using-artifact-attestations-to-establish-provenance-for-builds) to certify provenance.
 
