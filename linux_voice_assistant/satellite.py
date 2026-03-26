@@ -457,7 +457,14 @@ class VoiceSatelliteProtocol(APIServer):
             self._pipeline_active = True
             _LOGGER.debug("Continuing conversation")
         else:
-            self.unduck()
+            if self.state.pipeline_ended_sound and not self._tts_played:
+                _LOGGER.debug("Playing pipeline ended sound")
+                self.state.tts_player.play(
+                    self.state.pipeline_ended_sound,
+                    done_callback=self.unduck,
+                )
+            else:
+                self.unduck()
 
         _LOGGER.debug("TTS response finished")
 
