@@ -74,11 +74,7 @@ class VoiceSatelliteProtocol(APIServer):
             for extra in existing_media_players[1:]:
                 self.state.entities.remove(extra)
 
-        existing_mute_switches = [
-            entity
-            for entity in self.state.entities
-            if isinstance(entity, MuteSwitchEntity)
-        ]
+        existing_media_players = [entity for entity in self.state.entities if isinstance(entity, MediaPlayerEntity)]
         if existing_mute_switches:
             self.state.mute_switch_entity = existing_mute_switches[0]  # type: ignore[assignment]
             for extra in existing_mute_switches[1:]:  # type: ignore[index]
@@ -123,11 +119,7 @@ class VoiceSatelliteProtocol(APIServer):
         mute_switch.update_set_muted(self._set_muted)
         mute_switch.sync_with_state()
 
-        existing_thinking_sound_switches = [
-            entity
-            for entity in self.state.entities
-            if isinstance(entity, ThinkingSoundEntity)
-        ]
+        existing_thinking_sound_switches = [entity for entity in self.state.entities if isinstance(entity, ThinkingSoundEntity)]
         if existing_thinking_sound_switches:
             self.state.thinking_sound_entity = existing_thinking_sound_switches[0]  # type: ignore[assignment]
             for extra in existing_thinking_sound_switches[1:]:  # type: ignore[index]
@@ -150,23 +142,14 @@ class VoiceSatelliteProtocol(APIServer):
             self.state.entities.append(thinking_sound_switch)
 
         # Load thinking sound enabled state from preferences
-        if (
-            hasattr(self.state.preferences, "thinking_sound")
-            and self.state.preferences.thinking_sound in (0, 1)
-        ):
-            self.state.thinking_sound_enabled = bool(
-                self.state.preferences.thinking_sound
-            )
+        if hasattr(self.state.preferences, "thinking_sound") and self.state.preferences.thinking_sound in (0, 1):
++           self.state.thinking_sound_enabled = bool(self.state.preferences.thinking_sound)
         else:
             self.state.thinking_sound_enabled = False
 
         thinking_sound_switch.server = self
-        thinking_sound_switch.update_get_thinking_sound_enabled(
-            lambda: self.state.thinking_sound_enabled
-        )
-        thinking_sound_switch.update_set_thinking_sound_enabled(
-            self._set_thinking_sound_enabled
-        )
+        thinking_sound_switch.update_get_thinking_sound_enabled(lambda: self.state.thinking_sound_enabled)
++       thinking_sound_switch.update_set_thinking_sound_enabled(self._set_thinking_sound_enabled)
         thinking_sound_switch.sync_with_state()
 
         self._is_streaming_audio = False
@@ -205,9 +188,7 @@ class VoiceSatelliteProtocol(APIServer):
 
     def _set_thinking_sound_enabled(self, new_state: bool) -> None:
         self.state.thinking_sound_enabled = bool(new_state)
-        self.state.preferences.thinking_sound = (
-            1 if self.state.thinking_sound_enabled else 0
-        )
+        self.state.preferences.thinking_sound = 1 if self.state.thinking_sound_enabled else 0
 
         if self.state.thinking_sound_enabled:
             _LOGGER.debug("Thinking sound enabled")
@@ -237,9 +218,7 @@ class VoiceSatelliteProtocol(APIServer):
     # Voice pipeline event handler
     # ------------------------------------------------------------------
 
-    def handle_voice_event(
-        self, event_type: VoiceAssistantEventType, data: Dict[str, str]
-    ) -> None:
+    def handle_voice_event(self, event_type: VoiceAssistantEventType, data: Dict[str, str]) -> None:
         _LOGGER.debug("Voice event: type=%s, data=%s", event_type.name, data)
 
         if event_type == VoiceAssistantEventType.VOICE_ASSISTANT_RUN_START:
@@ -336,9 +315,7 @@ class VoiceSatelliteProtocol(APIServer):
     # Message routing
     # ------------------------------------------------------------------
 
-    def handle_message(  # noqa: C901  (acceptable complexity for a message router)
-        self, msg: message.Message
-    ) -> Iterable[message.Message]:
+    def handle_message(self, msg: message.Message) -> Iterable[message.Message]:  # noqa: C901  (acceptable complexity for a message router)
         if isinstance(msg, VoiceAssistantEventResponse):
             # Pipeline event
             data: Dict[str, str] = {}
@@ -381,11 +358,7 @@ class VoiceSatelliteProtocol(APIServer):
                 manufacturer="Open Home Foundation",
                 model="Linux Voice Assistant",
                 voice_assistant_feature_flags=(
-                    VoiceAssistantFeature.VOICE_ASSISTANT
-                    | VoiceAssistantFeature.API_AUDIO
-                    | VoiceAssistantFeature.ANNOUNCE
-                    | VoiceAssistantFeature.START_CONVERSATION
-                    | VoiceAssistantFeature.TIMERS
+                    VoiceAssistantFeature.VOICE_ASSISTANT | VoiceAssistantFeature.API_AUDIO | VoiceAssistantFeature.ANNOUNCE | VoiceAssistantFeature.START_CONVERSATION | VoiceAssistantFeature.TIMERS
                 ),
             )
 
@@ -438,11 +411,7 @@ class VoiceSatelliteProtocol(APIServer):
 
             yield VoiceAssistantConfigurationResponse(
                 available_wake_words=available_wake_words,
-                active_wake_words=[
-                    ww.id
-                    for ww in self.state.wake_words.values()
-                    if ww.id in self.state.active_wake_words
-                ],
+                active_wake_words=[ww.id for ww in self.state.wake_words.values() if ww.id in self.state.active_wake_words],
                 max_active_wake_words=2,
             )
             _LOGGER.info("Connected to Home Assistant")
@@ -691,7 +660,7 @@ class VoiceSatelliteProtocol(APIServer):
             self.state.tts_player.stop()
         except Exception:  # pylint: disable=broad-except
             _LOGGER.exception("Failed to stop TTS player during disconnect")
-
+self.state.preferences.thinking_sound = 1 if self.state.thinking_sound_enabled else 0
         self.state.stop_word.is_active = False  # type: ignore[attr-defined]
         self.state.connected = False
         if self.state.satellite is self:
@@ -716,9 +685,7 @@ class VoiceSatelliteProtocol(APIServer):
             states: List[message.Message] = []
             _LOGGER.debug("Found %d entities in state", len(self.state.entities))
             for i, entity in enumerate(self.state.entities):
-                entity_states = list(
-                    entity.handle_message(SubscribeHomeAssistantStatesRequest())
-                )
+                entity_states = list(entity.handle_message(SubscribeHomeAssistantStatesRequest()))
                 states.extend(entity_states)
                 _LOGGER.debug(
                     "Entity %d (%s) returned %d state messages",
@@ -738,9 +705,7 @@ class VoiceSatelliteProtocol(APIServer):
     # External wake word download
     # ------------------------------------------------------------------
 
-    def _download_external_wake_word(
-        self, external_wake_word: VoiceAssistantExternalWakeWord
-    ) -> Optional[AvailableWakeWord]:
+    def _download_external_wake_word(self, external_wake_word: VoiceAssistantExternalWakeWord) -> Optional[AvailableWakeWord]:
         eww_dir = self.state.download_dir / "external_wake_words"
         eww_dir.mkdir(parents=True, exist_ok=True)
 
@@ -765,9 +730,7 @@ class VoiceSatelliteProtocol(APIServer):
 
         if should_download_config or should_download_model:
             # Download config
-            _LOGGER.debug(
-                "Downloading %s to %s", external_wake_word.url, config_path
-            )
+            _LOGGER.debug("Downloading %s to %s", external_wake_word.url, config_path)
             with urlopen(external_wake_word.url) as request:
                 if request.status != 200:
                     _LOGGER.warning(
@@ -784,9 +747,7 @@ class VoiceSatelliteProtocol(APIServer):
             # Download model file
             parsed_url = urlparse(external_wake_word.url)
             parsed_url = parsed_url._replace(
-                path=posixpath.join(
-                    posixpath.dirname(parsed_url.path), model_path.name
-                ),
+                path=posixpath.join(posixpath.dirname(parsed_url.path), model_path.name),
             )
             model_url = urlunparse(parsed_url)
 
