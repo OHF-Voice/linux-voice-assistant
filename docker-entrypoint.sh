@@ -80,6 +80,10 @@ if [ -n "${UNMUTE_SOUND}" ]; then
   EXTRA_ARGS+=( "--unmute-sound" "$UNMUTE_SOUND" )
 fi
 
+if [ -n "${VOLUME_CONTROLLER}" ]; then
+  EXTRA_ARGS+=( "--volume-controller" "$VOLUME_CONTROLLER" )
+fi
+
 
 # Add cookie file for pulseaudio to prevent errors
 PULSE_COOKIE=${PULSE_COOKIE:-"/run/user/1000/pulse/cookie"}

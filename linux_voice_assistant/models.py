@@ -98,6 +98,8 @@ class ServerState:
     connected: bool = False
     volume: float = 1.0
     timer_max_ring_seconds: float = 900.0
+    volume_controller: str = "mpv"
+    audio_output_device: Optional[str] = None
 
     def save_preferences(self) -> None:
         """Save preferences as JSON."""
