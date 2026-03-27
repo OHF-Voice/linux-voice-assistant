@@ -1,6 +1,7 @@
 import logging
 from abc import abstractmethod
 from collections.abc import Iterable
+import subprocess
 from typing import Callable, List, Optional, Union
 
 # pylint: disable=no-name-in-module
@@ -76,6 +77,21 @@ class MediaPlayerEntity(ESPHomeEntity):
         self.apply_volume_from_state(initial_volume)
         self._log = logging.getLogger(f"{self.__class__.__name__}[{self.key}]")
 
+        # cant type hint server as Satellite cause circular imports, but it almost always it
+        if hasattr(server, "state"):
+            self.volume_controller = server.state.volume_controller
+            self.audio_output_device = server.state.audio_output_device
+
+    def set_volume(self, volume: float) -> None:
+        self.volume = volume
+
+        if self.volume_controller == "pipewire":
+            subprocess.run(["pactl", "set-sink-volume", self.audio_output_device or "@DEFAULT_SINK@", str(volume)])
+        else:
+            percent = int(round(volume * 100))
+            self.music_player.set_volume(percent)
+            self.announce_player.set_volume(percent)
+
     def play(
         self,
         url: Union[str, List[str]],
@@ -148,9 +164,7 @@ class MediaPlayerEntity(ESPHomeEntity):
                     self._log.debug("Executing MUTE")
                     if not self.muted:
                         self.previous_volume = self.volume
-                        self.volume = 0
-                        self.music_player.set_volume(0)
-                        self.announce_player.set_volume(0)
+                        self.set_volume(0)
                         self.muted = True
                     yield self._update_state(self.state)
 
@@ -158,8 +172,7 @@ class MediaPlayerEntity(ESPHomeEntity):
                     self._log.debug("Executing UNMUTE")
                     if self.muted:
                         self.volume = self.previous_volume
-                        self.music_player.set_volume(int(self.volume * 100))
-                        self.announce_player.set_volume(int(self.volume * 100))
+                        self.set_volume(self.volume)
                         self.muted = False
                     yield self._update_state(self.state)
 
@@ -226,10 +239,8 @@ class MediaPlayerEntity(ESPHomeEntity):
         remember: bool = True,
     ) -> None:
         normalized = max(0.0, min(1.0, float(volume)))
-        volume_percent = int(round(normalized * 100))
 
-        self.music_player.set_volume(volume_percent)
-        self.announce_player.set_volume(volume_percent)
+        self.set_volume(normalized)
 
         self.volume = normalized
 

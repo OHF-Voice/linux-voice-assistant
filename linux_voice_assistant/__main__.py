@@ -127,7 +127,8 @@ async def main() -> None:
     )
     parser.add_argument(
         "--host",
-        help="Optional host IP address to bind to (default: Autodetected by network interface)",  # 0.0.0.0 is IPv4, None is all interfaces
+        help="Optional host IP address to bind to (default: Autodetected by network interface)",
+        # 0.0.0.0 is IPv4, None is all interfaces
     )
     parser.add_argument(
         "--network-interface",
@@ -155,6 +156,14 @@ async def main() -> None:
         "--debug",
         action="store_true",
         help="Add this to enable debug logging",
+    )
+    parser.add_argument(
+        "--volume-controller",
+        choices=["mpv", "pipewire"],
+        default="mpv",
+        help="Which program handles the master volume control. 'mpv' is old default, and compatible. "
+             "'pipewire' requires wpctl, but in general interfaces with USB audio devices and pipewire better. "
+             "Defaults to 'mpv'. Must be 'mpv' or 'pipewire'.",
     )
     args = parser.parse_args()
 
@@ -354,6 +363,8 @@ async def main() -> None:
         download_dir=args.download_dir,
         volume=initial_volume,
         timer_max_ring_seconds=args.timer_max_ring_seconds,
+        volume_controller=args.volume_controller,
+        audio_output_device=args.audio_output_device
     )
 
     if args.enable_thinking_sound:
@@ -370,18 +381,21 @@ async def main() -> None:
 
     while attempt <= max_attempts:
         try:
-            server = await loop.create_server(lambda: VoiceSatelliteProtocol(state), host=host_ip_address, port=args.port)
+            server = await loop.create_server(lambda: VoiceSatelliteProtocol(state), host=host_ip_address,
+                                              port=args.port)
             break  # connect successful, exit the loop
         except OSError as err:
             message = err.strerror or str(err)
             if err.errno == errno.EADDRINUSE:
                 message = "address already in use"
             if attempt < max_attempts:
-                _LOGGER.warning("Attempt %d/%d failed to bind on address (%s, %s): %s. Retrying in 1 second...", attempt, max_attempts, host_ip_address, args.port, message)
+                _LOGGER.warning("Attempt %d/%d failed to bind on address (%s, %s): %s. Retrying in 1 second...",
+                                attempt, max_attempts, host_ip_address, args.port, message)
                 await asyncio.sleep(1)
                 attempt += 1
             else:
-                _LOGGER.exception("All %d attempts failed to bind on address (%s, %s): %s", max_attempts, host_ip_address, args.port, message)
+                _LOGGER.exception("All %d attempts failed to bind on address (%s, %s): %s", max_attempts,
+                                  host_ip_address, args.port, message)
                 sys.exit(1)
 
     process_audio_thread = threading.Thread(
@@ -392,7 +406,8 @@ async def main() -> None:
     process_audio_thread.start()
 
     # Auto discovery (zeroconf, mDNS)
-    discovery = HomeAssistantZeroconf(port=args.port, name=state.name, mac_address=state.mac_address, host_ip_address=host_ip_address)
+    discovery = HomeAssistantZeroconf(port=args.port, name=state.name, mac_address=state.mac_address,
+                                      host_ip_address=host_ip_address)
     await discovery.register_server()
 
     try:
@@ -429,7 +444,8 @@ def process_audio(state: ServerState, mic, block_size: int):
         with mic.recorder(samplerate=16000, channels=1, blocksize=block_size) as mic_in:
             while True:
                 audio_chunk_array = mic_in.record(block_size).reshape(-1)
-                audio_chunk = (np.clip(audio_chunk_array, -1.0, 1.0) * 32767.0).astype("<i2").tobytes()  # little-endian 16-bit signed
+                audio_chunk = (np.clip(audio_chunk_array, -1.0, 1.0) * 32767.0).astype(
+                    "<i2").tobytes()  # little-endian 16-bit signed
 
                 if state.satellite is None:
                     continue

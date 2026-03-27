@@ -4,7 +4,7 @@ name: Build main
 on:
   push:
     branches:
-      - "main"
+      - "pipewire-volume"
 
 env:
   REGISTRY: ghcr.io
@@ -51,7 +51,7 @@ jobs:
           context: .
           platforms: linux/amd64,linux/aarch64
           push: true
-          tags: ${{ env.REGISTRY_LOWER }}/${{ env.REPOSITORY_LOWER }}:nightly
+          tags: ${{ env.REGISTRY_LOWER }}/${{ env.REPOSITORY_LOWER }}:nightly-pw-volume
           labels: "nightly"
       - name: Generate artifact attestation
         uses: actions/attest-build-provenance@v1.4.4
