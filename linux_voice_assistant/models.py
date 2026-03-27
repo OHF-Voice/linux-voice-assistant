@@ -128,11 +128,7 @@ class ServerState:
             self.preferences.volume,
         )
 
-        if (
-            abs(self.volume - clamped_volume) < 0.0001
-            and self.preferences.volume is not None
-            and abs(self.preferences.volume - clamped_volume) < 0.0001
-        ):
+        if abs(self.volume - clamped_volume) < 0.0001 and self.preferences.volume is not None and abs(self.preferences.volume - clamped_volume) < 0.0001:
             _LOGGER.debug("Skipping save - volume unchanged")
             return
 
@@ -147,6 +143,4 @@ class ServerState:
         if api is not None:
             from .peripheral_api import LVAEvent  # local import avoids circular dep
 
-            api.emit_event_sync(
-                LVAEvent.VOLUME_CHANGED, {"volume": round(clamped_volume, 3)}
-            )
+            api.emit_event_sync(LVAEvent.VOLUME_CHANGED, {"volume": round(clamped_volume, 3)})
