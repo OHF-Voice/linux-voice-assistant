@@ -9,6 +9,10 @@ if [ "$ENABLE_DEBUG" = "1" ]; then
   EXTRA_ARGS+=( "--debug" )
 fi
 
+if [ "$ENABLE_COLORED_DEBUG" = "1" ]; then
+  EXTRA_ARGS+=( "--colored-debug" )
+fi
+
 if [ -n "${CLIENT_NAME}" ]; then
   EXTRA_ARGS+=( "--name" "$CLIENT_NAME" )
 fi

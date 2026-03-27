@@ -78,6 +78,7 @@ usage: __main__.py [-h] [--name NAME] [--audio-input-device AUDIO_INPUT_DEVICE] 
 | `--port` | Port for ESPHome server | 6053 |
 | `--enable-thinking-sound` | Enable thinking sound on startup | False |
 | `--debug` | Print DEBUG messages to console | False |
+| `--colored-debug` | Printcolored DEBUG messages to console | False |
 
 ## Build Information
 
