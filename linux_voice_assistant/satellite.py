@@ -59,7 +59,6 @@ class VoiceSatelliteProtocol(APIServer):
         super().__init__(state.name)
 
         self.state = state
-        self.state.satellite = self
         self.state.connected = False
 
         existing_media_players = [entity for entity in self.state.entities if isinstance(entity, MediaPlayerEntity)]
@@ -157,6 +156,9 @@ class VoiceSatelliteProtocol(APIServer):
         self._pipeline_active = False
         self._external_wake_words: Dict[str, VoiceAssistantExternalWakeWord] = {}
         self._disconnect_event = asyncio.Event()
+
+        self.state.satellite = self
+
 
     def _set_thinking_sound_enabled(self, new_state: bool) -> None:
         self.state.thinking_sound_enabled = bool(new_state)

@@ -1,4 +1,7 @@
+import asyncio
 import logging
+import re
+import threading
 from abc import abstractmethod
 from collections.abc import Iterable
 import subprocess
@@ -28,13 +31,13 @@ from .mpv_player import MpvMediaPlayer
 from .util import call_all
 
 SUPPORTED_MEDIA_PLAYER_FEATURES = (
-    MediaPlayerEntityFeature.PLAY
-    | MediaPlayerEntityFeature.PAUSE
-    | MediaPlayerEntityFeature.STOP
-    | MediaPlayerEntityFeature.PLAY_MEDIA
-    | MediaPlayerEntityFeature.VOLUME_SET
-    | MediaPlayerEntityFeature.VOLUME_MUTE
-    | MediaPlayerEntityFeature.MEDIA_ANNOUNCE
+        MediaPlayerEntityFeature.PLAY
+        | MediaPlayerEntityFeature.PAUSE
+        | MediaPlayerEntityFeature.STOP
+        | MediaPlayerEntityFeature.PLAY_MEDIA
+        | MediaPlayerEntityFeature.VOLUME_SET
+        | MediaPlayerEntityFeature.VOLUME_MUTE
+        | MediaPlayerEntityFeature.MEDIA_ANNOUNCE
 )
 
 
@@ -52,15 +55,15 @@ class ESPHomeEntity:
 
 class MediaPlayerEntity(ESPHomeEntity):
     def __init__(
-        self,
-        server: APIServer,
-        key: int,
-        name: str,
-        object_id: str,
-        music_player: MpvMediaPlayer,
-        announce_player: MpvMediaPlayer,
-        initial_volume: float = 1.0,
-        on_volume_changed: Optional[Callable[[float], None]] = None,
+            self,
+            server: APIServer,
+            key: int,
+            name: str,
+            object_id: str,
+            music_player: MpvMediaPlayer,
+            announce_player: MpvMediaPlayer,
+            initial_volume: float = 1.0,
+            on_volume_changed: Optional[Callable[[float], None]] = None,
     ) -> None:
         ESPHomeEntity.__init__(self, server)
 
@@ -77,26 +80,91 @@ class MediaPlayerEntity(ESPHomeEntity):
         self.apply_volume_from_state(initial_volume)
         self._log = logging.getLogger(f"{self.__class__.__name__}[{self.key}]")
 
-        # cant type hint server as Satellite cause circular imports, but it almost always it
-        if hasattr(server, "state"):
-            self.volume_controller = server.state.volume_controller
-            self.audio_output_device = server.state.audio_output_device
+        loop = asyncio.get_running_loop()
+        loop.create_task(self.volume_monitor_loop())
+
+    async def pw_vol(self):
+        proc = await asyncio.create_subprocess_exec(
+            "wpctl", "get-volume", self.server.state.audio_output_device or "@DEFAULT_SINK@",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+            stdin=asyncio.subprocess.DEVNULL,
+        )
+        stdout, _ = await proc.communicate()
+        output = stdout.decode('utf-8').strip()  # e.g., "Volume: 0.50" or "Volume: 0.50 [MUTED]"
+
+        # Extract the float value
+        match = re.search(r'Volume:\s*([0-9.]+)', output)
+        return float(match.group(1))  # Returns exactly 0.5
+
+    async def volume_monitor_loop(self):
+        while True:
+            try:
+                process = await asyncio.create_subprocess_exec(
+                    "pactl", "subscribe",
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.DEVNULL,
+                    stdin=asyncio.subprocess.DEVNULL,
+                )
+                while True:
+                    # 2. Thread sleeps here until PipeWire actually changes state
+                    line = await process.stdout.readline()
+
+                    if "Event 'change' on sink" in line.decode('utf-8').strip():
+                        self._log.debug(f"pactl subscribe event {line}")
+                        volume = await self.pw_vol()
+                        self._log.debug(f"new volume: {volume}")
+
+                        normalized = max(0.0, min(1.0, float(volume)))
+
+                        self.volume = normalized
+                        self.previous_volume = normalized
+
+                        if self._on_volume_changed:
+                            self._on_volume_changed(normalized)
+
+                        self.server.state.persist_volume(normalized)
+
+                        self.server.send_messages([self._get_state_message()])
+
+            except Exception as e:
+                self._log.error("Error in volume monitor loop: %s", e)
+                await asyncio.sleep(1)  # Avoid tight error loop
 
     def set_volume(self, volume: float) -> None:
+        # self._log.debug("Setting volume: %.2f", volume)
         self.volume = volume
+        if hasattr(self.server, "state") and self.server.state.volume_controller == "pipewire":
+            def _update_system_vol():
+                try:
+                    # vol_percent = f"{int(round(volume * 100))}%"
+                    self._log.debug("wpctl start")
+                    res = subprocess.run(
+                        ["wpctl", "set-volume", self.server.state.audio_output_device or "@DEFAULT_SINK@", str(volume)],
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                        timeout=1
+                    )
+                    if res.returncode == 0:
+                        self._log.debug("wpctl success")
+                    else:
+                        self._log.error("wpctl failed with error code: %s", res.returncode)
+                except Exception as e:
+                    self._log.error("wpctl err ", e)
+                    # self._log.error("Volume command failed: %s", e)
 
-        if self.volume_controller == "pipewire":
-            subprocess.run(["pactl", "set-sink-volume", self.audio_output_device or "@DEFAULT_SINK@", str(volume)])
+            threading.Thread(target=_update_system_vol, daemon=True).start()
         else:
             percent = int(round(volume * 100))
             self.music_player.set_volume(percent)
             self.announce_player.set_volume(percent)
 
     def play(
-        self,
-        url: Union[str, List[str]],
-        announcement: bool = False,
-        done_callback: Optional[Callable[[], None]] = None,
+            self,
+            url: Union[str, List[str]],
+            announcement: bool = False,
+            done_callback: Optional[Callable[[], None]] = None,
     ) -> Iterable[message.Message]:
         if announcement:
             self._log.debug("PLAY: announcement true")
@@ -171,8 +239,7 @@ class MediaPlayerEntity(ESPHomeEntity):
                 elif command == MediaPlayerCommand.UNMUTE:
                     self._log.debug("Executing UNMUTE")
                     if self.muted:
-                        self.volume = self.previous_volume
-                        self.set_volume(self.volume)
+                        self.set_volume(self.previous_volume)
                         self.muted = False
                     yield self._update_state(self.state)
 
@@ -232,17 +299,17 @@ class MediaPlayerEntity(ESPHomeEntity):
         self._on_volume_changed = callback
 
     def _apply_volume(
-        self,
-        volume: float,
-        *,
-        persist: bool,
-        remember: bool = True,
+            self,
+            volume: float,
+            *,
+            persist: bool,
+            remember: bool = True,
     ) -> None:
         normalized = max(0.0, min(1.0, float(volume)))
 
         self.set_volume(normalized)
 
-        self.volume = normalized
+        # self.volume = normalized
 
         if remember:
             self.previous_volume = normalized
@@ -256,13 +323,13 @@ class MediaPlayerEntity(ESPHomeEntity):
 
 class MuteSwitchEntity(ESPHomeEntity):
     def __init__(
-        self,
-        server: APIServer,
-        key: int,
-        name: str,
-        object_id: str,
-        get_muted: Callable[[], bool],
-        set_muted: Callable[[bool], None],
+            self,
+            server: APIServer,
+            key: int,
+            name: str,
+            object_id: str,
+            get_muted: Callable[[], bool],
+            set_muted: Callable[[bool], None],
     ) -> None:
         ESPHomeEntity.__init__(self, server)
 
@@ -309,13 +376,13 @@ class MuteSwitchEntity(ESPHomeEntity):
 
 class ThinkingSoundEntity(ESPHomeEntity):
     def __init__(
-        self,
-        server: APIServer,
-        key: int,
-        name: str,
-        object_id: str,
-        get_thinking_sound_enabled: Callable[[], bool],
-        set_thinking_sound_enabled: Callable[[bool], None],
+            self,
+            server: APIServer,
+            key: int,
+            name: str,
+            object_id: str,
+            get_thinking_sound_enabled: Callable[[], bool],
+            set_thinking_sound_enabled: Callable[[bool], None],
     ) -> None:
         ESPHomeEntity.__init__(self, server)
 

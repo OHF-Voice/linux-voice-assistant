@@ -4,7 +4,7 @@ name: Build main
 on:
   push:
     branches:
-      - "pipewire-volume"
+      - "pw-volume"
 
 env:
   REGISTRY: ghcr.io
