@@ -31,13 +31,13 @@ from .mpv_player import MpvMediaPlayer
 from .util import call_all
 
 SUPPORTED_MEDIA_PLAYER_FEATURES = (
-        MediaPlayerEntityFeature.PLAY
-        | MediaPlayerEntityFeature.PAUSE
-        | MediaPlayerEntityFeature.STOP
-        | MediaPlayerEntityFeature.PLAY_MEDIA
-        | MediaPlayerEntityFeature.VOLUME_SET
-        | MediaPlayerEntityFeature.VOLUME_MUTE
-        | MediaPlayerEntityFeature.MEDIA_ANNOUNCE
+    MediaPlayerEntityFeature.PLAY
+    | MediaPlayerEntityFeature.PAUSE
+    | MediaPlayerEntityFeature.STOP
+    | MediaPlayerEntityFeature.PLAY_MEDIA
+    | MediaPlayerEntityFeature.VOLUME_SET
+    | MediaPlayerEntityFeature.VOLUME_MUTE
+    | MediaPlayerEntityFeature.MEDIA_ANNOUNCE
 )
 
 
@@ -55,15 +55,15 @@ class ESPHomeEntity:
 
 class MediaPlayerEntity(ESPHomeEntity):
     def __init__(
-            self,
-            server: APIServer,
-            key: int,
-            name: str,
-            object_id: str,
-            music_player: MpvMediaPlayer,
-            announce_player: MpvMediaPlayer,
-            initial_volume: float = 1.0,
-            on_volume_changed: Optional[Callable[[float], None]] = None,
+        self,
+        server: APIServer,
+        key: int,
+        name: str,
+        object_id: str,
+        music_player: MpvMediaPlayer,
+        announce_player: MpvMediaPlayer,
+        initial_volume: float = 1.0,
+        on_volume_changed: Optional[Callable[[float], None]] = None,
     ) -> None:
         ESPHomeEntity.__init__(self, server)
 
@@ -161,10 +161,10 @@ class MediaPlayerEntity(ESPHomeEntity):
             self.announce_player.set_volume(percent)
 
     def play(
-            self,
-            url: Union[str, List[str]],
-            announcement: bool = False,
-            done_callback: Optional[Callable[[], None]] = None,
+        self,
+        url: Union[str, List[str]],
+        announcement: bool = False,
+        done_callback: Optional[Callable[[], None]] = None,
     ) -> Iterable[message.Message]:
         if announcement:
             self._log.debug("PLAY: announcement true")
@@ -299,11 +299,11 @@ class MediaPlayerEntity(ESPHomeEntity):
         self._on_volume_changed = callback
 
     def _apply_volume(
-            self,
-            volume: float,
-            *,
-            persist: bool,
-            remember: bool = True,
+        self,
+        volume: float,
+        *,
+        persist: bool,
+        remember: bool = True,
     ) -> None:
         normalized = max(0.0, min(1.0, float(volume)))
 
@@ -323,13 +323,13 @@ class MediaPlayerEntity(ESPHomeEntity):
 
 class MuteSwitchEntity(ESPHomeEntity):
     def __init__(
-            self,
-            server: APIServer,
-            key: int,
-            name: str,
-            object_id: str,
-            get_muted: Callable[[], bool],
-            set_muted: Callable[[bool], None],
+        self,
+        server: APIServer,
+        key: int,
+        name: str,
+        object_id: str,
+        get_muted: Callable[[], bool],
+        set_muted: Callable[[bool], None],
     ) -> None:
         ESPHomeEntity.__init__(self, server)
 
@@ -376,13 +376,13 @@ class MuteSwitchEntity(ESPHomeEntity):
 
 class ThinkingSoundEntity(ESPHomeEntity):
     def __init__(
-            self,
-            server: APIServer,
-            key: int,
-            name: str,
-            object_id: str,
-            get_thinking_sound_enabled: Callable[[], bool],
-            set_thinking_sound_enabled: Callable[[bool], None],
+        self,
+        server: APIServer,
+        key: int,
+        name: str,
+        object_id: str,
+        get_thinking_sound_enabled: Callable[[], bool],
+        set_thinking_sound_enabled: Callable[[bool], None],
     ) -> None:
         ESPHomeEntity.__init__(self, server)
 
