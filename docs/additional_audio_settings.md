@@ -4,7 +4,12 @@ This document is still in an early stage and will be updated soon.
 
 ## Pipewire:
 
-tbd
+### Pipewire-based Volume Control:
+
+If you set the environment variable `VOLUME_CONTROLLER` to `pipewire`, LVA will use Pipewire for volume control, which
+often works with USB volume controls/displays. You may need a daemon to handle external volume buttons, such
+as [alsa_volume_from_usb_hid](https://github.com/neildavis/alsa_volume_from_usb_hid)
+or [its docker version](https://github.com/machineonamission/alsa_volume_from_usb_hid).
 
 ## Pulseaudio:
 
