@@ -187,8 +187,6 @@ async def main() -> None:
             print(speaker["name"] + ":", speaker["description"])
         return
 
-    
-
     # Resolve network interface for mac-address detection
     if not args.network_interface:
         print("No network interface specified, try to detect default interface")
@@ -417,35 +415,40 @@ async def main() -> None:
 
     _LOGGER.debug("Server stopped")
 
+
 # -----------------------------------------------------------------------------
 def _setup_logging(args: argparse.Namespace) -> None:
-        COLORS = {
-            logging.DEBUG: "\033[36m",
-            logging.INFO: "\033[32m",
-            logging.WARNING: "\033[33m",
-            logging.ERROR: "\033[31m",
-            logging.CRITICAL: "\033[35m",
-        }
-        RESET = "\033[0m"
+    COLORS = {
+        logging.DEBUG: "\033[36m",
+        logging.INFO: "\033[32m",
+        logging.WARNING: "\033[33m",
+        logging.ERROR: "\033[31m",
+        logging.CRITICAL: "\033[35m",
+    }
+    RESET = "\033[0m"
 
-        original_format = logging.Formatter.format
+    original_format = logging.Formatter.format
 
-        def colored_format(self, record: logging.LogRecord) -> str:
-            color = COLORS.get(record.levelno, RESET)
-            return f"{color}{original_format(self, record)}{RESET}"
+    def colored_format(self, record: logging.LogRecord) -> str:
+        color = COLORS.get(record.levelno, RESET)
+        return f"{color}{original_format(self, record)}{RESET}"
 
-        logging.Formatter.format = colored_format  # type: ignore
+    logging.Formatter.format = colored_format  # type: ignore
 
-        handler = logging.StreamHandler()
-        handler.setFormatter(logging.Formatter(
+    handler = logging.StreamHandler()
+    handler.setFormatter(
+        logging.Formatter(
             fmt="%(asctime)s %(levelname)s %(name)s: %(message)s",
             datefmt="%H:%M:%S",
-        ))
-        logging.basicConfig(
-            level=logging.DEBUG if args.debug else logging.INFO,
-            handlers=[handler],
         )
-        _LOGGER.debug(args)
+    )
+    logging.basicConfig(
+        level=logging.DEBUG if args.debug else logging.INFO,
+        handlers=[handler],
+    )
+    _LOGGER.debug(args)
+
+
 # -----------------------------------------------------------------------------
 
 
