@@ -252,7 +252,6 @@ The following variables can be configured in the `.env` or in the service file:
 | `AUDIO_INPUT_DEVICE` | Autodetected | Audio input device name |
 | `AUDIO_OUTPUT_DEVICE` | Autodetected | Audio output device name |
 | `ENABLE_THINKING_SOUND` | false | Set to "1" to enable thinking sound |
-| `TIMER_MAX_RING_SECONDS` | 900 | Seconds before a ringing timer auto-stops |
 | `WAKE_WORD_DIR` | `app/wakewords` | Path to the wake word directory |
 | `WAKE_MODEL` | `okay_nabu` | Wake word model to use |
 | `REFACTORY_SECONDS` | `2` | Refractory period in seconds after wake word |
