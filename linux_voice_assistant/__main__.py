@@ -152,6 +152,11 @@ async def main() -> None:
         help="Seconds before a ringing timer auto-stops (default: 900)",
     )
     parser.add_argument(
+        "--listen-during-wake-sound",
+        action="store_true",
+        help="Start listening immediately after wake word detection, without waiting for the wake sound to finish",
+    )
+    parser.add_argument(
         "--debug",
         action="store_true",
         help="Add this to enable debug logging",
@@ -354,6 +359,7 @@ async def main() -> None:
         download_dir=args.download_dir,
         volume=initial_volume,
         timer_max_ring_seconds=args.timer_max_ring_seconds,
+        listen_during_wake_sound=args.listen_during_wake_sound,
     )
 
     if args.enable_thinking_sound:

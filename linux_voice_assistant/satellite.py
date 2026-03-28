@@ -399,14 +399,20 @@ class VoiceSatelliteProtocol(APIServer):
         _LOGGER.debug("Detected wake word: %s", wake_word_phrase)
         self._pipeline_active = True
         self.duck()
-        self.state.tts_player.play(
-            self.state.wakeup_sound,
-            done_callback=lambda: self._on_wakeup_sound_finished(wake_word_phrase),
-        )
+        
+        if self.state.listen_during_wake_sound:
+            _LOGGER.debug("Starting audio streaming immediately (listen_during_wake_sound enabled)")
+            self._start_audio_streaming(wake_word_phrase)
+            self.state.tts_player.play(self.state.wakeup_sound)
+        else:
+            self.state.tts_player.play(
+                self.state.wakeup_sound,
+                done_callback=lambda: self._start_audio_streaming(wake_word_phrase),
+            )
 
-    def _on_wakeup_sound_finished(self, wake_word_phrase: str) -> None:
-        """Callback invoked when the wakeup sound finishes playing."""
-        _LOGGER.debug("Wakeup sound finished, starting audio streaming with wake word: %s", wake_word_phrase)
+    def _start_audio_streaming(self, wake_word_phrase: str) -> None:
+        """Callback invoked to start streaming audio after/during wake word detection."""
+        _LOGGER.debug("Starting audio streaming with wake word: %s", wake_word_phrase)
         self.send_messages(
             [VoiceAssistantRequest(start=True, wake_word_phrase=wake_word_phrase)],
         )

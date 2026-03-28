@@ -44,6 +44,14 @@ if [ "$ENABLE_THINKING_SOUND" = "1" ]; then
   EXTRA_ARGS+=( "--enable-thinking-sound" )
 fi
 
+if [ -n "${TIMER_MAX_RING_SECONDS}" ]; then
+  EXTRA_ARGS+=( "--timer-max-ring-seconds" "$TIMER_MAX_RING_SECONDS" )
+fi
+
+if [ "$LISTEN_DURING_WAKE_SOUND" = "1" ]; then
+  EXTRA_ARGS+=( "--listen-during-wake-sound" )
+fi
+
 if [ -n "${WAKE_WORD_DIR}" ]; then
   EXTRA_ARGS+=( "--wake-word-dir" "$WAKE_WORD_DIR" )
 fi

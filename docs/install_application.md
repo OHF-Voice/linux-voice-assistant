@@ -252,14 +252,16 @@ The following variables can be configured in the `.env` or in the service file:
 | `AUDIO_INPUT_DEVICE` | Autodetected | Audio input device name |
 | `AUDIO_OUTPUT_DEVICE` | Autodetected | Audio output device name |
 | `ENABLE_THINKING_SOUND` | false | Set to "1" to enable thinking sound |
+| `TIMER_MAX_RING_SECONDS` | 900 | Seconds before a ringing timer auto-stops |
 | `WAKE_WORD_DIR` | `app/wakewords` | Path to the wake word directory |
 | `WAKE_MODEL` | `okay_nabu` | Wake word model to use |
 | `REFACTORY_SECONDS` | `2` | Refractory period in seconds after wake word |
 | `WAKEUP_SOUND` | `sounds/wake_word_triggered.flac` | Sound file for wake word triggered |
 | `TIMER_FINISHED_SOUND` | `sounds/timer_finished.flac` | Sound file for timer finished |
 | `PROCESSING_SOUND` | `sounds/processing.wav` | Sound file for processing state |
+| `LISTEN_DURING_WAKE_SOUND` | false | Set to "1" to start listening immediately after wake word detection, without waiting for the wake sound to finish |
 | `MUTE_SOUND` | `sounds/mute_switch_on.flac` | Sound file for mute on |
-| `UNMUTE_SOUND` | `sounds/mute_switch_off.flac` | Sound file for Configure Audio Devices
+| `UNMUTE_SOUND` | `sounds/mute_switch_off.flac` | Sound file for mute off |
 
 💡 **Note:** For the systemd installation some variables set in the service need to be without `LVA_` prefix.
 
