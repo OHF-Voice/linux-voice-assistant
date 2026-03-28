@@ -411,7 +411,7 @@ class VoiceSatelliteProtocol(APIServer):
             )
 
     def _start_audio_streaming(self, wake_word_phrase: str) -> None:
-        """Callback invoked to start streaming audio after/during wake word detection."""
+        """Start streaming audio after/during wake word detection."""
         _LOGGER.debug("Starting audio streaming with wake word: %s", wake_word_phrase)
         self.send_messages(
             [VoiceAssistantRequest(start=True, wake_word_phrase=wake_word_phrase)],
