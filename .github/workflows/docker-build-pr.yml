@@ -1,3 +1,4 @@
+---
 name: Build PR
 
 on:
@@ -24,48 +25,42 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha }}
 
-      - name: Extract PR information
-        id: extract_pr
+      - name: Set variables
         run: |
-          echo "PR_NUMBER=${{ github.event.pull_request.number }}" >> $GITHUB_ENV
+          echo "PR_NUMBER=$${{ github.event.pull_request.number || github.run_number }}" >> $GITHUB_ENV
           echo "REGISTRY_LOWER=$(echo '${{ env.REGISTRY }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
           echo "REPOSITORY_LOWER=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
 
       - name: Log in to the Container registry
-        uses: docker/login-action@v3.1.0
+        uses: docker/login-action@e92390c5fb421da1463c202d546fed0ec5c39f20 # v3.1.0
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ github.token }}
-
       # Build Docker Images (amd64 and arm64)
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
       - name: Create version files
         run: |
-          echo "pr-${{ env.PR_NUMBER }}" > version.txt
+          echo "${{ env.PR_NUMBER }}" > version.txt
           echo "${{ github.sha }}" > version_githash.txt
           ls -ltr
 
       - name: Build and push Docker image
         id: push
-        uses: docker/build-push-action@v5.3.0
+        uses: docker/build-push-action@2cdde995de11925a030ce8070c3d77a52ffcf1c0 # v5.3.0
         with:
           context: .
           platforms: linux/amd64,linux/aarch64
           push: true
-          tags: |
-            ${{ env.REGISTRY_LOWER }}/linux-voice-assistant-pr:${{ env.PR_NUMBER }}
-          labels: |
-            pr=${{ env.PR_NUMBER }}
-
+          tags: "${{ env.REGISTRY_LOWER }}/${{ env.REPOSITORY_LOWER }}-pr:${{ env.PR_NUMBER }}"
+          labels: "${{ env.PR_NUMBER }}"
       - name: Generate artifact attestation
         uses: actions/attest-build-provenance@v1.4.4
         with:
-          subject-name: ${{ env.REGISTRY }}/linux-voice-assistant-pr
+          subject-name: ${{ env.REGISTRY_LOWER }}/${{ env.REPOSITORY_LOWER }}-pr
           subject-digest: ${{ steps.push.outputs.digest }}
           push-to-registry: true
