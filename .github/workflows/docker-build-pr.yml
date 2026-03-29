@@ -27,7 +27,7 @@ jobs:
 
       - name: Set variables
         run: |
-          echo "PR_NUMBER=$${{ github.event.pull_request.number || github.run_number }}" >> $GITHUB_ENV
+          echo "PR_NUMBER=${{ github.event.pull_request.number || github.run_number }}" >> $GITHUB_ENV
           echo "REGISTRY_LOWER=$(echo '${{ env.REGISTRY }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
           echo "REPOSITORY_LOWER=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
 
