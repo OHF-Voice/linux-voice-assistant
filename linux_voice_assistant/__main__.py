@@ -156,6 +156,11 @@ async def main() -> None:
         action="store_true",
         help="Add this to enable debug logging",
     )
+    parser.add_argument(
+        "--output-only",
+        action="store_true",
+        help="Enable output only mode (Satellite supports announcements only)",
+    )
     args = parser.parse_args()
 
     if args.list_input_devices:
@@ -351,6 +356,7 @@ async def main() -> None:
         preferences=preferences,
         preferences_path=preferences_path,
         refractory_seconds=args.refractory_seconds,
+        output_only=args.output_only,
         download_dir=args.download_dir,
         volume=initial_volume,
         timer_max_ring_seconds=args.timer_max_ring_seconds,
