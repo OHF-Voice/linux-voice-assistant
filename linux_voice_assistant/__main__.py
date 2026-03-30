@@ -159,7 +159,7 @@ async def main() -> None:
     parser.add_argument(
         "--output-only",
         action="store_true",
-        help="Enable output only mode (Satellite supports announcements only)",
+        help="Enable output only mode",
     )
     args = parser.parse_args()
 
