@@ -84,6 +84,10 @@ if [ -n "${TIMER_MAX_RING_SECONDS}" ]; then
   EXTRA_ARGS+=( "--timer-max-ring-seconds" "$TIMER_MAX_RING_SECONDS" )
 fi
 
+if [ "$ENABLE_OUTPUT_ONLY" = "1" ]; then
+  EXTRA_ARGS+=( "--output-only" )
+fi
+
 
 # Add cookie file for pulseaudio to prevent errors
 PULSE_COOKIE=${PULSE_COOKIE:-"/run/user/1000/pulse/cookie"}
