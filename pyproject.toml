@@ -46,6 +46,9 @@ dev = [
     "autopep8",
 ]
 
+[project.scripts]
+linux-voice-assistant = "linux_voice_assistant.__main__:run"
+
 [project.urls]
 "Source Code" = "http://github.com/OHF-Voice/linux-voice-assistant"
 
