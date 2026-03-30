@@ -65,7 +65,18 @@ class VoiceSatelliteProtocol(APIServer):
         self.state.satellite = self
         self.state.connected = False
 
+        # Report capabilities appropriately
+        if state.output_only:
+            _LOGGER.debug("Output only features")
+            self.supported_features = VoiceAssistantFeature.API_AUDIO | VoiceAssistantFeature.ANNOUNCE
+        else:
+            _LOGGER.debug("Voice assistant features")
+            self.supported_features = (
+                VoiceAssistantFeature.VOICE_ASSISTANT | VoiceAssistantFeature.API_AUDIO | VoiceAssistantFeature.ANNOUNCE | VoiceAssistantFeature.START_CONVERSATION | VoiceAssistantFeature.TIMERS
+            )
+
         existing_media_players = [entity for entity in self.state.entities if isinstance(entity, MediaPlayerEntity)]
+
         if existing_media_players:
             # Keep the first instance and remove any extras.
             self.state.media_player_entity = existing_media_players[0]
@@ -341,9 +352,7 @@ class VoiceSatelliteProtocol(APIServer):
                 mac_address=self.state.mac_address,
                 manufacturer="Open Home Foundation",
                 model="Linux Voice Assistant",
-                voice_assistant_feature_flags=(
-                    VoiceAssistantFeature.VOICE_ASSISTANT | VoiceAssistantFeature.API_AUDIO | VoiceAssistantFeature.ANNOUNCE | VoiceAssistantFeature.START_CONVERSATION | VoiceAssistantFeature.TIMERS
-                ),
+                voice_assistant_feature_flags=self.supported_features,
             )
         elif isinstance(
             msg,
