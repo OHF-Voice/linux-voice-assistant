@@ -5,8 +5,8 @@ import hashlib
 import logging
 import posixpath
 import shutil
-import time
 import threading
+import time
 from collections.abc import Iterable
 from typing import Dict, List, Optional, Set, Union
 from urllib.parse import urlparse, urlunparse
