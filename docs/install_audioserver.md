@@ -1,6 +1,6 @@
 # Install Audioservice
 
-For Linux-Voice-Assistant a Pulseaudio connection to the soundcard is required. Since PulseAudio is not installed by default on Ubuntu 22.04 we also support Pipewire with pipewire-pulse. You can choose either variant A or B from this installation documentation.
+For Linux-Voice-Assistant a Pulseaudio connection to the soundcard is required. Since PulseAudio is no longer the default audio-server we recommend to use and install pipewire (pipewire-pulse) by default. We also support PulseAudio. You can choose either variant A or B from this installation documentation.
 
 **How does the communication work?**
 
@@ -36,6 +36,7 @@ sudo touch /var/lib/systemd/linger/$USER
 ### Configure PipeWire (optional):
 
 💡 **Note:** If you are not on a desktop system, which is already configured for PipeWire, you can configure it manually.
+
 💡 **Note:** LVA records audio at 16kHz. By default PipeWire may run at a different sample rate (typically 48kHz) and will resample automatically. Setting `default.clock.rate = 16000` avoids this resampling overhead, which is particularly beneficial on low-power hardware such as a Raspberry Pi.
 
 LVA is meant to be configured system wide. So only that method has been documented.
@@ -54,17 +55,13 @@ context.properties = {
 ```
 
 #### Applying the Changes
+PipeWire runs as a systemd user service under the user session (e.g., UID 1000). When executing commands as root, systemctl --user cannot connect to the user's DBus session unless the required environment variables are set. But as recommend at the end of this documentation part it is better and we recommend to restart the whole system.
 ```sh
-systemctl --user restart pipewire pipewire-pulse wireplumber
-```
-If you are running inside a container then you have to use the following commands:
-```
-pkill -f pipewire; pkill -f wireplumber; pkill -f pipewire-pulse
-pipewire & pipewire-pulse & wireplumber &
+sudo -u pi XDG_RUNTIME_DIR=/run/user/1000 systemctl --user restart pipewire pipewire-pulse wireplumber
 
 ```
 
-💡 **Note:** In certain cases where hardware drivers need to be installed, a system reboot may be required. For hardware such as the Seeed 2-Mic Voice Card, multiple reboots may be needed to ensure the driver is installed and loaded correctly.
+💡 **Note:** In certain cases where hardware drivers need to be installed, a system reboot may be required. For hardware such as the Seeed 2-Mic Voice Card, multiple reboots may be needed to ensure the driver is installed and loaded and installed correctly. More about that in the PiCompose documentation within the Ready-to-use Image.
 
 ## B) PulseAudio:
 
@@ -107,9 +104,10 @@ pulseaudio --check
 pactl info
 ```
 
-### Reboot
+Reboot the system:
 
-After you have made the changes, reboot your system to apply the changes. 
+In some cases to get the audio hardware working you may need to restart your system.
+
 
 
 ## Additional Information:
