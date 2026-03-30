@@ -85,14 +85,9 @@ fi
 PULSE_COOKIE=${PULSE_COOKIE:-"/run/user/1000/pulse/cookie"}
 if [[ "$PULSE_COOKIE" != "DISABLED" ]]; then
   if [ ! -f "$PULSE_COOKIE" ]; then
-    echo "PulseAudio cookie file not found at $PULSE_COOKIE"
-    PULSE_COOKIE="/app/configuration/tmp_pulse_cookie"
-    echo "changed PULSE_COOKIE to $PULSE_COOKIE"
-    if [ ! -f "$PULSE_COOKIE" ]; then
-      echo "Creating PulseAudio cookie file at $PULSE_COOKIE"
-      touch "$PULSE_COOKIE"
-      chmod 600 "$PULSE_COOKIE"
-    fi
+    echo "Creating PulseAudio cookie file at $PULSE_COOKIE"
+    touch "$PULSE_COOKIE"
+    chmod 600 "$PULSE_COOKIE"
   fi
 fi
 
