@@ -275,8 +275,8 @@ class PeripheralAPIServer:
         elif command == LVACommand.STOP_MEDIA_PLAYER:
             state.music_player.stop()
             if state.media_player_entity is not None:
-                from aioesphomeapi.model import MediaPlayerState  # type: ignore[import]
                 from aioesphomeapi.api_pb2 import MediaPlayerStateResponse  # type: ignore[attr-defined]
+                from aioesphomeapi.model import MediaPlayerState  # type: ignore[import]
 
                 state.media_player_entity.state = MediaPlayerState.IDLE
                 if satellite is not None:
