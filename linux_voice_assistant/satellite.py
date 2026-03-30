@@ -5,6 +5,7 @@ import hashlib
 import logging
 import posixpath
 import shutil
+import threading
 import time
 from collections.abc import Iterable
 from typing import Dict, List, Optional, Set, Union
@@ -380,11 +381,30 @@ class VoiceSatelliteProtocol(APIServer):
 
     def wakeup(self, wake_word: Union[MicroWakeWord, OpenWakeWord]) -> None:
         if self._timer_finished:
-            # Stop timer instead
+            # Stop the ringing timer, then start a normal wake-up after a short
+            # delay so the transition doesn't feel abrupt.
             self._timer_finished = False
+            self._timer_ring_start = None
+            self.state.active_wake_words.discard(self.state.stop_word.id)
             self.unduck()
             self.state.tts_player.stop()
-            _LOGGER.debug("Stopping timer finished sound")
+            _LOGGER.debug("Stopping timer finished sound; will wake up in 1 s")
+
+            wake_word_phrase = wake_word.wake_word  # type: ignore
+
+            def _delayed_wakeup() -> None:
+                if self.state.muted or self._pipeline_active:
+                    _LOGGER.debug("Delayed wakeup skipped (muted=%s, pipeline_active=%s)", self.state.muted, self._pipeline_active)
+                    return
+                _LOGGER.debug("Delayed wakeup: playing wakeup sound for %s", wake_word_phrase)
+                self._pipeline_active = True
+                self.duck()
+                self.state.tts_player.play(
+                    self.state.wakeup_sound,
+                    done_callback=lambda: self._on_wakeup_sound_finished(wake_word_phrase),
+                )
+
+            threading.Timer(0.1, _delayed_wakeup).start()
             return
 
         if self.state.muted:
