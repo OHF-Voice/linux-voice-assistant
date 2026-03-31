@@ -67,6 +67,7 @@ usage: __main__.py [-h] [--name NAME] [--audio-input-device AUDIO_INPUT_DEVICE] 
 | `--stop-model` | ID of stop model | `stop` |
 | `--download-dir` | Directory to download custom wake word models, etc. | `local/` |
 | `--refractory-seconds` | Seconds before wake word can be activated again | 2.0 |
+| `--timer-max-ring-seconds` | Seconds after which the timer stops ringing | 900.0 |
 | `--wakeup-sound` | Sound file played when wake word is detected | `sounds/wake_word_triggered.flac` |
 | `--timer-finished-sound` | Sound file played when timer finishes | `sounds/timer_finished.flac` |
 | `--processing-sound` | Sound played while assistant is processing | `sounds/processing.wav` |
@@ -79,6 +80,7 @@ usage: __main__.py [-h] [--name NAME] [--audio-input-device AUDIO_INPUT_DEVICE] 
 | `--enable-thinking-sound` | Enable thinking sound on startup | False |
 | `--listen-during-wake-sound` | Start listening immediately after wake word detection, without waiting for the wake sound to finish | False |
 | `--debug` | Print DEBUG messages to console | False |
+| `--output-only` | Enable output only mode | False |
 
 ## Build Information
 

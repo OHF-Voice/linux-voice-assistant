@@ -177,7 +177,10 @@ Environment=PREFERENCES_FILE="/home/pi/linux-voice-assistant/preferences.json"
 # Environment=AUDIO_INPUT_DEVICE="default"
 # Environment=AUDIO_OUTPUT_DEVICE="default"
 # Environment=ENABLE_THINKING_SOUND="1"
+# Environment=WAKE_WORD_DIR="app/wakewords"
 # Environment=WAKE-MODEL="okay_nabu"
+# Environment=STOP_MODEL="stop"
+# Environment=TIMER_MAX_RING_SECONDS="900"
 # Environment=REFACTORY_SECONDS="2"
 # Environment=WAKEUP_SOUND="sounds/wake_word_triggered.flac"
 # Environment=TIMER_FINISHED_SOUND="sounds/timer_finished.flac"
@@ -185,6 +188,7 @@ Environment=PREFERENCES_FILE="/home/pi/linux-voice-assistant/preferences.json"
 # Environment=LISTEN_DURING_WAKE_SOUND="0"
 # Environment=MUTE_SOUND="sounds/mute_switch_on.flac"
 # Environment=UNMUTE_SOUND="sounds/mute_switch_off.flac"
+# Environment=ENABLE_OUTPUT_ONLY="1"
 ExecStart=/home/pi/linux-voice-assistant/docker-entrypoint.sh
 # ExecStart=/home/pi/linux-voice-assistant/docker-entrypoint.sh --additional-parameter-if-you-want
 Restart=always
@@ -238,14 +242,14 @@ The following variables can be configured in the `.env` or in the service file:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
+| `ENABLE_DEBUG` | (optional) | Set to "1" to enable debug mode |
+| `LIST_DEVICES` | (optional) | Set to "1" to list audio devices instead of starting |
 | `LVA_USER_ID` | `1000` | User ID for the container (usually 1000 for the first user) |
 | `LVA_USER_GROUP` | `1000` | GROUP ID for the container (usually 1000 for the first users group) |
 | `CLIENT_NAME` | (optional) | Custom name for this voice assistant instance |
 | `LVA_PULSE_SERVER` | `/run/user/${LVA_USER_ID}/pulse/native` | Path to the PulseAudio/PipeWire socket (In some cases a `:unix`infront of the path is needed) |
 | `LVA_XDG_RUNTIME_DIR` | `/run/user/${LVA_USER_ID}` | XDG runtime directory |
 | `LVA_PULSE_COOKIE` | `/app/configuration/tmp_pulse_cookie` | Cookie file for PulseAudio if you use encryption. By default disabled. We use a tmp file to avoid errors if the file is not found |
-| `ENABLE_DEBUG` | (optional) | Set to "1" to enable debug mode |
-| `LIST_DEVICES` | (optional) | Set to "1" to list audio devices instead of starting |
 | `PREFERENCES_FILE` | (optional) | Path to a custom preferences JSON file |
 | `NETWORK_INTERFACE` | Autodetected | network card for server |
 | `HOST` | Autodetected | API server IP-Address, can be 0.0.0.0 for all interfaces, but only one network card works for MAC-ADDRESS and ESP protocol |
@@ -255,13 +259,17 @@ The following variables can be configured in the `.env` or in the service file:
 | `ENABLE_THINKING_SOUND` | false | Set to "1" to enable thinking sound |
 | `WAKE_WORD_DIR` | `app/wakewords` | Path to the wake word directory |
 | `WAKE_MODEL` | `okay_nabu` | Wake word model to use |
+| `STOP_MODEL` | `stop` | Stop model to use |
+| `TIMER_MAX_RING_SECONDS` | `900` | Seconds after which the timer stops ringing |
 | `REFACTORY_SECONDS` | `2` | Refractory period in seconds after wake word |
 | `WAKEUP_SOUND` | `sounds/wake_word_triggered.flac` | Sound file for wake word triggered |
 | `TIMER_FINISHED_SOUND` | `sounds/timer_finished.flac` | Sound file for timer finished |
 | `PROCESSING_SOUND` | `sounds/processing.wav` | Sound file for processing state |
 | `LISTEN_DURING_WAKE_SOUND` | false | Set to "1" to start listening immediately after wake word detection, without waiting for the wake sound to finish |
 | `MUTE_SOUND` | `sounds/mute_switch_on.flac` | Sound file for mute on |
-| `UNMUTE_SOUND` | `sounds/mute_switch_off.flac` | Sound file for mute off |
+| `UNMUTE_SOUND` | `sounds/mute_switch_off.flac` | Sound file for Configure Audio Devices
+| `ENABLE_OUTPUT_ONLY` | (optional) | Set to "1" to enable output-only mode |
+
 
 💡 **Note:** For the systemd installation some variables set in the service need to be without `LVA_` prefix.
 
