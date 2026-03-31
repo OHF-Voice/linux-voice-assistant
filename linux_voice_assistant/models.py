@@ -95,6 +95,7 @@ class ServerState:
     wake_words_changed: bool = False
     refractory_seconds: float = 2.0
     thinking_sound_enabled: bool = False
+    output_only: bool = False
     muted: bool = False
     connected: bool = False
     volume: float = 1.0
