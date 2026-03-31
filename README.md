@@ -6,7 +6,7 @@ An experimental Linux-Voice-Assistant software for [Home Assistant](https://www.
 
 This project enables you to build a Linux-based voice assistant designed to use [Assist](https://www.home-assistant.io/voice_control/) for Home Assistant. It allows you to create your own smart speaker that runs on any x64 or ARM64 hardware capable of handling local audio processing (using PulseAudio).
 
-Unlike simpler voice satellites that run on microcontrollers with very limited compute power, this setup can perform local wake word detection (OWW/MWW) and process some data on-device. 
+Unlike simpler voice satellites that run on microcontrollers with very limited compute power, this setup can perform local wake word detection (OWW/MWW) and process some data on-device. However similar to other remote satellites you can optionally enable output-only mode to use it purely as a smart audio-receiver/speaker.
 
 Because it runs on a full Linux system and offers access significantly more local computing resources for additional features and other integrations on the same satellite, this approach also provides greater flexibility for customization (such as for example experiment with using PipeWire).
 
@@ -20,6 +20,7 @@ Because it runs on a full Linux system and offers access significantly more loca
 - Supports multiple architectures (linux/amd64 and linux/aarch64)
 - Automated builds with artifact attestation for security
 - Supports announcments, start/continue conversation, and timers
+- Optional output-only mode (temporarily or permanently use without microphone)
 - Tested with Python 3.13 and Python 3.11.
 - Prebuild docker image available on [GitHub Container Registry](https://github.com/OHF-Voice/linux-voice-assistant/pkgs/container/linux-voice-assistant)
 - Prebuild Raspberry Pi image
