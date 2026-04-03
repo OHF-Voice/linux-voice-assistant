@@ -123,17 +123,16 @@ Log out and back in for the group change to take effect.
 Place all files in the same directory:
 
 ```
-satellite1/
+Satellite1_HAT_Board/
 ├── Dockerfile
-├── docker-compose.yml
+├── compose.yml
 ├── requirements.txt
-└── satellite1_peripheral.py
+└── Satellite1_HAT_Board.py
 ```
 
 ### Step 4 — Build and start
 
 ```bash
-cd satellite1
 docker compose up -d
 ```
 
@@ -147,7 +146,7 @@ docker compose logs -f
 
 ## Configuration
 
-All configuration is at the top of `satellite1_peripheral.py`:
+All configuration is at the top of `Satellite1_HAT_Board.py`:
 
 ```python
 # LVA connection
