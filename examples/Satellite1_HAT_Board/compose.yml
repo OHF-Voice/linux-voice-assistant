@@ -1,0 +1,148 @@
+---
+# Satellite 1 HAT Board – peripheral controller
+#
+# Runs alongside the linux-voice-assistant container.
+# Connects to LVA's peripheral WebSocket API (port 6055) and drives the
+# 12-LED SK6812 ring and four hardware buttons on the Satellite 1 HAT.
+#
+# IMPORTANT – read the hardware notes at the bottom of this file before
+# starting the container for the first time.
+
+services:
+  satellite1-peripheral:
+    build: .
+    image: lva/satellite1_hat_board:local
+    container_name: satellite1_hat_board
+    restart: unless-stopped
+
+    # -----------------------------------------------------------------------
+    # PWM + DMA access (required by rpi-ws281x for LED ring control)
+    #
+    # rpi-ws281x drives the SK6812 LEDs via hardware PWM (GPIO 12, channel 0)
+    # and DMA.  This requires access to /dev/mem for DMA buffer allocation.
+    # There is no narrower capability; privileged is the practical requirement
+    # on Raspberry Pi OS when using PWM mode.
+    # -----------------------------------------------------------------------
+    privileged: true
+
+    # -----------------------------------------------------------------------
+    # Device access
+    # -----------------------------------------------------------------------
+    devices:
+      # GPIO memory map – needed by RPi.GPIO for button input
+      - /dev/gpiomem:/dev/gpiomem
+      # Full physical memory map – needed by rpi-ws281x DMA engine
+      - /dev/mem:/dev/mem
+      # Video core mailbox – used by rpi-ws281x to allocate DMA buffers
+      - /dev/vcio:/dev/vcio
+
+    # -----------------------------------------------------------------------
+    # Run as root inside the container.
+    # rpi-ws281x's DMA allocator requires root access to /dev/mem and /dev/vcio.
+    # -----------------------------------------------------------------------
+    user: "0:0"
+
+    group_add:
+      # gpio group – allows RPi.GPIO to open /dev/gpiomem without root
+      # (redundant when user is root but good practice to keep for non-root builds)
+      - gpio
+
+    # -----------------------------------------------------------------------
+    # Environment variables
+    # -----------------------------------------------------------------------
+    environment:
+      - PYTHONUNBUFFERED=1
+
+    # -----------------------------------------------------------------------
+    # Network
+    #
+    # Uses the host network so "localhost" resolves to the Pi itself and
+    # the LVA container's port 6055 is directly reachable.
+    # If LVA is on a different host, change --host below to its IP address
+    # and remove network_mode: host.
+    # -----------------------------------------------------------------------
+    network_mode: host
+
+    # -----------------------------------------------------------------------
+    # Command-line arguments passed to satellite1_peripheral.py
+    # -----------------------------------------------------------------------
+    command:
+      - "--host"
+      - "localhost"        # Change to LVA container IP if on a different host
+      - "--port"
+      - "6055"
+      # Uncomment for verbose logging during setup / troubleshooting:
+      # - "--debug"
+
+    # -----------------------------------------------------------------------
+    # Health check – verifies the process is still running
+    # -----------------------------------------------------------------------
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "satellite1_peripheral.py"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+    # -----------------------------------------------------------------------
+    # Logging – keep last 10 MB across 3 rotated files
+    # -----------------------------------------------------------------------
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+
+# =============================================================================
+# HARDWARE NOTES – read before first run
+# =============================================================================
+#
+# 1. SPI / PWM KERNEL OVERLAY
+#    rpi-ws281x can drive LEDs via PWM (recommended), PCM, or SPI.
+#    This compose file uses PWM on GPIO 12 (PWM0, channel 0).
+#    Add the following line to /boot/firmware/config.txt (or /boot/config.txt
+#    on older Raspberry Pi OS):
+#
+#        dtoverlay=pwm,pin=12,func=4
+#
+#    Then reboot.  Without this overlay the PWM pin is not mapped and the
+#    LED ring will not light up.
+#
+#    Alternatively, SPI mode can be used (GPIO 10, SPI0 MOSI).  If you prefer
+#    SPI, enable it via:
+#        dtoverlay=spi0-1cs
+#    and change LED_GPIO_PIN to 10 and LED_CHANNEL to 0 in satellite1_peripheral.py,
+#    then also set LED_DMA to 10 and remove the need for /dev/vcio.
+#
+# 2. AUDIO CONFLICT WITH PWM
+#    The Raspberry Pi's onboard audio also uses PWM.  If you use the 3.5 mm
+#    headphone jack, it conflicts with PWM0.  Disable onboard audio in
+#    /boot/firmware/config.txt:
+#
+#        # dtparam=audio=on    ← comment this out
+#
+#    The Satellite 1 HAT has its own I2S audio codec (XMOS XVF3800), so
+#    onboard audio is not needed.
+#
+# 3. SATELLITE 1 HAT I2S AUDIO DRIVER
+#    The HAT's microphone array is driven by the XMOS XVF3800 over USB.
+#    No additional kernel driver is required — it enumerates as a standard
+#    USB audio device.  LVA picks it up automatically via soundcard.
+#    If you use the Satellite 1 HAT's line-out, add to config.txt:
+#
+#        dtoverlay=hifiberry-dac
+#
+# 4. GPIO GROUP
+#    Make sure the user running Docker belongs to the gpio and spi groups
+#    on the host:
+#
+#        sudo usermod -aG gpio,spi $USER
+#
+# 5. MEMORY SPLIT (optional)
+#    On Pi Zero 2 W, increase GPU memory to at least 64 MB so the VideoCore
+#    mailbox has enough address space for the DMA allocator:
+#
+#        gpu_mem=64    (in /boot/firmware/config.txt)
+#
+# =============================================================================
