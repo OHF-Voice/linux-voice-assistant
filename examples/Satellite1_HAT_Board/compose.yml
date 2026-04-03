@@ -64,7 +64,7 @@ services:
     network_mode: host
 
     # -----------------------------------------------------------------------
-    # Command-line arguments passed to satellite1_peripheral.py
+    # Command-line arguments passed to Satellite1_HAT_Board.py
     # -----------------------------------------------------------------------
     command:
       - "--host"
@@ -78,7 +78,7 @@ services:
     # Health check – verifies the process is still running
     # -----------------------------------------------------------------------
     healthcheck:
-      test: ["CMD", "pgrep", "-f", "satellite1_peripheral.py"]
+      test: ["CMD", "pgrep", "-f", "Satellite1_HAT_Board.py"]
       interval: 30s
       timeout: 5s
       retries: 3
