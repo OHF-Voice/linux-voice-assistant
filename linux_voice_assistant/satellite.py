@@ -5,6 +5,7 @@ import hashlib
 import logging
 import posixpath
 import shutil
+import threading
 import time
 from collections.abc import Iterable
 from typing import Dict, List, Optional, Set, Union
@@ -61,7 +62,18 @@ class VoiceSatelliteProtocol(APIServer):
         self.state.satellite = self
         self.state.connected = False
 
+        # Report capabilities appropriately
+        if state.output_only:
+            _LOGGER.debug("Output only features")
+            self.supported_features = VoiceAssistantFeature.API_AUDIO | VoiceAssistantFeature.ANNOUNCE
+        else:
+            _LOGGER.debug("Voice assistant features")
+            self.supported_features = (
+                VoiceAssistantFeature.VOICE_ASSISTANT | VoiceAssistantFeature.API_AUDIO | VoiceAssistantFeature.ANNOUNCE | VoiceAssistantFeature.START_CONVERSATION | VoiceAssistantFeature.TIMERS
+            )
+
         existing_media_players = [entity for entity in self.state.entities if isinstance(entity, MediaPlayerEntity)]
+
         if existing_media_players:
             # Keep the first instance and remove any extras.
             self.state.media_player_entity = existing_media_players[0]
@@ -285,9 +297,7 @@ class VoiceSatelliteProtocol(APIServer):
                 mac_address=self.state.mac_address,
                 manufacturer="Open Home Foundation",
                 model="Linux Voice Assistant",
-                voice_assistant_feature_flags=(
-                    VoiceAssistantFeature.VOICE_ASSISTANT | VoiceAssistantFeature.API_AUDIO | VoiceAssistantFeature.ANNOUNCE | VoiceAssistantFeature.START_CONVERSATION | VoiceAssistantFeature.TIMERS
-                ),
+                voice_assistant_feature_flags=self.supported_features,
             )
         elif isinstance(
             msg,
@@ -379,11 +389,30 @@ class VoiceSatelliteProtocol(APIServer):
 
     def wakeup(self, wake_word: Union[MicroWakeWord, OpenWakeWord]) -> None:
         if self._timer_finished:
-            # Stop timer instead
+            # Stop the ringing timer, then start a normal wake-up after a short
+            # delay so the transition doesn't feel abrupt.
             self._timer_finished = False
+            self._timer_ring_start = None
+            self.state.active_wake_words.discard(self.state.stop_word.id)
             self.unduck()
             self.state.tts_player.stop()
-            _LOGGER.debug("Stopping timer finished sound")
+            _LOGGER.debug("Stopping timer finished sound; will wake up in 1 s")
+
+            wake_word_phrase = wake_word.wake_word  # type: ignore
+
+            def _delayed_wakeup() -> None:
+                if self.state.muted or self._pipeline_active:
+                    _LOGGER.debug("Delayed wakeup skipped (muted=%s, pipeline_active=%s)", self.state.muted, self._pipeline_active)
+                    return
+                _LOGGER.debug("Delayed wakeup: playing wakeup sound for %s", wake_word_phrase)
+                self._pipeline_active = True
+                self.duck()
+                self.state.tts_player.play(
+                    self.state.wakeup_sound,
+                    done_callback=lambda: self._on_wakeup_sound_finished(wake_word_phrase),
+                )
+
+            threading.Timer(0.1, _delayed_wakeup).start()
             return
 
         if self.state.muted:

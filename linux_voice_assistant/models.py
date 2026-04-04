@@ -96,6 +96,7 @@ class ServerState:
     refractory_seconds: float = 2.0
     thinking_sound_enabled: bool = False
     sendspin_bridge: "Optional[SendspinBridge]" = None
+    output_only: bool = False
     muted: bool = False
     connected: bool = False
     volume: float = 1.0

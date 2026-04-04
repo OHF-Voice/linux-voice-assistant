@@ -171,6 +171,10 @@ async def main() -> None:
         type=float,
         default=0.0,
         help="Static playback delay in milliseconds for SendSpin sync adjustment",
+    parser.add_argument(
+        "--output-only",
+        action="store_true",
+        help="Enable output only mode",
     )
     args = parser.parse_args()
 
@@ -369,6 +373,7 @@ async def main() -> None:
         preferences=preferences,
         preferences_path=preferences_path,
         refractory_seconds=args.refractory_seconds,
+        output_only=args.output_only,
         download_dir=args.download_dir,
         volume=initial_volume,
         timer_max_ring_seconds=args.timer_max_ring_seconds,
@@ -547,5 +552,10 @@ def process_audio(state: ServerState, mic, block_size: int):
 
 # -----------------------------------------------------------------------------
 
-if __name__ == "__main__":
+
+def run():
     asyncio.run(main())
+
+
+if __name__ == "__main__":
+    run()
