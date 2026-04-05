@@ -204,7 +204,7 @@ DEFAULT_R, DEFAULT_G, DEFAULT_B = 24, 187, 242
 ### LEDs do not light up
 
 1. Confirm `dtparam=spi=on` is in `/boot/firmware/config.txt` and the Pi has been rebooted.
-2. Check `/dev/spidev0.1` exists: `ls /dev/spidev*`. If only `spidev0.0` exists, change `SPI_DEVICE = 0` in the script and update the device mapping in `docker-compose.yml` to `/dev/spidev0.0`.
+2. Check `/dev/spidev0.1` exists: `ls /dev/spidev*`. If only `spidev0.0` exists, change `SPI_DEVICE = 0` in the script and update the device mapping in `compose.yml` to `/dev/spidev0.0`.
 3. Confirm the container user is in the `spi` group: `groups $USER`.
 4. Run with `--debug` and look for `APA102 LED ring initialised` in the logs.
 
