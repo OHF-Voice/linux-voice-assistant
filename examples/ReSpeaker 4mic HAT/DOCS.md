@@ -128,7 +128,7 @@ Log out and back in. Check your UID:
 id -u $USER
 ```
 
-If it is not `1000`, update the `user:` field in `docker-compose.yml` to match.
+If it is not `1000`, update the `user:` field in `compose.yml` to match.
 
 ### Step 4 — File structure
 
