@@ -39,7 +39,10 @@ Feedback events emitted by LVA
 Commands accepted from the peripheral container
 ------------------------------------------------
   start_listening
-  stop_listening
+  stop_pipeline     Abort the active voice pipeline at any phase — listening,
+                    thinking, or wake word active. Calls satellite.stop() which
+                    cleans up STT streaming, sends VoiceAssistantAnnounceFinished
+                    to HA, unducking music, and emits idle to peripherals.
   mute_mic
   unmute_mic
   volume_up
@@ -92,7 +95,7 @@ class LVACommand(str, Enum):
     """Commands accepted from peripheral clients."""
 
     START_LISTENING = "start_listening"
-    STOP_LISTENING = "stop_listening"
+    STOP_PIPELINE = "stop_pipeline"
     MUTE_MIC = "mute_mic"
     UNMUTE_MIC = "unmute_mic"
     VOLUME_UP = "volume_up"
@@ -149,13 +152,18 @@ class PeripheralAPIServer:
         try:
             from websockets.server import serve  # type: ignore[import]
         except ImportError:
-            _LOGGER.error("websockets package not installed – peripheral API disabled. " "Install with: pip install websockets")
+            _LOGGER.error(
+                "websockets package not installed – peripheral API disabled. "
+                "Install with: pip install websockets"
+            )
             return
 
         self._loop = asyncio.get_running_loop()
         self._server = await serve(self._handle_client, self._host, self._port)
-        _LOGGER.info("Peripheral API listening at ws://%s:%d", self._host, self._port)
-      
+        _LOGGER.info(
+            "Peripheral API listening at ws://%s:%d", self._host, self._port
+        )
+
     async def stop(self) -> None:
         """Gracefully shut down the server and all client connections."""
         if self._server is not None:
@@ -233,7 +241,9 @@ class PeripheralAPIServer:
                 return
             satellite.start_listening()  # plays sound, then starts pipeline
 
-        elif command == LVACommand.STOP_LISTENING:
+        elif command == LVACommand.STOP_PIPELINE:
+            # Stops the voice pipeline at any active phase:
+            # listening, thinking, or wake word active.
             if satellite is not None:
                 satellite.stop()
 
@@ -248,7 +258,11 @@ class PeripheralAPIServer:
                 await self._push_mute_switch(satellite, muted=False)
 
         elif command in (LVACommand.VOLUME_UP, LVACommand.VOLUME_DOWN):
-            delta = self._volume_step if command == LVACommand.VOLUME_UP else -self._volume_step
+            delta = (
+                self._volume_step
+                if command == LVACommand.VOLUME_UP
+                else -self._volume_step
+            )
             new_vol = max(0.0, min(1.0, state.volume + delta))
             vol_pct = int(round(new_vol * 100))
 
@@ -275,8 +289,8 @@ class PeripheralAPIServer:
         elif command == LVACommand.STOP_MEDIA_PLAYER:
             state.music_player.stop()
             if state.media_player_entity is not None:
-                from aioesphomeapi.api_pb2 import MediaPlayerStateResponse  # type: ignore[attr-defined]
                 from aioesphomeapi.model import MediaPlayerState  # type: ignore[import]
+                from aioesphomeapi.api_pb2 import MediaPlayerStateResponse  # type: ignore[attr-defined]
 
                 state.media_player_entity.state = MediaPlayerState.IDLE
                 if satellite is not None:
