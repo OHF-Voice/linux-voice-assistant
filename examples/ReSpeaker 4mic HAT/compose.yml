@@ -1,0 +1,142 @@
+---
+# ReSpeaker 4-Mic Array HAT – peripheral controller
+#
+# Runs alongside the linux-voice-assistant container.
+# Connects to LVA's peripheral WebSocket API (port 6055) and drives the
+#
+# Key differences from Satellite 1 HAT:
+#   - LEDs use SPI (not PWM/DMA), so no privileged mode is required
+#   - Audio uses I2S via the seeed-voicecard driver — see hardware notes
+
+services:
+  respeaker4mic-peripheral:
+    build: .
+    image: lva/respeaker-4mic-hat:local
+    container_name: respeaker-4mic-hat
+    restart: unless-stopped
+
+    # -----------------------------------------------------------------------
+    # Device access
+    #
+    # SPI access for APA102 LEDs:
+    #   /dev/spidev0.1  – SPI0 CE1 (used by apa102-pi for the LED ring)
+    #                     Change to /dev/spidev0.0 if you wired CE0 instead.
+    # -----------------------------------------------------------------------
+    devices:
+      - /dev/spidev0.1:/dev/spidev0.1
+      - /dev/gpiomem:/dev/gpiomem
+
+    # -----------------------------------------------------------------------
+    # Run as the gpio/spi group member — no root required.
+    # The host user must be in the gpio and spi groups.
+    # (see hardware notes below)
+    # -----------------------------------------------------------------------
+    user: "1000:1000"
+
+    group_add:
+      - gpio
+      - spi
+
+    # -----------------------------------------------------------------------
+    # Environment
+    # -----------------------------------------------------------------------
+    environment:
+      - PYTHONUNBUFFERED=1
+
+    # -----------------------------------------------------------------------
+    # Network — host mode so "localhost" reaches the LVA container directly
+    # -----------------------------------------------------------------------
+    network_mode: host
+
+    # -----------------------------------------------------------------------
+    # Command-line arguments
+    # -----------------------------------------------------------------------
+    command:
+      - "--host"
+      - "localhost"        # Change to LVA container IP if on a different host
+      - "--port"
+      - "6055"
+      # Uncomment for verbose logging during setup / troubleshooting:
+      # - "--debug"
+
+    # -----------------------------------------------------------------------
+    # Health check
+    # -----------------------------------------------------------------------
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "respeaker4mic_peripheral.py"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+
+# =============================================================================
+# HARDWARE NOTES
+# =============================================================================
+#
+# 1. AUDIO DRIVER — seeed-voicecard (REQUIRED for microphone input)
+#
+#    The ReSpeaker 4-Mic Array uses an AC108 I2S codec for the microphones.
+#    The standard Raspberry Pi kernel does not include this driver.
+#    Install it on the HOST Raspberry Pi (not inside Docker):
+#
+#        git clone https://github.com/respeaker/seeed-voicecard
+#        cd seeed-voicecard
+#        sudo ./install.sh
+#        sudo reboot
+#
+#    After reboot, the microphone array should appear as an ALSA device.
+#    LVA will automatically detect it via soundcard. Verify with:
+#
+#        arecord -l
+#        # Should list: seeed-4mic-voicecard
+#
+#    Note: the seeed-voicecard installer adds its own dtoverlay to
+#    /boot/firmware/config.txt. Do not add it manually.
+#
+# 2. SPI OVERLAY (REQUIRED for LED ring)
+#
+#    The APA102 LED ring uses SPI. Enable it in /boot/firmware/config.txt:
+#
+#        dtparam=spi=on
+#
+#    Then reboot. Verify SPI devices are present:
+#
+#        ls /dev/spidev*
+#        # Should show: /dev/spidev0.0  /dev/spidev0.1
+#
+#    The seeed-voicecard installer sometimes enables SPI automatically.
+#    Check /boot/firmware/config.txt after running install.sh before
+#    adding it manually.
+#
+# 3. GPIO GROUP (REQUIRED for button input)
+#
+#    Add the host user to the gpio and spi groups:
+#
+#        sudo usermod -aG gpio,spi $USER
+#
+#    Log out and back in. Also update the user field in this compose file
+#    if your UID is not 1000:
+#
+#        id -u $USER     # check your UID
+#
+# 4. SPI CONFLICT WITH seeed-voicecard
+#
+#    The seeed-voicecard driver uses I2S (not SPI), so there is no conflict
+#    with the APA102 SPI LED ring. Both can run simultaneously.
+#
+# 5. SPI CE SELECTION
+#
+#    The APA102 ring does not use a chip enable (CE) line electrically, but
+#    the apa102-pi library requires CE0 or CE1 to open the SPI bus.
+#    This compose file maps /dev/spidev0.1 (CE1). If you prefer CE0, change:
+#      - device: /dev/spidev0.0:/dev/spidev0.0
+#      - SPI_DEVICE = 0 in respeaker_4mic_hat.py
+#
+# =============================================================================
