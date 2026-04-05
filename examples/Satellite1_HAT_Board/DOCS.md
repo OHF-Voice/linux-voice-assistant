@@ -175,7 +175,7 @@ DEFAULT_R, DEFAULT_G, DEFAULT_B = 24, 187, 242
 
 ### Command-line arguments
 
-The container command in `docker-compose.yml` accepts:
+The container command in `compose.yml` accepts:
 
 | Argument | Default | Description |
 |---|---|---|
