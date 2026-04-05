@@ -56,7 +56,7 @@ Sends a command based on the current assistant state, in priority order:
 | Current state | Command sent |
 |---|---|
 | Timer ringing | `stop_timer_ringing` |
-| Listening / thinking / wake word active | `stop_listening` |
+| Wake word / listening / thinking | `stop_pipeline` |
 | TTS speaking | `stop_speaking` |
 | Music / media playing | `stop_media_player` |
 | Any other (idle) | `start_listening` |
@@ -75,7 +75,7 @@ All animations mirror the Home Assistant Voice PE ESPHome firmware exactly.
 | Listening | Fast clockwise spin | Same dual-arc pattern at 50 ms interval |
 | Thinking | Pulsing pair | Two opposing LEDs fade in and out |
 | TTS speaking | Anticlockwise spin | Dual-arc spin in reverse direction |
-| Muted | Solid ring + red indicators | Full ring on; red at positions 3 & 9 (mic locations) |
+| Muted | Solid ring + red indicators | Full ring on; red at positions 0, 3, 6 & 9 (all 4 mic locations) |
 | Error | Red pulse | All LEDs red, pulsing |
 | Timer ticking | Countdown arc | Arc length proportional to `seconds_left / total_seconds` |
 | Timer ringing | Pulse + optional red | Full ring pulsing; red at 3 & 9 if muted |
@@ -123,9 +123,9 @@ Log out and back in for the group change to take effect.
 Place all files in the same directory:
 
 ```
-Satellite1_HAT_Board/
+satellite1/
 ├── Dockerfile
-├── compose.yml
+├── docker-compose.yml
 ├── requirements.txt
 └── Satellite1_HAT_Board.py
 ```
@@ -133,6 +133,7 @@ Satellite1_HAT_Board/
 ### Step 4 — Build and start
 
 ```bash
+cd satellite1
 docker compose up -d
 ```
 
@@ -188,7 +189,7 @@ To connect to LVA running on a different host:
 ```yaml
 command:
   - "--host"
-  - "192.168.1.50"
+  - "192.168.1.50" # Use your actual device ip address
   - "--port"
   - "6055"
 ```
