@@ -25,8 +25,8 @@ Install dependencies
 
 Run
 ---
-  python3 satellite1_peripheral.py
-  python3 satellite1_peripheral.py --host 127.0.0.1 --port 6055 --debug
+  python3 Satellite1_HAT_Board.py
+  python3 Satellite1_HAT_Board.py --host 127.0.0.1 --port 6055 --debug
 """
 
 from __future__ import annotations
@@ -346,16 +346,19 @@ class LEDRing:
 
     def _anim_muted(self, color: RGB, muted: bool) -> float:
         """
-        Solid ring with red indicators at mic positions when muted.
-        Mirrors ESPHome "Muted or Silent" effect.
+        Solid ring with red indicators at all 4 mic positions when muted.
+        Satellite 1 HAT has mics at 12, 3, 6 and 9 o'clock → LEDs 0, 3, 6, 9.
         """
         for i in range(LED_COUNT):
             self._set(i, color)
 
         if muted:
-            # Mic indicators at positions 3 and 9 (mirrors ESPHome positions)
-            self._set(2, BLACK); self._set(3, RED); self._set(4, BLACK)
-            self._set(8, BLACK); self._set(9, RED); self._set(10, BLACK)
+            # 4 mic positions: top (0), right (3), bottom (6), left (9)
+            # Blank the immediate neighbours so the red indicators stand out
+            self._set(11, BLACK); self._set(0, RED);  self._set(1, BLACK)
+            self._set(2,  BLACK); self._set(3, RED);  self._set(4, BLACK)
+            self._set(5,  BLACK); self._set(6, RED);  self._set(7, BLACK)
+            self._set(8,  BLACK); self._set(9, RED);  self._set(10, BLACK)
 
         self._write()
         return 0.016
@@ -372,14 +375,17 @@ class LEDRing:
 
     def _anim_timer_ring(self, color: RGB, muted: bool) -> float:
         """
-        All LEDs pulse with ring colour; red mute indicators if muted.
+        All LEDs pulse with ring colour; red at all 4 mic positions if muted.
         Mirrors ESPHome "Timer Ring" effect.
         """
         factor = self._pulse_step(10)
         for i in range(LED_COUNT):
             self._set(i, _scale(color, factor))
         if muted:
+            # 4 mic positions: LEDs 0, 3, 6, 9
+            self._set(0, _scale(RED, factor))
             self._set(3, _scale(RED, factor))
+            self._set(6, _scale(RED, factor))
             self._set(9, _scale(RED, factor))
         self._write()
         return 0.01
@@ -409,8 +415,11 @@ class LEDRing:
                 self._set(i, BLACK)
 
         if muted:
-            self._set(2, BLACK); self._set(3, RED); self._set(4, BLACK)
-            self._set(8, BLACK); self._set(9, RED); self._set(10, BLACK)
+            # 4 mic positions: LEDs 0, 3, 6, 9
+            self._set(11, BLACK); self._set(0, RED);  self._set(1, BLACK)
+            self._set(2,  BLACK); self._set(3, RED);  self._set(4, BLACK)
+            self._set(5,  BLACK); self._set(6, RED);  self._set(7, BLACK)
+            self._set(8,  BLACK); self._set(9, RED);  self._set(10, BLACK)
 
         self._index = (LED_COUNT + self._index - 1) % LED_COUNT
         self._write()
@@ -587,23 +596,27 @@ class ButtonHandler:
         """
         Context-sensitive bottom button.
 
-        Priority order mirrors ESPHome center button logic:
-          1. Timer ringing  → stop_timer_ringing
-          2. Listening/thinking (pipeline active) → stop_listening
-          3. TTS speaking   → stop_speaking
-          4. Media playing  → stop_media_player
-          5. Else           → start_listening
+        Priority order:
+          1. Timer ringing              → stop_timer_ringing
+          2. Pipeline active            → stop_pipeline
+             (wake word / listening / thinking)
+          3. TTS speaking               → stop_speaking
+          4. Media playing              → stop_media_player
+          5. Idle / anything else       → start_listening
         """
         assist = self._state.assist_state
 
         if assist == AssistState.TIMER_RINGING:
             self._send("stop_timer_ringing")
-        elif assist in (AssistState.LISTENING, AssistState.THINKING, AssistState.WAKE_WORD):
-            self._send("stop_listening")
+        elif assist in (AssistState.WAKE_WORD, AssistState.LISTENING, AssistState.THINKING):
+            # stop_pipeline aborts the voice pipeline at any of these phases
+            self._send("stop_pipeline")
         elif assist == AssistState.SPEAKING:
             self._send("stop_speaking")
         elif assist == AssistState.MEDIA_PLAYING:
             self._send("stop_media_player")
+        else:
+            self._send("start_listening")
         else:
             self._send("start_listening")
 
