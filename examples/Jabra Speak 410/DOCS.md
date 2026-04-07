@@ -110,7 +110,7 @@ environment:
 ### Step 4 — File structure
 
 ```
-jabra_speak_410/
+Jabra Speak 410/
 ├── docker-compose.yml
 └── (no build required — uses pre-built image)
 ```
