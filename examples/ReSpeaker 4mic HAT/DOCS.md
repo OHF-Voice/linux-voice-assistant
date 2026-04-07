@@ -133,7 +133,7 @@ If it is not `1000`, update the `user:` field in `compose.yml` to match.
 ### Step 4 — File structure
 
 ```
-respeaker_4mic_hat/
+ReSpeaker 4mic HAT/
 ├── Dockerfile
 ├── compose.yml
 ├── requirements.txt

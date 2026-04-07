@@ -104,7 +104,7 @@ environment:
 ### Step 3 — File structure
 
 ```
-respeaker_usb_mic_array/
+ReSpeaker Mic Array v2.0 (USB)/
 ├── Dockerfile
 ├── docker-compose.yml
 ├── requirements.txt
