@@ -8,7 +8,7 @@ The controller connects to the Jabra Speak 410 via USB HID, drives its LED ring 
 
 > **This board connects over USB** — no GPIO, no SPI, no HAT required. It works on any Linux host.
 
-![Demo Video](./demo.mp4)
+[Demo Video](./demo.mp4)
 
 ---
 
