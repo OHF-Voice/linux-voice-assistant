@@ -33,6 +33,7 @@ dependencies = [
     "getmac<1",
     "types-protobuf",
     "websockets==12",
+    "webrtc_noise_gain",
 ]
 dynamic = ["version"]
 

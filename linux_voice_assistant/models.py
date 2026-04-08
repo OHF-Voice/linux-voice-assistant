@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from .entity import (
         ESPHomeEntity,
         MediaPlayerEntity,
+        MicSettingEntity,
         MuteSwitchEntity,
         ThinkingSoundEntity,
     )
@@ -60,6 +61,8 @@ class Preferences:
     active_wake_words: List[str] = field(default_factory=list)
     volume: Optional[float] = None
     thinking_sound: int = 0  # 0 = disabled, 1 = enabled
+    mic_auto_gain: int = 0
+    mic_noise_suppression: int = 0
 
 
 @dataclass
@@ -98,6 +101,8 @@ class ServerState:
     # Assigned in __main__ before the event loop starts.
     peripheral_api: "Optional[Any]" = None  # PeripheralAPIServer at runtime
 
+    mic_gain_entity: "Optional[MicSettingEntity]" = None
+    mic_noise_suppression_entity: "Optional[MicSettingEntity]" = None
     wake_words_changed: bool = False
     refractory_seconds: float = 2.0
     thinking_sound_enabled: bool = False
@@ -105,6 +110,8 @@ class ServerState:
     muted: bool = False
     connected: bool = False
     volume: float = 1.0
+    mic_auto_gain: int = 0
+    mic_noise_suppression: int = 0
     timer_max_ring_seconds: float = 900.0
 
     def save_preferences(self) -> None:
@@ -145,3 +152,22 @@ class ServerState:
             from .peripheral_api import LVAEvent  # local import avoids circular dep
 
             api.emit_event_sync(LVAEvent.VOLUME_CHANGED, {"volume": round(clamped_volume, 3)})
+    def persist_mic_gain(self, gain: float) -> None:
+        """Persist the microphone auto gain value."""
+        gain_int = int(gain)
+        if self.mic_auto_gain == gain_int and self.preferences.mic_auto_gain == gain_int:
+            return
+
+        self.mic_auto_gain = gain_int
+        self.preferences.mic_auto_gain = gain_int
+        self.save_preferences()
+
+    def persist_mic_noise(self, noise: float) -> None:
+        """Persist the microphone noise suppression value."""
+        noise_int = int(noise)
+        if self.mic_noise_suppression == noise_int and self.preferences.mic_noise_suppression == noise_int:
+            return
+
+        self.mic_noise_suppression = noise_int
+        self.preferences.mic_noise_suppression = noise_int
+        self.save_preferences()
