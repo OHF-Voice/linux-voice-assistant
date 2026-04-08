@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from .entity import (
         ESPHomeEntity,
         MediaPlayerEntity,
+        MicSettingEntity,
         MuteSwitchEntity,
         ThinkingSoundEntity,
         WakeWordSensitivityEntity,
@@ -61,6 +62,8 @@ class Preferences:
     volume: Optional[float] = None
     thinking_sound: int = 0  # 0 = disabled, 1 = enabled
     wake_word_sensitivity: str = "Slightly sensitive"
+    mic_auto_gain: int = 0
+    mic_noise_suppression: int = 0
 
 
 @dataclass
@@ -94,6 +97,8 @@ class ServerState:
     mute_switch_entity: "Optional[MuteSwitchEntity]" = None
     thinking_sound_entity: "Optional[ThinkingSoundEntity]" = None
     sensitivity_entity: "Optional[WakeWordSensitivityEntity]" = None
+    mic_gain_entity: "Optional[MicSettingEntity]" = None
+    mic_noise_suppression_entity: "Optional[MicSettingEntity]" = None
     wake_words_changed: bool = False
     refractory_seconds: float = 2.0
     thinking_sound_enabled: bool = False
@@ -103,6 +108,8 @@ class ServerState:
     volume: float = 1.0
     wake_word_sensitivity: str = "Slightly sensitive"
     oww_probability_cutoff: float = 0.7  # Dynamic threshold for OpenWakeWord
+    mic_auto_gain: int = 0
+    mic_noise_suppression: int = 0
     timer_max_ring_seconds: float = 900.0
 
     def save_preferences(self) -> None:
@@ -136,3 +143,23 @@ class ServerState:
         _LOGGER.info("Saving volume %s to %s", clamped_volume, self.preferences_path)
         self.save_preferences()
         _LOGGER.info("Volume saved successfully")
+
+    def persist_mic_gain(self, gain: float) -> None:
+        """Persist the microphone auto gain value."""
+        gain_int = int(gain)
+        if self.mic_auto_gain == gain_int and self.preferences.mic_auto_gain == gain_int:
+            return
+
+        self.mic_auto_gain = gain_int
+        self.preferences.mic_auto_gain = gain_int
+        self.save_preferences()
+
+    def persist_mic_noise(self, noise: float) -> None:
+        """Persist the microphone noise suppression value."""
+        noise_int = int(noise)
+        if self.mic_noise_suppression == noise_int and self.preferences.mic_noise_suppression == noise_int:
+            return
+
+        self.mic_noise_suppression = noise_int
+        self.preferences.mic_noise_suppression = noise_int
+        self.save_preferences()
