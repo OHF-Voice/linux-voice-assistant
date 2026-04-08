@@ -20,6 +20,8 @@ from aioesphomeapi.api_pb2 import (  # type: ignore[attr-defined]
     ListEntitiesDoneResponse,
     ListEntitiesRequest,
     MediaPlayerCommandRequest,
+    NumberCommandRequest,
+    SelectCommandRequest,
     SubscribeHomeAssistantStatesRequest,
     SwitchCommandRequest,
     VoiceAssistantAnnounceFinished,
@@ -45,7 +47,7 @@ from pymicro_wakeword import MicroWakeWord
 from pyopen_wakeword import OpenWakeWord
 
 from .api_server import APIServer
-from .entity import MediaPlayerEntity, MuteSwitchEntity, ThinkingSoundEntity
+from .entity import MediaPlayerEntity, MicSettingEntity, MuteSwitchEntity, ThinkingSoundEntity
 from .models import AvailableWakeWord, ServerState, WakeWordType
 from .util import call_all
 
@@ -158,6 +160,58 @@ class VoiceSatelliteProtocol(APIServer):
         thinking_sound_switch.update_get_thinking_sound_enabled(lambda: self.state.thinking_sound_enabled)
         thinking_sound_switch.update_set_thinking_sound_enabled(self._set_thinking_sound_enabled)
         thinking_sound_switch.sync_with_state()
+
+        # Mic Gain
+        if self.state.mic_gain_entity is None:
+            self.state.mic_gain_entity = MicSettingEntity(
+                server=self,
+                key=len(self.state.entities),
+                name="Mic Auto Gain",
+                object_id="mic_gain",
+                min_value=0.0,
+                max_value=31.0,
+                get_value=lambda: float(self.state.mic_auto_gain),
+                set_value=lambda val: self.state.persist_mic_gain(float(val)),
+                icon="mdi:microphone-plus",
+            )
+            self.state.entities.append(self.state.mic_gain_entity)
+        elif self.state.mic_gain_entity not in self.state.entities:
+            self.state.entities.append(self.state.mic_gain_entity)
+
+        self.state.mic_gain_entity.server = self
+        self.state.mic_gain_entity.update_get_value(lambda: float(self.state.mic_auto_gain))
+        self.state.mic_gain_entity.update_set_value(lambda val: self.state.persist_mic_gain(float(val)))  # type: ignore[arg-type]
+        self.state.mic_gain_entity.sync_with_state()
+
+        # Mic Noise Suppression
+        _NOISE_OPTIONS = ["Off", "Low", "Medium", "High", "Max"]
+        _NOISE_TO_INT = {label: i for i, label in enumerate(_NOISE_OPTIONS)}
+
+        def _get_noise_label() -> str:
+            return _NOISE_OPTIONS[max(0, min(4, self.state.mic_noise_suppression))]
+
+        def _set_noise_label(label: Union[float, str]) -> None:
+            self.state.persist_mic_noise(float(_NOISE_TO_INT.get(str(label), 0)))
+
+        if self.state.mic_noise_suppression_entity is None:
+            self.state.mic_noise_suppression_entity = MicSettingEntity(
+                server=self,
+                key=len(self.state.entities),
+                name="Mic Noise Suppression",
+                object_id="mic_noise",
+                options=_NOISE_OPTIONS,
+                get_value=_get_noise_label,
+                set_value=_set_noise_label,
+                icon="mdi:waveform",
+            )
+            self.state.entities.append(self.state.mic_noise_suppression_entity)
+        elif self.state.mic_noise_suppression_entity not in self.state.entities:
+            self.state.entities.append(self.state.mic_noise_suppression_entity)
+
+        self.state.mic_noise_suppression_entity.server = self
+        self.state.mic_noise_suppression_entity.update_get_value(_get_noise_label)
+        self.state.mic_noise_suppression_entity.update_set_value(_set_noise_label)
+        self.state.mic_noise_suppression_entity.sync_with_state()
 
         self._is_streaming_audio = False
         self._tts_url: Optional[str] = None
@@ -302,12 +356,7 @@ class VoiceSatelliteProtocol(APIServer):
             )
         elif isinstance(
             msg,
-            (
-                ListEntitiesRequest,
-                SubscribeHomeAssistantStatesRequest,
-                MediaPlayerCommandRequest,
-                SwitchCommandRequest,
-            ),
+            (ListEntitiesRequest, SubscribeHomeAssistantStatesRequest, MediaPlayerCommandRequest, SwitchCommandRequest, NumberCommandRequest, SelectCommandRequest),
         ):
             for entity in self.state.entities:
                 yield from entity.handle_message(msg)
@@ -549,6 +598,12 @@ class VoiceSatelliteProtocol(APIServer):
 
         if self.state.mute_switch_entity is not None:
             self.state.mute_switch_entity.sync_with_state()
+
+        if self.state.mic_gain_entity is not None:
+            self.state.mic_gain_entity.sync_with_state()
+
+        if self.state.mic_noise_suppression_entity is not None:
+            self.state.mic_noise_suppression_entity.sync_with_state()
 
         _LOGGER.info("Disconnected from Home Assistant; waiting for reconnection")
 
