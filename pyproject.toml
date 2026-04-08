@@ -32,6 +32,7 @@ dependencies = [
     "zeroconf<1",
     "getmac<1",
     "types-protobuf",
+    "websockets==12",
 ]
 dynamic = ["version"]
 
