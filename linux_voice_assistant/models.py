@@ -97,7 +97,7 @@ class ServerState:
     thinking_sound_entity: "Optional[ThinkingSoundEntity]" = None
     mic_gain_entity: "Optional[MicSettingEntity]" = None
     mic_noise_suppression_entity: "Optional[MicSettingEntity]" = None
-    mic_volume_entity: "Optional[MicSettingEntity]" = None 
+    mic_volume_entity: "Optional[MicSettingEntity]" = None
     wake_words_changed: bool = False
     refractory_seconds: float = 2.0
     thinking_sound_enabled: bool = False
