@@ -388,6 +388,7 @@ async def main() -> None:
         volume=initial_volume,
         wake_word_sensitivity=initial_sensitivity,
         oww_probability_cutoff=SENSITIVITY_PRESETS[initial_sensitivity]["oww"],
+        mic_volume=preferences.mic_volume,
         mic_auto_gain=preferences.mic_auto_gain,
         mic_noise_suppression=preferences.mic_noise_suppression,
         timer_max_ring_seconds=args.timer_max_ring_seconds,
@@ -496,7 +497,8 @@ def process_audio(state: ServerState, mic, block_size: int):
             while True:
                 audio_chunk_array = mic_in.record(block_size).reshape(-1)
                 # little-endian 16-bit signed
-                audio_chunk = (np.clip(audio_chunk_array, -1.0, 1.0) * 32767.0).astype("<i2").tobytes()
+                mic_vol_scalar = max(0.1, min(1.0, state.mic_volume / 100.0))
+                audio_chunk = (np.clip(audio_chunk_array * mic_vol_scalar, -1.0, 1.0) * 32767.0).astype("<i2").tobytes()
 
                 if state.satellite is None:
                     continue
