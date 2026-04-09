@@ -167,9 +167,8 @@ class ServerState:
         volume_int = max(1, min(100, int(round(volume))))
         if self.mic_volume == volume_int and self.preferences.mic_volume == volume_int:
             return
- 
+
         self.mic_volume = volume_int
         self.preferences.mic_volume = volume_int
         _LOGGER.info("Saving mic_volume %s to %s", volume_int, self.preferences_path)
         self.save_preferences()
-        

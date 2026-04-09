@@ -229,7 +229,7 @@ class VoiceSatelliteProtocol(APIServer):
             self.state.entities.append(self.state.mic_volume_entity)
         elif self.state.mic_volume_entity not in self.state.entities:
             self.state.entities.append(self.state.mic_volume_entity)
- 
+
         self.state.mic_volume_entity.server = self
         self.state.mic_volume_entity.update_get_value(lambda: float(self.state.mic_volume))
         self.state.mic_volume_entity.update_set_value(lambda val: self.state.persist_mic_volume(float(val)))
