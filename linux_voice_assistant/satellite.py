@@ -212,6 +212,29 @@ class VoiceSatelliteProtocol(APIServer):
         self.state.mic_noise_suppression_entity.update_set_value(_set_noise_label)
         self.state.mic_noise_suppression_entity.sync_with_state()
 
+        # Mic Volume
+        if self.state.mic_volume_entity is None:
+            self.state.mic_volume_entity = MicSettingEntity(
+                server=self,
+                key=len(self.state.entities),
+                name="Mic Volume",
+                object_id="mic_volume",
+                min_value=1.0,
+                max_value=100.0,
+                get_value=lambda: float(self.state.mic_volume),
+                set_value=lambda val: self.state.persist_mic_volume(float(val)),
+                icon="mdi:microphone-settings",
+            )
+            self.state.entities.append(self.state.mic_volume_entity)
+        elif self.state.mic_volume_entity not in self.state.entities:
+            self.state.entities.append(self.state.mic_volume_entity)
+
+        self.state.mic_volume_entity.server = self
+        self.state.mic_volume_entity.update_get_value(lambda: float(self.state.mic_volume))
+        self.state.mic_volume_entity.update_set_value(lambda val: self.state.persist_mic_volume(float(val)))
+
+        # ---- Instance variables ----
+
         self._is_streaming_audio = False
         self._tts_url: Optional[str] = None
         self._tts_played = False
@@ -609,6 +632,9 @@ class VoiceSatelliteProtocol(APIServer):
 
         if self.state.mic_noise_suppression_entity is not None:
             self.state.mic_noise_suppression_entity.sync_with_state()
+
+        if self.state.mic_volume_entity is not None:
+            self.state.mic_volume_entity.sync_with_state()
 
         _LOGGER.info("Disconnected from Home Assistant; waiting for reconnection")
 
