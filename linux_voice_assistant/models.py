@@ -63,6 +63,7 @@ class Preferences:
     thinking_sound: int = 0  # 0 = disabled, 1 = enabled
     mic_auto_gain: int = 0
     mic_noise_suppression: int = 0
+    mic_volume: int = 100  # 1–100, default maximum
 
 
 @dataclass
@@ -103,6 +104,7 @@ class ServerState:
 
     mic_gain_entity: "Optional[MicSettingEntity]" = None
     mic_noise_suppression_entity: "Optional[MicSettingEntity]" = None
+    mic_volume_entity: "Optional[MicSettingEntity]" = None
     wake_words_changed: bool = False
     refractory_seconds: float = 2.0
     thinking_sound_enabled: bool = False
@@ -112,6 +114,7 @@ class ServerState:
     volume: float = 1.0
     mic_auto_gain: int = 0
     mic_noise_suppression: int = 0
+    mic_volume: int = 100  # 1–100, default maximum
     timer_max_ring_seconds: float = 900.0
 
     def save_preferences(self) -> None:
@@ -170,4 +173,15 @@ class ServerState:
 
         self.mic_noise_suppression = noise_int
         self.preferences.mic_noise_suppression = noise_int
+        self.save_preferences()
+
+    def persist_mic_volume(self, volume: float) -> None:
+        """Persist the microphone input volume (0–100)."""
+        volume_int = max(1, min(100, int(round(volume))))
+        if self.mic_volume == volume_int and self.preferences.mic_volume == volume_int:
+            return
+
+        self.mic_volume = volume_int
+        self.preferences.mic_volume = volume_int
+        _LOGGER.info("Saving mic_volume %s to %s", volume_int, self.preferences_path)
         self.save_preferences()
