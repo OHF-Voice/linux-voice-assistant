@@ -273,6 +273,21 @@ class PeripheralAPIServer:
                 state.media_player_entity.volume = new_vol
                 state.media_player_entity.previous_volume = new_vol
 
+                # Push the new volume to HA so its media player entity updates in real time
+                if satellite is not None:
+                    from aioesphomeapi.api_pb2 import MediaPlayerStateResponse  # type: ignore[attr-defined]
+
+                    satellite.send_messages(
+                        [
+                            MediaPlayerStateResponse(
+                                key=state.media_player_entity.key,
+                                state=state.media_player_entity.state,
+                                volume=new_vol,
+                                muted=state.media_player_entity.muted,
+                            )
+                        ]
+                    )
+
             # persist_volume also emits VOLUME_CHANGED via models.py
             state.persist_volume(new_vol)
 
