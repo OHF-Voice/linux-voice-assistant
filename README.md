@@ -51,7 +51,7 @@ For all other users we have different installation methods available (Docker, sy
 💡 **Note:** There is a [environment variable](docs/install_application.md#environment-variables-reference) for each parameter if you use docker or systemd based setup.
 
 ``` sh
-usage: __main__.py [-h] [--name NAME] [--audio-input-device AUDIO_INPUT_DEVICE] [--list-input-devices] [--audio-input-block-size AUDIO_INPUT_BLOCK_SIZE] [--audio-output-device AUDIO_OUTPUT_DEVICE] [--list-output-devices] [--wake-word-dir WAKE_WORD_DIR]
+usage: __main__.py [-h] [--name NAME] [--audio-input-device AUDIO_INPUT_DEVICE] [--list-input-devices] [--audio-input-block-size AUDIO_INPUT_BLOCK_SIZE] [--audio-output-device AUDIO_OUTPUT_DEVICE] [--list-output-devices] [--wake-word-dir WAKE_WORD_DIR]  [--mic-auto-gain] [--mic-noise-suppression]
                    [--wake-model WAKE_MODEL] [--stop-model STOP_MODEL] [--download-dir DOWNLOAD_DIR] [--refractory-seconds REFRACTORY_SECONDS] [--wakeup-sound WAKEUP_SOUND] [--timer-finished-sound TIMER_FINISHED_SOUND] [--processing-sound PROCESSING_SOUND]
                    [--mute-sound MUTE_SOUND] [--unmute-sound UNMUTE_SOUND] [--preferences-file PREFERENCES_FILE] [--host HOST] [--network-interface NETWORK_INTERFACE] [--port PORT] [--enable-thinking-sound] [--listen-during-wake-sound] [--debug]
 ```
@@ -62,6 +62,8 @@ usage: __main__.py [-h] [--name NAME] [--audio-input-device AUDIO_INPUT_DEVICE] 
 | `--audio-input-device` | Soundcard name for input device | Autodetected |
 | `--audio-input-block-size` | Audio input block size in samples | 1024 |
 | `--audio-output-device` | mpv name for output device | Autodetected |
+| `--mic-auto-gain` | Add WebRTC Gain to Mic | 0 |
+| `--mic-noise-suppression` | Add WebRTC Noise Suppression to Mic | 0 |
 | `--wake-word-dir` | Directory with wake word models (.tflite) and configs (.json) | `wakewords/` |
 | `--wake-model` | ID of active wake word model | `okay_nabu` |
 | `--stop-model` | ID of stop model | `stop` |
@@ -81,6 +83,8 @@ usage: __main__.py [-h] [--name NAME] [--audio-input-device AUDIO_INPUT_DEVICE] 
 | `--listen-during-wake-sound` | Start listening immediately after wake word detection, without waiting for the wake sound to finish | False |
 | `--debug` | Print DEBUG messages to console | False |
 | `--output-only` | Enable output only mode | False |
+
+💡 **Note:** There is a detailed explanation on the gain and noise suppression flags in the [audio options](docs/audio_options.md) file.
 
 ## Build Information
 

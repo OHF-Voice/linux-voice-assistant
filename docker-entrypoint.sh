@@ -40,6 +40,14 @@ if [ -n "${AUDIO_OUTPUT_DEVICE}" ]; then
   EXTRA_ARGS+=( "--audio-output-device" "$AUDIO_OUTPUT_DEVICE" )
 fi
 
+if [ -n "${MIC_AUTO_GAIN}" ]; then
+  EXTRA_ARGS+=( "--mic-auto-gain" "$MIC_AUTO_GAIN" )
+fi
+
+if [ -n "${MIC_NOISE_SUPPRESSION}" ]; then
+  EXTRA_ARGS+=( "--mic-noise-suppression" "$MIC_NOISE_SUPPRESSION" )
+fi
+
 if [ "$ENABLE_THINKING_SOUND" = "1" ]; then
   EXTRA_ARGS+=( "--enable-thinking-sound" )
 fi

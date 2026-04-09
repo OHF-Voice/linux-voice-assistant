@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from .entity import (
         ESPHomeEntity,
         MediaPlayerEntity,
+        MicSettingEntity,
         MuteSwitchEntity,
         ThinkingSoundEntity,
     )
@@ -59,6 +60,9 @@ class Preferences:
     active_wake_words: List[str] = field(default_factory=list)
     volume: Optional[float] = None
     thinking_sound: int = 0  # 0 = disabled, 1 = enabled
+    mic_auto_gain: int = 0
+    mic_noise_suppression: int = 0
+    mic_volume: int = 100  # 1–100, default maximum
 
 
 @dataclass
@@ -91,6 +95,9 @@ class ServerState:
     satellite: "Optional[VoiceSatelliteProtocol]" = None
     mute_switch_entity: "Optional[MuteSwitchEntity]" = None
     thinking_sound_entity: "Optional[ThinkingSoundEntity]" = None
+    mic_gain_entity: "Optional[MicSettingEntity]" = None
+    mic_noise_suppression_entity: "Optional[MicSettingEntity]" = None
+    mic_volume_entity: "Optional[MicSettingEntity]" = None
     wake_words_changed: bool = False
     refractory_seconds: float = 2.0
     thinking_sound_enabled: bool = False
@@ -98,6 +105,9 @@ class ServerState:
     muted: bool = False
     connected: bool = False
     volume: float = 1.0
+    mic_auto_gain: int = 0
+    mic_noise_suppression: int = 0
+    mic_volume: int = 100  # 1–100, default maximum
     timer_max_ring_seconds: float = 900.0
     listen_during_wake_sound: bool = False
 
@@ -132,3 +142,34 @@ class ServerState:
         _LOGGER.info("Saving volume %s to %s", clamped_volume, self.preferences_path)
         self.save_preferences()
         _LOGGER.info("Volume saved successfully")
+
+    def persist_mic_gain(self, gain: float) -> None:
+        """Persist the microphone auto gain value."""
+        gain_int = int(gain)
+        if self.mic_auto_gain == gain_int and self.preferences.mic_auto_gain == gain_int:
+            return
+
+        self.mic_auto_gain = gain_int
+        self.preferences.mic_auto_gain = gain_int
+        self.save_preferences()
+
+    def persist_mic_noise(self, noise: float) -> None:
+        """Persist the microphone noise suppression value."""
+        noise_int = int(noise)
+        if self.mic_noise_suppression == noise_int and self.preferences.mic_noise_suppression == noise_int:
+            return
+
+        self.mic_noise_suppression = noise_int
+        self.preferences.mic_noise_suppression = noise_int
+        self.save_preferences()
+
+    def persist_mic_volume(self, volume: float) -> None:
+        """Persist the microphone input volume (0–100)."""
+        volume_int = max(1, min(100, int(round(volume))))
+        if self.mic_volume == volume_int and self.preferences.mic_volume == volume_int:
+            return
+
+        self.mic_volume = volume_int
+        self.preferences.mic_volume = volume_int
+        _LOGGER.info("Saving mic_volume %s to %s", volume_int, self.preferences_path)
+        self.save_preferences()
