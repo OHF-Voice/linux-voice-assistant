@@ -1,5 +1,8 @@
 {
   "type": "openWakeWord",
   "wake_word": "Hey Mycroft",
-  "model": "hey_mycroft_v0.1.tflite"
+  "model": "hey_mycroft_v0.1.tflite",
+  "openWakeWord": {
+    "probability_cutoff": 0.7
+  }
 }
