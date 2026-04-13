@@ -1,10 +1,9 @@
 [build-system]
-requires = ["setuptools>=62.3"]
+requires = ["setuptools>=62.3", "setuptools-scm>=8"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name        = "linux-voice-assistant"
-version     = "1.0.0"
 license     = {text = "Apache-2.0"}
 description = "Linux voice assistant for Home Assistant using the ESPHome protocol"
 readme      = "README.md"
@@ -33,7 +32,9 @@ dependencies = [
     "zeroconf<1",
     "getmac<1",
     "types-protobuf",
+    "webrtc_noise_gain",
 ]
+dynamic = ["version"]
 
 [project.optional-dependencies]
 dev = [
@@ -46,6 +47,9 @@ dev = [
     "autopep8",
 ]
 
+[project.scripts]
+linux-voice-assistant = "linux_voice_assistant.__main__:run"
+
 [project.urls]
 "Source Code" = "http://github.com/OHF-Voice/linux-voice-assistant"
 
@@ -55,7 +59,7 @@ zip-safe  = true
 include-package-data = true
 
 [tool.setuptools.packages.find]
-include = ["linux_voice_assistant"]
+include = ["linux_voice_assistant", "linux_voice_assistant.*"]
 exclude = ["tests", "tests.*"]
 
 [tool.black]

@@ -26,6 +26,7 @@ from .util import (
     get_esphome_version,
     get_version,
 )
+from .webrtc import WebRTCProcessor
 from .zeroconf import HomeAssistantZeroconf
 
 _LOGGER = logging.getLogger(__name__)
@@ -68,6 +69,8 @@ async def main() -> None:
         action="store_true",
         help="List audio output devices and exit",
     )
+    parser.add_argument("--mic-auto-gain", type=int, default=0, choices=list(range(32)))
+    parser.add_argument("--mic-noise-suppression", type=int, default=0, choices=(0, 1, 2, 3, 4))
     parser.add_argument(
         "--wake-word-dir",
         default=[_WAKEWORDS_DIR],
@@ -150,11 +153,16 @@ async def main() -> None:
         type=float,
         default=900.0,  # 15 minutes
         help="Seconds before a ringing timer auto-stops (default: 900)",
-    )      
+    )
     parser.add_argument(
         "--debug",
         action="store_true",
         help="Add this to enable debug logging",
+    )
+    parser.add_argument(
+        "--output-only",
+        action="store_true",
+        help="Enable output only mode",
     )
     args = parser.parse_args()
 
@@ -290,6 +298,19 @@ async def main() -> None:
     if args.enable_thinking_sound:
         preferences.thinking_sound = 1
 
+    if args.mic_auto_gain or args.mic_noise_suppression:
+        try:
+            import webrtc_noise_gain  # type: ignore[import-untyped] # noqa: F401
+        except ImportError:
+            _LOGGER.exception("Extras for webrtc are not installed")
+            sys.exit(1)
+
+    if args.mic_auto_gain > 0:
+        preferences.mic_auto_gain = args.mic_auto_gain
+
+    if args.mic_noise_suppression > 0:
+        preferences.mic_noise_suppression = args.mic_noise_suppression
+
     # Load wake/stop models
     active_wake_words: Set[str] = set()
     wake_models: Dict[str, Union[MicroWakeWord, OpenWakeWord]] = {}
@@ -351,12 +372,16 @@ async def main() -> None:
         preferences=preferences,
         preferences_path=preferences_path,
         refractory_seconds=args.refractory_seconds,
+        output_only=args.output_only,
         download_dir=args.download_dir,
         volume=initial_volume,
+        mic_volume=preferences.mic_volume,
+        mic_auto_gain=preferences.mic_auto_gain,
+        mic_noise_suppression=preferences.mic_noise_suppression,
         timer_max_ring_seconds=args.timer_max_ring_seconds,
     )
 
-    if args.enable_thinking_sound:
+    if args.enable_thinking_sound or args.mic_auto_gain or args.mic_noise_suppression:
         state.save_preferences()
 
     initial_volume_percent = int(round(initial_volume * 100))
@@ -423,13 +448,16 @@ def process_audio(state: ServerState, mic, block_size: int):
     has_oww = False
 
     last_active: Optional[float] = None
+    webrtc: Optional[WebRTCProcessor] = None
 
     try:
         _LOGGER.debug("Opening audio input device: %s", mic.name)
         with mic.recorder(samplerate=16000, channels=1, blocksize=block_size) as mic_in:
             while True:
                 audio_chunk_array = mic_in.record(block_size).reshape(-1)
-                audio_chunk = (np.clip(audio_chunk_array, -1.0, 1.0) * 32767.0).astype("<i2").tobytes()  # little-endian 16-bit signed
+                # little-endian 16-bit signed
+                mic_vol_scalar = max(0.1, min(1.0, state.mic_volume / 100.0))
+                audio_chunk = (np.clip(audio_chunk_array * mic_vol_scalar, -1.0, 1.0) * 32767.0).astype("<i2").tobytes()
 
                 if state.satellite is None:
                     continue
@@ -449,6 +477,18 @@ def process_audio(state: ServerState, mic, block_size: int):
 
                     if has_oww and (oww_features is None):
                         oww_features = OpenWakeWordFeatures.from_builtin()
+
+                agc = state.preferences.mic_auto_gain or 0
+                ns = state.preferences.mic_noise_suppression or 0
+
+                if agc > 0 or ns > 0:
+                    if webrtc is None:
+                        webrtc = WebRTCProcessor(agc_level=agc, ns_level=ns)
+                    else:
+                        webrtc.update_settings(agc, ns)
+                    audio_chunk = webrtc.process(audio_chunk)
+                    if not audio_chunk:
+                        continue
 
                 try:
                     state.satellite.handle_audio(audio_chunk)
@@ -480,7 +520,6 @@ def process_audio(state: ServerState, mic, block_size: int):
                             if (last_active is None) or ((now - last_active) > state.refractory_seconds):
                                 state.satellite.wakeup(wake_word)
                                 last_active = now
-
                     # Always process to keep state correct
                     stopped = False
                     for micro_input in micro_inputs:
@@ -499,5 +538,10 @@ def process_audio(state: ServerState, mic, block_size: int):
 
 # -----------------------------------------------------------------------------
 
-if __name__ == "__main__":
+
+def run():
     asyncio.run(main())
+
+
+if __name__ == "__main__":
+    run()
