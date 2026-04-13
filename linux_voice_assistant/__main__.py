@@ -295,15 +295,6 @@ async def main() -> None:
         args.wake_model
     )
 
-    if not wake_models:
-        # Load default model
-        wake_word_id = args.wake_model
-        wake_word = available_wake_words[wake_word_id]
-
-        _LOGGER.debug("Loading wake model: %s", wake_word_id)
-        wake_models[wake_word_id] = wake_word.load()
-        active_wake_words.add(wake_word_id)
-
     # TODO: allow openWakeWord for "stop"
     stop_model = load_stop_model(wake_word_dirs, args.stop_model)
     assert stop_model is not None
