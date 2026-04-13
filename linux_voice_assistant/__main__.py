@@ -19,6 +19,7 @@ from pyopen_wakeword import OpenWakeWord, OpenWakeWordFeatures
 
 from .models import Preferences, ServerState
 from .wake_word import find_available_wake_words, load_wake_models, load_stop_model
+
 from .mpv_player import MpvMediaPlayer
 from .satellite import VoiceSatelliteProtocol
 from .util import (
@@ -27,6 +28,7 @@ from .util import (
     get_esphome_version,
     get_version,
 )
+from .webrtc import WebRTCProcessor
 from .zeroconf import HomeAssistantZeroconf
 
 _LOGGER = logging.getLogger(__name__)
@@ -69,6 +71,8 @@ async def main() -> None:
         action="store_true",
         help="List audio output devices and exit",
     )
+    parser.add_argument("--mic-auto-gain", type=int, default=0, choices=list(range(32)))
+    parser.add_argument("--mic-noise-suppression", type=int, default=0, choices=(0, 1, 2, 3, 4))
     parser.add_argument(
         "--wake-word-dir",
         default=[_WAKEWORDS_DIR],
@@ -147,9 +151,20 @@ async def main() -> None:
         help="Enable thinking finish sound, when the assistant is done thinking and needed more time to process",
     )
     parser.add_argument(
+        "--timer-max-ring-seconds",
+        type=float,
+        default=900.0,  # 15 minutes
+        help="Seconds before a ringing timer auto-stops (default: 900)",
+    )
+    parser.add_argument(
         "--debug",
         action="store_true",
         help="Add this to enable debug logging",
+    )
+    parser.add_argument(
+        "--output-only",
+        action="store_true",
+        help="Enable output only mode",
     )
     args = parser.parse_args()
 
@@ -260,12 +275,34 @@ async def main() -> None:
     if args.enable_thinking_sound:
         preferences.thinking_sound = 1
 
+    if args.mic_auto_gain or args.mic_noise_suppression:
+        try:
+            import webrtc_noise_gain  # type: ignore[import-untyped] # noqa: F401
+        except ImportError:
+            _LOGGER.exception("Extras for webrtc are not installed")
+            sys.exit(1)
+
+    if args.mic_auto_gain > 0:
+        preferences.mic_auto_gain = args.mic_auto_gain
+
+    if args.mic_noise_suppression > 0:
+        preferences.mic_noise_suppression = args.mic_noise_suppression
+
     # Load wake/stop models
     wake_models, active_wake_words, fallback_used = load_wake_models(
         available_wake_words,
         preferences.active_wake_words,
         args.wake_model
     )
+
+    if not wake_models:
+        # Load default model
+        wake_word_id = args.wake_model
+        wake_word = available_wake_words[wake_word_id]
+
+        _LOGGER.debug("Loading wake model: %s", wake_word_id)
+        wake_models[wake_word_id] = wake_word.load()
+        active_wake_words.add(wake_word_id)
 
     # TODO: allow openWakeWord for "stop"
     stop_model = load_stop_model(wake_word_dirs, args.stop_model)
@@ -295,20 +332,25 @@ async def main() -> None:
         preferences=preferences,
         preferences_path=preferences_path,
         refractory_seconds=args.refractory_seconds,
+        output_only=args.output_only,
         download_dir=args.download_dir,
         volume=initial_volume,
+        mic_volume=preferences.mic_volume,
+        mic_auto_gain=preferences.mic_auto_gain,
+        mic_noise_suppression=preferences.mic_noise_suppression,
+        timer_max_ring_seconds=args.timer_max_ring_seconds,
     )
 
-#    if fallback_used:
-#        # Fallback auf Default Model wurde verwendet, speichere als aktive Wake Words
-#        _LOGGER.debug("Fallback wurde verwendet, speichere Standard Wake Words in Preferences")
-#        state.preferences.active_wake_words = list(active_wake_words)
-#        state.active_wake_words = active_wake_words
-#        state.wake_words = wake_models
-#        state.save_preferences()
-#        state.wake_words_changed = True
-    
-    if args.enable_thinking_sound:
+    if fallback_used:
+        # Fallback auf Default Model wurde verwendet, speichere als aktive Wake Words
+        _LOGGER.debug("Fallback wurde verwendet, speichere Standard Wake Words in Preferences")
+        state.preferences.active_wake_words = list(active_wake_words)
+        state.active_wake_words = active_wake_words
+        state.wake_words = wake_models
+        state.save_preferences()
+        state.wake_words_changed = True
+
+    if args.enable_thinking_sound or args.mic_auto_gain or args.mic_noise_suppression:
         state.save_preferences()
 
     initial_volume_percent = int(round(initial_volume * 100))
@@ -375,17 +417,32 @@ def process_audio(state: ServerState, mic, block_size: int):
     has_oww = False
 
     last_active: Optional[float] = None
+    webrtc: Optional[WebRTCProcessor] = None
 
     try:
         _LOGGER.debug("Opening audio input device: %s", mic.name)
         with mic.recorder(samplerate=16000, channels=1, blocksize=block_size) as mic_in:
             while True:
                 audio_chunk_array = mic_in.record(block_size).reshape(-1)
-                audio_chunk = (np.clip(audio_chunk_array, -1.0, 1.0) * 32767.0).astype("<i2").tobytes()  # little-endian 16-bit signed
+                # little-endian 16-bit signed
+                mic_vol_scalar = max(0.1, min(1.0, state.mic_volume / 100.0))
+                audio_chunk = (np.clip(audio_chunk_array * mic_vol_scalar, -1.0, 1.0) * 32767.0).astype("<i2").tobytes()
+                agc = state.preferences.mic_auto_gain or 0
+                ns = state.preferences.mic_noise_suppression or 0
+
+                if agc > 0 or ns > 0:
+                    if webrtc is None:
+                        webrtc = WebRTCProcessor(agc_level=agc, ns_level=ns)
+                    else:
+                        webrtc.update_settings(agc, ns)
+                    audio_chunk = webrtc.process(audio_chunk)
+                    if not audio_chunk:
+                        continue
 
                 if state.satellite is None:
                     continue
 
+                # WAKE WORD
                 if (not wake_words) or (state.wake_words_changed and state.wake_words):
                     # Update list of wake word models to process
                     state.wake_words_changed = False
@@ -485,6 +542,11 @@ def process_audio(state: ServerState, mic, block_size: int):
                         oww_inputs.clear()
                         oww_inputs.extend(oww_features.process_streaming(audio_chunk))
 
+                    if has_oww:
+                        assert oww_features is not None
+                        oww_inputs.clear()
+                        oww_inputs.extend(oww_features.process_streaming(audio_chunk))
+
                     for wake_word_index, wake_word in enumerate(wake_words):
                         activated = False
 
@@ -550,5 +612,10 @@ def process_audio(state: ServerState, mic, block_size: int):
 
 # -----------------------------------------------------------------------------
 
-if __name__ == "__main__":
+
+def run():
     asyncio.run(main())
+
+
+if __name__ == "__main__":
+    run()
