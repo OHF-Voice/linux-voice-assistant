@@ -1,5 +1,8 @@
 {
   "type": "openWakeWord",
   "wake_word": "Alexa",
-  "model": "alexa_v0.1.tflite"
+  "model": "alexa_v0.1.tflite",
+  "openWakeWord": {
+    "probability_cutoff": 0.7
+  }
 }

@@ -17,6 +17,9 @@ if TYPE_CHECKING:
         MediaPlayerEntity,
         MuteSwitchEntity,
         ThinkingSoundEntity,
+        WakeWord1SensitivityNumberEntity,
+        WakeWord2SensitivityNumberEntity,
+        StopWordSensitivityNumberEntity,
     )
     from .mpv_player import MpvMediaPlayer
     from .satellite import VoiceSatelliteProtocol
@@ -36,6 +39,7 @@ class AvailableWakeWord:
     wake_word: str
     trained_languages: List[str]
     wake_word_path: Path
+    probability_cutoff: float = 0.7
 
     def load(self) -> "Union[MicroWakeWord, OpenWakeWord]":
         if self.type == WakeWordType.MICRO_WAKE_WORD:
@@ -59,6 +63,9 @@ class Preferences:
     active_wake_words: List[str] = field(default_factory=list)
     volume: Optional[float] = None
     thinking_sound: int = 0  # 0 = disabled, 1 = enabled
+    wake_word_1_sensitivity: Optional[float] = None
+    wake_word_2_sensitivity: Optional[float] = None
+    stop_word_sensitivity: Optional[float] = None
 
 
 @dataclass
@@ -74,7 +81,7 @@ class ServerState:
     entities: "List[ESPHomeEntity]"
     available_wake_words: "Dict[str, AvailableWakeWord]"
     wake_words: "Dict[str, Union[MicroWakeWord, OpenWakeWord]]"
-    active_wake_words: Set[str]
+    active_wake_words: List[str]
     stop_word: "MicroWakeWord"
     music_player: "MpvMediaPlayer"
     tts_player: "MpvMediaPlayer"
@@ -91,12 +98,22 @@ class ServerState:
     satellite: "Optional[VoiceSatelliteProtocol]" = None
     mute_switch_entity: "Optional[MuteSwitchEntity]" = None
     thinking_sound_entity: "Optional[ThinkingSoundEntity]" = None
+    sensitivity_1_number_entity: "Optional[WakeWord1SensitivityNumberEntity]" = None
+    sensitivity_2_number_entity: "Optional[WakeWord2SensitivityNumberEntity]" = None
+    stop_sensitivity_number_entity: "Optional[StopWordSensitivityNumberEntity]" = None
     wake_words_changed: bool = False
     refractory_seconds: float = 2.0
     thinking_sound_enabled: bool = False
     muted: bool = False
     connected: bool = False
     volume: float = 1.0
+    oww_probability_cutoff: float = 0.7  # Dynamic threshold for OpenWakeWord
+    oww_second_probability_cutoff: float = 0.7  # Dynamic threshold for second OpenWakeWord
+    oww_stop_probability_cutoff: float = 0.5  # Dynamic threshold for Stop word
+    
+    wake_word_1_threshold: float = 0.7
+    wake_word_2_threshold: float = 0.7
+    stop_word_threshold: float = 0.5
 
     def save_preferences(self) -> None:
         """Save preferences as JSON."""
