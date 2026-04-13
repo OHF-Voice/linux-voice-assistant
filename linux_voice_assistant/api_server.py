@@ -53,7 +53,7 @@ class APIServer(asyncio.Protocol):
                 [
                     HelloResponse(
                         api_version_major=1,
-                        api_version_minor=10,
+                        api_version_minor=14,
                         name=self.name,
                     )
                 ]
