@@ -83,7 +83,7 @@ class VoiceSatelliteProtocol(APIServer):
         self._pipeline_active = False
         self._external_wake_words: Dict[str, VoiceAssistantExternalWakeWord] = {}
         
-        # ✅ JETZT erst die Referenz im State setzen - erst ab hier sind wir bereit für Callbacks!
+        # Now set reference in state - only from this point we are ready for callbacks!
         self.state.satellite = self
         self.state.connected = False
 
@@ -555,7 +555,7 @@ class VoiceSatelliteProtocol(APIServer):
             active_wake_words: Set[str] = set()
             new_wake_words: List[Optional[str]] = [None, None]
             
-            # Erhalte alte Positionen vor Änderung
+            # Get old positions before modification
             old_positions: Dict[str, int] = {}
             for idx, ww_id in enumerate(self.state.preferences.active_wake_words):
                 if ww_id is not None and idx < 2:
@@ -569,7 +569,7 @@ class VoiceSatelliteProtocol(APIServer):
                 else:
                     model_info = self.state.available_wake_words.get(wake_word_id)
                     if not model_info:
-                        # Prüfe externe Wake Words (möglicherweise Download erforderlich)
+                        # Check external wake words (may require download)
                         external_wake_word = self._external_wake_words.get(wake_word_id)
                         if not external_wake_word:
                             continue
@@ -598,7 +598,7 @@ class VoiceSatelliteProtocol(APIServer):
                         new_wake_words[pos] = ww_id
                         placed.add(ww_id)
             
-            # Restliche Wake Words an freien Plätzen hinzufügen
+            # Add remaining wake words to free slots
             free_slots = [i for i in range(2) if new_wake_words[i] is None]
             for ww_id in remaining_ww:
                 if ww_id not in placed and free_slots:
@@ -606,8 +606,8 @@ class VoiceSatelliteProtocol(APIServer):
                     new_wake_words[pos] = ww_id
                     placed.add(ww_id)
             
-            # Wenn nur noch ein Wake Word übrig ist und es an Stelle 1 war, bleibt Stelle 0 None
-            # Stelle 2 wird automatisch None wenn nicht besetzt
+            # If only one wake word is left and it was at position 1, position 0 remains None
+            # Position 2 automatically stays None if not occupied
             
             self.state.active_wake_words = active_wake_words
             _LOGGER.debug("Active wake words: %s", active_wake_words)
