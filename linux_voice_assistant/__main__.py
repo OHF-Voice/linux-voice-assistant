@@ -542,11 +542,6 @@ def process_audio(state: ServerState, mic, block_size: int):
                         oww_inputs.clear()
                         oww_inputs.extend(oww_features.process_streaming(audio_chunk))
 
-                    if has_oww:
-                        assert oww_features is not None
-                        oww_inputs.clear()
-                        oww_inputs.extend(oww_features.process_streaming(audio_chunk))
-
                     for wake_word_index, wake_word in enumerate(wake_words):
                         activated = False
 
