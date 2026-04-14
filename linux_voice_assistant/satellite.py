@@ -551,7 +551,7 @@ class VoiceSatelliteProtocol(APIServer):
                 if ww_id is not None and idx < 2:
                     old_positions[ww_id] = idx
 
-            # Verarbeite neue aktive Wake Words
+            # Process new active wake words
             for wake_word_id in msg.active_wake_words:
                 if wake_word_id in self.state.wake_words:
                     # Bereits aktiv
