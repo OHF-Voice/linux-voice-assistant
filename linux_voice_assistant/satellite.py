@@ -603,7 +603,7 @@ class VoiceSatelliteProtocol(APIServer):
             _LOGGER.debug("Active wake words: %s", active_wake_words)
             _LOGGER.debug("Wake word positions: [0]=%s, [1]=%s", new_wake_words[0], new_wake_words[1])
 
-            self.state.preferences.active_wake_words = list(new_wake_words)
+            self.state.preferences.active_wake_words = new_wake_words
             self.state.save_preferences()
             self.state.wake_words_changed = True
 
