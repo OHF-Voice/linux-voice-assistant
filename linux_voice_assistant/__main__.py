@@ -329,8 +329,8 @@ async def main() -> None:
     )
 
     if fallback_used:
-        # Fallback auf Default Model wurde verwendet, speichere als aktive Wake Words
-        _LOGGER.debug("Fallback wurde verwendet, speichere Standard Wake Words in Preferences")
+        # Fallback to the default model was used, save as active wake words
+        _LOGGER.debug("Fallback was used, save default wake words in Preferences.")
         state.preferences.active_wake_words = list(active_wake_words)
         state.active_wake_words = active_wake_words
         state.wake_words = wake_models
