@@ -50,6 +50,7 @@ from .api_server import APIServer
 
 from .entity import (
     MediaPlayerEntity,
+    MicSettingEntity,
     MuteSwitchEntity,
     ThinkingSoundEntity,
     WakeWord1SensitivityNumberEntity,
@@ -71,19 +72,6 @@ class VoiceSatelliteProtocol(APIServer):
         super().__init__(state.name)
 
         self.state = state
-        
-        # ✅ Initialisiere ALLE Instanzvariablen zuallererst!
-        self._is_streaming_audio = False
-        self._tts_url: Optional[str] = None
-        self._tts_played = False
-        self._continue_conversation = False
-        self._timer_finished = False
-        self._timer_ring_start: Optional[float] = None
-        self._processing = False
-        self._pipeline_active = False
-        self._external_wake_words: Dict[str, VoiceAssistantExternalWakeWord] = {}
-        
-        # Now set reference in state - only from this point we are ready for callbacks!
         self.state.satellite = self
         self.state.connected = False
 
@@ -331,7 +319,16 @@ class VoiceSatelliteProtocol(APIServer):
         self.state.mic_volume_entity.update_set_value(lambda val: self.state.persist_mic_volume(float(val)))
 
         # ---- Instance variables ----
-        # ✅ Wurden bereits ganz oben initialisiert um Race Condition zu verhindern
+
+        self._is_streaming_audio = False
+        self._tts_url: Optional[str] = None
+        self._tts_played = False
+        self._continue_conversation = False
+        self._timer_finished = False
+        self._timer_ring_start: Optional[float] = None
+        self._processing = False
+        self._pipeline_active = False
+        self._external_wake_words: Dict[str, VoiceAssistantExternalWakeWord] = {}
         self._disconnect_event = asyncio.Event()
 
     def _set_thinking_sound_enabled(self, new_state: bool) -> None:
