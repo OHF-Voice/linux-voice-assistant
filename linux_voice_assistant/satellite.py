@@ -171,7 +171,6 @@ class VoiceSatelliteProtocol(APIServer):
         thinking_sound_switch.update_set_thinking_sound_enabled(self._set_thinking_sound_enabled)
         thinking_sound_switch.sync_with_state()
 
-
         # Add/update Wake Word 1 sensitivity number entity
         sensitivity_1_entity = self.state.sensitivity_1_number_entity
         if sensitivity_1_entity is None:
@@ -192,10 +191,9 @@ class VoiceSatelliteProtocol(APIServer):
         sensitivity_1_entity.server = self
         sensitivity_1_entity.update_get_sensitivity(lambda: self.state.wake_word_1_threshold)
         sensitivity_1_entity.update_set_sensitivity(self._set_sensitivity_1)
-        
+
         sensitivity_1_entity.sync_with_state()
         _LOGGER.debug("INIT: Wake Word 1 entity initialized with value %.3f", sensitivity_1_entity.value)
-
 
         # Add/update Wake Word 2 sensitivity number entity
         sensitivity_2_entity = self.state.sensitivity_2_number_entity
@@ -217,9 +215,8 @@ class VoiceSatelliteProtocol(APIServer):
         sensitivity_2_entity.server = self
         sensitivity_2_entity.update_get_sensitivity(lambda: self.state.wake_word_2_threshold)
         sensitivity_2_entity.update_set_sensitivity(self._set_sensitivity_2)
-        
-        sensitivity_2_entity.sync_with_state()
 
+        sensitivity_2_entity.sync_with_state()
 
         # Add/update Stop Word sensitivity number entity
         stop_sensitivity_entity = self.state.stop_sensitivity_number_entity
@@ -241,9 +238,8 @@ class VoiceSatelliteProtocol(APIServer):
         stop_sensitivity_entity.server = self
         stop_sensitivity_entity.update_get_sensitivity(lambda: self.state.stop_word_threshold)
         stop_sensitivity_entity.update_set_sensitivity(self._set_stop_sensitivity)
-        
-        stop_sensitivity_entity.sync_with_state()
 
+        stop_sensitivity_entity.sync_with_state()
 
         # Mic Gain
         if self.state.mic_gain_entity is None:
@@ -500,7 +496,7 @@ class VoiceSatelliteProtocol(APIServer):
         elif isinstance(msg, VoiceAssistantConfigurationRequest):
             _LOGGER.debug("✅ Received VoiceAssistantConfigurationRequest from Home Assistant")
             _LOGGER.debug("   -> Request contains %d external wake words", len(msg.external_wake_words))
-            
+
             available_wake_words = [
                 VoiceAssistantWakeWord(
                     id=ww.id,
@@ -517,9 +513,8 @@ class VoiceSatelliteProtocol(APIServer):
                 _LOGGER.debug("      - %s: '%s' (langs: %s)", ww.id, ww.wake_word, ww.trained_languages)
 
             for eww in msg.external_wake_words:
-                _LOGGER.debug("   -> Processing external wake word: id=%s, word='%s', type=%s",
-                              eww.id, eww.wake_word, eww.model_type)
-                
+                _LOGGER.debug("   -> Processing external wake word: id=%s, word='%s', type=%s", eww.id, eww.wake_word, eww.model_type)
+
                 if eww.model_type != "micro":
                     _LOGGER.debug("      → Skipping: not micro model type")
                     continue
@@ -536,28 +531,28 @@ class VoiceSatelliteProtocol(APIServer):
                 self._external_wake_words[eww.id] = eww
                 _LOGGER.debug("      → Stored in external wake words cache")
 
-            active_ww_ids=[ww.id for ww in self.state.wake_words.values() if ww.id in self.state.active_wake_words]
+            active_ww_ids = [ww.id for ww in self.state.wake_words.values() if ww.id in self.state.active_wake_words]
             _LOGGER.debug("   -> Active wake word IDs: %s", active_ww_ids)
-            
+
             yield VoiceAssistantConfigurationResponse(
                 available_wake_words=available_wake_words,
                 active_wake_words=active_ww_ids,
                 max_active_wake_words=2,
             )
-            
+
             _LOGGER.info("✅ Connected to Home Assistant - Configuration handshake completed")
             _LOGGER.debug("✅ VoiceAssistantConfigurationResponse sent successfully")
         elif isinstance(msg, VoiceAssistantSetConfiguration):
             # Change active wake words
             active_wake_words: Set[str] = set()
             new_wake_words: List[Optional[str]] = [None, None]
-            
+
             # Get old positions before modification
             old_positions: Dict[str, int] = {}
             for idx, ww_id in enumerate(self.state.preferences.active_wake_words):
                 if ww_id is not None and idx < 2:
                     old_positions[ww_id] = idx
-            
+
             # Verarbeite neue aktive Wake Words
             for wake_word_id in msg.active_wake_words:
                 if wake_word_id in self.state.wake_words:
@@ -582,11 +577,11 @@ class VoiceSatelliteProtocol(APIServer):
 
                     _LOGGER.info("Wake word set: %s", wake_word_id)
                     active_wake_words.add(wake_word_id)
-            
+
             # Behalte alte Positionen bei
             remaining_ww = list(active_wake_words)
             placed = set()
-            
+
             # Zuerst platzieren wir Wake Words an ihrer alten Position
             for ww_id in remaining_ww:
                 if ww_id in old_positions:
@@ -594,7 +589,7 @@ class VoiceSatelliteProtocol(APIServer):
                     if pos < 2:
                         new_wake_words[pos] = ww_id
                         placed.add(ww_id)
-            
+
             # Add remaining wake words to free slots
             free_slots = [i for i in range(2) if new_wake_words[i] is None]
             for ww_id in remaining_ww:
@@ -602,10 +597,10 @@ class VoiceSatelliteProtocol(APIServer):
                     pos = free_slots.pop(0)
                     new_wake_words[pos] = ww_id
                     placed.add(ww_id)
-            
+
             # If only one wake word is left and it was at position 1, position 0 remains None
             # Position 2 automatically stays None if not occupied
-            
+
             self.state.active_wake_words = active_wake_words
             _LOGGER.debug("Active wake words: %s", active_wake_words)
             _LOGGER.debug("Wake word positions: [0]=%s, [1]=%s", new_wake_words[0], new_wake_words[1])

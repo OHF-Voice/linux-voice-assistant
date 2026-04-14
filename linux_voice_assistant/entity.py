@@ -443,7 +443,6 @@ class MicSettingEntity(ESPHomeEntity):
         self._set_value = set_value
 
 
-
 # -----------------------------------------------------------------------------
 
 
@@ -615,19 +614,18 @@ class StopWordSensitivityNumberEntity(ESPHomeEntity):
             yield NumberStateResponse(key=self.key, state=self.value)
 
 
-
 # Backward compatibility export aliases
 __all__ = [
-    'ESPHomeEntity',
-    'MediaPlayerEntity',
-    'MuteSwitchEntity',
-    'ThinkingSoundEntity',
-    'WakeWord1SensitivityNumberEntity',
-    'WakeWord2SensitivityNumberEntity',
-    'StopWordSensitivityNumberEntity',
+    "ESPHomeEntity",
+    "MediaPlayerEntity",
+    "MuteSwitchEntity",
+    "ThinkingSoundEntity",
+    "WakeWord1SensitivityNumberEntity",
+    "WakeWord2SensitivityNumberEntity",
+    "StopWordSensitivityNumberEntity",
     # Old class names for backward compatibility
-    'WakeWordSensitivityNumberEntity',
-    'SecondWakeWordSensitivityNumberEntity',
+    "WakeWordSensitivityNumberEntity",
+    "SecondWakeWordSensitivityNumberEntity",
 ]
 
 WakeWordSensitivityNumberEntity = WakeWord1SensitivityNumberEntity

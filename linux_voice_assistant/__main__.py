@@ -289,11 +289,7 @@ async def main() -> None:
         preferences.mic_noise_suppression = args.mic_noise_suppression
 
     # Load wake/stop models
-    wake_models, active_wake_words, fallback_used = load_wake_models(
-        available_wake_words,
-        preferences.active_wake_words,
-        args.wake_model
-    )
+    wake_models, active_wake_words, fallback_used = load_wake_models(available_wake_words, preferences.active_wake_words, args.wake_model)
 
     # TODO: allow openWakeWord for "stop"
     stop_model = load_stop_model(wake_word_dirs, args.stop_model)
@@ -461,9 +457,9 @@ def process_audio(state: ServerState, mic, block_size: int):
                     for idx, wake_word in enumerate(wake_words):
 
                         # Load default threshold from model json
-                        wake_word_id = wake_word.id if hasattr(wake_word, 'id') else next(iter(state.wake_words.keys()))
+                        wake_word_id = wake_word.id if hasattr(wake_word, "id") else next(iter(state.wake_words.keys()))
                         available_word = state.available_wake_words.get(wake_word_id)
-                        #_LOGGER.debug("word= %s", state.available_wake_words.get(wake_word_id))
+                        # _LOGGER.debug("word= %s", state.available_wake_words.get(wake_word_id))
                         default_threshold = available_word.probability_cutoff if available_word else 0.7
                         _LOGGER.debug("Using default threshold %.3f for wake word '%s' from model config", default_threshold, wake_word_id)
                         # Check preferences override
@@ -473,44 +469,42 @@ def process_audio(state: ServerState, mic, block_size: int):
                                 state.wake_word_1_threshold = state.preferences.wake_word_1_sensitivity
                             else:
                                 state.wake_word_1_threshold = default_threshold
-                            _LOGGER.debug("Wake Word 1 threshold set to %.3f (was %.3f, preferences: %s)",
-                                            state.wake_word_1_threshold, old_val, state.preferences.wake_word_1_sensitivity)
+                            _LOGGER.debug("Wake Word 1 threshold set to %.3f (was %.3f, preferences: %s)", state.wake_word_1_threshold, old_val, state.preferences.wake_word_1_sensitivity)
                         elif idx == 1:
                             old_val = state.wake_word_2_threshold
                             if state.preferences.wake_word_2_sensitivity is not None:
                                 state.wake_word_2_threshold = state.preferences.wake_word_2_sensitivity
                             else:
                                 state.wake_word_2_threshold = default_threshold
-                            _LOGGER.debug("Wake Word 2 threshold set to %.3f (was %.3f, preferences: %s)",
-                                            state.wake_word_2_threshold, old_val, state.preferences.wake_word_2_sensitivity)
+                            _LOGGER.debug("Wake Word 2 threshold set to %.3f (was %.3f, preferences: %s)", state.wake_word_2_threshold, old_val, state.preferences.wake_word_2_sensitivity)
 
                         if isinstance(wake_word, OpenWakeWord):
                             has_oww = True
-                    
+
                     # Sync entity states after threshold values were updated
                     if state.satellite is not None:
                         _LOGGER.debug("Updating WebUI entities with new threshold values")
-                        
+
                         # Wake Word 1
                         if state.satellite.state.sensitivity_1_number_entity is not None:
                             _LOGGER.debug("  → Syncing Wake Word 1 entity to value %.3f", state.wake_word_1_threshold)
                             state.satellite.state.sensitivity_1_number_entity.sync_with_state()
                             _LOGGER.debug("  ✅ Wake Word 1 entity now has value %.3f", state.satellite.state.sensitivity_1_number_entity.value)
-                        
+
                         # Wake Word 2
                         if state.satellite.state.sensitivity_2_number_entity is not None:
                             _LOGGER.debug("  → Syncing Wake Word 2 entity to value %.3f", state.wake_word_2_threshold)
                             state.satellite.state.sensitivity_2_number_entity.sync_with_state()
                             _LOGGER.debug("  ✅ Wake Word 2 entity now has value %.3f", state.satellite.state.sensitivity_2_number_entity.value)
-                        
+
                         # Stop Word
                         if state.satellite.state.stop_sensitivity_number_entity is not None:
                             _LOGGER.debug("  → Syncing Stop Word entity to value %.3f", state.stop_word_threshold)
                             state.satellite.state.stop_sensitivity_number_entity.sync_with_state()
                             _LOGGER.debug("  ✅ Stop Word entity now has value %.3f", state.satellite.state.stop_sensitivity_number_entity.value)
-                        
+
                         _LOGGER.debug("All sensitivity entities synced successfully")
-                        
+
                         # Force push new state to connected Home Assistant instance
                         if state.satellite is not None:
                             try:
@@ -518,17 +512,16 @@ def process_audio(state: ServerState, mic, block_size: int):
                                 for entity in [
                                     state.satellite.state.sensitivity_1_number_entity,
                                     state.satellite.state.sensitivity_2_number_entity,
-                                    state.satellite.state.stop_sensitivity_number_entity
+                                    state.satellite.state.stop_sensitivity_number_entity,
                                 ]:
                                     if entity is not None:
                                         from aioesphomeapi.api_pb2 import NumberStateResponse
-                                        state.satellite.send_messages([
-                                            NumberStateResponse(key=entity.key, state=entity.value)
-                                        ])
+
+                                        state.satellite.send_messages([NumberStateResponse(key=entity.key, state=entity.value)])
                                         _LOGGER.debug("  → Pushed value %.3f for entity %d", entity.value, entity.key)
                             except Exception as e:
                                 _LOGGER.debug("Could not push state (no client connected yet): %s", e)
-                    
+
                     # TODO: Save settings: At this moment settings are only saved when changed in the UI. Means that the default value can change while updating since its not saved in preferences.
 
                     if micro_features is None:
@@ -555,18 +548,18 @@ def process_audio(state: ServerState, mic, block_size: int):
                         # Set dynamic threshold depending on wake word index
                         if wake_word_index == 0:
                             threshold = state.wake_word_1_threshold
-                            #_LOGGER.debug("Set wake word %d probability cutoff to %.3f", wake_word_index+1, state.wake_word_1_threshold)
+                            # _LOGGER.debug("Set wake word %d probability cutoff to %.3f", wake_word_index+1, state.wake_word_1_threshold)
                         elif wake_word_index == 1:
                             threshold = state.wake_word_2_threshold
-                            #_LOGGER.debug("Set wake word %d probability cutoff to %.3f", wake_word_index+1, state.wake_word_2_threshold)
+                            # _LOGGER.debug("Set wake word %d probability cutoff to %.3f", wake_word_index+1, state.wake_word_2_threshold)
                         else:
                             threshold = 0.7
-                            #_LOGGER.debug("Set wake word %d probability cutoff to fallback value 0.7", wake_word_index+1)
+                            # _LOGGER.debug("Set wake word %d probability cutoff to fallback value 0.7", wake_word_index+1)
 
                         if isinstance(wake_word, MicroWakeWord):
                             # No debugging when no detection
                             wake_word.debug_probabilities = False
-                            
+
                             # set microWakeWord cutoff
                             wake_word.probability_cutoff = threshold
 
@@ -596,7 +589,7 @@ def process_audio(state: ServerState, mic, block_size: int):
 
                     # Apply stop word sensitivity threshold
                     state.stop_word.probability_cutoff = state.stop_word_threshold
-                    #_LOGGER.debug("Set stop word probability cutoff to %.3f", state.stop_word_threshold)
+                    # _LOGGER.debug("Set stop word probability cutoff to %.3f", state.stop_word_threshold)
                     for micro_input in micro_inputs:
                         if state.stop_word.process_streaming(micro_input):
                             state.stop_word.debug_probabilities = True
