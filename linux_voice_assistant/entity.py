@@ -19,13 +19,13 @@ from aioesphomeapi.api_pb2 import (  # type: ignore[attr-defined]
     SubscribeHomeAssistantStatesRequest,
     SwitchCommandRequest,
     SwitchStateResponse,
-    NumberMode,
 )
 from aioesphomeapi.model import (
     EntityCategory,
     MediaPlayerCommand,
     MediaPlayerEntityFeature,
     MediaPlayerState,
+    NumberMode,
 )
 from google.protobuf import message
 
