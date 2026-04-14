@@ -13,7 +13,7 @@ from typing import List, Optional, Union
 
 import numpy as np
 import soundcard as sc
-from aioesphomeapi.api_pb2 import NumberStateResponse  # type: ignore
+from aioesphomeapi.api_pb2 import NumberStateResponse  # type: ignore  # pylint: disable=no-name-in-module
 from getmac import get_mac_address  # type: ignore
 from pymicro_wakeword import MicroWakeWord, MicroWakeWordFeatures
 from pyopen_wakeword import OpenWakeWord, OpenWakeWordFeatures
