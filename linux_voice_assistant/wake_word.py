@@ -120,18 +120,45 @@ def load_wake_models(
         # No models loaded, fall back to default model
         _LOGGER.debug("No wake models loaded, falling back to default model")
         wake_word_id = default_wake_word_id
+        
+        # Check if default wake word exists
+        wake_word = available_wake_words.get(wake_word_id)
+        if wake_word is None:
+            _LOGGER.error("❌ Default wake word '%s' not found!", wake_word_id)
+            
+            # Try fallback to 'okay_nabu'
+            wake_word_id = "okay_nabu"
+            wake_word = available_wake_words.get(wake_word_id)
+            
+            if wake_word is None:
+                _LOGGER.error("❌ Fallback wake word 'okay_nabu' also not found!")
+                
+                # If absolutely nothing works, take first available wake word
+                if available_wake_words:
+                    wake_word_id = next(iter(available_wake_words.keys()))
+                    wake_word = available_wake_words[wake_word_id]
+                    _LOGGER.warning("⚠️ Using first available wake word as last resort: %s", wake_word_id)
+                else:
+                    _LOGGER.critical("❌ NO WAKE WORDS FOUND AT ALL! Cannot proceed.")
+                    raise RuntimeError("No wake word models available in any search directory")
+        
         # wake_word_id2 = "hey_home_assistant"
-        wake_word = available_wake_words[wake_word_id]
-        # wake_word2 = available_wake_words[wake_word_id2]
+        # wake_word2 = available_wake_words.get(wake_word_id2)
 
         _LOGGER.debug("Loading default wake model 1: %s", wake_word_id)
         # _LOGGER.debug("Loading default wake model 2: %s", wake_word_id2)
-        wake_models[wake_word_id] = wake_word.load()
-        # wake_models[wake_word_id2] = wake_word2.load()
-        active_wake_words.add(wake_word_id)
-        # active_wake_words.add(wake_word_id2)
-        _LOGGER.debug("Successfully loaded default wake model 1: %s", wake_word_id)
-        # _LOGGER.debug("Successfully loaded default wake model 2: %s", wake_word_id2)
+        try:
+            wake_models[wake_word_id] = wake_word.load()
+            # if wake_word2 is not None:
+            #     wake_models[wake_word_id2] = wake_word2.load()
+            #     active_wake_words.add(wake_word_id2)
+            
+            active_wake_words.add(wake_word_id)
+            _LOGGER.debug("✅ Successfully loaded default wake model 1: %s", wake_word_id)
+            # _LOGGER.debug("✅ Successfully loaded default wake model 2: %s", wake_word_id2)
+        except Exception as ex:
+            _LOGGER.critical("❌ Failed to load even fallback wake word %s: %s", wake_word_id, ex, exc_info=True)
+            raise
 
     _LOGGER.debug("Loaded %d wake models successfully", len(wake_models))
     _LOGGER.debug("Active wake words: %s", sorted(active_wake_words))
