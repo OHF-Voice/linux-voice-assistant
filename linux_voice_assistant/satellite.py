@@ -580,7 +580,7 @@ class VoiceSatelliteProtocol(APIServer):
             remaining_ww = list(active_wake_words)
             placed = set()
 
-            # First, place Wake Words in its old position.
+            # First, place Wake Words in their old positions.
             for ww_id in remaining_ww:
                 if ww_id in old_positions:
                     pos = old_positions[ww_id]
