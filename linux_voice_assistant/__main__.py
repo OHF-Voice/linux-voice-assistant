@@ -288,11 +288,7 @@ async def main() -> None:
         preferences.mic_noise_suppression = args.mic_noise_suppression
 
     # Load wake/stop models
-    wake_models, active_wake_words, fallback_used = load_wake_models(
-        available_wake_words,
-        [word for word in preferences.active_wake_words if word is not None],
-        args.wake_model
-    )
+    wake_models, active_wake_words, fallback_used = load_wake_models(available_wake_words, [word for word in preferences.active_wake_words if word is not None], args.wake_model)
 
     # TODO: allow openWakeWord for "stop"
     stop_model = load_stop_model(wake_word_dirs, args.stop_model)
