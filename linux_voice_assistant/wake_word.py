@@ -120,18 +120,18 @@ def load_wake_models(
         # No models loaded, fall back to default model
         _LOGGER.debug("No wake models loaded, falling back to default model")
         wake_word_id = default_wake_word_id
-        wake_word_id2 = "hey_home_assistant"
+        #wake_word_id2 = "hey_home_assistant"
         wake_word = available_wake_words[wake_word_id]
-        wake_word2 = available_wake_words[wake_word_id2]
+        #wake_word2 = available_wake_words[wake_word_id2]
 
         _LOGGER.debug("Loading default wake model 1: %s", wake_word_id)
-        _LOGGER.debug("Loading default wake model 2: %s", wake_word_id2)
+        #_LOGGER.debug("Loading default wake model 2: %s", wake_word_id2)
         wake_models[wake_word_id] = wake_word.load()
-        wake_models[wake_word_id2] = wake_word2.load()
+        #wake_models[wake_word_id2] = wake_word2.load()
         active_wake_words.add(wake_word_id)
-        active_wake_words.add(wake_word_id2)
+        #active_wake_words.add(wake_word_id2)
         _LOGGER.debug("Successfully loaded default wake model 1: %s", wake_word_id)
-        _LOGGER.debug("Successfully loaded default wake model 2: %s", wake_word_id2)
+        #_LOGGER.debug("Successfully loaded default wake model 2: %s", wake_word_id2)
 
     _LOGGER.debug("Loaded %d wake models successfully", len(wake_models))
     _LOGGER.debug("Active wake words: %s", sorted(active_wake_words))
