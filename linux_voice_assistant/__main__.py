@@ -514,7 +514,7 @@ def process_audio(state: ServerState, mic, block_size: int):
                                     state.satellite.state.stop_sensitivity_number_entity,
                                 ]:
                                     if entity is not None:
-                                        from aioesphomeapi.api_pb2 import NumberStateResponse  # pylint: disable=no-name-in-module
+                                        from aioesphomeapi.api_pb2 import NumberStateResponse  # pylint: disable=no-name-in-module  # type: ignore[attr-defined]
 
                                         state.satellite.send_messages([NumberStateResponse(key=entity.key, state=entity.value)])
                                         _LOGGER.debug("  → Pushed value %.3f for entity %d", entity.value, entity.key)
@@ -570,7 +570,7 @@ def process_audio(state: ServerState, mic, block_size: int):
                             for oww_input in oww_inputs:
                                 for prob in wake_word.process_streaming(oww_input):
                                     if prob > threshold:
-                                        _LOGGER.debug("Wake word '%s' activated (probability %.3f exceeded threshold %.3f)", wake_word.wake_word, prob, threshold)
+                                        _LOGGER.debug("Wake word '%s' activated (probability %.3f exceeded threshold %.3f)", wake_word.wake_word, prob, threshold)  # type: ignore[attr-defined]
                                         activated = True
 
                         if activated and not state.muted:
