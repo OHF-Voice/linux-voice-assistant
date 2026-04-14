@@ -9,7 +9,7 @@ import threading
 import time
 from pathlib import Path
 from queue import Queue
-from typing import Dict, List, Optional, Set, Union
+from typing import List, Optional, Union
 
 import numpy as np
 import soundcard as sc
