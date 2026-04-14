@@ -514,7 +514,7 @@ def process_audio(state: ServerState, mic, block_size: int):
                                     state.satellite.state.stop_sensitivity_number_entity,
                                 ]:
                                     if entity is not None:
-                                        from aioesphomeapi.api_pb2 import NumberStateResponse  # pylint: disable=no-name-in-module  # type: ignore[attr-defined]
+                                        from aioesphomeapi.api_pb2 import NumberStateResponse  # pylint: disable=no-name-in-module  # type: ignore[attr-defined,no-redef]
 
                                         state.satellite.send_messages([NumberStateResponse(key=entity.key, state=entity.value)])
                                         _LOGGER.debug("  → Pushed value %.3f for entity %d", entity.value, entity.key)
