@@ -13,6 +13,7 @@ from typing import List, Optional, Union
 
 import numpy as np
 import soundcard as sc
+from aioesphomeapi.api_pb2 import NumberStateResponse
 from getmac import get_mac_address  # type: ignore
 from pymicro_wakeword import MicroWakeWord, MicroWakeWordFeatures
 from pyopen_wakeword import OpenWakeWord, OpenWakeWordFeatures
@@ -514,9 +515,7 @@ def process_audio(state: ServerState, mic, block_size: int):
                                     state.satellite.state.stop_sensitivity_number_entity,
                                 ]:
                                     if entity is not None:
-                                        from aioesphomeapi.api_pb2 import NumberStateResponse  # pylint: disable=no-name-in-module  # type: ignore[attr-defined, no-redef, import-error]
-
-                                        state.satellite.send_messages([NumberStateResponse(key=entity.key, state=entity.value)])
+                                        state.satellite.send_messages([NumberStateResponse(key=entity.key, state=entity.value)])  # type: ignore[attr-defined]
                                         _LOGGER.debug("  → Pushed value %.3f for entity %d", entity.value, entity.key)
                             except Exception as e:
                                 _LOGGER.debug("Could not push state (no client connected yet): %s", e)
