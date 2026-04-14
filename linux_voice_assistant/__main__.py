@@ -288,7 +288,11 @@ async def main() -> None:
         preferences.mic_noise_suppression = args.mic_noise_suppression
 
     # Load wake/stop models
-    wake_models, active_wake_words, fallback_used = load_wake_models(available_wake_words, preferences.active_wake_words, args.wake_model)
+    wake_models, active_wake_words, fallback_used = load_wake_models(
+        available_wake_words,
+        [word for word in preferences.active_wake_words if word is not None],
+        args.wake_model
+    )
 
     # TODO: allow openWakeWord for "stop"
     stop_model = load_stop_model(wake_word_dirs, args.stop_model)
@@ -514,7 +518,7 @@ def process_audio(state: ServerState, mic, block_size: int):
                                     state.satellite.state.stop_sensitivity_number_entity,
                                 ]:
                                     if entity is not None:
-                                        from aioesphomeapi.api_pb2 import NumberStateResponse  # pylint: disable=no-name-in-module  # type: ignore[attr-defined,no-redef]
+                                        from aioesphomeapi.api_pb2 import NumberStateResponse  # pylint: disable=no-name-in-module  # type: ignore[attr-defined, no-redef, import-error]
 
                                         state.satellite.send_messages([NumberStateResponse(key=entity.key, state=entity.value)])
                                         _LOGGER.debug("  → Pushed value %.3f for entity %d", entity.value, entity.key)
