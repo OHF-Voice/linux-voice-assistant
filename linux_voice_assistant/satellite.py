@@ -554,7 +554,7 @@ class VoiceSatelliteProtocol(APIServer):
             # Process new active wake words
             for wake_word_id in msg.active_wake_words:
                 if wake_word_id in self.state.wake_words:
-                    # Bereits aktiv
+                    # Already active
                     active_wake_words.add(wake_word_id)
                 else:
                     model_info = self.state.available_wake_words.get(wake_word_id)
