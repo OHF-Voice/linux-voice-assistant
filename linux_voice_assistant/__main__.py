@@ -353,6 +353,22 @@ async def main() -> None:
     attempt = 1
     server = None
 
+    # Validate VoiceSatelliteProtocol initialization BEFORE starting server
+    # This catches errors like missing imports or broken initialization immediately
+    # instead of failing silently only when first client connects
+    _LOGGER.debug("Validating VoiceSatelliteProtocol initialization...")
+    try:
+        # Create test instance to run complete __init__ code path
+        test_protocol = VoiceSatelliteProtocol(state)
+        # Cleanup state reference
+        test_protocol.state.satellite = None
+        del test_protocol
+        _LOGGER.debug("✅ VoiceSatelliteProtocol validation successful")
+    except Exception as e:
+        _LOGGER.critical("❌ FATAL ERROR in VoiceSatelliteProtocol initialization!", exc_info=True)
+        _LOGGER.critical("Program will exit immediately - fix the error above first!")
+        sys.exit(1)
+
     while attempt <= max_attempts:
         try:
             server = await loop.create_server(lambda: VoiceSatelliteProtocol(state), host=host_ip_address, port=args.port)
@@ -430,7 +446,7 @@ def process_audio(state: ServerState, mic, block_size: int):
                     if not audio_chunk:
                         continue
 
-                if state.satellite is None:
+                if state.satellite is None or not hasattr(state.satellite, "_is_streaming_audio"):
                     continue
 
                 # WAKE WORD
