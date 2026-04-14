@@ -61,7 +61,7 @@ class AvailableWakeWord:
 
 @dataclass
 class Preferences:
-    active_wake_words: List[str] = field(default_factory=list)
+    active_wake_words: List[Optional[str]] = field(default_factory=list)
     volume: Optional[float] = None
     thinking_sound: int = 0  # 0 = disabled, 1 = enabled
     wake_word_1_sensitivity: Optional[float] = None
