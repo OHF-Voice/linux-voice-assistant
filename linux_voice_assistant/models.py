@@ -17,10 +17,10 @@ if TYPE_CHECKING:
         MediaPlayerEntity,
         MicSettingEntity,
         MuteSwitchEntity,
+        StopWordSensitivityNumberEntity,
         ThinkingSoundEntity,
         WakeWord1SensitivityNumberEntity,
         WakeWord2SensitivityNumberEntity,
-        StopWordSensitivityNumberEntity,
     )
     from .mpv_player import MpvMediaPlayer
     from .satellite import VoiceSatelliteProtocol

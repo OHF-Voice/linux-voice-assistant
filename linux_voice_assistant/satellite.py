@@ -47,17 +47,15 @@ from pymicro_wakeword import MicroWakeWord
 from pyopen_wakeword import OpenWakeWord
 
 from .api_server import APIServer
-
 from .entity import (
     MediaPlayerEntity,
     MicSettingEntity,
     MuteSwitchEntity,
+    StopWordSensitivityNumberEntity,
     ThinkingSoundEntity,
     WakeWord1SensitivityNumberEntity,
     WakeWord2SensitivityNumberEntity,
-    StopWordSensitivityNumberEntity,
 )
-
 from .models import AvailableWakeWord, ServerState, WakeWordType
 from .util import call_all
 

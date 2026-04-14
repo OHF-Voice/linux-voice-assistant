@@ -18,8 +18,6 @@ from pymicro_wakeword import MicroWakeWord, MicroWakeWordFeatures
 from pyopen_wakeword import OpenWakeWord, OpenWakeWordFeatures
 
 from .models import Preferences, ServerState
-from .wake_word import find_available_wake_words, load_wake_models, load_stop_model
-
 from .mpv_player import MpvMediaPlayer
 from .satellite import VoiceSatelliteProtocol
 from .util import (
@@ -28,6 +26,7 @@ from .util import (
     get_esphome_version,
     get_version,
 )
+from .wake_word import find_available_wake_words, load_stop_model, load_wake_models
 from .webrtc import WebRTCProcessor
 from .zeroconf import HomeAssistantZeroconf
 
