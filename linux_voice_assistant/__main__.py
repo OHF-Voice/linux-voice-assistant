@@ -359,7 +359,7 @@ async def main() -> None:
         test_protocol.state.satellite = None
         del test_protocol
         _LOGGER.debug("✅ VoiceSatelliteProtocol validation successful")
-    except Exception as e:
+    except Exception:
         _LOGGER.critical("❌ FATAL ERROR in VoiceSatelliteProtocol initialization!", exc_info=True)
         _LOGGER.critical("Program will exit immediately - fix the error above first!")
         sys.exit(1)
@@ -514,7 +514,7 @@ def process_audio(state: ServerState, mic, block_size: int):
                                     state.satellite.state.stop_sensitivity_number_entity,
                                 ]:
                                     if entity is not None:
-                                        from aioesphomeapi.api_pb2 import NumberStateResponse
+                                        from aioesphomeapi.api_pb2 import NumberStateResponse  # pylint: disable=no-name-in-module
 
                                         state.satellite.send_messages([NumberStateResponse(key=entity.key, state=entity.value)])
                                         _LOGGER.debug("  → Pushed value %.3f for entity %d", entity.value, entity.key)
