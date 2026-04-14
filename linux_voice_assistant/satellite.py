@@ -576,11 +576,11 @@ class VoiceSatelliteProtocol(APIServer):
                     _LOGGER.info("Wake word set: %s", wake_word_id)
                     active_wake_words.add(wake_word_id)
 
-            # Behalte alte Positionen bei
+            # Keep old positions
             remaining_ww = list(active_wake_words)
             placed = set()
 
-            # Zuerst platzieren wir Wake Words an ihrer alten Position
+            # First, place Wake Words in its old position.
             for ww_id in remaining_ww:
                 if ww_id in old_positions:
                     pos = old_positions[ww_id]
