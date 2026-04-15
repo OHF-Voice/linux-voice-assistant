@@ -360,6 +360,8 @@ class ThinkingSoundEntity(ESPHomeEntity):
             yield SwitchStateResponse(key=self.key, state=self._switch_state)
 
 
+
+
 class MicSettingEntity(ESPHomeEntity):
     def __init__(
         self,
@@ -441,6 +443,7 @@ class MicSettingEntity(ESPHomeEntity):
 
     def update_set_value(self, set_value: Callable[[Union[float, str]], None]) -> None:
         self._set_value = set_value
+
 
 
 # -----------------------------------------------------------------------------
