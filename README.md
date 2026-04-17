@@ -72,6 +72,7 @@ usage: __main__.py [-h] [--name NAME] [--audio-input-device AUDIO_INPUT_DEVICE] 
 | `--refractory-seconds` | Seconds before wake word can be activated again | 2.0 |
 | `--timer-max-ring-seconds` | Seconds after which the timer stops ringing | 900.0 |
 | `--wakeup-sound` | Sound file played when wake word is detected | `sounds/wake_word_triggered.flac` |
+| `--start-listening-sound` | Sound file played when the button is pressed to start listening | `sounds/start_listening_button.flac` |
 | `--timer-finished-sound` | Sound file played when timer finishes | `sounds/timer_finished.flac` |
 | `--processing-sound` | Sound played while assistant is processing | `sounds/processing.wav` |
 | `--mute-sound` | Sound played when muting the assistant | `sounds/mute_switch_on.flac` |
@@ -81,6 +82,10 @@ usage: __main__.py [-h] [--name NAME] [--audio-input-device AUDIO_INPUT_DEVICE] 
 | `--network-interface` | Network interface for ESPHome server | Autodetected |
 | `--port` | Port for ESPHome server | 6053 |
 | `--enable-thinking-sound` | Enable thinking sound on startup | False |
+| `--peripheral-host` | Bind address for the peripheral WebSocket API | 0.0.0.0 |
+| `--peripheral-port` | Port for the peripheral WebSocket API | 6055 |
+| `--peripheral-volume-step` | Volume change per button press, 0.0–1.0 | %(default)s |
+| `--disable-peripheral-api` | Disable the peripheral WebSocket API entirely | False |
 | `--debug` | Print DEBUG messages to console | False |
 | `--output-only` | Enable output only mode | False |
 
