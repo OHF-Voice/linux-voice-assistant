@@ -261,7 +261,6 @@ The following variables can be configured in the `.env` or in the service file:
 | `MIC_VOLUME` | Control microphone volume | 1.0 |
 | `MIC_AUTO_GAIN` | Add WebRTC Gain to Mic | 0 |
 | `MIC_NOISE_SUPPRESSION` | Add WebRTC Noise Suppresion to Mic | 0 |
-| `MIC_VOLUME` |  Control microphone volume | 1.0 |
 | `ENABLE_THINKING_SOUND` | false | Set to "1" to enable thinking sound |
 | `WAKE_WORD_DIR` | `app/wakewords` | Path to the wake word directory |
 | `WAKE_MODEL` | `okay_nabu` | Wake word model to use |
