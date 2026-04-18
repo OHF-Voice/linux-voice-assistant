@@ -155,7 +155,7 @@ class ServerState:
             from .peripheral_api import LVAEvent  # local import avoids circular dep
 
             api.emit_event_sync(LVAEvent.VOLUME_CHANGED, {"volume": round(clamped_volume, 3)})
-            
+
     def persist_mic_gain(self, gain: float) -> None:
         """Persist the microphone auto gain value."""
         gain_int = int(gain)
