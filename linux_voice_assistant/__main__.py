@@ -163,6 +163,8 @@ async def main() -> None:
         "--colored-debug",
         action="store_true",
         help="Add this to enable colored debug logging",
+    )
+    parser.add_argument(
         "--output-only",
         action="store_true",
         help="Enable output only mode",
