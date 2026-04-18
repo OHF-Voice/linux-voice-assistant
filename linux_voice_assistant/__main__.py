@@ -398,7 +398,6 @@ async def main() -> None:
         tts_player=MpvMediaPlayer(device=args.audio_output_device),
         wakeup_sound=args.wakeup_sound,
         start_listening_sound=args.start_listening_sound,
-        
         timer_finished_sound=args.timer_finished_sound,
         processing_sound=args.processing_sound,
         mute_sound=args.mute_sound,
