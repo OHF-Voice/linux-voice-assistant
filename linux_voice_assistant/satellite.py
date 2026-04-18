@@ -158,7 +158,7 @@ class VoiceSatelliteProtocol(APIServer):
 
         # Load thinking sound enabled state from preferences
         if hasattr(self.state.preferences, "thinking_sound") and self.state.preferences.thinking_sound in (0, 1):
-+           self.state.thinking_sound_enabled = bool(self.state.preferences.thinking_sound)
+            self.state.thinking_sound_enabled = bool(self.state.preferences.thinking_sound)
         else:
             self.state.thinking_sound_enabled = False
 
