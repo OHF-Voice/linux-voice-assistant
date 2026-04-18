@@ -457,8 +457,7 @@ async def main() -> None:
                 message = "address already in use"
             if attempt < max_attempts:
                 _LOGGER.warning(
-                    "Attempt %d/%d failed to bind on address (%s, %s): %s. "
-                    "Retrying in 1 second...",
+                    "Attempt %d/%d failed to bind on address (%s, %s): %s. " "Retrying in 1 second...",
                     attempt,
                     max_attempts,
                     host_ip_address,
@@ -501,15 +500,11 @@ async def main() -> None:
     # ------------------------------------------------------------------
     if peripheral_api is not None:
         await peripheral_api.start()
-        await peripheral_api.emit_event(
-            LVAEvent.ZEROCONF, {"status": "getting_started"}
-        )
+        await peripheral_api.emit_event(LVAEvent.ZEROCONF, {"status": "getting_started"})
 
     try:
         async with server:  # type: ignore[union-attr]
-            _LOGGER.info(
-                "Server started (host=%s, port=%s)", host_ip_address, args.port
-            )
+            _LOGGER.info("Server started (host=%s, port=%s)", host_ip_address, args.port)
             await server.serve_forever()  # type: ignore[union-attr]
     except KeyboardInterrupt:
         pass
@@ -554,11 +549,7 @@ def process_audio(state: ServerState, mic, block_size: int):
                 if (not wake_words) or (state.wake_words_changed and state.wake_words):
                     # Update list of wake word models to process
                     state.wake_words_changed = False
-                    wake_words = [
-                        ww
-                        for ww in state.wake_words.values()
-                        if ww.id in state.active_wake_words
-                    ]
+                    wake_words = [ww for ww in state.wake_words.values() if ww.id in state.active_wake_words]
 
                     has_oww = False
                     for wake_word in wake_words:
@@ -610,9 +601,7 @@ def process_audio(state: ServerState, mic, block_size: int):
                         if activated and not state.muted:
                             # Check refractory
                             now = time.monotonic()
-                            if (last_active is None) or (
-                                (now - last_active) > state.refractory_seconds
-                            ):
+                            if (last_active is None) or ((now - last_active) > state.refractory_seconds):
                                 state.satellite.wakeup(wake_word)
                                 last_active = now
                     # Always process to keep state correct
