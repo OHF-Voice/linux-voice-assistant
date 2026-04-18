@@ -37,6 +37,21 @@ class LibMpvPlayer(AudioPlayer):
         if device:
             self._mpv["audio-device"] = device
 
+        # Pre-buffer audio before the sink starts clocking samples out.
+        # The default (0.2 s) is too tight for short notification sounds on
+        # PulseAudio/PipeWire: the sink stream takes a few ms to initialise
+        # and the very first samples are dropped before it is ready, making
+        # short files (<1 s) appear to start mid-way through.
+        # 0.8 s gives the output pipeline enough headroom without adding any
+        # noticeable latency for a user-facing notification sound.
+        self._mpv["audio-buffer"] = 0.8
+
+        # Keep the PulseAudio/PipeWire stream open between files by outputting
+        # silence when idle.  This eliminates the per-play sink re-initialisation
+        # penalty entirely, so back-to-back short sounds (wakeup → TTS, mute →
+        # unmute) never lose their first samples regardless of system load.
+        self._mpv["audio-stream-silence"] = True
+
         # Callback Handling
         self._done_callback: Optional[Callable[[], None]] = None
         self._mpv.event_callback("end-file")(self._on_end_file)
