@@ -66,11 +66,7 @@ class VoiceSatelliteProtocol(APIServer):
         self.state.satellite = self
         self.state.connected = False
 
-        existing_media_players = [
-            entity
-            for entity in self.state.entities
-            if isinstance(entity, MediaPlayerEntity)
-        ]
+        existing_media_players = [entity for entity in self.state.entities if isinstance(entity, MediaPlayerEntity)]
         # Report capabilities appropriately
         if state.output_only:
             _LOGGER.debug("Output only features")
@@ -602,9 +598,7 @@ class VoiceSatelliteProtocol(APIServer):
             "Wakeup sound finished, starting audio streaming for: %s",
             wake_word_phrase,
         )
-        self.send_messages(
-            [VoiceAssistantRequest(start=True, wake_word_phrase=wake_word_phrase)]
-        )
+        self.send_messages([VoiceAssistantRequest(start=True, wake_word_phrase=wake_word_phrase)])
         self._is_streaming_audio = True
         self._emit(LVAEvent.LISTENING)
 
