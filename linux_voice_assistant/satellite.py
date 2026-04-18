@@ -158,13 +158,13 @@ class VoiceSatelliteProtocol(APIServer):
 
         # Load thinking sound enabled state from preferences
         if hasattr(self.state.preferences, "thinking_sound") and self.state.preferences.thinking_sound in (0, 1):
-+           self.state.thinking_sound_enabled = bool(self.state.preferences.thinking_sound)
+            self.state.thinking_sound_enabled = bool(self.state.preferences.thinking_sound)
         else:
             self.state.thinking_sound_enabled = False
 
         thinking_sound_switch.server = self
         thinking_sound_switch.update_get_thinking_sound_enabled(lambda: self.state.thinking_sound_enabled)
-+       thinking_sound_switch.update_set_thinking_sound_enabled(self._set_thinking_sound_enabled)
+     thinking_sound_switch.update_set_thinking_sound_enabled(self._set_thinking_sound_enabled)
         thinking_sound_switch.sync_with_state()
 
         # Mic Gain
