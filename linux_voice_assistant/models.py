@@ -20,7 +20,6 @@ if TYPE_CHECKING:
         ThinkingSoundEntity,
     )
     from .mpv_player import MpvMediaPlayer
-    from .peripheral_api import PeripheralAPIServer
     from .satellite import VoiceSatelliteProtocol
 
 _LOGGER = logging.getLogger(__name__)
