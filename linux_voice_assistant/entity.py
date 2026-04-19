@@ -1,10 +1,15 @@
 import logging
 from abc import abstractmethod
 from collections.abc import Iterable
-from typing import Callable, List, Optional, Union
+from typing import Callable, List, Optional, Tuple, Union
 
 # pylint: disable=no-name-in-module
 from aioesphomeapi.api_pb2 import (  # type: ignore[attr-defined]
+    EventResponse,
+    LightCommandRequest,
+    LightStateResponse,
+    ListEntitiesEventResponse,
+    ListEntitiesLightResponse,
     ListEntitiesMediaPlayerResponse,
     ListEntitiesNumberResponse,
     ListEntitiesRequest,
@@ -21,6 +26,7 @@ from aioesphomeapi.api_pb2 import (  # type: ignore[attr-defined]
     SwitchStateResponse,
 )
 from aioesphomeapi.model import (
+    ColorMode,
     EntityCategory,
     MediaPlayerCommand,
     MediaPlayerEntityFeature,
@@ -202,6 +208,10 @@ class MediaPlayerEntity(ESPHomeEntity):
         self._log.debug("SET NEW STATE: %s => %s", self.state, new_state)
         self._log.debug("SET NEW STATE: %s => %s", self.state.name, new_state.name)
         self.state = new_state
+        server_state = getattr(self.server, "state", None)
+        led = getattr(server_state, "led_controller", None)
+        if led is not None:
+            led.on_media_changed()
         return self._get_state_message()
 
     def _get_state_message(self) -> MediaPlayerStateResponse:
@@ -440,3 +450,155 @@ class MicSettingEntity(ESPHomeEntity):
 
     def update_set_value(self, set_value: Callable[[Union[float, str]], None]) -> None:
         self._set_value = set_value
+
+
+# -----------------------------------------------------------------------------
+
+
+EFFECT_VOICE_ASSISTANT = "Voice Assistant"
+EFFECT_NONE = "None"
+
+
+class LEDLightEntity(ESPHomeEntity):
+    """RGB light entity emulating the HA Voice PE LEDs.
+
+    Exposes on/off, brightness, RGB color and the two effects listed
+    below to HA. The LED controller reads this state each animation
+    frame so users can recolor the LEDs from HA.
+
+    Effects:
+        "Voice Assistant" — phase animations play; user color tints
+          WAKE_WORD / LISTENING / IDLE while THINKING / SPEAKING
+          keep their distinct signal colors.
+        "None"            — LEDs hold a solid user-set color; phase
+          animations are suppressed until the effect changes.
+    """
+
+    def __init__(
+        self,
+        server: APIServer,
+        key: int,
+        name: str,
+        object_id: str,
+        on_changed: Optional[Callable[[], None]] = None,
+    ) -> None:
+        ESPHomeEntity.__init__(self, server)
+        self.key = key
+        self.name = name
+        self.object_id = object_id
+        self._on_changed = on_changed
+
+        self.is_on: bool = True
+        self.brightness: float = 1.0
+        # Default to HA Voice PE "voice assistant blue".
+        self.red: float = 0.0
+        self.green: float = 0.2
+        self.blue: float = 1.0
+        self.effect: str = EFFECT_VOICE_ASSISTANT
+        self.effects_list: List[str] = [EFFECT_VOICE_ASSISTANT, EFFECT_NONE]
+
+    def update_on_changed(self, on_changed: Optional[Callable[[], None]]) -> None:
+        self._on_changed = on_changed
+
+    def rgb_255(self) -> Tuple[int, int, int]:
+        return (
+            max(0, min(255, int(self.red * 255))),
+            max(0, min(255, int(self.green * 255))),
+            max(0, min(255, int(self.blue * 255))),
+        )
+
+    def handle_message(self, msg: message.Message) -> Iterable[message.Message]:
+        if isinstance(msg, LightCommandRequest) and msg.key == self.key:
+            changed = False
+            if msg.has_state:
+                self.is_on = bool(msg.state)
+                changed = True
+            if msg.has_brightness:
+                self.brightness = max(0.0, min(1.0, float(msg.brightness)))
+                changed = True
+            if msg.has_rgb:
+                self.red = max(0.0, min(1.0, float(msg.red)))
+                self.green = max(0.0, min(1.0, float(msg.green)))
+                self.blue = max(0.0, min(1.0, float(msg.blue)))
+                changed = True
+            if msg.has_effect:
+                requested = str(msg.effect)
+                if requested in self.effects_list:
+                    self.effect = requested
+                    changed = True
+            if changed and self._on_changed is not None:
+                self._on_changed()
+            yield self._state_response()
+        elif isinstance(msg, ListEntitiesRequest):
+            yield ListEntitiesLightResponse(
+                object_id=self.object_id,
+                key=self.key,
+                name=self.name,
+                supported_color_modes=[int(ColorMode.RGB)],
+                effects=self.effects_list,
+                icon="mdi:led-strip-variant",
+                entity_category=EntityCategory.CONFIG,
+            )
+        elif isinstance(msg, SubscribeHomeAssistantStatesRequest):
+            yield self._state_response()
+
+    def _state_response(self) -> LightStateResponse:
+        return LightStateResponse(
+            key=self.key,
+            state=self.is_on,
+            brightness=self.brightness,
+            color_mode=int(ColorMode.RGB),
+            color_brightness=self.brightness,
+            red=self.red,
+            green=self.green,
+            blue=self.blue,
+            effect=self.effect,
+        )
+
+
+# -----------------------------------------------------------------------------
+
+
+class ButtonEventEntity(ESPHomeEntity):
+    """Fires button-press events so HA can trigger automations.
+
+    Matches the HA Voice PE: single/double/triple/long presses appear
+    under the device's Events card and as ``event`` triggers.
+    """
+
+    EVENT_TYPES: Tuple[str, ...] = (
+        "single_press",
+        "double_press",
+        "triple_press",
+        "long_press",
+    )
+
+    def __init__(
+        self,
+        server: APIServer,
+        key: int,
+        name: str,
+        object_id: str,
+    ) -> None:
+        ESPHomeEntity.__init__(self, server)
+        self.key = key
+        self.name = name
+        self.object_id = object_id
+
+    def fire(self, event_type: str) -> None:
+        if event_type not in self.EVENT_TYPES:
+            return
+        self.server.send_messages(
+            [EventResponse(key=self.key, event_type=event_type)]
+        )
+
+    def handle_message(self, msg: message.Message) -> Iterable[message.Message]:
+        if isinstance(msg, ListEntitiesRequest):
+            yield ListEntitiesEventResponse(
+                object_id=self.object_id,
+                key=self.key,
+                name=self.name,
+                device_class="button",
+                event_types=list(self.EVENT_TYPES),
+                icon="mdi:gesture-tap-button",
+            )

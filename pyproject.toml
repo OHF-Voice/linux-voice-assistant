@@ -46,6 +46,11 @@ dev = [
     "isort",
     "autopep8",
 ]
+respeaker_2mic = [
+    "spidev>=3,<4",
+    "gpiozero>=2,<3",
+    "lgpio>=0.2,<1",
+]
 
 [project.scripts]
 linux-voice-assistant = "linux_voice_assistant.__main__:run"

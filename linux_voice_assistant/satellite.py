@@ -17,6 +17,7 @@ from aioesphomeapi.api_pb2 import (  # type: ignore[attr-defined]
     AuthenticationRequest,
     DeviceInfoRequest,
     DeviceInfoResponse,
+    LightCommandRequest,
     ListEntitiesDoneResponse,
     ListEntitiesRequest,
     MediaPlayerCommandRequest,
@@ -47,7 +48,7 @@ from pymicro_wakeword import MicroWakeWord
 from pyopen_wakeword import OpenWakeWord
 
 from .api_server import APIServer
-from .entity import MediaPlayerEntity, MicSettingEntity, MuteSwitchEntity, ThinkingSoundEntity
+from .entity import ButtonEventEntity, LEDLightEntity, MediaPlayerEntity, MicSettingEntity, MuteSwitchEntity, ThinkingSoundEntity
 from .models import AvailableWakeWord, ServerState, WakeWordType
 from .util import call_all
 
@@ -234,6 +235,42 @@ class VoiceSatelliteProtocol(APIServer):
         self.state.mic_volume_entity.update_get_value(lambda: float(self.state.mic_volume))
         self.state.mic_volume_entity.update_set_value(lambda val: self.state.persist_mic_volume(float(val)))
 
+        # LEDs configuration light entity — only registered when an LED
+        # controller is active so HA doesn't see a light it can't drive.
+        if self.state.led_controller is not None:
+            if self.state.led_light_entity is None:
+                self.state.led_light_entity = LEDLightEntity(
+                    server=self,
+                    key=len(self.state.entities),
+                    name="LEDs",
+                    object_id="leds",
+                    on_changed=self.state.led_controller.on_light_changed,
+                )
+                self.state.entities.append(self.state.led_light_entity)
+            elif self.state.led_light_entity not in self.state.entities:
+                self.state.entities.append(self.state.led_light_entity)
+
+            self.state.led_light_entity.server = self
+            self.state.led_light_entity.update_on_changed(self.state.led_controller.on_light_changed)
+            self.state.led_controller.set_light_entity(self.state.led_light_entity)
+
+        # Button press Event entity — exposes single/double/triple/long
+        # press events to HA so automations can react like on the HAVPE.
+        if self.state.button_controller is not None:
+            if self.state.button_event_entity is None:
+                self.state.button_event_entity = ButtonEventEntity(
+                    server=self,
+                    key=len(self.state.entities),
+                    name="Button press",
+                    object_id="button_press",
+                )
+                self.state.entities.append(self.state.button_event_entity)
+            elif self.state.button_event_entity not in self.state.entities:
+                self.state.entities.append(self.state.button_event_entity)
+
+            self.state.button_event_entity.server = self
+            self.state.button_controller.set_event_entity(self.state.button_event_entity)
+
         # ---- Instance variables ----
 
         self._is_streaming_audio = False
@@ -276,6 +313,9 @@ class VoiceSatelliteProtocol(APIServer):
             # Resume normal operation - wake word detection will be active again
             pass
 
+        if self.state.led_controller is not None:
+            self.state.led_controller.on_mute_changed()
+
     def handle_voice_event(self, event_type: VoiceAssistantEventType, data: Dict[str, str]) -> None:
         _LOGGER.debug("Voice event: type=%s, data=%s", event_type.name, data)
 
@@ -298,6 +338,8 @@ class VoiceSatelliteProtocol(APIServer):
             VoiceAssistantEventType.VOICE_ASSISTANT_STT_END,
         ):
             self._is_streaming_audio = False
+            if self.state.led_controller is not None:
+                self.state.led_controller.on_thinking()
         elif event_type == VoiceAssistantEventType.VOICE_ASSISTANT_INTENT_PROGRESS:
             if data.get("tts_start_streaming") == "1":
                 # Start streaming early
@@ -327,13 +369,28 @@ class VoiceSatelliteProtocol(APIServer):
         msg: VoiceAssistantTimerEventResponse,
     ) -> None:
         _LOGGER.debug("Timer event: type=%s", event_type.name)
+        led = self.state.led_controller
         if event_type == VoiceAssistantTimerEventType.VOICE_ASSISTANT_TIMER_FINISHED:
             if not self._timer_finished:
                 self.state.active_wake_words.add(self.state.stop_word.id)
                 self._timer_finished = True
                 self._timer_ring_start = time.monotonic()
                 self.duck()
+                if led is not None:
+                    led.on_timer_ringing()
                 self._play_timer_finished()
+        elif event_type == VoiceAssistantTimerEventType.VOICE_ASSISTANT_TIMER_STARTED:
+            if led is not None:
+                led.on_timer_started(msg.total_seconds, msg.seconds_left)
+        elif event_type == VoiceAssistantTimerEventType.VOICE_ASSISTANT_TIMER_UPDATED:
+            if led is not None:
+                if msg.is_active:
+                    led.on_timer_updated(msg.total_seconds, msg.seconds_left)
+                else:
+                    led.on_timer_cancelled()
+        elif event_type == VoiceAssistantTimerEventType.VOICE_ASSISTANT_TIMER_CANCELLED:
+            if led is not None:
+                led.on_timer_cancelled()
 
     def handle_message(self, msg: message.Message) -> Iterable[message.Message]:
         if isinstance(msg, VoiceAssistantEventResponse):
@@ -379,7 +436,7 @@ class VoiceSatelliteProtocol(APIServer):
             )
         elif isinstance(
             msg,
-            (ListEntitiesRequest, SubscribeHomeAssistantStatesRequest, MediaPlayerCommandRequest, SwitchCommandRequest, NumberCommandRequest, SelectCommandRequest),
+            (ListEntitiesRequest, SubscribeHomeAssistantStatesRequest, MediaPlayerCommandRequest, SwitchCommandRequest, NumberCommandRequest, SelectCommandRequest, LightCommandRequest),
         ):
             for entity in self.state.entities:
                 yield from entity.handle_message(msg)
@@ -469,6 +526,8 @@ class VoiceSatelliteProtocol(APIServer):
             self.state.active_wake_words.discard(self.state.stop_word.id)
             self.unduck()
             self.state.tts_player.stop()
+            if self.state.led_controller is not None:
+                self.state.led_controller.on_timer_stopped()
             _LOGGER.debug("Stopping timer finished sound; will wake up in 1 s")
 
             wake_word_phrase = wake_word.wake_word  # type: ignore
@@ -480,6 +539,8 @@ class VoiceSatelliteProtocol(APIServer):
                 _LOGGER.debug("Delayed wakeup: playing wakeup sound for %s", wake_word_phrase)
                 self._pipeline_active = True
                 self.duck()
+                if self.state.led_controller is not None:
+                    self.state.led_controller.on_wake_word()
                 self.state.tts_player.play(
                     self.state.wakeup_sound,
                     done_callback=lambda: self._on_wakeup_sound_finished(wake_word_phrase),
@@ -500,6 +561,8 @@ class VoiceSatelliteProtocol(APIServer):
         _LOGGER.debug("Detected wake word: %s", wake_word_phrase)
         self._pipeline_active = True
         self.duck()
+        if self.state.led_controller is not None:
+            self.state.led_controller.on_wake_word()
         self.state.tts_player.play(
             self.state.wakeup_sound,
             done_callback=lambda: self._on_wakeup_sound_finished(wake_word_phrase),
@@ -512,21 +575,28 @@ class VoiceSatelliteProtocol(APIServer):
             [VoiceAssistantRequest(start=True, wake_word_phrase=wake_word_phrase)],
         )
         self._is_streaming_audio = True
+        if self.state.led_controller is not None:
+            self.state.led_controller.on_listening()
 
     def stop(self) -> None:
         self.state.active_wake_words.discard(self.state.stop_word.id)
         self._pipeline_active = False
 
+        led = self.state.led_controller
         if self._timer_finished:
             self._timer_finished = False
             self._timer_ring_start = None
             self.unduck()
             self.state.tts_player.stop()
+            if led is not None:
+                led.on_timer_stopped()
             _LOGGER.debug("Stopping timer finished sound")
         else:
             # tts_player.stop() invokes the done_callback (_tts_finished),
             # so we don't call _tts_finished() again explicitly.
             self.state.tts_player.stop()
+            if led is not None:
+                led.on_pipeline_idle()
             _LOGGER.debug("TTS response stopped manually")
 
     def play_tts(self) -> None:
@@ -537,6 +607,8 @@ class VoiceSatelliteProtocol(APIServer):
         _LOGGER.debug("Playing TTS response: %s", self._tts_url)
 
         self.state.active_wake_words.add(self.state.stop_word.id)
+        if self.state.led_controller is not None:
+            self.state.led_controller.on_speaking()
         self.state.tts_player.play(self._tts_url, done_callback=self._tts_finished)
 
     def duck(self) -> None:
@@ -552,13 +624,18 @@ class VoiceSatelliteProtocol(APIServer):
         self.state.active_wake_words.discard(self.state.stop_word.id)
         self.send_messages([VoiceAssistantAnnounceFinished()])
 
+        led = self.state.led_controller
         if self._continue_conversation:
             self.send_messages([VoiceAssistantRequest(start=True)])
             self._is_streaming_audio = True
             self._pipeline_active = True
+            if led is not None:
+                led.on_listening()
             _LOGGER.debug("Continuing conversation")
         else:
             self.unduck()
+            if led is not None:
+                led.on_pipeline_idle()
 
         _LOGGER.debug("TTS response finished")
 
@@ -616,6 +693,8 @@ class VoiceSatelliteProtocol(APIServer):
 
         self.state.stop_word.is_active = False
         self.state.connected = False
+        if self.state.led_controller is not None:
+            self.state.led_controller.on_ha_connected(False)
         if self.state.satellite is self:
             self.state.satellite = None
 
@@ -638,6 +717,8 @@ class VoiceSatelliteProtocol(APIServer):
 
         if msg_type == PROTO_TO_MESSAGE_TYPE[AuthenticationRequest]:
             self.state.connected = True
+            if self.state.led_controller is not None:
+                self.state.led_controller.on_ha_connected(True)
             _LOGGER.debug("Authentication successful, connected to Home Assistant")
             # Send states after connect
             states: List[message.Message] = []

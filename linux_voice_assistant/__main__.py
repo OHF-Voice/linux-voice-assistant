@@ -17,6 +17,8 @@ from getmac import get_mac_address  # type: ignore
 from pymicro_wakeword import MicroWakeWord, MicroWakeWordFeatures
 from pyopen_wakeword import OpenWakeWord, OpenWakeWordFeatures
 
+from .button_controller import create_button_controller
+from .led_controller import create_led_controller
 from .models import AvailableWakeWord, Preferences, ServerState, WakeWordType
 from .mpv_player import MpvMediaPlayer
 from .satellite import VoiceSatelliteProtocol
@@ -163,6 +165,18 @@ async def main() -> None:
         "--output-only",
         action="store_true",
         help="Enable output only mode",
+    )
+    parser.add_argument(
+        "--led-controller",
+        default=None,
+        choices=("none", "respeaker_2mic"),
+        help="Drive onboard LEDs for the named hardware variant (default: none)",
+    )
+    parser.add_argument(
+        "--button-controller",
+        default=None,
+        choices=("none", "respeaker_2mic"),
+        help="Watch physical button on the named hardware variant (default: none)",
     )
     args = parser.parse_args()
 
@@ -389,6 +403,10 @@ async def main() -> None:
     state.tts_player.set_volume(initial_volume_percent)
 
     loop = asyncio.get_running_loop()
+
+    state.led_controller = create_led_controller(args.led_controller, state, loop)
+    state.button_controller = create_button_controller(args.button_controller, state, loop)
+
     max_attempts = 15
     attempt = 1
     server = None
@@ -429,6 +447,10 @@ async def main() -> None:
     finally:
         state.audio_queue.put_nowait(None)
         process_audio_thread.join()
+        if state.led_controller is not None:
+            state.led_controller.cleanup()
+        if state.button_controller is not None:
+            state.button_controller.cleanup()
 
     _LOGGER.debug("Server stopped")
 

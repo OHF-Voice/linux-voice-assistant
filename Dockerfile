@@ -26,6 +26,9 @@ LABEL \
 # - ca-certificates:    For encrypted connections
 # - iproute2:           For ss command in entrypoint (port check)
 # - procps:             For pgrep in healthcheck
+# - swig:               Required to build the lgpio Python wheel
+#                       (gpiozero backend for the ReSpeaker 2-Mic HAT
+#                       button). Harmless when the button isn't used.
 RUN apt-get update && \
     apt-get install --yes --no-install-recommends \
     avahi-utils \
@@ -39,9 +42,22 @@ RUN apt-get update && \
     libasound2-plugins \
     ca-certificates \
     iproute2 \
+    curl \
+    swig \
     vim \
     procps && \
 apt-get clean
+
+### Build liblgpio from source (Debian Trixie doesn't package it).
+### Required for the lgpio Python wheel used by gpiozero on Pi 5 and
+### the ReSpeaker 2-Mic HAT button. Tiny (<1 MiB after install), and
+### harmless on non-Pi hosts because nothing loads it unless
+### --button-controller is set.
+RUN set -eux; \
+    mkdir -p /tmp/lgpio && cd /tmp/lgpio; \
+    curl -fsSL https://github.com/joan2937/lg/archive/refs/tags/v0.2.2.tar.gz | tar xz --strip-components=1; \
+    make && make install && ldconfig; \
+    cd / && rm -rf /tmp/lgpio
 
 ### Set workdir:
 WORKDIR /app
@@ -60,6 +76,11 @@ COPY version_githash.txt ./
 ### Run installation:
 RUN chmod +x docker-entrypoint.sh
 RUN ./script/setup
+
+### Install optional ReSpeaker 2-Mic HAT extras (LED + button). Harmless
+### on non-Pi hosts; only loaded when --led-controller / --button-controller
+### (or the matching env vars) are set.
+RUN /app/.venv/bin/pip install -e '.[respeaker_2mic]'
 
 ### Set ports for ESPHome API:
 EXPOSE 6053

@@ -36,9 +36,23 @@ services:
     env_file: ${ENV_FILE:-.env}
     group_add:
       - audio
+      # Uncomment when using --led-controller respeaker_2mic (SPI access).
+      # Pass the host's spi GID as a number; the 'spi' group doesn't exist
+      # inside the container, so group_add by name would fail. Find your
+      # host's GID with: getent group spi
+      # - "${SPI_GID:-989}"
+      # Uncomment when using --button-controller respeaker_2mic (GPIO access).
+      # Same reasoning as SPI_GID above; find yours with: getent group gpio
+      # - "${GPIO_GID:-986}"
     # Priority for audio process
     cap_add:
       - SYS_NICE
+    # Uncomment devices for ReSpeaker 2-Mic HAT hardware:
+    #   /dev/spidev0.0 → LEDs (--led-controller respeaker_2mic)
+    #   /dev/gpiochip0 → button (--button-controller respeaker_2mic)
+    # devices:
+    #   - /dev/spidev0.0:/dev/spidev0.0
+    #   - /dev/gpiochip0:/dev/gpiochip0
     volumes:
       # Wakeword data and configuration
       - wakeword_data:/app/local

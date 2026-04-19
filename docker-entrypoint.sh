@@ -100,6 +100,14 @@ if [ "$ENABLE_OUTPUT_ONLY" = "1" ]; then
   EXTRA_ARGS+=( "--output-only" )
 fi
 
+if [ -n "${LED_CONTROLLER}" ]; then
+  EXTRA_ARGS+=( "--led-controller" "$LED_CONTROLLER" )
+fi
+
+if [ -n "${BUTTON_CONTROLLER}" ]; then
+  EXTRA_ARGS+=( "--button-controller" "$BUTTON_CONTROLLER" )
+fi
+
 
 # Add cookie file for pulseaudio to prevent errors
 PULSE_COOKIE=${PULSE_COOKIE:-"/run/user/1000/pulse/cookie"}

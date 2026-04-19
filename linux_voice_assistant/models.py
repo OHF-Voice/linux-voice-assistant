@@ -12,13 +12,17 @@ if TYPE_CHECKING:
     from pymicro_wakeword import MicroWakeWord
     from pyopen_wakeword import OpenWakeWord
 
+    from .button_controller import ButtonController
     from .entity import (
+        ButtonEventEntity,
         ESPHomeEntity,
+        LEDLightEntity,
         MediaPlayerEntity,
         MicSettingEntity,
         MuteSwitchEntity,
         ThinkingSoundEntity,
     )
+    from .led_controller import LEDController
     from .mpv_player import MpvMediaPlayer
     from .satellite import VoiceSatelliteProtocol
 
@@ -93,6 +97,10 @@ class ServerState:
 
     media_player_entity: "Optional[MediaPlayerEntity]" = None
     satellite: "Optional[VoiceSatelliteProtocol]" = None
+    led_controller: "Optional[LEDController]" = None
+    button_controller: "Optional[ButtonController]" = None
+    led_light_entity: "Optional[LEDLightEntity]" = None
+    button_event_entity: "Optional[ButtonEventEntity]" = None
     mute_switch_entity: "Optional[MuteSwitchEntity]" = None
     thinking_sound_entity: "Optional[ThinkingSoundEntity]" = None
     mic_gain_entity: "Optional[MicSettingEntity]" = None
