@@ -795,7 +795,7 @@ class VoiceSatelliteProtocol(APIServer):
             _LOGGER.debug("Total state messages to send: %d", len(states))
             self.send_messages(states)
             for i, msg in enumerate(states):
-                _LOGGER.debug("Sent state message %d: %s", i, type(msg).__name__)      
+                _LOGGER.debug("Sent state message %d: %s", i, type(msg).__name__)
             _LOGGER.debug("All entity states sent after connect")
 
             # Notify peripherals that Home Assistant is now connected
