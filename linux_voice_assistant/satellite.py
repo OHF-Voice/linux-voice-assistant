@@ -66,7 +66,6 @@ class VoiceSatelliteProtocol(APIServer):
         self.state.satellite = self
         self.state.connected = False
 
-        existing_media_players = [entity for entity in self.state.entities if isinstance(entity, MediaPlayerEntity)]
         # Report capabilities appropriately
         if state.output_only:
             _LOGGER.debug("Output only features")
@@ -86,7 +85,6 @@ class VoiceSatelliteProtocol(APIServer):
             for extra in existing_media_players[1:]:
                 self.state.entities.remove(extra)
 
-        existing_media_players = [entity for entity in self.state.entities if isinstance(entity, MediaPlayerEntity)]
         if existing_mute_switches:
             self.state.mute_switch_entity = existing_mute_switches[0]  # type: ignore[assignment]
             for extra in existing_mute_switches[1:]:  # type: ignore[index]
@@ -281,6 +279,7 @@ class VoiceSatelliteProtocol(APIServer):
             _LOGGER.debug("Thinking sound enabled")
         else:
             _LOGGER.debug("Thinking sound disabled")
+            pass
         self.state.save_preferences()
 
     def _set_muted(self, new_state: bool) -> None:
@@ -791,15 +790,12 @@ class VoiceSatelliteProtocol(APIServer):
             for i, entity in enumerate(self.state.entities):
                 entity_states = list(entity.handle_message(SubscribeHomeAssistantStatesRequest()))
                 states.extend(entity_states)
-                _LOGGER.debug(
-                    "Entity %d (%s) returned %d state messages",
-                    i,
-                    type(entity).__name__,
-                    len(entity_states),
-                )
+                _LOGGER.debug("Entity %d (%s) returned %d state messages", i, type(entity).__name__, len(entity_states))
 
             _LOGGER.debug("Total state messages to send: %d", len(states))
             self.send_messages(states)
+            for i, msg in enumerate(states):
+                _LOGGER.debug("Sent state message %d: %s", i, type(msg).__name__)            
             _LOGGER.debug("All entity states sent after connect")
 
             # Notify peripherals that Home Assistant is now connected
@@ -858,11 +854,7 @@ class VoiceSatelliteProtocol(APIServer):
             _LOGGER.debug("Downloading %s to %s", model_url, model_path)
             with urlopen(model_url) as request:
                 if request.status != 200:
-                    _LOGGER.warning(
-                        "Failed to download: %s, status=%s",
-                        model_url,
-                        request.status,
-                    )
+                    _LOGGER.warning("Failed to download: %s, status=%s", model_url, request.status)
                     return None
 
                 with open(model_path, "wb") as model_file:
