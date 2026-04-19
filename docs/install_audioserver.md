@@ -24,7 +24,7 @@ Link the PipeWire configuration for ALSA applications:
 sudo ln -s /usr/share/alsa/alsa.conf.d/50-pipewire.conf /etc/alsa/conf.d/
 ```
 
-Allow services to run without an active user session (optional, for headless setups):
+Allow services to run without an active user session. This step is **required on headless systems** (e.g. Raspberry Pi OS Lite), since PipeWire runs under the user's systemd session and only starts while someone is logged in. Without it, LVA will silently stop working after you close your SSH session.
 
 ```sh
 sudo mkdir -p /var/lib/systemd/linger
@@ -32,6 +32,13 @@ sudo touch /var/lib/systemd/linger/$USER
 ```
 
 💡 **Note:** Replace `$USER` with your actual username that you want to run the voice assistant.
+
+You can verify it worked with:
+
+```sh
+loginctl show-user $USER | grep Linger
+# Expected: Linger=yes
+```
 
 ### Configure PipeWire (optional):
 

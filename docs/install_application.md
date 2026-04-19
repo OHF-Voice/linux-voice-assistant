@@ -213,6 +213,8 @@ sudo systemctl enable linux-voice-assistant
 sudo systemctl start linux-voice-assistant
 ```
 
+💡 **Note:** On headless systems, also enable linger for the user running the service so PipeWire stays running without an active login session. See [Install Audioservice - Pipewire](install_audioserver.md#a-pipewire-recommended). Without this step, LVA will silently stop working after you close your SSH session.
+
 💡 **Note:** If you want to change settings you can do this with editing the Environment in the service file.
 
 If you want to check if the service is running you can use the following command:
