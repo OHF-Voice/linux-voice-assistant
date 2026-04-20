@@ -1,4 +1,4 @@
-# Audio Options: Gain and Noise Suppression
+# Audio Options: Gain Noise Suppression, and Wake Word Sensitivity
 
 ## What do Gain and Noise Suppression do
 
