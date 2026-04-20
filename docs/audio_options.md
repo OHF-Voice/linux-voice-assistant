@@ -49,7 +49,7 @@ LVA exposes two slider entities to change these gain and noise suppression from 
 💡 **Note:**  Keep in mind that when the flags are set they will overwrite the previous value in the preferences file and also they will be overridden if the value is changed in Home Assistant(Also applies to the ENV file but the ENV file will always overwrite the last value on startup).
 
 
-### Wake Word Sensitivity
+## Wake Word Sensitivity
  
 LVA exposes three numeric controls in the Home Assistant device page for fine-grained sensitivity tuning. These let you dial in the exact probability threshold that best matches your microphone quality, room acoustics, and false-activation tolerance.
  
