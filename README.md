@@ -86,6 +86,29 @@ usage: __main__.py [-h] [--name NAME] [--audio-input-device AUDIO_INPUT_DEVICE] 
 
 💡 **Note:** There is a detailed explanation on the gain and noise suppression flags in the [audio options](docs/audio_options.md) file.
 
+#### Wake Word Sensitivity
+ 
+LVA exposes three numeric controls in the Home Assistant device page for fine-grained sensitivity tuning. These let you dial in the exact probability threshold that best matches your microphone quality, room acoustics, and false-activation tolerance.
+ 
+| Entity | Description | Default |
+|--------|-------------|---------|
+| **Wake Word 1 Sensitivity** | Probability cutoff for the primary wake word | From model manifest |
+| **Wake Word 2 Sensitivity** | Probability cutoff for the secondary wake word (if active) | From model manifest |
+| **Stop Word Sensitivity** | Probability cutoff for the stop word | From model manifest |
+ 
+Values range from `0.0` to `1.0`:
+ 
+- **Higher value** (e.g. `0.95`) → more selective, fewer false activations, may miss quieter or accented speech
+- **Lower value** (e.g. `0.50`) → more responsive, but more likely to trigger on similar-sounding words
+The defaults are read directly from each model's `.json` manifest file (the `probability_cutoff` field), so bundled models like `okay_nabu` (0.85), `hey_jarvis` (0.97), and custom downloaded models all start at their author-tested baseline. Changes made in the Home Assistant UI are persisted in `preferences.json` and survive restarts.
+ 
+**Tuning guide:**
+ 
+- If the wake word **rarely activates** (misses your voice): lower the value slightly, e.g. by `0.05` steps
+- If the wake word **activates too often** (false triggers from TV, music, or similar words): raise the value slightly
+- Start from the model's default and make small adjustments — a change of `0.05–0.10` is usually enough to notice a difference
+- Far-field microphones with noise cancellation (e.g. ReSpeaker, Satellite1) generally work well at the default values; basic USB microphones may need a lower threshold
+
 ## Build Information
 
 Image builds can be tracked in this repository's `Actions` tab, and utilize [artifact attestation](https://docs.github.com/en/actions/security-guides/using-artifact-attestations-to-establish-provenance-for-builds) to certify provenance.
