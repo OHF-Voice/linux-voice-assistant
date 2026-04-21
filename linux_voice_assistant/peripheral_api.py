@@ -152,12 +152,17 @@ class PeripheralAPIServer:
         try:
             from websockets.server import serve  # type: ignore[import]
         except ImportError:
-            _LOGGER.error("websockets package not installed – peripheral API disabled. " "Install with: pip install websockets")
+            _LOGGER.error(
+                "websockets package not installed – peripheral API disabled. "
+                "Install with: pip install websockets"
+            )
             return
 
         self._loop = asyncio.get_running_loop()
         self._server = await serve(self._handle_client, self._host, self._port)
-        _LOGGER.info("Peripheral API listening at ws://%s:%d", self._host, self._port)
+        _LOGGER.info(
+            "Peripheral API listening at ws://%s:%d", self._host, self._port
+        )
 
     async def stop(self) -> None:
         """Gracefully shut down the server and all client connections."""
@@ -253,7 +258,11 @@ class PeripheralAPIServer:
                 await self._push_mute_switch(satellite, muted=False)
 
         elif command in (LVACommand.VOLUME_UP, LVACommand.VOLUME_DOWN):
-            delta = self._volume_step if command == LVACommand.VOLUME_UP else -self._volume_step
+            delta = (
+                self._volume_step
+                if command == LVACommand.VOLUME_UP
+                else -self._volume_step
+            )
             new_vol = max(0.0, min(1.0, state.volume + delta))
             vol_pct = int(round(new_vol * 100))
 
@@ -266,7 +275,7 @@ class PeripheralAPIServer:
 
                 # Push the new volume to HA so its media player entity updates in real time
                 if satellite is not None:
-                    from aioesphomeapi.api_pb2 import MediaPlayerStateResponse  # type: ignore[attr-defined]
+                    from aioesphomeapi.api_pb2 import MediaPlayerStateResponse  # type: ignore[attr-defined]  # pylint: disable=no-name-in-module
 
                     satellite.send_messages(
                         [
@@ -295,8 +304,8 @@ class PeripheralAPIServer:
         elif command == LVACommand.STOP_MEDIA_PLAYER:
             state.music_player.stop()
             if state.media_player_entity is not None:
-                from aioesphomeapi.api_pb2 import MediaPlayerStateResponse  # type: ignore[attr-defined]
                 from aioesphomeapi.model import MediaPlayerState  # type: ignore[import]
+                from aioesphomeapi.api_pb2 import MediaPlayerStateResponse  # type: ignore[attr-defined]  # pylint: disable=no-name-in-module
 
                 state.media_player_entity.state = MediaPlayerState.IDLE
                 if satellite is not None:
