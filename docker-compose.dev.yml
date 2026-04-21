@@ -2,7 +2,7 @@
 services:
   # Fix permissions for wakeword_data and configuration volume
   fix-permissions:
-    image: "ghcr.io/ohf-voice/linux-voice-assistant:latest"
+    image: "ghcr.io/ohf-voice/linux-voice-assistant-pr:207"
     entrypoint: []
     command: "chown -R ${LVA_USER_ID:-1000}:${LVA_USER_GROUP:-1000} /app/local /app/configuration /app/wakewords/custom /app/sounds/custom"
     environment:
@@ -24,7 +24,7 @@ services:
   # Linux Voice Assistant
   linux-voice-assistant:
     container_name: linux-voice-assistant
-    image: "ghcr.io/ohf-voice/linux-voice-assistant:latest"
+    image: "ghcr.io/ohf-voice/linux-voice-assistant-pr:207"
     restart: unless-stopped
     network_mode: "host"
     user: "${LVA_USER_ID:-1000}:${LVA_USER_GROUP:-1000}"
@@ -66,7 +66,9 @@ services:
       timeout: 5s
       retries: 3
       start_period: 90s
-    #command:
+    command:
+      - "--mic-noise-suppression"
+      - "1"
     #  - --additional-parameters-here
     #  - --but-use-env-if-possible
 

@@ -26,6 +26,7 @@ from aioesphomeapi.model import (
     MediaPlayerCommand,
     MediaPlayerEntityFeature,
     MediaPlayerState,
+    NumberMode,
 )
 from google.protobuf import message
 
@@ -518,3 +519,193 @@ class MicSettingEntity(ESPHomeEntity):
 
     def update_set_value(self, set_value: Callable[[Union[float, str]], None]) -> None:
         self._set_value = set_value
+
+
+# -----------------------------------------------------------------------------
+
+
+class WakeWord1SensitivityNumberEntity(ESPHomeEntity):
+    def __init__(
+        self,
+        server: APIServer,
+        key: int,
+        name: str,
+        object_id: str,
+        get_sensitivity: Callable[[], float],
+        set_sensitivity: Callable[[float], None],
+        initial_value: float = 0.5,
+    ) -> None:
+        ESPHomeEntity.__init__(self, server)
+
+        self.key = key
+        self.name = name
+        self.object_id = object_id
+        self._get_sensitivity = get_sensitivity
+        self._set_sensitivity = set_sensitivity
+        self.value = initial_value
+        self._log = logging.getLogger(f"{self.__class__.__name__}[{self.key}]")
+
+    def update_get_sensitivity(self, get_sensitivity: Callable[[], float]) -> None:
+        self._get_sensitivity = get_sensitivity
+
+    def update_set_sensitivity(self, set_sensitivity: Callable[[float], None]) -> None:
+        self._set_sensitivity = set_sensitivity
+
+    def sync_with_state(self) -> None:
+        old_value = self.value
+        self.value = self._get_sensitivity()
+        self._log.debug("Entity synchronized: old=%.3f new=%.3f", old_value, self.value)
+
+    def handle_message(self, msg: message.Message) -> Iterable[message.Message]:
+        if isinstance(msg, NumberCommandRequest) and (msg.key == self.key):
+            new_value = float(msg.state)
+            self._log.debug("Sensitivity value changed: %s => %s", self.value, new_value)
+            self.value = new_value
+            self._set_sensitivity(new_value)
+            yield NumberStateResponse(key=self.key, state=self.value)
+        elif isinstance(msg, ListEntitiesRequest):
+            yield ListEntitiesNumberResponse(
+                object_id=self.object_id,
+                key=self.key,
+                name=self.name,
+                entity_category=EntityCategory.CONFIG,
+                min_value=0.0,
+                max_value=1.0,
+                step=0.001,
+                mode=NumberMode.BOX,
+            )
+        elif isinstance(msg, SubscribeHomeAssistantStatesRequest):
+            self.sync_with_state()
+            yield NumberStateResponse(key=self.key, state=self.value)
+
+
+class WakeWord2SensitivityNumberEntity(ESPHomeEntity):
+    def __init__(
+        self,
+        server: APIServer,
+        key: int,
+        name: str,
+        object_id: str,
+        get_sensitivity: Callable[[], float],
+        set_sensitivity: Callable[[float], None],
+        initial_value: float = 0.5,
+    ) -> None:
+        ESPHomeEntity.__init__(self, server)
+
+        self.key = key
+        self.name = name
+        self.object_id = object_id
+        self._get_sensitivity = get_sensitivity
+        self._set_sensitivity = set_sensitivity
+        self.value = initial_value
+        self._log = logging.getLogger(f"{self.__class__.__name__}[{self.key}]")
+
+    def update_get_sensitivity(self, get_sensitivity: Callable[[], float]) -> None:
+        self._get_sensitivity = get_sensitivity
+
+    def update_set_sensitivity(self, set_sensitivity: Callable[[float], None]) -> None:
+        self._set_sensitivity = set_sensitivity
+
+    def sync_with_state(self) -> None:
+        old_value = self.value
+        self.value = self._get_sensitivity()
+        self._log.debug("Entity synchronized: old=%.3f new=%.3f", old_value, self.value)
+
+    def handle_message(self, msg: message.Message) -> Iterable[message.Message]:
+        if isinstance(msg, NumberCommandRequest) and (msg.key == self.key):
+            new_value = float(msg.state)
+            self._log.debug("Second wake word sensitivity value changed: %s => %s", self.value, new_value)
+            self.value = new_value
+            self._set_sensitivity(new_value)
+            yield NumberStateResponse(key=self.key, state=self.value)
+        elif isinstance(msg, ListEntitiesRequest):
+            yield ListEntitiesNumberResponse(
+                object_id=self.object_id,
+                key=self.key,
+                name=self.name,
+                entity_category=EntityCategory.CONFIG,
+                min_value=0.0,
+                max_value=1.0,
+                step=0.001,
+                mode=NumberMode.BOX,
+            )
+        elif isinstance(msg, SubscribeHomeAssistantStatesRequest):
+            self.sync_with_state()
+            yield NumberStateResponse(key=self.key, state=self.value)
+
+
+class StopWordSensitivityNumberEntity(ESPHomeEntity):
+    def __init__(
+        self,
+        server: APIServer,
+        key: int,
+        name: str,
+        object_id: str,
+        get_sensitivity: Callable[[], float],
+        set_sensitivity: Callable[[float], None],
+        initial_value: float = 0.5,
+    ) -> None:
+        ESPHomeEntity.__init__(self, server)
+
+        self.key = key
+        self.name = name
+        self.object_id = object_id
+        self._get_sensitivity = get_sensitivity
+        self._set_sensitivity = set_sensitivity
+        self.value = initial_value
+        self._log = logging.getLogger(f"{self.__class__.__name__}[{self.key}]")
+
+    def update_get_sensitivity(self, get_sensitivity: Callable[[], float]) -> None:
+        self._get_sensitivity = get_sensitivity
+
+    def update_set_sensitivity(self, set_sensitivity: Callable[[float], None]) -> None:
+        self._set_sensitivity = set_sensitivity
+
+    def sync_with_state(self) -> None:
+        old_value = self.value
+        self.value = self._get_sensitivity()
+        self._log.debug("Entity synchronized: old=%.3f new=%.3f", old_value, self.value)
+
+    def handle_message(self, msg: message.Message) -> Iterable[message.Message]:
+        if isinstance(msg, NumberCommandRequest) and (msg.key == self.key):
+            new_value = float(msg.state)
+            self._log.debug("Stop word sensitivity value changed: %s => %s", self.value, new_value)
+            self.value = new_value
+            self._set_sensitivity(new_value)
+            yield NumberStateResponse(key=self.key, state=self.value)
+        elif isinstance(msg, ListEntitiesRequest):
+            yield ListEntitiesNumberResponse(
+                object_id=self.object_id,
+                key=self.key,
+                name=self.name,
+                entity_category=EntityCategory.CONFIG,
+                icon="mdi:hand-back-left",
+                min_value=0.0,
+                max_value=1.0,
+                step=0.001,
+                mode=NumberMode.BOX,
+            )
+        elif isinstance(msg, SubscribeHomeAssistantStatesRequest):
+            self.sync_with_state()
+            yield NumberStateResponse(key=self.key, state=self.value)
+
+
+# Backward compatibility export aliases
+__all__ = [
+    "ESPHomeEntity",
+    "MediaPlayerEntity",
+    "MuteSwitchEntity",
+    "ThinkingSoundEntity",
+    "WakeWord1SensitivityNumberEntity",
+    "WakeWord2SensitivityNumberEntity",
+    "StopWordSensitivityNumberEntity",
+    # Old class names for backward compatibility
+    "WakeWordSensitivityNumberEntity",
+    "SecondWakeWordSensitivityNumberEntity",
+]
+
+WakeWordSensitivityNumberEntity = WakeWord1SensitivityNumberEntity
+SecondWakeWordSensitivityNumberEntity = WakeWord2SensitivityNumberEntity
+
+
+# -----------------------------------------------------------------------------

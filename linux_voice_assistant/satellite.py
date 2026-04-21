@@ -47,7 +47,15 @@ from pymicro_wakeword import MicroWakeWord
 from pyopen_wakeword import OpenWakeWord
 
 from .api_server import APIServer
-from .entity import MediaPlayerEntity, MicSettingEntity, MuteSwitchEntity, ThinkingSoundEntity
+from .entity import (
+    MediaPlayerEntity,
+    MicSettingEntity,
+    MuteSwitchEntity,
+    StopWordSensitivityNumberEntity,
+    ThinkingSoundEntity,
+    WakeWord1SensitivityNumberEntity,
+    WakeWord2SensitivityNumberEntity,
+)
 from .models import AvailableWakeWord, ServerState, WakeWordType
 from .util import call_all
 
@@ -160,6 +168,76 @@ class VoiceSatelliteProtocol(APIServer):
         thinking_sound_switch.update_set_thinking_sound_enabled(self._set_thinking_sound_enabled)
         thinking_sound_switch.sync_with_state()
 
+        # Add/update Wake Word 1 sensitivity number entity
+        sensitivity_1_entity = self.state.sensitivity_1_number_entity
+        if sensitivity_1_entity is None:
+            sensitivity_1_entity = WakeWord1SensitivityNumberEntity(
+                server=self,
+                key=len(state.entities),
+                name="Wake Word 1 Sensitivity",
+                object_id="wake_word_1_sensitivity",
+                get_sensitivity=lambda: self.state.wake_word_1_threshold,
+                set_sensitivity=self._set_sensitivity_1,
+                initial_value=self.state.wake_word_1_threshold,
+            )
+            self.state.entities.append(sensitivity_1_entity)
+            self.state.sensitivity_1_number_entity = sensitivity_1_entity
+        elif sensitivity_1_entity not in self.state.entities:
+            self.state.entities.append(sensitivity_1_entity)
+
+        sensitivity_1_entity.server = self
+        sensitivity_1_entity.update_get_sensitivity(lambda: self.state.wake_word_1_threshold)
+        sensitivity_1_entity.update_set_sensitivity(self._set_sensitivity_1)
+
+        sensitivity_1_entity.sync_with_state()
+        _LOGGER.debug("INIT: Wake Word 1 entity initialized with value %.3f", sensitivity_1_entity.value)
+
+        # Add/update Wake Word 2 sensitivity number entity
+        sensitivity_2_entity = self.state.sensitivity_2_number_entity
+        if sensitivity_2_entity is None:
+            sensitivity_2_entity = WakeWord2SensitivityNumberEntity(
+                server=self,
+                key=len(state.entities),
+                name="Wake Word 2 Sensitivity",
+                object_id="wake_word_2_sensitivity",
+                get_sensitivity=lambda: self.state.wake_word_2_threshold,
+                set_sensitivity=self._set_sensitivity_2,
+                initial_value=self.state.wake_word_2_threshold,
+            )
+            self.state.entities.append(sensitivity_2_entity)
+            self.state.sensitivity_2_number_entity = sensitivity_2_entity
+        elif sensitivity_2_entity not in self.state.entities:
+            self.state.entities.append(sensitivity_2_entity)
+
+        sensitivity_2_entity.server = self
+        sensitivity_2_entity.update_get_sensitivity(lambda: self.state.wake_word_2_threshold)
+        sensitivity_2_entity.update_set_sensitivity(self._set_sensitivity_2)
+
+        sensitivity_2_entity.sync_with_state()
+
+        # Add/update Stop Word sensitivity number entity
+        stop_sensitivity_entity = self.state.stop_sensitivity_number_entity
+        if stop_sensitivity_entity is None:
+            stop_sensitivity_entity = StopWordSensitivityNumberEntity(
+                server=self,
+                key=len(state.entities),
+                name="Stop Word Sensitivity",
+                object_id="stop_word_sensitivity",
+                get_sensitivity=lambda: self.state.stop_word_threshold,
+                set_sensitivity=self._set_stop_sensitivity,
+                initial_value=self.state.stop_word_threshold,
+            )
+            self.state.entities.append(stop_sensitivity_entity)
+            self.state.stop_sensitivity_number_entity = stop_sensitivity_entity
+        elif stop_sensitivity_entity not in self.state.entities:
+            self.state.entities.append(stop_sensitivity_entity)
+
+        stop_sensitivity_entity.server = self
+        stop_sensitivity_entity.update_get_sensitivity(lambda: self.state.stop_word_threshold)
+        stop_sensitivity_entity.update_set_sensitivity(self._set_stop_sensitivity)
+
+        stop_sensitivity_entity.sync_with_state()
+
         # Mic Gain
         if self.state.mic_gain_entity is None:
             self.state.mic_gain_entity = MicSettingEntity(
@@ -256,6 +334,33 @@ class VoiceSatelliteProtocol(APIServer):
             _LOGGER.debug("Thinking sound disabled")
             pass
         self.state.save_preferences()
+
+    def _set_sensitivity_1(self, new_value: float) -> None:
+        self.state.wake_word_1_threshold = float(new_value)
+        self.state.preferences.wake_word_1_sensitivity = float(new_value)
+        self.state.save_preferences()
+        _LOGGER.debug("Wake Word 1 Sensitivity value set to: %s", new_value)
+        # Sync entity state
+        if self.state.sensitivity_1_number_entity is not None:
+            self.state.sensitivity_1_number_entity.sync_with_state()
+
+    def _set_sensitivity_2(self, new_value: float) -> None:
+        self.state.wake_word_2_threshold = float(new_value)
+        self.state.preferences.wake_word_2_sensitivity = float(new_value)
+        self.state.save_preferences()
+        _LOGGER.debug("Wake Word 2 Sensitivity value set to: %s", new_value)
+        # Sync entity state
+        if self.state.sensitivity_2_number_entity is not None:
+            self.state.sensitivity_2_number_entity.sync_with_state()
+
+    def _set_stop_sensitivity(self, new_value: float) -> None:
+        self.state.stop_word_threshold = float(new_value)
+        self.state.preferences.stop_word_sensitivity = float(new_value)
+        self.state.save_preferences()
+        _LOGGER.debug("Stop Word Sensitivity value set to: %s", new_value)
+        # Sync entity state
+        if self.state.stop_sensitivity_number_entity is not None:
+            self.state.stop_sensitivity_number_entity.sync_with_state()
 
     def _set_muted(self, new_state: bool) -> None:
         self.state.muted = bool(new_state)
@@ -386,6 +491,9 @@ class VoiceSatelliteProtocol(APIServer):
             if isinstance(msg, ListEntitiesRequest):
                 yield ListEntitiesDoneResponse()
         elif isinstance(msg, VoiceAssistantConfigurationRequest):
+            _LOGGER.debug("✅ Received VoiceAssistantConfigurationRequest from Home Assistant")
+            _LOGGER.debug("   -> Request contains %d external wake words", len(msg.external_wake_words))
+
             available_wake_words = [
                 VoiceAssistantWakeWord(
                     id=ww.id,
@@ -395,10 +503,20 @@ class VoiceSatelliteProtocol(APIServer):
                 for ww in self.state.available_wake_words.values()
             ]
 
+            # Log available internal wake words first
+            internal_ww_count = len(self.state.available_wake_words)
+            _LOGGER.debug("   -> Found %d internal available wake words", internal_ww_count)
+            for ww in available_wake_words:
+                _LOGGER.debug("      - %s: '%s' (langs: %s)", ww.id, ww.wake_word, ww.trained_languages)
+
             for eww in msg.external_wake_words:
+                _LOGGER.debug("   -> Processing external wake word: id=%s, word='%s', type=%s", eww.id, eww.wake_word, eww.model_type)
+
                 if eww.model_type != "micro":
+                    _LOGGER.debug("      → Skipping: not micro model type")
                     continue
 
+                _LOGGER.debug("      → Adding to available wake words")
                 available_wake_words.append(
                     VoiceAssistantWakeWord(
                         id=eww.id,
@@ -408,47 +526,83 @@ class VoiceSatelliteProtocol(APIServer):
                 )
 
                 self._external_wake_words[eww.id] = eww
+                _LOGGER.debug("      → Stored in external wake words cache")
+
+            active_ww_ids = [ww.id for ww in self.state.wake_words.values() if ww.id in self.state.active_wake_words]
+            _LOGGER.debug("   -> Active wake word IDs: %s", active_ww_ids)
 
             yield VoiceAssistantConfigurationResponse(
                 available_wake_words=available_wake_words,
-                active_wake_words=[ww.id for ww in self.state.wake_words.values() if ww.id in self.state.active_wake_words],
+                active_wake_words=active_ww_ids,
                 max_active_wake_words=2,
             )
-            _LOGGER.info("Connected to Home Assistant")
+
+            _LOGGER.info("✅ Connected to Home Assistant - Configuration handshake completed")
+            _LOGGER.debug("✅ VoiceAssistantConfigurationResponse sent successfully")
         elif isinstance(msg, VoiceAssistantSetConfiguration):
             # Change active wake words
             active_wake_words: Set[str] = set()
+            new_wake_words: List[Optional[str]] = [None, None]
 
+            # Get old positions before modification
+            old_positions: Dict[str, int] = {}
+            for idx, ww_id in enumerate(self.state.preferences.active_wake_words):
+                if ww_id is not None and idx < 2:
+                    old_positions[ww_id] = idx
+
+            # Process new active wake words
             for wake_word_id in msg.active_wake_words:
                 if wake_word_id in self.state.wake_words:
                     # Already active
                     active_wake_words.add(wake_word_id)
-                    continue
-
-                model_info = self.state.available_wake_words.get(wake_word_id)
-                if not model_info:
-                    # Check external wake words (may require download)
-                    external_wake_word = self._external_wake_words.get(wake_word_id)
-                    if not external_wake_word:
-                        continue
-
-                    model_info = self._download_external_wake_word(external_wake_word)
+                else:
+                    model_info = self.state.available_wake_words.get(wake_word_id)
                     if not model_info:
-                        continue
+                        # Check external wake words (may require download)
+                        external_wake_word = self._external_wake_words.get(wake_word_id)
+                        if not external_wake_word:
+                            continue
 
-                    self.state.available_wake_words[wake_word_id] = model_info
+                        model_info = self._download_external_wake_word(external_wake_word)
+                        if not model_info:
+                            continue
 
-                _LOGGER.debug("Loading wake word: %s", model_info.wake_word_path)
-                self.state.wake_words[wake_word_id] = model_info.load()
+                        self.state.available_wake_words[wake_word_id] = model_info
 
-                _LOGGER.info("Wake word set: %s", wake_word_id)
-                active_wake_words.add(wake_word_id)
-                break
+                    _LOGGER.debug("Loading wake word: %s", model_info.wake_word_path)
+                    self.state.wake_words[wake_word_id] = model_info.load()
+
+                    _LOGGER.info("Wake word set: %s", wake_word_id)
+                    active_wake_words.add(wake_word_id)
+
+            # Keep old positions
+            remaining_ww = list(active_wake_words)
+            placed = set()
+
+            # First, place Wake Words in their old positions.
+            for ww_id in remaining_ww:
+                if ww_id in old_positions:
+                    pos = old_positions[ww_id]
+                    if pos < 2:
+                        new_wake_words[pos] = ww_id
+                        placed.add(ww_id)
+
+            # Add remaining wake words to free slots
+            free_slots = [i for i in range(2) if new_wake_words[i] is None]
+            for ww_id in remaining_ww:
+                if ww_id not in placed and free_slots:
+                    pos = free_slots.pop(0)
+                    new_wake_words[pos] = ww_id
+                    placed.add(ww_id)
+
+            # If only one wake word is left and it was at position 1, position 0 remains None
+            # Position 2 automatically stays None if not occupied
 
             self.state.active_wake_words = active_wake_words
             _LOGGER.debug("Active wake words: %s", active_wake_words)
+            _LOGGER.debug("Wake word positions: [0]=%s, [1]=%s", new_wake_words[0], new_wake_words[1])
 
-            self.state.preferences.active_wake_words = list(active_wake_words)
+            self.state.preferences.active_wake_words = new_wake_words
             self.state.save_preferences()
             self.state.wake_words_changed = True
 
