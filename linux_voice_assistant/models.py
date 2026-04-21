@@ -17,7 +17,10 @@ if TYPE_CHECKING:
         MediaPlayerEntity,
         MicSettingEntity,
         MuteSwitchEntity,
+        StopWordSensitivityNumberEntity,
         ThinkingSoundEntity,
+        WakeWord1SensitivityNumberEntity,
+        WakeWord2SensitivityNumberEntity,
     )
     from .mpv_player import MpvMediaPlayer
     from .satellite import VoiceSatelliteProtocol
@@ -37,6 +40,7 @@ class AvailableWakeWord:
     wake_word: str
     trained_languages: List[str]
     wake_word_path: Path
+    probability_cutoff: float = 0.7
 
     def load(self) -> "Union[MicroWakeWord, OpenWakeWord]":
         if self.type == WakeWordType.MICRO_WAKE_WORD:
@@ -57,9 +61,13 @@ class AvailableWakeWord:
 
 @dataclass
 class Preferences:
-    active_wake_words: List[str] = field(default_factory=list)
+    active_wake_words: List[Optional[str]] = field(default_factory=list)
     volume: Optional[float] = None
     thinking_sound: int = 0  # 0 = disabled, 1 = enabled
+    wake_word_1_sensitivity: Optional[float] = None
+    wake_word_2_sensitivity: Optional[float] = None
+    stop_word_sensitivity: Optional[float] = None
+
     mic_auto_gain: int = 0
     mic_noise_suppression: int = 0
     mic_volume: int = 100  # 1–100, default maximum
@@ -96,6 +104,9 @@ class ServerState:
     satellite: "Optional[VoiceSatelliteProtocol]" = None
     mute_switch_entity: "Optional[MuteSwitchEntity]" = None
     thinking_sound_entity: "Optional[ThinkingSoundEntity]" = None
+    sensitivity_1_number_entity: "Optional[WakeWord1SensitivityNumberEntity]" = None
+    sensitivity_2_number_entity: "Optional[WakeWord2SensitivityNumberEntity]" = None
+    stop_sensitivity_number_entity: "Optional[StopWordSensitivityNumberEntity]" = None
     mic_gain_entity: "Optional[MicSettingEntity]" = None
     mic_noise_suppression_entity: "Optional[MicSettingEntity]" = None
     mic_volume_entity: "Optional[MicSettingEntity]" = None
@@ -106,6 +117,12 @@ class ServerState:
     muted: bool = False
     connected: bool = False
     volume: float = 1.0
+    oww_probability_cutoff: float = 0.7  # Dynamic threshold for OpenWakeWord
+    oww_second_probability_cutoff: float = 0.7  # Dynamic threshold for second OpenWakeWord
+    oww_stop_probability_cutoff: float = 0.5  # Dynamic threshold for Stop word
+    wake_word_1_threshold: float = 0.7
+    wake_word_2_threshold: float = 0.7
+    stop_word_threshold: float = 0.5
     mic_auto_gain: int = 0
     mic_noise_suppression: int = 0
     mic_volume: int = 100  # 1–100, default maximum
