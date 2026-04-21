@@ -44,11 +44,11 @@ But you can also install LVA on AMD64 devices, for example on your Linux desktop
 
 For Raspberry Pi users, we provide a prebuild image that can be flashed to a SD card. See [PiCompose](https://github.com/florian-asche/PiCompose).
 
-For all other users we have different installation methods available (Docker, systemd), each with its own dedicated instructions. See [Linux-Voice-Assistant - Installation](docs/install.md). 
+For all other users, we have different installation methods available (Docker, systemd), each with its own dedicated instructions. See [Linux-Voice-Assistant - Installation](docs/install.md). 
 
 #### Parameter overview
 
-💡 **Note:** There is a [environment variable](docs/install_application.md#environment-variables-reference) for each parameter if you use docker or systemd based setup.
+💡 **Note:** There is an [environment variable](docs/install_application.md#environment-variables-reference) for each parameter if you use docker or systemd based setup.
 
 ``` sh
 usage: __main__.py [-h] [--name NAME] [--audio-input-device AUDIO_INPUT_DEVICE] [--list-input-devices] [--audio-input-block-size AUDIO_INPUT_BLOCK_SIZE] [--audio-output-device AUDIO_OUTPUT_DEVICE] [--list-output-devices] [--wake-word-dir WAKE_WORD_DIR]  [--mic-auto-gain] [--mic-noise-suppression]
@@ -85,7 +85,8 @@ usage: __main__.py [-h] [--name NAME] [--audio-input-device AUDIO_INPUT_DEVICE] 
 | `--colored-debug` | Printcolored DEBUG messages to console | False |
 | `--output-only` | Enable output only mode | False |
 
-💡 **Note:** There is a detailed explanation on the gain and noise suppression flags in the [audio options](docs/audio_options.md) file.
+💡 **Note:** There is a detailed explanation on the gain, noise suppression, and wake word sensitivity flags in the [audio options](docs/audio_options.md) file.
+
 
 ## Build Information
 
