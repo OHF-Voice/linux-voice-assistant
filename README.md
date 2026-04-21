@@ -84,7 +84,8 @@ usage: __main__.py [-h] [--name NAME] [--audio-input-device AUDIO_INPUT_DEVICE] 
 | `--debug` | Print DEBUG messages to console | False |
 | `--output-only` | Enable output only mode | False |
 
-💡 **Note:** There is a detailed explanation on the gain and noise suppression flags in the [audio options](docs/audio_options.md) file.
+💡 **Note:** There is a detailed explanation on the gain, noise suppression, and wake word sensitivity flags in the [audio options](docs/audio_options.md) file.
+
 
 ## Build Information
 
