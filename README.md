@@ -20,7 +20,7 @@ Because it runs on a full Linux system and offers access significantly more loca
 - Supports multiple architectures (linux/amd64 and linux/aarch64)
 - Automated builds with artifact attestation for security
 - Supports announcments, start/continue conversation, and timers
-- Tested with Python 3.13 and Python 3.11.
+- Tested and works with Python 3.11 and Python 3.12.
 - Prebuild docker image available on [GitHub Container Registry](https://github.com/OHF-Voice/linux-voice-assistant/pkgs/container/linux-voice-assistant)
 - Prebuild Raspberry Pi image
 
