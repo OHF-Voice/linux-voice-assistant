@@ -10,7 +10,7 @@ services:
       - XDG_RUNTIME_DIR=${LVA_XDG_RUNTIME_DIR:-/run/user/1000}
       - PULSE_SERVER=${LVA_PULSE_SERVER:-/run/user/1000/pulse/native}
       - PULSE_COOKIE=${LVA_PULSE_COOKIE:-/run/user/1000/pulse/cookie}
-    env_file: ${ENV_FILE:-dev.env}
+    env_file: ${ENV_FILE:-.env}
     group_add:
       - audio
     volumes:
@@ -33,7 +33,7 @@ services:
       - XDG_RUNTIME_DIR=${LVA_XDG_RUNTIME_DIR:-/run/user/1000}
       - PULSE_SERVER=${LVA_PULSE_SERVER:-/run/user/1000/pulse/native}
       - PULSE_COOKIE=${LVA_PULSE_COOKIE:-/run/user/1000/pulse/cookie}
-    env_file: ${ENV_FILE:-dev.env}
+    env_file: ${ENV_FILE:-.env}
     group_add:
       - audio
     # Priority for audio process
