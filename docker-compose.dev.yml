@@ -2,7 +2,7 @@
 services:
   # Fix permissions for wakeword_data and configuration volume
   fix-permissions:
-    image: "ghcr.io/ohf-voice/linux-voice-assistant-pr:207"
+    image: "${LVA_IMAGE:-ghcr.io/ohf-voice/linux-voice-assistant-pr}:${LVA_IMAGE_TAG:-nightly}"
     entrypoint: []
     command: "chown -R ${LVA_USER_ID:-1000}:${LVA_USER_GROUP:-1000} /app/local /app/configuration /app/wakewords/custom /app/sounds/custom"
     environment:
@@ -24,7 +24,7 @@ services:
   # Linux Voice Assistant
   linux-voice-assistant:
     container_name: linux-voice-assistant
-    image: "ghcr.io/ohf-voice/linux-voice-assistant-pr:207"
+    image: "${LVA_IMAGE:-ghcr.io/ohf-voice/linux-voice-assistant-pr}:${LVA_IMAGE_TAG:-nightly}"
     restart: unless-stopped
     network_mode: "host"
     user: "${LVA_USER_ID:-1000}:${LVA_USER_GROUP:-1000}"
@@ -33,7 +33,7 @@ services:
       - XDG_RUNTIME_DIR=${LVA_XDG_RUNTIME_DIR:-/run/user/1000}
       - PULSE_SERVER=${LVA_PULSE_SERVER:-/run/user/1000/pulse/native}
       - PULSE_COOKIE=${LVA_PULSE_COOKIE:-/run/user/1000/pulse/cookie}
-    env_file: .env
+    env_file: ${ENV_FILE:-.env}
     group_add:
       - audio
     # Priority for audio process
@@ -67,8 +67,8 @@ services:
       retries: 3
       start_period: 90s
     command:
-      - "--mic-noise-suppression"
-      - "1"
+    #  - "--mic-noise-suppression"
+    #  - "1"
     #  - --additional-parameters-here
     #  - --but-use-env-if-possible
 
