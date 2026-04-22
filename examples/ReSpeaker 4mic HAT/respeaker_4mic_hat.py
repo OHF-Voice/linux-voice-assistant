@@ -2,16 +2,23 @@
 """
 ReSpeaker 4-Mic Array HAT – Linux Voice Assistant peripheral controller.
 
-Mirrors the Home Assistant Voice PE LED ring animations to LVA peripheral API commands.
+Mirrors the Home Assistant Voice PE LED ring animations and maps four
+external GPIO buttons to LVA peripheral API commands.
 
 Hardware layout (ReSpeaker 4-Mic HAT on Raspberry Pi)
 ------------------------------------------------------
   LED ring   : 12 × APA102 RGB LEDs  →  SPI0 (MOSI GPIO 10, SCLK GPIO 11)
   Microphones: 4 × MEMS mics         →  I2S (AC108 codec, seeed-voicecard driver)
 
+The ReSpeaker 4-Mic HAT has no onboard buttons. Connect your own momentary
+tactile switches between the GPIO pins above and GND.
+
 Install dependencies
 ---------------------
-  pip install websockets apa102-pi RPi.GPIO
+  pip install websockets apa102-pi gpiozero lgpio
+
+Note: gpiozero with the lgpio backend works on Pi 3/4/5 without RPi.GPIO.
+  Requires /dev/gpiochip0 (Pi 1–4) or /dev/gpiochip4 (Pi 5).
 
 Enable SPI on the Pi (required for APA102 LEDs):
   Add  dtparam=spi=on  to /boot/firmware/config.txt and reboot.
@@ -19,7 +26,7 @@ Enable SPI on the Pi (required for APA102 LEDs):
 Run
 ---
   python3 respeaker_4mic_hat.py
-  python3 respeaker_4mic_hat.py --host 192.168.1.50 --port 6055 --debug
+  python3 respeaker_4mic_hat.py --host 127.0.0.1 --port 6055 --debug
 """
 
 from __future__ import annotations
@@ -42,11 +49,11 @@ from typing import Optional, Tuple
 # ---------------------------------------------------------------------------
 
 try:
-    import RPi.GPIO as GPIO  # type: ignore[import]
+    from gpiozero import Button as GPIOButton  # type: ignore[import]
     _HAS_GPIO = True
 except ImportError:
     _HAS_GPIO = False
-    logging.warning("RPi.GPIO not found – button input disabled")
+    logging.warning("gpiozero not found – button input disabled")
 
 try:
     from apa102_pi.driver import apa102 as _apa102_driver  # type: ignore[import]

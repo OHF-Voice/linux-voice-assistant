@@ -34,16 +34,20 @@ Button behaviour (context action — same priority as HA Voice PE centre button)
 
 Install dependencies
 --------------------
-  pip install websockets spidev RPi.GPIO
+  pip install websockets spidev gpiozero lgpio
 
 Enable SPI on the Pi:
   Add  dtparam=spi=on  to /boot/firmware/config.txt and reboot.
   (The seeed-voicecard installer does this automatically.)
 
+Note: gpiozero with the lgpio backend works on Pi 3/4/5.
+  Requires /dev/gpiochip0 (Pi 1–4) or /dev/gpiochip4 (Pi 5)
+  to be accessible inside the container.
+
 Run
 ---
   python3 respeaker_2mic_hat.py
-  python3 respeaker_2mic_hat.py --host 192.168.1.50 --port 6055 --debug
+  python3 respeaker_2mic_hat.py --host 127.0.0.1 --port 6055 --debug
 """
 
 from __future__ import annotations
@@ -72,11 +76,11 @@ except ImportError:
     logging.warning("spidev not found – LED output will be simulated")
 
 try:
-    import RPi.GPIO as GPIO  # type: ignore[import]
+    from gpiozero import Button  # type: ignore[import]
     _HAS_GPIO = True
 except ImportError:
     _HAS_GPIO = False
-    logging.warning("RPi.GPIO not found – button input disabled")
+    logging.warning("gpiozero not found – button input disabled")
 
 try:
     import websockets  # type: ignore[import]
@@ -435,8 +439,10 @@ class LEDAnimator:
 
 class ButtonHandler:
     """
-    Manages the single onboard button (GPIO 17) using RPi.GPIO.
-    Sends context-aware commands to LVA via the asyncio command queue.
+    Manages the single onboard button (GPIO 17) using gpiozero.
+
+    gpiozero works with the lgpio backend on Pi 3/4/5 without needing
+    RPi.GPIO, which is not supported on Pi 5.
     """
 
     def __init__(
@@ -448,23 +454,21 @@ class ButtonHandler:
         self._state = state
         self._loop = loop
         self._queue = command_queue
+        self._button: Optional[object] = None
 
     def setup(self) -> None:
         if not _HAS_GPIO:
             _LOGGER.warning("GPIO unavailable – button not configured")
             return
 
-        GPIO.setmode(GPIO.BCM)
-        GPIO.setup(BTN_ACTION, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-        GPIO.add_event_detect(
-            BTN_ACTION, GPIO.FALLING,
-            callback=self._on_press, bouncetime=BTN_DEBOUNCE_MS,
-        )
-        _LOGGER.info("Button configured (GPIO BCM %d)", BTN_ACTION)
+        self._button = Button(BTN_ACTION, pull_up=True, bounce_time=BTN_DEBOUNCE_MS / 1000.0)
+        self._button.when_pressed = self._on_press  # type: ignore[union-attr]
+        _LOGGER.info("Button configured (gpiozero BCM %d)", BTN_ACTION)
 
     def cleanup(self) -> None:
-        if _HAS_GPIO:
-            GPIO.cleanup()
+        if self._button is not None:
+            self._button.close()  # type: ignore[union-attr]
+            self._button = None
 
     def _send(self, command: str) -> None:
         _LOGGER.info("Button → %s", command)
@@ -472,7 +476,7 @@ class ButtonHandler:
             self._queue.put(command), self._loop
         )
 
-    def _on_press(self, _channel) -> None:
+    def _on_press(self) -> None:
         """
         Context-sensitive action — mirrors HA Voice PE centre button priority:
           1. Timer ringing              → stop_timer_ringing

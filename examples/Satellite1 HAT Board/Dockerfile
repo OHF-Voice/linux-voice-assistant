@@ -14,14 +14,15 @@ LABEL \
 #
 #   build-essential   – compiles rpi-ws281x C extension
 #   python3-dev       – Python C headers for native extensions
-#   libgpiod-dev      – optional gpiod alternative; also satisfies some GPIO deps
 #   git               – rpi-ws281x sometimes pulls from git during install
+#
+# Note: libgpiod-dev is NOT needed — gpiozero uses the lgpio backend
+# (installed via pip) which works on Pi 3/4/5 without RPi.GPIO.
 # ----------------------------------------------------------------------------
 RUN apt-get update && \
     apt-get install --yes --no-install-recommends \
         build-essential \
         python3-dev \
-        libgpiod-dev \
         git \
         ca-certificates && \
     apt-get clean && \
@@ -34,7 +35,8 @@ WORKDIR /app
 #
 #   websockets    – WebSocket client to talk to LVA peripheral API
 #   rpi-ws281x    – SK6812 / WS2812 LED ring driver (PWM + DMA)
-#   RPi.GPIO      – GPIO button input
+#   gpiozero      – GPIO button input (Pi 3/4/5 compatible)
+#   lgpio         – gpiozero backend; works on Pi 3/4/5 including Pi 5
 # ----------------------------------------------------------------------------
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt

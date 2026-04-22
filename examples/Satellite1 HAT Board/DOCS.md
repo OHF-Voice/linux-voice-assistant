@@ -18,12 +18,12 @@ The controller runs as a separate Docker container on the same Raspberry Pi. It 
 
 ### Compatible hardware
 
-The Satellite 1 HAT works on any Raspberry Pi with a 40-pin GPIO header. Tested targets:
-
-- Raspberry Pi Zero 2 W
-- Raspberry Pi 3 B / B+
-- Raspberry Pi 4 B
-- Raspberry Pi 5
+| Board | Notes |
+|---|---|
+| Raspberry Pi Zero 2 W | Recommended for compact builds |
+| Raspberry Pi 3 B / B+ | Fully supported |
+| Raspberry Pi 4 B | Fully supported |
+| Raspberry Pi 5 | Fully supported — see Pi 5 note under Step 1 |
 
 ---
 
@@ -48,7 +48,7 @@ Sends `volume_up` to LVA. Each press increases volume by one step.
 Sends `volume_down` to LVA. Each press decreases volume by one step.
 
 ### Top button — Mute / Unmute
-Toggles microphone mute. Sends `mute_mic` when unmuted, `unmute_mic` when muted. The LED ring switches to the muted indicator pattern immediately.
+Toggles microphone mute. Sends `mute_mic` when unmuted, `unmute_mic` when muted.
 
 ### Bottom button — Context action
 Sends a command based on the current assistant state, in priority order:
@@ -70,15 +70,15 @@ All animations mirror the Home Assistant Voice PE ESPHome firmware exactly.
 | LVA state | Animation | Description |
 |---|---|---|
 | No HA connection / error | Red twinkle | Random red sparkle across all LEDs |
-| Idle | Off | Ring off (or dim if user LED ring is on) |
+| Idle | Off | Ring off |
 | Wake word detected | Slow clockwise spin | Two trailing arcs at opposing positions |
 | Listening | Fast clockwise spin | Same dual-arc pattern at 50 ms interval |
 | Thinking | Pulsing pair | Two opposing LEDs fade in and out |
 | TTS speaking | Anticlockwise spin | Dual-arc spin in reverse direction |
-| Muted | Solid ring + red indicators | Full ring on; red at positions 0, 3, 6 & 9 (all 4 mic locations) |
+| Muted | Solid ring + red indicators | Full ring on; red at positions 0, 3, 6 & 9 (mic locations) |
 | Error | Red pulse | All LEDs red, pulsing |
 | Timer ticking | Countdown arc | Arc length proportional to `seconds_left / total_seconds` |
-| Timer ringing | Pulse + optional red | Full ring pulsing; red at 3 & 9 if muted |
+| Timer ringing | Pulse + optional red | Full ring pulsing; red at 0, 3, 6, 9 if muted |
 
 ---
 
@@ -86,14 +86,16 @@ All animations mirror the Home Assistant Voice PE ESPHome firmware exactly.
 
 ### Step 1 — Host kernel configuration
 
-Edit `/boot/firmware/config.txt` (or `/boot/config.txt` on older Raspberry Pi OS):
+> **This must be done on the host Raspberry Pi, not inside Docker.**
+
+Edit `/boot/firmware/config.txt` (Raspberry Pi OS Bookworm) or `/boot/config.txt` (older releases):
 
 ```ini
-# Enable PWM on GPIO 12 for the LED ring
+# Enable PWM on GPIO 12 for the SK6812 LED ring
 dtoverlay=pwm,pin=12,func=4
 
 # Disable onboard audio — it shares PWM0 with GPIO 12
-# dtparam=audio=on
+# dtparam=audio=on    ← comment this out
 
 # Optional: I2S line-out if using the HAT's audio output
 # dtoverlay=hifiberry-dac
@@ -108,19 +110,25 @@ Reboot after saving:
 sudo reboot
 ```
 
-> **Why disable onboard audio?** The Raspberry Pi's 3.5 mm headphone jack uses the same PWM0 hardware peripheral as GPIO 12. They cannot run at the same time. The Satellite 1 HAT's XMOS microphone array connects over USB and is unaffected.
+> **Why disable onboard audio?** The Raspberry Pi's 3.5 mm headphone jack uses the same PWM0 hardware peripheral as GPIO 12. They cannot run simultaneously. The Satellite 1 HAT's XMOS microphone array connects over USB and is unaffected.
+
+> **Pi 5 note:** On the Raspberry Pi 5, GPIO is exposed as `/dev/gpiochip4` instead of `/dev/gpiochip0`. Update the `devices` mapping in `compose.yml`:
+> ```yaml
+> devices:
+>   - /dev/gpiochip4:/dev/gpiochip4
+>   - /dev/mem:/dev/mem
+>   - /dev/vcio:/dev/vcio
+> ```
 
 ### Step 2 — Add user to GPIO group
 
 ```bash
-sudo usermod -aG gpio,spi $USER
+sudo usermod -aG gpio $USER
 ```
 
 Log out and back in for the group change to take effect.
 
 ### Step 3 — File structure
-
-Place all files in the same directory:
 
 ```
 Satellite1 HAT Board/
@@ -166,16 +174,11 @@ BTN_DEBOUNCE_MS = 150   # Button debounce in milliseconds
 LED_COUNT      = 12
 LED_BRIGHTNESS = 168    # 0–255, default is 66 % (168)
 
-# Default ring colour  (R, G, B) — matches HA Voice PE default
+# Default ring colour (R, G, B) — matches HA Voice PE default
 DEFAULT_R, DEFAULT_G, DEFAULT_B = 24, 187, 242
-
-# Volume step per button press (0.0–1.0)
-# Also configurable via --peripheral-volume-step on the LVA side
 ```
 
 ### Command-line arguments
-
-The container command in `compose.yml` accepts:
 
 | Argument | Default | Description |
 |---|---|---|
@@ -183,39 +186,16 @@ The container command in `compose.yml` accepts:
 | `--port` | `6055` | LVA peripheral API port |
 | `--debug` | off | Enable verbose debug logging |
 
-To connect to LVA running on a different host:
-
-```yaml
-command:
-  - "--host"
-  - "192.168.1.50" # Use your actual device ip address
-  - "--port"
-  - "6055"
-```
-
----
-
-## Connection to LVA
-
-The controller connects to LVA's peripheral WebSocket API at `ws://<host>:6055`. The LVA container must have the peripheral API enabled (it is on by default) and port 6055 must be reachable.
-
-On startup the controller:
-1. Connects to LVA and receives a state snapshot (current mute state, volume, HA connection status)
-2. Sets the LED ring to the appropriate animation immediately
-3. Begins listening for events and button presses
-
-If the connection is lost (LVA restarted, network drop), the controller shows a red twinkle animation and automatically reconnects every 3 seconds.
-
 ---
 
 ## Drivers summary
 
-| Component | Driver needed | How |
-|---|---|---|
-| LED ring (SK6812) | PWM kernel overlay | `dtoverlay=pwm,pin=12,func=4` in `config.txt` |
-| Buttons | None | `RPi.GPIO` reads `/dev/gpiomem` directly |
-| Microphone (XMOS XVF3800) | None | Enumerates as USB audio device automatically |
-| I2S line-out (optional) | HiFiBerry DAC overlay | `dtoverlay=hifiberry-dac` in `config.txt` |
+| Component | Driver needed | Where to install | How |
+|---|---|---|---|
+| LED ring (SK6812) | PWM kernel overlay | **Host Pi** | `dtoverlay=pwm,pin=12,func=4` in `config.txt`, then reboot |
+| Buttons | None | — | `gpiozero` + `lgpio` installed inside container via pip |
+| Microphone (XMOS XVF3800) | None | — | Enumerates as USB audio device automatically |
+| I2S line-out (optional) | HiFiBerry DAC overlay | **Host Pi** | `dtoverlay=hifiberry-dac` in `config.txt`, then reboot |
 
 ---
 
@@ -225,22 +205,27 @@ If the connection is lost (LVA restarted, network drop), the controller shows a 
 
 1. Confirm `dtoverlay=pwm,pin=12,func=4` is in `config.txt` and the Pi has been rebooted.
 2. Confirm onboard audio is disabled (`dtparam=audio=on` is commented out).
-3. Check the container is running as root (`user: "0:0"` in compose file) — `rpi-ws281x` requires root for DMA access.
-4. Run with `--debug` and look for `LED ring initialised` in the logs. If `rpi_ws281x not found` appears, the Python package failed to install — rebuild the image.
+3. The container runs as root (`user: "0:0"`) — `rpi-ws281x` requires root for DMA access via `/dev/mem`.
+4. Run with `--debug` and look for `LED ring initialised` in the logs.
 
 ### Buttons do not respond
 
-1. Confirm `/dev/gpiomem` is mapped in the compose `devices` section.
-2. Check that the `gpio` group is listed under `group_add`.
-3. Run with `--debug` — each button press logs `Button → <command>`.
+1. Confirm `/dev/gpiochip0` (or `/dev/gpiochip4` on Pi 5) is mapped in the compose `devices` section.
+2. Run with `--debug` — each button press logs `Button → <command>`.
 
-### Container exits immediately
+### Pi 5 — buttons not working
 
-1. Run `docker compose logs` — a missing `/dev/mem` or `/dev/vcio` device produces a clear error at startup.
-2. Ensure `privileged: true` is set in the compose file.
+On Pi 5, GPIO is on `/dev/gpiochip4` not `/dev/gpiochip0`. Update `compose.yml`:
+
+```yaml
+devices:
+  - /dev/gpiochip4:/dev/gpiochip4
+  - /dev/mem:/dev/mem
+  - /dev/vcio:/dev/vcio
+```
 
 ### LVA not reachable
 
 1. Confirm LVA is running and `--disable-peripheral-api` was not passed.
-2. With `network_mode: host`, `localhost` resolves to the Pi itself. If LVA is in a separate Docker network (not host mode), use its container IP or service name instead.
-3. Check that port 6055 is not blocked by a firewall: `nc -zv localhost 6055`.
+2. With `network_mode: host`, `localhost` resolves to the Pi itself.
+3. Check port 6055 is not blocked: `nc -zv localhost 6055`.

@@ -21,7 +21,7 @@ The controller runs as a separate Docker container on the same Raspberry Pi. It 
 | Raspberry Pi Zero 2 W | Recommended for compact builds |
 | Raspberry Pi 3 B / B+ | Fully supported |
 | Raspberry Pi 4 B | Fully supported |
-| Raspberry Pi 5 | Requires seeed-voicecard driver compatible with kernel 6.6+ |
+| Raspberry Pi 5 | Requires seeed-voicecard driver compatible with kernel 6.6+ — see Step 1 |
 
 ---
 
@@ -29,13 +29,11 @@ The controller runs as a separate Docker container on the same Raspberry Pi. It 
 
 ### LED ring (APA102)
 
-The APA102 LEDs are driven over SPI. No PWM or DMA is required.
-
 | Signal | GPIO (BCM) | Notes |
 |---|---|---|
 | MOSI (data) | GPIO 10 | SPI0 MOSI |
 | SCLK (clock) | GPIO 11 | SPI0 SCLK |
-| CE (bus select) | GPIO 7 (CE1) | Change to GPIO 8 (CE0) if preferred |
+| CE (bus select) | GPIO 7 (CE1) | /dev/spidev0.1 |
 
 ---
 
@@ -51,30 +49,14 @@ All animations mirror the Home Assistant Voice PE ESPHome firmware exactly.
 | Listening | Fast clockwise spin | Same dual-arc pattern at 50 ms interval |
 | Thinking | Pulsing pair | Two opposing LEDs fade in and out |
 | TTS speaking | Anticlockwise spin | Dual-arc spin in reverse direction |
-| Muted | Solid ring + red indicators | Full ring on; red at LEDs 1, 4, 7, 10 (the 4 mic corners) |
+| Muted | Solid ring + red indicators | Full ring on; red at LEDs 1, 4, 7, 10 (mic corners) |
 | Error | Red pulse | All LEDs red, pulsing |
 | Timer ticking | Countdown arc | Arc proportional to `seconds_left / total_seconds` |
 | Timer ringing | Pulse + optional red | Full ring pulsing; red at corners if muted |
 
 ### Mic indicator positions
 
-The four mics sit at the **corners** of the square board. On the 12-LED ring (30° per step), the corners land at 45°, 135°, 225° and 315°, which corresponds to **LEDs 1, 4, 7, 10**. When muted, these four LEDs turn red so the user can immediately identify the microphone positions.
-
-```
-          LED 0
-     11 ·     · 1  ← MIC corner (top-right)
-   10 ·         · 2
-  9 ·             · 3
-   8 ·         · 4  ← MIC corner (bottom-right)
-     7 ·     · 5
-          LED 6
-     5 ·     · 7  ← MIC corner (bottom-left)
-   4 ·         · 8
-  ... (mirrored)
-     MIC corner (top-left) → LED 10
-
-  Mic corners: LEDs 1, 4, 7, 10
-```
+The four mics sit at the corners of the square board. On the 12-LED ring (30° per step), the corners land at 45°, 135°, 225°, 315° → **LEDs 1, 4, 7, 10**.
 
 ---
 
@@ -82,7 +64,7 @@ The four mics sit at the **corners** of the square board. On the 12-LED ring (30
 
 ### Step 1 — Install the seeed-voicecard audio driver
 
-Run on the **host Raspberry Pi** (not inside Docker):
+> **This must be done on the host Raspberry Pi, not inside Docker.**
 
 ```bash
 git clone https://github.com/respeaker/seeed-voicecard
@@ -95,11 +77,12 @@ After rebooting, verify the microphone appears:
 
 ```bash
 arecord -l
-# Expected output includes:
-# card X: seeed4micvoicec [seeed-4mic-voicecard], device 0: ...
+# Expected: card X: seeed4micvoicec [seeed-4mic-voicecard]
 ```
 
-> **Note:** The installer modifies `/boot/firmware/config.txt` automatically. Check the file after running `install.sh` before proceeding to step 2 — SPI may already be enabled.
+> **Note:** The seeed-voicecard installer modifies `/boot/firmware/config.txt` automatically. Check the file after running `install.sh` — SPI may already be enabled.
+
+> **Pi 5 note:** The standard seeed-voicecard repository may not support the Pi 5 kernel (6.6+). Check the [seeed-voicecard GitHub issues](https://github.com/respeaker/seeed-voicecard/issues) for a compatible branch or fork before proceeding.
 
 ### Step 2 — Enable SPI in config.txt
 
@@ -130,6 +113,13 @@ id -u $USER
 
 If it is not `1000`, update the `user:` field in `compose.yml` to match.
 
+> **Pi 5 note:** On Pi 5, GPIO is exposed as `/dev/gpiochip4` not `/dev/gpiochip0`. Update the `devices` mapping in `compose.yml`:
+> ```yaml
+> devices:
+>   - /dev/spidev0.1:/dev/spidev0.1
+>   - /dev/gpiochip4:/dev/gpiochip4
+> ```
+
 ### Step 4 — File structure
 
 ```
@@ -143,7 +133,6 @@ ReSpeaker 4mic HAT/
 ### Step 5 — Build and start
 
 ```bash
-cd respeaker4mic
 docker compose up -d
 ```
 
@@ -186,10 +175,10 @@ DEFAULT_R, DEFAULT_G, DEFAULT_B = 24, 187, 242
 
 ## Drivers summary
 
-| Component | Driver needed | How |
-|---|---|---|
-| Microphone array (AC108) | **seeed-voicecard** | `./install.sh` on host, then reboot |
-| LED ring (APA102) | SPI overlay | `dtparam=spi=on` in `config.txt` |
+| Component | Driver needed | Where to install | How |
+|---|---|---|---|
+| Microphone array (AC108) | **seeed-voicecard** | **Host Pi** | `git clone` + `sudo ./install.sh`, then reboot |
+| LED ring (APA102) | SPI overlay | **Host Pi** | `dtparam=spi=on` in `config.txt`, then reboot |
 
 ---
 
@@ -216,4 +205,4 @@ The seeed-voicecard driver uses I2S — it does **not** use SPI — so there is 
 
 1. Confirm LVA is running and port 6055 is open: `nc -zv localhost 6055`.
 2. With `network_mode: host`, `localhost` resolves to the Pi itself.
-3. If LVA runs in a separate Docker network (not host mode), use its container IP or service name as `--host`.
+3. If LVA runs in a separate Docker network, use its container IP or service name as `--host`.

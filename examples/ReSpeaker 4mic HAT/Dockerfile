@@ -33,7 +33,8 @@ WORKDIR /app
 #   websockets   – WebSocket client for LVA peripheral API
 #   apa102-pi    – APA102 LED ring driver (SPI)
 #   spidev       – low-level SPI access (used by apa102-pi)
-#   RPi.GPIO     – GPIO button input
+#   gpiozero     – GPIO button input (Pi 3/4/5 compatible)
+#   lgpio         – gpiozero backend; works on Pi 3/4/5 including Pi 5
 # ----------------------------------------------------------------------------
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt

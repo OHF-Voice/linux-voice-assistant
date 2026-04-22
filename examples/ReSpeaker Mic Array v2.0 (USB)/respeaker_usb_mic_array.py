@@ -29,7 +29,7 @@ Host udev rule (run once on the Pi/host, then reboot or run udevadm trigger):
 Run
 ---
   python3 respeaker_usb_mic_array.py
-  python3 respeaker_usb_mic_array.py --host 192.168.1.50 --port 6055 --debug
+  python3 respeaker_usb_mic_array.py --host 127.0.0.1 --port 6055 --debug
 """
 
 from __future__ import annotations

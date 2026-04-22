@@ -30,7 +30,8 @@ WORKDIR /app
 #
 #   websockets  – WebSocket client for LVA peripheral API
 #   spidev      – low-level SPI access for APA102 LEDs
-#   RPi.GPIO    – GPIO button input
+#   gpiozero     – GPIO button input (Pi 3/4/5 compatible)
+#   lgpio         – gpiozero backend; works on Pi 3/4/5 including Pi 5
 # ----------------------------------------------------------------------------
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt

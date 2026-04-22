@@ -23,7 +23,7 @@ The controller runs as a separate Docker container on the same Raspberry Pi. It 
 | Raspberry Pi Zero 2 W | Recommended for compact builds |
 | Raspberry Pi 3 B / B+ | Fully supported |
 | Raspberry Pi 4 B | Fully supported |
-| Raspberry Pi 5 | Requires seeed-voicecard driver compatible with kernel 6.6+ |
+| Raspberry Pi 5 | Requires seeed-voicecard driver compatible with kernel 6.6+ — see Step 1 |
 
 ---
 
@@ -54,7 +54,7 @@ The controller runs as a separate Docker container on the same Raspberry Pi. It 
   └──────────────────────────────────────┘
 ```
 
-LED 0 sits above MIC_L and LED 2 sits above MIC_R. When the microphone is muted, these two LEDs turn red to visually indicate the mic positions are disabled. The centre LED (1) is used for general status animations.
+LED 0 sits above MIC_L and LED 2 sits above MIC_R. When the microphone is muted, these two LEDs turn red. The centre LED (1) is used for general status animations.
 
 ---
 
@@ -78,7 +78,7 @@ LED 0 sits above MIC_L and LED 2 sits above MIC_R. When the microphone is muted,
 
 ## Button behaviour
 
-The single onboard button sends a context-aware command to LVA, mirroring the Home Assistant Voice PE centre button priority:
+The single onboard button sends a context-aware command to LVA:
 
 | Current state | Command sent |
 |---|---|
@@ -94,7 +94,7 @@ The single onboard button sends a context-aware command to LVA, mirroring the Ho
 
 ### Step 1 — Install the seeed-voicecard audio driver
 
-Run on the **host Raspberry Pi** (not inside Docker):
+> **This must be done on the host Raspberry Pi, not inside Docker.**
 
 ```bash
 git clone https://github.com/respeaker/seeed-voicecard
@@ -106,14 +106,13 @@ sudo reboot
 After rebooting, verify the microphone and speaker appear:
 
 ```bash
-arecord -l
-# Should list: seeed-2mic-voicecard
-
-aplay -l
-# Should list: seeed-2mic-voicecard
+arecord -l   # Should list: seeed-2mic-voicecard
+aplay -l     # Should list: seeed-2mic-voicecard
 ```
 
-> **Note:** The seeed-voicecard installer also enables SPI automatically. Check `/boot/firmware/config.txt` after running `install.sh` before proceeding to step 2.
+> **Note:** The seeed-voicecard installer also enables SPI automatically. Check `/boot/firmware/config.txt` after running `install.sh` before proceeding to Step 2.
+
+> **Pi 5 note:** The standard seeed-voicecard repository may not support the Pi 5 kernel (6.6+). Check the [seeed-voicecard GitHub issues](https://github.com/respeaker/seeed-voicecard/issues) for a compatible branch or fork before proceeding.
 
 ### Step 2 — Enable SPI in config.txt
 
@@ -147,6 +146,13 @@ id -u $USER
 
 If it is not `1000`, update the `user:` field in `compose.yml` to match.
 
+> **Pi 5 note:** On Pi 5, GPIO is exposed as `/dev/gpiochip4` not `/dev/gpiochip0`. Update the `devices` mapping in `compose.yml`:
+> ```yaml
+> devices:
+>   - /dev/spidev0.0:/dev/spidev0.0
+>   - /dev/gpiochip4:/dev/gpiochip4
+> ```
+
 ### Step 4 — File structure
 
 ```
@@ -154,7 +160,7 @@ ReSpeaker 2mic HAT/
 ├── Dockerfile
 ├── compose.yml
 ├── requirements.txt
-└── respeaker_2mic_hat.py
+└── respeaker2mic_peripheral.py
 ```
 
 ### Step 5 — Build and start
@@ -190,7 +196,7 @@ environment:
 
 ## Configuration
 
-All configuration is at the top of `respeaker_2mic_hat.py`:
+All configuration is at the top of `respeaker2mic_peripheral.py`:
 
 ```python
 # LVA connection
@@ -221,11 +227,11 @@ BTN_DEBOUNCE_MS = 150
 
 ## Drivers summary
 
-| Component | Driver needed | How |
-|---|---|---|
-| Microphones + speaker (WM8960) | **seeed-voicecard** | `./install.sh` on host, then reboot |
-| LED strip (APA102) | SPI overlay | `dtparam=spi=on` in `config.txt` |
-| Button | None | `RPi.GPIO` reads `/dev/gpiomem` directly |
+| Component | Driver needed | Where to install | How |
+|---|---|---|---|
+| Microphones + speaker (WM8960) | **seeed-voicecard** | **Host Pi** | `git clone` + `sudo ./install.sh`, then reboot |
+| LED strip (APA102) | SPI overlay | **Host Pi** | `dtparam=spi=on` in `config.txt`, then reboot |
+| Button | None | — | `gpiozero` + `lgpio` installed inside container via pip |
 
 ---
 
@@ -242,16 +248,24 @@ BTN_DEBOUNCE_MS = 150
 1. Confirm `dtparam=spi=on` is in `/boot/firmware/config.txt` and the Pi has been rebooted.
 2. Check `/dev/spidev0.0` exists: `ls /dev/spidev*`.
 3. Confirm the container user is in the `spi` group: `groups $USER`.
-4. Run with `--debug` and look for `APA102 SPI driver opened` in the logs. If `spidev not found` appears, the Python package failed to install — rebuild the image.
+4. Run with `--debug` and look for `APA102 SPI driver opened` in the logs.
 
 ### Button does not respond
 
-1. Confirm `/dev/gpiomem` is mapped in the compose `devices` section.
-2. Confirm the container user is in the `gpio` group.
-3. Run with `--debug` — each button press logs `Button → <command>`.
+1. Confirm `/dev/gpiochip0` (or `/dev/gpiochip4` on Pi 5) is mapped in the compose `devices` section.
+2. Run with `--debug` — each button press logs `Button → <command>`.
+
+### Pi 5 — button not working
+
+On Pi 5, GPIO is on `/dev/gpiochip4` not `/dev/gpiochip0`. Update `compose.yml`:
+
+```yaml
+devices:
+  - /dev/spidev0.0:/dev/spidev0.0
+  - /dev/gpiochip4:/dev/gpiochip4
+```
 
 ### LVA not reachable
 
 1. Confirm LVA is running and port 6055 is open: `nc -zv localhost 6055`.
 2. With `network_mode: host`, `localhost` resolves to the Pi itself.
-3. If LVA runs in a separate Docker network, use its container IP or service name as `--host`.
