@@ -22,7 +22,7 @@ Because it runs on a full Linux system and offers access significantly more loca
 - Supports announcments, start/continue conversation, and timers
 - Tested and works with Python 3.11 and Python 3.12.
 - Prebuild docker image available on [GitHub Container Registry](https://github.com/OHF-Voice/linux-voice-assistant/pkgs/container/linux-voice-assistant)
-- Prebuild Raspberry Pi image
+- Prebuild [Raspberry Pi image](https://github.com/florian-asche/PiCompose)
 
 ## Usage
 
