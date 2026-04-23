@@ -917,8 +917,6 @@ class VoiceSatelliteProtocol(APIServer):
         if self.state.mute_switch_entity is not None:
             self.state.mute_switch_entity.sync_with_state()
 
-        # Notify peripheral container that HA is no longer reachable
-        self._emit(LVAEvent.ERROR, {"reason": "ha_disconnected"})
         if self.state.mic_gain_entity is not None:
             self.state.mic_gain_entity.sync_with_state()
 
@@ -927,6 +925,9 @@ class VoiceSatelliteProtocol(APIServer):
 
         if self.state.mic_volume_entity is not None:
             self.state.mic_volume_entity.sync_with_state()
+
+        # Notify peripheral container that HA is no longer reachable
+        self._emit(LVAEvent.DISCONNECTED)
 
         _LOGGER.info("Disconnected from Home Assistant; waiting for reconnection")
 

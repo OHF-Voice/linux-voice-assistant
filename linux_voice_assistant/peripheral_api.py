@@ -14,16 +14,20 @@ Feedback events emitted by LVA
   thinking
   tts_speaking
   tts_finished
-  error       data: {"reason": "ha_disconnected" | "pipeline_error" | <str>}
-              Emitted when the HA TCP connection is lost, or when the voice
-              pipeline reports an error.
+  pipeline_error  data: {"reason": <str>}
+              Emitted when the voice pipeline reports an error (STT failure,
+              intent error, etc.). NOT emitted when HA disconnects — that
+              uses the separate ``disconnected`` event below.
+              Peripheral containers should show a brief red error animation
+              (e.g. 3 red flashes then off) and then return to idle.
+  disconnected
+              Emitted when the HA TCP connection is lost.
+              Connected leds with peripheral containers should 
+              show a red twinkle / "no connection" animation and keep retrying
+              until they see a ``zeroconf`` event with status "connected".
               NOTE: if LVA itself is not running the peripheral container will
-              receive a WebSocket connection failure / close on its end.
-              That closed-connection signal is the "LVA not running" error —
-              LVA cannot emit anything if it is not running.  The peripheral
-              container should treat any dropped WebSocket connection as an
-              error condition and display the appropriate LED state while it
-              retries connecting.
+              see a WebSocket connection failure on its end — that is also
+              a "disconnected" condition to handle with the same animation.
   idle
   muted
   timer_ticking   data: {"id": str, "name": str, "total_seconds": int, "seconds_left": int}
@@ -79,7 +83,8 @@ class LVAEvent(str, Enum):
     THINKING = "thinking"
     TTS_SPEAKING = "tts_speaking"
     TTS_FINISHED = "tts_finished"
-    ERROR = "error"
+    PIPELINE_ERROR = "pipeline_error"
+    DISCONNECTED = "disconnected"
     IDLE = "idle"
     MUTED = "muted"
     TIMER_TICKING = "timer_ticking"

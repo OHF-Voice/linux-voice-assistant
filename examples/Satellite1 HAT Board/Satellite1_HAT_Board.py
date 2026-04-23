@@ -704,16 +704,16 @@ class LVAClient:
             self._state.update(assist_state=AssistState.IDLE)
         elif event == "muted":
             self._state.update(assist_state=AssistState.MUTED, muted=True)
-        elif event == "error":
-            reason = data.get("reason", "")
-            _LOGGER.warning("LVA error: %s", reason)
-            if reason == "ha_disconnected":
-                self._state.update(
-                    ha_connected=False,
-                    assist_state=AssistState.NOT_READY,
-                )
-            else:
-                self._state.update(assist_state=AssistState.ERROR)
+        elif event == "pipeline_error":
+            _LOGGER.warning("LVA pipeline error: %s", data.get("reason", ""))
+            self._state.update(assist_state=AssistState.ERROR)
+ 
+        elif event == "disconnected":
+            _LOGGER.warning("Home Assistant disconnected")
+            self._state.update(
+                ha_connected=False,
+                assist_state=AssistState.NOT_READY,
+            )
 
         # --- Timer events --------------------------------------------------      
         elif event == "timer_ticking":

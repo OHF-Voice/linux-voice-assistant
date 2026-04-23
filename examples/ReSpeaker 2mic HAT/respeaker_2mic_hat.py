@@ -17,7 +17,7 @@ LED behaviours
   thinking         : yellow pulse on all 3 LEDs
   tts_speaking     : green breathe on all 3 LEDs
   muted            : LED 0 and LED 2 solid red (mic positions), centre off
-  error            : red flash on all 3 LEDs
+  pipeline_error   : red flash on all 3 LEDs
   timer_ringing    : blue flash on all 3 LEDs (repeating)
   timer_ticking    : all 3 dim cyan, brightness proportional to time left
   media_playing    : dim green steady on all 3 LEDs
@@ -614,20 +614,21 @@ class LVAClient:
         elif event == "muted":
             self._state.update(assist_state=AssistState.MUTED, muted=True)
 
-        elif event == "error":
-            reason = data.get("reason", "")
-            _LOGGER.warning("LVA error: %s", reason)
-            if reason == "ha_disconnected":
-                self._state.update(
-                    ha_connected=False,
-                    assist_state=AssistState.NOT_READY,
-                )
-            else:
-                self._state.update(assist_state=AssistState.ERROR)
-                # Auto-recover to idle after showing the error flash
-                await asyncio.sleep(2.5)
-                if self._state.assist_state == AssistState.ERROR:
-                    self._state.update(assist_state=AssistState.IDLE)
+        elif event == "pipeline_error":
+            _LOGGER.warning("LVA pipeline error: %s", data.get("reason", ""))
+            self._state.update(assist_state=AssistState.ERROR)
+            # Auto-recover to idle after showing the error flash
+            await asyncio.sleep(2.5)
+            if self._state.assist_state == AssistState.ERROR:
+                self._state.update(assist_state=AssistState.IDLE)
+
+        elif event == "disconnected":
+            _LOGGER.warning("Home Assistant disconnected")
+            self._state.update(
+                ha_connected=False,
+                assist_state=AssistState.NOT_READY,
+            )
+            self._animator.set_state(AssistState.NOT_READY)
 
         elif event == "timer_ticking":
             self._state.update(
