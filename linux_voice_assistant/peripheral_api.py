@@ -22,7 +22,7 @@ Feedback events emitted by LVA
               (e.g. 3 red flashes then off) and then return to idle.
   disconnected
               Emitted when the HA TCP connection is lost.
-              Connected leds with peripheral containers should 
+              Connected leds with peripheral containers should
               show a red twinkle / "no connection" animation and keep retrying
               until they see a ``zeroconf`` event with status "connected".
               NOTE: if LVA itself is not running the peripheral container will
