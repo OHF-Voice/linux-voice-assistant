@@ -241,6 +241,7 @@ class LEDRing:
             if self._animation != name:
                 _LOGGER.debug("LED animation → %s", name)
                 self._animation = name
+                # Reset counters on animation change (mirrors ESPHome initial_run)
                 self._index = 0
                 self._brightness_step = 0
                 self._brightness_dec = True
@@ -265,9 +266,11 @@ class LEDRing:
         self._pixels[i % LED_COUNT] = color
 
     def _color(self) -> RGB:
+        """Return the current user-configured ring colour."""
         return (DEFAULT_R, DEFAULT_G, DEFAULT_B)
 
     def _pulse_step(self, steps: int = 10) -> float:
+        """Advance pulse counter and return brightness 0.0–1.0."""
         factor = (steps - self._brightness_step) / steps
         if self._brightness_dec:
             self._brightness_step += 1
@@ -278,7 +281,8 @@ class LEDRing:
         return factor
 
     # ------------------------------------------------------------------
-    # Animation implementations
+    # Animation implementations  (each returns sleep time in seconds)
+    # All logic mirrors the ESPHome addressable_lambda effects verbatim.
     # ------------------------------------------------------------------
 
     def _anim_off(self) -> float:
@@ -286,6 +290,7 @@ class LEDRing:
         return 0.1
 
     def _anim_twinkle(self, color: RGB) -> float:
+        """Random sparkle – used for Not Ready and No HA connection states."""
         FADE = 0.85
         SPARK_PROB = 0.15
         for i in range(LED_COUNT):
@@ -298,7 +303,14 @@ class LEDRing:
         return 0.05
 
     def _anim_spin(self, color: RGB, interval: float, reverse: bool = False) -> float:
+        """
+        Shared spin pattern for Waiting / Listening / Replying.
+
+        Mirrors the ESPHome "Waiting for Command", "Listening For Command"
+        and "Replying" addressable_lambda effects.
+        """
         if reverse:
+            # Replying goes anticlockwise: index decrements
             self._index = (LED_COUNT + self._index - 1) % LED_COUNT
             offsets = [(0, 1.0), (1, 192/255), (2, 128/255),
                        (6, 1.0), (7, 192/255), (8, 128/255)]
@@ -308,8 +320,10 @@ class LEDRing:
 
         for i in range(LED_COUNT):
             self._set(i, BLACK)
+          
         for offset, brightness in offsets:
             self._set((self._index + offset) % LED_COUNT, _scale(color, brightness))
+          
         if not reverse:
             self._index = (self._index + 1) % LED_COUNT
 
@@ -317,6 +331,10 @@ class LEDRing:
         return interval
 
     def _anim_thinking(self, color: RGB) -> float:
+        """
+        Two opposing LEDs pulsing in brightness.
+        Mirrors ESPHome "Thinking" effect. Index does NOT advance.
+        """
         factor = self._pulse_step(10)
         for i in range(LED_COUNT):
             if i == self._index % LED_COUNT or i == (self._index + 6) % LED_COUNT:
@@ -327,17 +345,28 @@ class LEDRing:
         return 0.01
 
     def _anim_muted(self, color: RGB, muted: bool) -> float:
+        """
+        Solid ring with red indicators at all 4 mic positions when muted.
+        Satellite 1 HAT has mics at 12, 3, 6 and 9 o'clock → LEDs 0, 3, 6, 9.
+        """
         for i in range(LED_COUNT):
             self._set(i, color)
+          
         if muted:
+            # 4 mic positions: top (0), right (3), bottom (6), left (9)
+            # Blank the immediate neighbours so the red indicators stand out          
             self._set(11, BLACK); self._set(0, RED);  self._set(1, BLACK)
             self._set(2,  BLACK); self._set(3, RED);  self._set(4, BLACK)
             self._set(5,  BLACK); self._set(6, RED);  self._set(7, BLACK)
             self._set(8,  BLACK); self._set(9, RED);  self._set(10, BLACK)
+
         self._write()
         return 0.016
 
     def _anim_error(self) -> float:
+        """
+        All LEDs red, pulsing. Mirrors ESPHome "Error" effect.
+        """      
         factor = self._pulse_step(10)
         for i in range(LED_COUNT):
             self._set(i, _scale(RED, factor))
@@ -345,10 +374,15 @@ class LEDRing:
         return 0.01
 
     def _anim_timer_ring(self, color: RGB, muted: bool) -> float:
+        """
+        All LEDs pulse with ring colour; red at all 4 mic positions if muted.
+        Mirrors ESPHome "Timer Ring" effect.
+        """      
         factor = self._pulse_step(10)
         for i in range(LED_COUNT):
             self._set(i, _scale(color, factor))
         if muted:
+            # 4 mic positions: LEDs 0, 3, 6, 9
             self._set(0, _scale(RED, factor))
             self._set(3, _scale(RED, factor))
             self._set(6, _scale(RED, factor))
@@ -360,10 +394,16 @@ class LEDRing:
         self, color: RGB, muted: bool,
         seconds_left: int, total_seconds: int,
     ) -> float:
+        """
+        Arc of LEDs proportional to remaining time.
+        Mirrors ESPHome "Timer Tick" effect exactly, including the
+        brightness-dip on the sweep marker LED.
+        """      
         total = max(total_seconds, 1)
         timer_ratio = LED_COUNT * seconds_left / total
         last_led_on = max(0, math.ceil(timer_ratio) - 1)
 
+        # Index sweeps anticlockwise (matches ESPHome anticlockwise decrement)
         for i in range(LED_COUNT):
             brightness_dip = (
                 0.9 if (i == self._index % LED_COUNT and i != last_led_on) else 1.0
@@ -375,6 +415,7 @@ class LEDRing:
                 self._set(i, BLACK)
 
         if muted:
+            # 4 mic positions: LEDs 0, 3, 6, 9
             self._set(11, BLACK); self._set(0, RED);  self._set(1, BLACK)
             self._set(2,  BLACK); self._set(3, RED);  self._set(4, BLACK)
             self._set(5,  BLACK); self._set(6, RED);  self._set(7, BLACK)
@@ -401,26 +442,37 @@ class LEDRing:
 
             if anim == self.ANIM_OFF:
                 sleep = self._anim_off()
+              
             elif anim == self.ANIM_TWINKLE:
                 sleep = self._anim_twinkle(RED)
+              
             elif anim == self.ANIM_TWINKLE_BLUE:
                 sleep = self._anim_twinkle(color)
+              
             elif anim == self.ANIM_WAIT_CMD:
                 sleep = self._anim_spin(color, interval=0.1, reverse=False)
+              
             elif anim == self.ANIM_LISTENING:
                 sleep = self._anim_spin(color, interval=0.05, reverse=False)
+              
             elif anim == self.ANIM_THINKING:
                 sleep = self._anim_thinking(color)
+              
             elif anim == self.ANIM_REPLYING:
                 sleep = self._anim_spin(color, interval=0.05, reverse=True)
+              
             elif anim == self.ANIM_MUTED:
                 sleep = self._anim_muted(color, muted=True)
+              
             elif anim == self.ANIM_ERROR:
                 sleep = self._anim_error()
+              
             elif anim == self.ANIM_TIMER_RING:
                 sleep = self._anim_timer_ring(color, muted)
+              
             elif anim == self.ANIM_TIMER_TICK:
                 sleep = self._anim_timer_tick(color, muted, t_left, t_total)
+              
             else:
                 sleep = self._anim_off()
 
@@ -539,6 +591,7 @@ class ButtonHandler:
         if assist == AssistState.TIMER_RINGING:
             self._send("stop_timer_ringing")
         elif assist in (AssistState.WAKE_WORD, AssistState.LISTENING, AssistState.THINKING):
+            # stop_pipeline aborts the voice pipeline at any of these phases
             self._send("stop_pipeline")
         elif assist == AssistState.SPEAKING:
             self._send("stop_speaking")
@@ -553,6 +606,12 @@ class ButtonHandler:
 # ===========================================================================
 
 class LVAClient:
+    """
+    Maintains a persistent WebSocket connection to the LVA peripheral API.
+
+    - Receives events and updates SharedState + LEDRing.
+    - Drains command_queue and sends commands.
+    """  
 
     def __init__(
         self,
@@ -595,6 +654,7 @@ class LVAClient:
             )
             for task in pending:
                 task.cancel()
+            # Re-raise the first exception so run_forever() can handle it
             for task in done:
                 if not task.cancelled() and task.exception():
                     raise task.exception()
@@ -614,6 +674,7 @@ class LVAClient:
                 await ws.send(json.dumps({"command": command}))
             except Exception as exc:  # pylint: disable=broad-except
                 _LOGGER.warning("Failed to send command %s: %s", command, exc)
+                # Put it back so it's not silently dropped
                 self._queue.put_nowait(command)
                 raise
 
@@ -623,12 +684,14 @@ class LVAClient:
 
         _LOGGER.debug("Event: %s  data=%s", event, data)
 
+        # --- Snapshot (sent on connect) ------------------------------------
         if event == "snapshot":
             self._state.update(
                 muted=data.get("muted", False),
                 volume=data.get("volume", 1.0),
                 ha_connected=data.get("ha_connected", False),
             )
+        # --- Voice pipeline events -----------------------------------------
         elif event == "wake_word_detected":
             self._state.update(assist_state=AssistState.WAKE_WORD)
         elif event == "listening":
@@ -651,6 +714,8 @@ class LVAClient:
                 )
             else:
                 self._state.update(assist_state=AssistState.ERROR)
+
+        # --- Timer events --------------------------------------------------      
         elif event == "timer_ticking":
             self._state.update(
                 assist_state=AssistState.TIMER_TICKING,
@@ -668,6 +733,8 @@ class LVAClient:
                 timer_total_seconds=data.get("total_seconds", 0),
                 timer_seconds_left=data.get("seconds_left", 0),
             )
+          
+        # --- Media / volume events -----------------------------------------          
         elif event == "media_player_playing":
             self._state.update(assist_state=AssistState.MEDIA_PLAYING)
         elif event == "volume_changed":
@@ -682,6 +749,7 @@ class LVAClient:
             elif status == "getting_started":
                 _LOGGER.info("LVA starting up, waiting for HA …")
 
+        # --- Recompute LED animation after every event ---------------------
         snap = self._state.snapshot
         anim = state_to_animation(
             snap["assist_state"], snap["ha_connected"], snap["muted"]
@@ -702,10 +770,14 @@ async def async_main(host: str, port: int) -> None:
     buttons = ButtonHandler(state, loop, command_queue)
     client  = LVAClient(host, port, state, leds, command_queue)
 
+    # Start hardware
     leds.start()
     buttons.setup()
+
+    # Start with "not ready" animation
     leds.set_animation(LEDRing.ANIM_TWINKLE)
 
+    # Graceful shutdown on SIGINT / SIGTERM
     def _shutdown(signum, frame) -> None:
         _LOGGER.info("Shutdown requested")
         leds.stop()
