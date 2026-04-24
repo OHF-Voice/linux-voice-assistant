@@ -1,7 +1,8 @@
 import logging
 from abc import abstractmethod
 from collections.abc import Iterable
-from typing import Callable, List, Optional, Union
+from typing import TYPE_CHECKING, Callable, List, Optional, Union
+import logging
 
 # pylint: disable=no-name-in-module
 from aioesphomeapi.api_pb2 import (  # type: ignore[attr-defined]
@@ -33,6 +34,8 @@ from .api_server import APIServer
 from .mpv_player import MpvMediaPlayer
 from .util import call_all
 
+if TYPE_CHECKING:
+    from .sendspin_bridge import SendspinBridge
 SUPPORTED_MEDIA_PLAYER_FEATURES = (
     MediaPlayerEntityFeature.PLAY
     | MediaPlayerEntityFeature.PAUSE
@@ -79,9 +82,40 @@ class MediaPlayerEntity(ESPHomeEntity):
         self.previous_volume = 1.0
         self.music_player = music_player
         self.announce_player = announce_player
+        self.sendspin_bridge: Optional["SendspinBridge"] = None
         self._on_volume_changed = on_volume_changed
-        self.apply_volume_from_state(initial_volume)
+        self.apply_volume_from_state(initial_volume)         
         self._log = logging.getLogger(f"{self.__class__.__name__}[{self.key}]")
+
+    def set_sendspin_bridge(self, bridge: "SendspinBridge") -> None:
+        """Set the SendSpin bridge for coordinated playback."""
+        self.sendspin_bridge = bridge
+        # Register callback so SendSpin can notify us when it starts
+        bridge.set_on_sendspin_start(self._on_sendspin_start)
+
+    def _on_sendspin_start(self) -> None:
+        """Called when SendSpin starts playing - pause HA music and report paused."""
+        if self.music_player.is_playing:
+            self.music_player.pause()
+        # Report PAUSED to HA since HA's music is paused (SendSpin is playing)
+        self.server.send_messages([self._update_state(MediaPlayerState.PAUSED)])
+
+    def _stop_sendspin_if_playing(self) -> None:
+        """Stop SendSpin playback if it's active."""
+        if self.sendspin_bridge and self.sendspin_bridge.is_playing:
+            self.sendspin_bridge.stop()
+
+    def _pause_sendspin_if_playing(self) -> bool:
+        """Pause SendSpin playback if it's active. Returns True if paused."""
+        if self.sendspin_bridge and self.sendspin_bridge.is_playing:
+            self.sendspin_bridge.pause()
+            return True
+        return False
+
+    def _resume_sendspin(self) -> None:
+        """Resume SendSpin playback if it was paused."""
+        if self.sendspin_bridge:
+            self.sendspin_bridge.resume()
 
     def play(
         self,
@@ -89,25 +123,55 @@ class MediaPlayerEntity(ESPHomeEntity):
         announcement: bool = False,
         done_callback: Optional[Callable[[], None]] = None,
     ) -> Iterable[message.Message]:
+        sendspin_was_playing = False
+
+        if announcement:
+            # For announcements, pause SendSpin (don't stop it) so it can resume after
+            sendspin_was_playing = self._pause_sendspin_if_playing()
+        else:
+            # For music playback, stop SendSpin completely (HA is taking over)
+            self._stop_sendspin_if_playing()
+
         if announcement:
             self._log.debug("PLAY: announcement true")
             if self.music_player.is_playing:
-                # Announce, resume music
+                # HA music playing: pause it, play announcement, then resume both
                 self.music_player.pause()
                 self.announce_player.play(
                     url,
-                    done_callback=lambda: call_all(self.music_player.resume, done_callback),
+                    done_callback=lambda: call_all(
+                        self.music_player.resume,
+                        self._resume_sendspin if sendspin_was_playing else lambda: None,
+                        done_callback,
+                    ),
                 )
-            else:
-                # Announce, idle
+            elif sendspin_was_playing:
+                # SendSpin was playing: play announcement, then resume SendSpin
                 self.announce_player.play(
                     url,
                     done_callback=lambda: call_all(
+                        self._resume_sendspin,
+                        lambda: self._safe_send_state(MediaPlayerState.PAUSED),
+                        done_callback,
+                    ),
+                    done_callback=lambda: call_all(self.music_player.resume, done_callback),
+                )
+            else:
+                # Nothing was playing, just announce then go idle
+                self.announce_player.play(
+                    url,
+                    done_callback=lambda: call_all(
+                        lambda: self._safe_send_state(MediaPlayerState.IDLE),
                         self.server.send_messages([self._update_state(MediaPlayerState.IDLE)]),
                         done_callback,
                     ),
                 )
         else:
+            # Music playback
+            self.music_player.play(
+                url,
+                done_callback=lambda: call_all(
+                    lambda: self._safe_send_state(MediaPlayerState.IDLE),
             self._log.debug("PLAY: announcement false")
             # Music
             self.music_player.play(
@@ -176,6 +240,13 @@ class MediaPlayerEntity(ESPHomeEntity):
 
             elif msg.has_volume:
                 self._log.debug("Message has volume: %.2f", msg.volume)
+                volume = int(msg.volume * 100)
+                self.music_player.set_volume(volume)
+                self.announce_player.set_volume(volume)
+                # Sync volume with SendSpin bridge
+                if self.sendspin_bridge:
+                    self.sendspin_bridge.set_volume(volume, self.muted)
+                self.volume = msg.volume
                 self._apply_volume(msg.volume, persist=True)
                 if hasattr(self.server, "state") and getattr(self.server, "state", None) is not None:
                     self._log.debug("Persisting volume to preferences")
@@ -204,6 +275,13 @@ class MediaPlayerEntity(ESPHomeEntity):
         self._log.debug("SET NEW STATE: %s => %s", self.state.name, new_state.name)
         self.state = new_state
         return self._get_state_message()
+
+    def _safe_send_state(self, state: MediaPlayerState) -> None:
+        """Send state update, ignoring connection errors."""
+        try:
+            self.server.send_messages([self._update_state(state)])
+        except Exception:
+            pass  # Connection may be closed or in error state
 
     def _get_state_message(self) -> MediaPlayerStateResponse:
         return MediaPlayerStateResponse(
