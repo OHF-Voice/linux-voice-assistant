@@ -162,12 +162,23 @@ async def main() -> None:
         help="Add this to enable debug logging",
     )
     parser.add_argument(
+        "--colored-debug",
+        action="store_true",
+        help="Add this to enable colored debug logging",
+    )
+    parser.add_argument(
         "--output-only",
         action="store_true",
         help="Enable output only mode",
     )
     args = parser.parse_args()
 
+    if args.colored_debug:
+        args.debug = True
+        _setup_logging(args)
+    if args.debug:
+        logging.basicConfig(level=logging.DEBUG if args.debug else logging.INFO)
+        _LOGGER.debug(args)
     if args.list_input_devices:
         print("Audio Input devices:")
         print("=" * 13)
@@ -185,9 +196,6 @@ async def main() -> None:
         for speaker in player.audio_device_list:  # type: ignore
             print(speaker["name"] + ":", speaker["description"])
         return
-
-    logging.basicConfig(level=logging.DEBUG if args.debug else logging.INFO)
-    _LOGGER.debug(args)
 
     # Resolve network interface for mac-address detection
     if not args.network_interface:
@@ -403,6 +411,39 @@ async def main() -> None:
         process_audio_thread.join()
 
     _LOGGER.debug("Server stopped")
+
+
+# -----------------------------------------------------------------------------
+def _setup_logging(args: argparse.Namespace) -> None:
+    COLORS = {
+        logging.DEBUG: "\033[36m",
+        logging.INFO: "\033[32m",
+        logging.WARNING: "\033[33m",
+        logging.ERROR: "\033[31m",
+        logging.CRITICAL: "\033[35m",
+    }
+    RESET = "\033[0m"
+
+    original_format = logging.Formatter.format
+
+    def colored_format(self, record: logging.LogRecord) -> str:
+        color = COLORS.get(record.levelno, RESET)
+        return f"{color}{original_format(self, record)}{RESET}"
+
+    logging.Formatter.format = colored_format  # type: ignore
+
+    handler = logging.StreamHandler()
+    handler.setFormatter(
+        logging.Formatter(
+            fmt="%(asctime)s %(levelname)s %(name)s: %(message)s",
+            datefmt="%H:%M:%S",
+        )
+    )
+    logging.basicConfig(
+        level=logging.DEBUG if args.debug else logging.INFO,
+        handlers=[handler],
+    )
+    _LOGGER.debug(args)
 
 
 # -----------------------------------------------------------------------------
