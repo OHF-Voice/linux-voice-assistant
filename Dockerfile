@@ -41,7 +41,6 @@ RUN apt-get update && \
     iproute2 \
     vim \
     procps  \
-    wireplumber \
     && \
 apt-get clean
 
