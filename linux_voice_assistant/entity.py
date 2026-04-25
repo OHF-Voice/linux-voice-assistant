@@ -97,7 +97,7 @@ class MediaPlayerEntity(ESPHomeEntity):
     async def pw_vol(self):
         # a bit verbose but otherwise robust and awk/grep/regex-less
         # no get-sink-volume does not support -f json, otherwise i would have DONE that
-        def_sink = json.loads(await get_stdout("pactl", "get-default-sink"))
+        def_sink = await get_stdout("pactl", "get-default-sink")
         sinks = json.loads(await get_stdout("pactl", "-f", "json", "list", "sinks"))
 
         def_sink_info = None
