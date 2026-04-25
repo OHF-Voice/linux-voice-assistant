@@ -151,7 +151,7 @@ class MediaPlayerEntity(ESPHomeEntity):
                         self.server.send_messages([self._get_state_message()])
 
             except Exception as e:
-                self._log.error("Error in volume monitor loop: %s", e)
+                self._log.error("Error in volume monitor loop: %s", e, e.__traceback__)
                 await asyncio.sleep(1)  # Avoid tight error loop
 
     def set_volume(self, volume: float) -> None:
