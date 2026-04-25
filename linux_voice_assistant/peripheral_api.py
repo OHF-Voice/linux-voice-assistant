@@ -63,6 +63,7 @@ import json
 import logging
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Dict, Optional, Set
+
 from aioesphomeapi.api_pb2 import MediaPlayerStateResponse  # type: ignore[attr-defined]  # pylint: disable=no-name-in-module
 from aioesphomeapi.model import MediaPlayerState  # type: ignore[import]
 
