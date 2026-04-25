@@ -5,6 +5,7 @@ import hashlib
 import logging
 import posixpath
 import shutil
+import threading
 import time
 from collections.abc import Iterable
 from typing import Dict, List, Optional, Set, Union
@@ -19,6 +20,8 @@ from aioesphomeapi.api_pb2 import (  # type: ignore[attr-defined]
     ListEntitiesDoneResponse,
     ListEntitiesRequest,
     MediaPlayerCommandRequest,
+    NumberCommandRequest,
+    SelectCommandRequest,
     SubscribeHomeAssistantStatesRequest,
     SwitchCommandRequest,
     VoiceAssistantAnnounceFinished,
@@ -44,7 +47,15 @@ from pymicro_wakeword import MicroWakeWord
 from pyopen_wakeword import OpenWakeWord
 
 from .api_server import APIServer
-from .entity import MediaPlayerEntity, MuteSwitchEntity, ThinkingSoundEntity
+from .entity import (
+    MediaPlayerEntity,
+    MicSettingEntity,
+    MuteSwitchEntity,
+    StopWordSensitivityNumberEntity,
+    ThinkingSoundEntity,
+    WakeWord1SensitivityNumberEntity,
+    WakeWord2SensitivityNumberEntity,
+)
 from .models import AvailableWakeWord, ServerState, WakeWordType
 from .util import call_all
 
@@ -62,7 +73,18 @@ class VoiceSatelliteProtocol(APIServer):
         self.state.satellite = self
         self.state.connected = False
 
+        # Report capabilities appropriately
+        if state.output_only:
+            _LOGGER.debug("Output only features")
+            self.supported_features = VoiceAssistantFeature.API_AUDIO | VoiceAssistantFeature.ANNOUNCE
+        else:
+            _LOGGER.debug("Voice assistant features")
+            self.supported_features = (
+                VoiceAssistantFeature.VOICE_ASSISTANT | VoiceAssistantFeature.API_AUDIO | VoiceAssistantFeature.ANNOUNCE | VoiceAssistantFeature.START_CONVERSATION | VoiceAssistantFeature.TIMERS
+            )
+
         existing_media_players = [entity for entity in self.state.entities if isinstance(entity, MediaPlayerEntity)]
+
         if existing_media_players:
             # Keep the first instance and remove any extras.
             self.state.media_player_entity = existing_media_players[0]
@@ -147,6 +169,151 @@ class VoiceSatelliteProtocol(APIServer):
         thinking_sound_switch.update_set_thinking_sound_enabled(self._set_thinking_sound_enabled)
         thinking_sound_switch.sync_with_state()
 
+        # Add/update Wake Word 1 sensitivity number entity
+        sensitivity_1_entity = self.state.sensitivity_1_number_entity
+        if sensitivity_1_entity is None:
+            sensitivity_1_entity = WakeWord1SensitivityNumberEntity(
+                server=self,
+                key=len(state.entities),
+                name="Wake Word 1 Sensitivity",
+                object_id="wake_word_1_sensitivity",
+                get_sensitivity=lambda: self.state.wake_word_1_threshold,
+                set_sensitivity=self._set_sensitivity_1,
+                initial_value=self.state.wake_word_1_threshold,
+            )
+            self.state.entities.append(sensitivity_1_entity)
+            self.state.sensitivity_1_number_entity = sensitivity_1_entity
+        elif sensitivity_1_entity not in self.state.entities:
+            self.state.entities.append(sensitivity_1_entity)
+
+        sensitivity_1_entity.server = self
+        sensitivity_1_entity.update_get_sensitivity(lambda: self.state.wake_word_1_threshold)
+        sensitivity_1_entity.update_set_sensitivity(self._set_sensitivity_1)
+
+        sensitivity_1_entity.sync_with_state()
+        _LOGGER.debug("INIT: Wake Word 1 entity initialized with value %.3f", sensitivity_1_entity.value)
+
+        # Add/update Wake Word 2 sensitivity number entity
+        sensitivity_2_entity = self.state.sensitivity_2_number_entity
+        if sensitivity_2_entity is None:
+            sensitivity_2_entity = WakeWord2SensitivityNumberEntity(
+                server=self,
+                key=len(state.entities),
+                name="Wake Word 2 Sensitivity",
+                object_id="wake_word_2_sensitivity",
+                get_sensitivity=lambda: self.state.wake_word_2_threshold,
+                set_sensitivity=self._set_sensitivity_2,
+                initial_value=self.state.wake_word_2_threshold,
+            )
+            self.state.entities.append(sensitivity_2_entity)
+            self.state.sensitivity_2_number_entity = sensitivity_2_entity
+        elif sensitivity_2_entity not in self.state.entities:
+            self.state.entities.append(sensitivity_2_entity)
+
+        sensitivity_2_entity.server = self
+        sensitivity_2_entity.update_get_sensitivity(lambda: self.state.wake_word_2_threshold)
+        sensitivity_2_entity.update_set_sensitivity(self._set_sensitivity_2)
+
+        sensitivity_2_entity.sync_with_state()
+
+        # Add/update Stop Word sensitivity number entity
+        stop_sensitivity_entity = self.state.stop_sensitivity_number_entity
+        if stop_sensitivity_entity is None:
+            stop_sensitivity_entity = StopWordSensitivityNumberEntity(
+                server=self,
+                key=len(state.entities),
+                name="Stop Word Sensitivity",
+                object_id="stop_word_sensitivity",
+                get_sensitivity=lambda: self.state.stop_word_threshold,
+                set_sensitivity=self._set_stop_sensitivity,
+                initial_value=self.state.stop_word_threshold,
+            )
+            self.state.entities.append(stop_sensitivity_entity)
+            self.state.stop_sensitivity_number_entity = stop_sensitivity_entity
+        elif stop_sensitivity_entity not in self.state.entities:
+            self.state.entities.append(stop_sensitivity_entity)
+
+        stop_sensitivity_entity.server = self
+        stop_sensitivity_entity.update_get_sensitivity(lambda: self.state.stop_word_threshold)
+        stop_sensitivity_entity.update_set_sensitivity(self._set_stop_sensitivity)
+
+        stop_sensitivity_entity.sync_with_state()
+
+        # Mic Gain
+        if self.state.mic_gain_entity is None:
+            self.state.mic_gain_entity = MicSettingEntity(
+                server=self,
+                key=len(self.state.entities),
+                name="Mic Auto Gain",
+                object_id="mic_gain",
+                min_value=0.0,
+                max_value=31.0,
+                get_value=lambda: float(self.state.mic_auto_gain),
+                set_value=lambda val: self.state.persist_mic_gain(float(val)),
+                icon="mdi:microphone-plus",
+            )
+            self.state.entities.append(self.state.mic_gain_entity)
+        elif self.state.mic_gain_entity not in self.state.entities:
+            self.state.entities.append(self.state.mic_gain_entity)
+
+        self.state.mic_gain_entity.server = self
+        self.state.mic_gain_entity.update_get_value(lambda: float(self.state.mic_auto_gain))
+        self.state.mic_gain_entity.update_set_value(lambda val: self.state.persist_mic_gain(float(val)))  # type: ignore[arg-type]
+        self.state.mic_gain_entity.sync_with_state()
+
+        # Mic Noise Suppression
+        _NOISE_OPTIONS = ["Off", "Low", "Medium", "High", "Max"]
+        _NOISE_TO_INT = {label: i for i, label in enumerate(_NOISE_OPTIONS)}
+
+        def _get_noise_label() -> str:
+            return _NOISE_OPTIONS[max(0, min(4, self.state.mic_noise_suppression))]
+
+        def _set_noise_label(label: Union[float, str]) -> None:
+            self.state.persist_mic_noise(float(_NOISE_TO_INT.get(str(label), 0)))
+
+        if self.state.mic_noise_suppression_entity is None:
+            self.state.mic_noise_suppression_entity = MicSettingEntity(
+                server=self,
+                key=len(self.state.entities),
+                name="Mic Noise Suppression",
+                object_id="mic_noise",
+                options=_NOISE_OPTIONS,
+                get_value=_get_noise_label,
+                set_value=_set_noise_label,
+                icon="mdi:waveform",
+            )
+            self.state.entities.append(self.state.mic_noise_suppression_entity)
+        elif self.state.mic_noise_suppression_entity not in self.state.entities:
+            self.state.entities.append(self.state.mic_noise_suppression_entity)
+
+        self.state.mic_noise_suppression_entity.server = self
+        self.state.mic_noise_suppression_entity.update_get_value(_get_noise_label)
+        self.state.mic_noise_suppression_entity.update_set_value(_set_noise_label)
+        self.state.mic_noise_suppression_entity.sync_with_state()
+
+        # Mic Volume
+        if self.state.mic_volume_entity is None:
+            self.state.mic_volume_entity = MicSettingEntity(
+                server=self,
+                key=len(self.state.entities),
+                name="Mic Volume",
+                object_id="mic_volume",
+                min_value=1.0,
+                max_value=100.0,
+                get_value=lambda: float(self.state.mic_volume),
+                set_value=lambda val: self.state.persist_mic_volume(float(val)),
+                icon="mdi:microphone-settings",
+            )
+            self.state.entities.append(self.state.mic_volume_entity)
+        elif self.state.mic_volume_entity not in self.state.entities:
+            self.state.entities.append(self.state.mic_volume_entity)
+
+        self.state.mic_volume_entity.server = self
+        self.state.mic_volume_entity.update_get_value(lambda: float(self.state.mic_volume))
+        self.state.mic_volume_entity.update_set_value(lambda val: self.state.persist_mic_volume(float(val)))
+
+        # ---- Instance variables ----
+
         self._is_streaming_audio = False
         self._tts_url: Optional[str] = None
         self._tts_played = False
@@ -168,6 +335,33 @@ class VoiceSatelliteProtocol(APIServer):
             _LOGGER.debug("Thinking sound disabled")
             pass
         self.state.save_preferences()
+
+    def _set_sensitivity_1(self, new_value: float) -> None:
+        self.state.wake_word_1_threshold = float(new_value)
+        self.state.preferences.wake_word_1_sensitivity = float(new_value)
+        self.state.save_preferences()
+        _LOGGER.debug("Wake Word 1 Sensitivity value set to: %s", new_value)
+        # Sync entity state
+        if self.state.sensitivity_1_number_entity is not None:
+            self.state.sensitivity_1_number_entity.sync_with_state()
+
+    def _set_sensitivity_2(self, new_value: float) -> None:
+        self.state.wake_word_2_threshold = float(new_value)
+        self.state.preferences.wake_word_2_sensitivity = float(new_value)
+        self.state.save_preferences()
+        _LOGGER.debug("Wake Word 2 Sensitivity value set to: %s", new_value)
+        # Sync entity state
+        if self.state.sensitivity_2_number_entity is not None:
+            self.state.sensitivity_2_number_entity.sync_with_state()
+
+    def _set_stop_sensitivity(self, new_value: float) -> None:
+        self.state.stop_word_threshold = float(new_value)
+        self.state.preferences.stop_word_sensitivity = float(new_value)
+        self.state.save_preferences()
+        _LOGGER.debug("Stop Word Sensitivity value set to: %s", new_value)
+        # Sync entity state
+        if self.state.stop_sensitivity_number_entity is not None:
+            self.state.stop_sensitivity_number_entity.sync_with_state()
 
     def _set_muted(self, new_state: bool) -> None:
         self.state.muted = bool(new_state)
@@ -286,18 +480,11 @@ class VoiceSatelliteProtocol(APIServer):
                 mac_address=self.state.mac_address,
                 manufacturer="Open Home Foundation",
                 model="Linux Voice Assistant",
-                voice_assistant_feature_flags=(
-                    VoiceAssistantFeature.VOICE_ASSISTANT | VoiceAssistantFeature.API_AUDIO | VoiceAssistantFeature.ANNOUNCE | VoiceAssistantFeature.START_CONVERSATION | VoiceAssistantFeature.TIMERS
-                ),
+                voice_assistant_feature_flags=self.supported_features,
             )
         elif isinstance(
             msg,
-            (
-                ListEntitiesRequest,
-                SubscribeHomeAssistantStatesRequest,
-                MediaPlayerCommandRequest,
-                SwitchCommandRequest,
-            ),
+            (ListEntitiesRequest, SubscribeHomeAssistantStatesRequest, MediaPlayerCommandRequest, SwitchCommandRequest, NumberCommandRequest, SelectCommandRequest),
         ):
             for entity in self.state.entities:
                 yield from entity.handle_message(msg)
@@ -305,6 +492,9 @@ class VoiceSatelliteProtocol(APIServer):
             if isinstance(msg, ListEntitiesRequest):
                 yield ListEntitiesDoneResponse()
         elif isinstance(msg, VoiceAssistantConfigurationRequest):
+            _LOGGER.debug("✅ Received VoiceAssistantConfigurationRequest from Home Assistant")
+            _LOGGER.debug("   -> Request contains %d external wake words", len(msg.external_wake_words))
+
             available_wake_words = [
                 VoiceAssistantWakeWord(
                     id=ww.id,
@@ -314,10 +504,20 @@ class VoiceSatelliteProtocol(APIServer):
                 for ww in self.state.available_wake_words.values()
             ]
 
+            # Log available internal wake words first
+            internal_ww_count = len(self.state.available_wake_words)
+            _LOGGER.debug("   -> Found %d internal available wake words", internal_ww_count)
+            for ww in available_wake_words:
+                _LOGGER.debug("      - %s: '%s' (langs: %s)", ww.id, ww.wake_word, ww.trained_languages)
+
             for eww in msg.external_wake_words:
+                _LOGGER.debug("   -> Processing external wake word: id=%s, word='%s', type=%s", eww.id, eww.wake_word, eww.model_type)
+
                 if eww.model_type != "micro":
+                    _LOGGER.debug("      → Skipping: not micro model type")
                     continue
 
+                _LOGGER.debug("      → Adding to available wake words")
                 available_wake_words.append(
                     VoiceAssistantWakeWord(
                         id=eww.id,
@@ -327,47 +527,83 @@ class VoiceSatelliteProtocol(APIServer):
                 )
 
                 self._external_wake_words[eww.id] = eww
+                _LOGGER.debug("      → Stored in external wake words cache")
+
+            active_ww_ids = [ww.id for ww in self.state.wake_words.values() if ww.id in self.state.active_wake_words]
+            _LOGGER.debug("   -> Active wake word IDs: %s", active_ww_ids)
 
             yield VoiceAssistantConfigurationResponse(
                 available_wake_words=available_wake_words,
-                active_wake_words=[ww.id for ww in self.state.wake_words.values() if ww.id in self.state.active_wake_words],
+                active_wake_words=active_ww_ids,
                 max_active_wake_words=2,
             )
-            _LOGGER.info("Connected to Home Assistant")
+
+            _LOGGER.info("✅ Connected to Home Assistant - Configuration handshake completed")
+            _LOGGER.debug("✅ VoiceAssistantConfigurationResponse sent successfully")
         elif isinstance(msg, VoiceAssistantSetConfiguration):
             # Change active wake words
             active_wake_words: Set[str] = set()
+            new_wake_words: List[Optional[str]] = [None, None]
 
+            # Get old positions before modification
+            old_positions: Dict[str, int] = {}
+            for idx, ww_id in enumerate(self.state.preferences.active_wake_words):
+                if ww_id is not None and idx < 2:
+                    old_positions[ww_id] = idx
+
+            # Process new active wake words
             for wake_word_id in msg.active_wake_words:
                 if wake_word_id in self.state.wake_words:
                     # Already active
                     active_wake_words.add(wake_word_id)
-                    continue
-
-                model_info = self.state.available_wake_words.get(wake_word_id)
-                if not model_info:
-                    # Check external wake words (may require download)
-                    external_wake_word = self._external_wake_words.get(wake_word_id)
-                    if not external_wake_word:
-                        continue
-
-                    model_info = self._download_external_wake_word(external_wake_word)
+                else:
+                    model_info = self.state.available_wake_words.get(wake_word_id)
                     if not model_info:
-                        continue
+                        # Check external wake words (may require download)
+                        external_wake_word = self._external_wake_words.get(wake_word_id)
+                        if not external_wake_word:
+                            continue
 
-                    self.state.available_wake_words[wake_word_id] = model_info
+                        model_info = self._download_external_wake_word(external_wake_word)
+                        if not model_info:
+                            continue
 
-                _LOGGER.debug("Loading wake word: %s", model_info.wake_word_path)
-                self.state.wake_words[wake_word_id] = model_info.load()
+                        self.state.available_wake_words[wake_word_id] = model_info
 
-                _LOGGER.info("Wake word set: %s", wake_word_id)
-                active_wake_words.add(wake_word_id)
-                break
+                    _LOGGER.debug("Loading wake word: %s", model_info.wake_word_path)
+                    self.state.wake_words[wake_word_id] = model_info.load()
+
+                    _LOGGER.info("Wake word set: %s", wake_word_id)
+                    active_wake_words.add(wake_word_id)
+
+            # Keep old positions
+            remaining_ww = list(active_wake_words)
+            placed = set()
+
+            # First, place Wake Words in their old positions.
+            for ww_id in remaining_ww:
+                if ww_id in old_positions:
+                    pos = old_positions[ww_id]
+                    if pos < 2:
+                        new_wake_words[pos] = ww_id
+                        placed.add(ww_id)
+
+            # Add remaining wake words to free slots
+            free_slots = [i for i in range(2) if new_wake_words[i] is None]
+            for ww_id in remaining_ww:
+                if ww_id not in placed and free_slots:
+                    pos = free_slots.pop(0)
+                    new_wake_words[pos] = ww_id
+                    placed.add(ww_id)
+
+            # If only one wake word is left and it was at position 1, position 0 remains None
+            # Position 2 automatically stays None if not occupied
 
             self.state.active_wake_words = active_wake_words
             _LOGGER.debug("Active wake words: %s", active_wake_words)
+            _LOGGER.debug("Wake word positions: [0]=%s, [1]=%s", new_wake_words[0], new_wake_words[1])
 
-            self.state.preferences.active_wake_words = list(active_wake_words)
+            self.state.preferences.active_wake_words = new_wake_words
             self.state.save_preferences()
             self.state.wake_words_changed = True
 
@@ -380,11 +616,30 @@ class VoiceSatelliteProtocol(APIServer):
 
     def wakeup(self, wake_word: Union[MicroWakeWord, OpenWakeWord]) -> None:
         if self._timer_finished:
-            # Stop timer instead
+            # Stop the ringing timer, then start a normal wake-up after a short
+            # delay so the transition doesn't feel abrupt.
             self._timer_finished = False
+            self._timer_ring_start = None
+            self.state.active_wake_words.discard(self.state.stop_word.id)
             self.unduck()
             self.state.tts_player.stop()
-            _LOGGER.debug("Stopping timer finished sound")
+            _LOGGER.debug("Stopping timer finished sound; will wake up in 1 s")
+
+            wake_word_phrase = wake_word.wake_word  # type: ignore
+
+            def _delayed_wakeup() -> None:
+                if self.state.muted or self._pipeline_active:
+                    _LOGGER.debug("Delayed wakeup skipped (muted=%s, pipeline_active=%s)", self.state.muted, self._pipeline_active)
+                    return
+                _LOGGER.debug("Delayed wakeup: playing wakeup sound for %s", wake_word_phrase)
+                self._pipeline_active = True
+                self.duck()
+                self.state.tts_player.play(
+                    self.state.wakeup_sound,
+                    done_callback=lambda: self._on_wakeup_sound_finished(wake_word_phrase),
+                )
+
+            threading.Timer(0.1, _delayed_wakeup).start()
             return
 
         if self.state.muted:
@@ -520,6 +775,15 @@ class VoiceSatelliteProtocol(APIServer):
 
         if self.state.mute_switch_entity is not None:
             self.state.mute_switch_entity.sync_with_state()
+
+        if self.state.mic_gain_entity is not None:
+            self.state.mic_gain_entity.sync_with_state()
+
+        if self.state.mic_noise_suppression_entity is not None:
+            self.state.mic_noise_suppression_entity.sync_with_state()
+
+        if self.state.mic_volume_entity is not None:
+            self.state.mic_volume_entity.sync_with_state()
 
         _LOGGER.info("Disconnected from Home Assistant; waiting for reconnection")
 

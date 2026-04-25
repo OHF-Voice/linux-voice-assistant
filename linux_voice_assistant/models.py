@@ -15,8 +15,12 @@ if TYPE_CHECKING:
     from .entity import (
         ESPHomeEntity,
         MediaPlayerEntity,
+        MicSettingEntity,
         MuteSwitchEntity,
+        StopWordSensitivityNumberEntity,
         ThinkingSoundEntity,
+        WakeWord1SensitivityNumberEntity,
+        WakeWord2SensitivityNumberEntity,
     )
     from .mpv_player import MpvMediaPlayer
     from .satellite import VoiceSatelliteProtocol
@@ -36,6 +40,7 @@ class AvailableWakeWord:
     wake_word: str
     trained_languages: List[str]
     wake_word_path: Path
+    probability_cutoff: float = 0.7
 
     def load(self) -> "Union[MicroWakeWord, OpenWakeWord]":
         if self.type == WakeWordType.MICRO_WAKE_WORD:
@@ -56,9 +61,16 @@ class AvailableWakeWord:
 
 @dataclass
 class Preferences:
-    active_wake_words: List[str] = field(default_factory=list)
+    active_wake_words: List[Optional[str]] = field(default_factory=list)
     volume: Optional[float] = None
     thinking_sound: int = 0  # 0 = disabled, 1 = enabled
+    wake_word_1_sensitivity: Optional[float] = None
+    wake_word_2_sensitivity: Optional[float] = None
+    stop_word_sensitivity: Optional[float] = None
+
+    mic_auto_gain: int = 0
+    mic_noise_suppression: int = 0
+    mic_volume: int = 100  # 1–100, default maximum
 
 
 @dataclass
@@ -91,12 +103,28 @@ class ServerState:
     satellite: "Optional[VoiceSatelliteProtocol]" = None
     mute_switch_entity: "Optional[MuteSwitchEntity]" = None
     thinking_sound_entity: "Optional[ThinkingSoundEntity]" = None
+    sensitivity_1_number_entity: "Optional[WakeWord1SensitivityNumberEntity]" = None
+    sensitivity_2_number_entity: "Optional[WakeWord2SensitivityNumberEntity]" = None
+    stop_sensitivity_number_entity: "Optional[StopWordSensitivityNumberEntity]" = None
+    mic_gain_entity: "Optional[MicSettingEntity]" = None
+    mic_noise_suppression_entity: "Optional[MicSettingEntity]" = None
+    mic_volume_entity: "Optional[MicSettingEntity]" = None
     wake_words_changed: bool = False
     refractory_seconds: float = 2.0
     thinking_sound_enabled: bool = False
+    output_only: bool = False
     muted: bool = False
     connected: bool = False
     volume: float = 1.0
+    oww_probability_cutoff: float = 0.7  # Dynamic threshold for OpenWakeWord
+    oww_second_probability_cutoff: float = 0.7  # Dynamic threshold for second OpenWakeWord
+    oww_stop_probability_cutoff: float = 0.5  # Dynamic threshold for Stop word
+    wake_word_1_threshold: float = 0.7
+    wake_word_2_threshold: float = 0.7
+    stop_word_threshold: float = 0.5
+    mic_auto_gain: int = 0
+    mic_noise_suppression: int = 0
+    mic_volume: int = 100  # 1–100, default maximum
     timer_max_ring_seconds: float = 900.0
     volume_controller: str = "mpv"
     audio_output_device: Optional[str] = None
@@ -132,3 +160,34 @@ class ServerState:
         _LOGGER.info("Saving volume %s to %s", clamped_volume, self.preferences_path)
         self.save_preferences()
         _LOGGER.info("Volume saved successfully")
+
+    def persist_mic_gain(self, gain: float) -> None:
+        """Persist the microphone auto gain value."""
+        gain_int = int(gain)
+        if self.mic_auto_gain == gain_int and self.preferences.mic_auto_gain == gain_int:
+            return
+
+        self.mic_auto_gain = gain_int
+        self.preferences.mic_auto_gain = gain_int
+        self.save_preferences()
+
+    def persist_mic_noise(self, noise: float) -> None:
+        """Persist the microphone noise suppression value."""
+        noise_int = int(noise)
+        if self.mic_noise_suppression == noise_int and self.preferences.mic_noise_suppression == noise_int:
+            return
+
+        self.mic_noise_suppression = noise_int
+        self.preferences.mic_noise_suppression = noise_int
+        self.save_preferences()
+
+    def persist_mic_volume(self, volume: float) -> None:
+        """Persist the microphone input volume (0–100)."""
+        volume_int = max(1, min(100, int(round(volume))))
+        if self.mic_volume == volume_int and self.preferences.mic_volume == volume_int:
+            return
+
+        self.mic_volume = volume_int
+        self.preferences.mic_volume = volume_int
+        _LOGGER.info("Saving mic_volume %s to %s", volume_int, self.preferences_path)
+        self.save_preferences()

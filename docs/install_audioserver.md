@@ -1,6 +1,6 @@
 # Install Audioservice
 
-For Linux-Voice-Assistant a Pulseaudio connection to the soundcard is required. Since PulseAudio is not installed by default on Ubuntu 22.04 we also support Pipewire with pipewire-pulse. You can choose either variant A or B from this installation documentation.
+For Linux-Voice-Assistant a Pulseaudio connection to the soundcard is required. Since PulseAudio is no longer the default audio-server we recommend to use and install pipewire (pipewire-pulse) by default. We also support PulseAudio. You can choose either variant A or B from this installation documentation.
 
 **How does the communication work?**
 
@@ -15,7 +15,7 @@ PipeWire is a multimedia server that provides low-latency audio/video handling. 
 sudo apt update
 
 # Install PipeWire and related packages
-sudo apt install -y pipewire wireplumber pipewire-audio-client-libraries libspa-0.2-bluetooth pipewire-audio pipewire-pulse dfu-util
+sudo apt install -y pipewire wireplumber pipewire-audio-client-libraries libspa-0.2-bluetooth pipewire-audio pipewire-pulse dfu-util pulseaudio-utils
 ```
 
 Link the PipeWire configuration for ALSA applications:
@@ -24,7 +24,7 @@ Link the PipeWire configuration for ALSA applications:
 sudo ln -s /usr/share/alsa/alsa.conf.d/50-pipewire.conf /etc/alsa/conf.d/
 ```
 
-Allow services to run without an active user session (optional, for headless setups):
+Allow services to run without an active user session. This step is **required on headless systems** (e.g. Raspberry Pi OS Lite), since PipeWire runs under the user's systemd session and only starts while someone is logged in. Without it, LVA will silently stop working after you close your SSH session.
 
 ```sh
 sudo mkdir -p /var/lib/systemd/linger
@@ -33,370 +33,42 @@ sudo touch /var/lib/systemd/linger/$USER
 
 💡 **Note:** Replace `$USER` with your actual username that you want to run the voice assistant.
 
+You can verify it worked with:
+
+```sh
+loginctl show-user $USER | grep Linger
+# Expected: Linger=yes
+```
+
 ### Configure PipeWire (optional):
 
 💡 **Note:** If you are not on a desktop system, which is already configured for PipeWire, you can configure it manually.
 
-Create the PipeWire configuration directory:
+💡 **Note:** LVA records audio at 16kHz. By default PipeWire may run at a different sample rate (typically 48kHz) and will resample automatically. Setting `default.clock.rate = 16000` avoids this resampling overhead, which is particularly beneficial on low-power hardware such as a Raspberry Pi.
 
+LVA is meant to be configured system wide. So only that method has been documented.
+
+#### System-wide Configuration
 ```sh
-sudo mkdir -p "/etc/pipewire"
+sudo mkdir -p /etc/pipewire/pipewire.conf.d
+sudo vi /etc/pipewire/pipewire.conf.d/linux-voice-assistant.conf
 ```
 
-Create the file `/etc/pipewire/pipewire.conf` with the following content (minimal configuration for voice assistant use):
-
-```ini
-# Daemon config file for PipeWire version "1.2.7" #
-#
-# Copy and edit this file in /etc/pipewire for system-wide changes
-# or in ~/.config/pipewire for local changes.
-#
-# It is also possible to place a file with an updated section in
-# /etc/pipewire/pipewire.conf.d/ for system-wide changes or in
-# ~/.config/pipewire/pipewire.conf.d/ for local changes.
-#
-
+Add the following content:
+```
 context.properties = {
-    ## Configure properties in the system.
-    #library.name.system                   = support/libspa-support
-    #context.data-loop.library.name.system = support/libspa-support
-    #support.dbus                          = true
-    #link.max-buffers                      = 64
-    link.max-buffers                       = 16                       # version < 3 clients can't handle more
-    mem.warn-mlock                        = true
-    #mem.allow-mlock                       = true
-    #mem.mlock-all                         = false
-    #clock.power-of-two-quantum            = true
-    log.level                             = 3
-    #cpu.zero.denormals                    = false
-
-    #loop.rt-prio = -1            # -1 = use module-rt prio, 0 disable rt
-    #loop.class = data.rt
-    #thread.affinity = [ 0 1 ]    # optional array of CPUs
-    context.num-data-loops = 1   # -1 = num-cpus, 0 = no data loops
-    #
-    #context.data-loops = [
-    #    {   loop.rt-prio = -1
-    #        loop.class = [ data.rt audio.rt ]
-    #        #library.name.system = support/libspa-support
-    #        thread.name = data-loop.0
-    #        #thread.affinity = [ 0 1 ]    # optional array of CPUs
-    #    }
-    #]
-
-    core.daemon = true              # listening for socket connections
-    core.name   = pipewire-0        # core name and socket name
-
-    ## Properties for the DSP configuration.
-    default.clock.rate          = 16000
-    #default.clock.allowed-rates = [ 48000 ]
-    #default.clock.quantum       = 1024
-    #default.clock.min-quantum   = 32
-    #default.clock.max-quantum   = 2048
-    #default.clock.quantum-limit = 8192
-    #default.clock.quantum-floor = 4
-    #default.video.width         = 640
-    #default.video.height        = 480
-    #default.video.rate.num      = 25
-    #default.video.rate.denom    = 1
-    #
-    #settings.check-quantum      = false
-    #settings.check-rate         = false
-
-    # keys checked below to disable module loading
-    module.x11.bell = true
-    # enables autoloading of access module, when disabled an alternative
-    # access module needs to be loaded.
-    module.access = true
-    # enables autoloading of module-jackdbus-detect
-    module.jackdbus-detect = true
+    default.clock.rate = 16000
 }
-
-context.properties.rules = [
-    {   matches = [ { cpu.vm.name = !null } ]
-        actions = {
-            update-props = {
-                # These overrides are only applied when running in a vm.
-                default.clock.min-quantum = 1024
-            }
-        }
-    }
-]
-
-context.spa-libs = {
-    #<factory-name regex> = <library-name>
-    #
-    # Used to find spa factory names. It maps an spa factory name
-    # regular expression to a library name that should contain
-    # that factory.
-    #
-    audio.convert.* = audioconvert/libspa-audioconvert
-    avb.*           = avb/libspa-avb
-    api.alsa.*      = alsa/libspa-alsa
-    #api.v4l2.*      = v4l2/libspa-v4l2
-    #api.libcamera.* = libcamera/libspa-libcamera
-    api.bluez5.*    = bluez5/libspa-bluez5
-    api.vulkan.*    = vulkan/libspa-vulkan
-    api.jack.*      = jack/libspa-jack
-    support.*       = support/libspa-support
-    #video.convert.* = videoconvert/libspa-videoconvert
-    #videotestsrc   = videotestsrc/libspa-videotestsrc
-    #audiotestsrc   = audiotestsrc/libspa-audiotestsrc
-}
-
-context.modules = [
-    #{ name = <module-name>
-    #    ( args  = { <key> = <value> ... } )
-    #    ( flags = [ ( ifexists ) ( nofail ) ] )
-    #    ( condition = [ { <key> = <value> ... } ... ] )
-    #}
-    #
-    # Loads a module with the given parameters.
-    # If ifexists is given, the module is ignored when it is not found.
-    # If nofail is given, module initialization failures are ignored.
-    # If condition is given, the module is loaded only when the context
-    # properties all match the match rules.
-    #
-
-    # Uses realtime scheduling to boost the audio thread priorities. This uses
-    # RTKit if the user doesn't have permission to use regular realtime
-    # scheduling. You can also clamp utilisation values to improve scheduling
-    # on embedded and heterogeneous systems, e.g. Arm big.LITTLE devices.
-    { name = libpipewire-module-rt
-        args = {
-            nice.level    = -11
-            rt.prio       = 88
-            #rt.time.soft = -1
-            #rt.time.hard = -1
-            #uclamp.min = 0
-            #uclamp.max = 1024
-        }
-        flags = [ ifexists nofail ]
-    }
-
-    # The native communication protocol.
-    { name = libpipewire-module-protocol-native
-        args = {
-            # List of server Unix sockets, and optionally permissions
-            #sockets = [ { name = "pipewire-0" }, { name = "pipewire-0-manager" } ]
-        }
-    }
-
-    # The profile module. Allows application to access profiler
-    # and performance data. It provides an interface that is used
-    # by pw-top and pw-profiler.
-    { name = libpipewire-module-profiler }
-
-    # Allows applications to create metadata objects. It creates
-    # a factory for Metadata objects.
-    { name = libpipewire-module-metadata }
-
-    # Creates a factory for making devices that run in the
-    # context of the PipeWire server.
-    { name = libpipewire-module-spa-device-factory }
-
-    # Creates a factory for making nodes that run in the
-    # context of the PipeWire server.
-    { name = libpipewire-module-spa-node-factory }
-
-    # Allows creating nodes that run in the context of the
-    # client. Is used by all clients that want to provide
-    # data to PipeWire.
-    { name = libpipewire-module-client-node }
-
-    # Allows creating devices that run in the context of the
-    # client. Is used by the session manager.
-    { name = libpipewire-module-client-device }
-
-    # The portal module monitors the PID of the portal process
-    # and tags connections with the same PID as portal
-    # connections.
-    { name = libpipewire-module-portal
-        flags = [ ifexists nofail ]
-    }
-
-    # The access module can perform access checks and block
-    # new clients.
-    { name = libpipewire-module-access
-        args = {
-            # Socket-specific access permissions
-            #access.socket = { pipewire-0 = "default", pipewire-0-manager = "unrestricted" }
-
-            # Deprecated legacy mode (not socket-based),
-            # for now enabled by default if access.socket is not specified
-            #access.legacy = true
-        }
-        condition = [ { module.access = true } ]
-    }
-
-    # Makes a factory for wrapping nodes in an adapter with a
-    # converter and resampler.
-    { name = libpipewire-module-adapter }
-
-    # Makes a factory for creating links between ports.
-    { name = libpipewire-module-link-factory }
-
-    # Provides factories to make session manager objects.
-    { name = libpipewire-module-session-manager }
-
-    # Use libcanberra to play X11 Bell
-    { name = libpipewire-module-x11-bell
-        args = {
-            #sink.name = "@DEFAULT_SINK@"
-            #sample.name = "bell-window-system"
-            #x11.display = null
-            #x11.xauthority = null
-        }
-        flags = [ ifexists nofail ]
-        condition = [ { module.x11.bell = true } ]
-    }
-    { name = libpipewire-module-jackdbus-detect
-        args = {
-            #jack.library     = libjack.so.0
-            #jack.server      = null
-            #jack.client-name = PipeWire
-            #jack.connect     = true
-            #tunnel.mode      = duplex  # source|sink|duplex
-            source.props = {
-                #audio.channels = 2
-		#midi.ports = 1
-                #audio.position = [ FL FR ]
-                # extra sink properties
-            }
-            sink.props = {
-                #audio.channels = 2
-		#midi.ports = 1
-                #audio.position = [ FL FR ]
-                # extra sink properties
-            }
-        }
-        flags = [ ifexists nofail ]
-        condition = [ { module.jackdbus-detect = true } ]
-    }
-]
-
-context.objects = [
-    #{ factory = <factory-name>
-    #    ( args  = { <key> = <value> ... } )
-    #    ( flags = [ ( nofail ) ] )
-    #    ( condition = [ { <key> = <value> ... } ... ] )
-    #}
-    #
-    # Creates an object from a PipeWire factory with the given parameters.
-    # If nofail is given, errors are ignored (and no object is created).
-    # If condition is given, the object is created only when the context properties
-    # all match the match rules.
-    #
-    #{ factory = spa-node-factory   args = { factory.name = videotestsrc node.name = videotestsrc node.description = videotestsrc "Spa:Pod:Object:Param:Props:patternType" = 1 } }
-    #{ factory = spa-device-factory args = { factory.name = api.jack.device foo=bar } flags = [ nofail ] }
-    #{ factory = spa-device-factory args = { factory.name = api.alsa.enum.udev } }
-    #{ factory = spa-node-factory   args = { factory.name = api.alsa.seq.bridge node.name = Internal-MIDI-Bridge } }
-    #{ factory = adapter            args = { factory.name = audiotestsrc node.name = my-test node.description = audiotestsrc } }
-    #{ factory = spa-node-factory   args = { factory.name = api.vulkan.compute.source node.name = my-compute-source } }
-
-    # A default dummy driver. This handles nodes marked with the "node.always-process"
-    # property when no other driver is currently active. JACK clients need this.
-    { factory = spa-node-factory
-        args = {
-            factory.name    = support.node.driver
-            node.name       = Dummy-Driver
-            node.group      = pipewire.dummy
-            node.sync-group  = sync.dummy
-            priority.driver = 200000
-            #clock.id       = monotonic # realtime | tai | monotonic-raw | boottime
-            #clock.name     = "clock.system.monotonic"
-        }
-    }
-    { factory = spa-node-factory
-        args = {
-            factory.name    = support.node.driver
-            node.name       = Freewheel-Driver
-            priority.driver = 190000
-            node.group      = pipewire.freewheel
-            node.sync-group  = sync.dummy
-            node.freewheel  = true
-            #freewheel.wait = 10
-        }
-    }
-
-    # This creates a new Source node. It will have input ports
-    # that you can link, to provide audio for this source.
-    #{ factory = adapter
-    #    args = {
-    #        factory.name     = support.null-audio-sink
-    #        node.name        = "my-mic"
-    #        node.description = "Microphone"
-    #        media.class      = "Audio/Source/Virtual"
-    #        audio.position   = "FL,FR"
-    #        monitor.passthrough = true
-    #    }
-    #}
-
-    # This creates a single PCM source device for the given
-    # alsa device path hw:0. You can change source to sink
-    # to make a sink in the same way.
-    #{ factory = adapter
-    #    args = {
-    #        factory.name           = api.alsa.pcm.source
-    #        node.name              = "alsa-source"
-    #        node.description       = "PCM Source"
-    #        media.class            = "Audio/Source"
-    #        api.alsa.path          = "hw:0"
-    #        api.alsa.period-size   = 1024
-    #        api.alsa.headroom      = 0
-    #        api.alsa.disable-mmap  = false
-    #        api.alsa.disable-batch = false
-    #        audio.format           = "S16LE"
-    #        audio.rate             = 48000
-    #        audio.channels         = 2
-    #        audio.position         = "FL,FR"
-    #    }
-    #}
-
-    # Use the metadata factory to create metadata and some default values.
-    #{ factory = metadata
-    #    args = {
-    #        metadata.name = my-metadata
-    #        metadata.values = [
-    #            { key = default.audio.sink   value = { name = somesink } }
-    #            { key = default.audio.source value = { name = somesource } }
-    #        ]
-    #    }
-    #}
-]
-
-context.exec = [
-    #{   path = <program-name>
-    #    ( args = "<arguments>" | [ <arg1> <arg2> ... ] )
-    #    ( condition = [ { <key> = <value> ... } ... ] )
-    #}
-    #
-    # Execute the given program with arguments.
-    # If condition is given, the program is executed only when the context
-    # properties all match the match rules.
-    #
-    # You can optionally start the session manager here,
-    # but it is better to start it as a systemd service.
-    # Run the session manager with -h for options.
-    #
-    #{ path = "/usr/bin/pipewire-media-session" args = ""
-    #  condition = [ { exec.session-manager = null } { exec.session-manager = true } ] }
-    #
-    # You can optionally start the pulseaudio-server here as well
-    # but it is better to start it as a systemd service.
-    # It can be interesting to start another daemon here that listens
-    # on another address with the -a option (eg. -a tcp:4713).
-    #
-    #{ path = "/usr/bin/pipewire" args = [ "-c" "pipewire-pulse.conf" ]
-    #  condition = [ { exec.pipewire-pulse = null } { exec.pipewire-pulse = true } ] }
-]
 ```
 
-### Reboot
+#### Applying the Changes
+PipeWire runs as a systemd user service under the user session (e.g., UID 1000). When executing commands as root, systemctl --user cannot connect to the user's DBus session unless the required environment variables are set. But as recommend at the end of this documentation part it is better and we recommend to restart the whole system.
+```sh
+sudo -u pi XDG_RUNTIME_DIR=/run/user/1000 systemctl --user restart pipewire pipewire-pulse wireplumber
 
-After you have made the changes, reboot your system to apply the changes. 
+```
 
-💡 **Note:** Offtopic but for systems with hardware like the Seeed 2-Mic Voice Card, you even have to reboot the system multiple times to make sure that the driver is installed and everything is loaded correctly.
+💡 **Note:** In certain cases where hardware drivers need to be installed, a system reboot may be required. For hardware such as the Seeed 2-Mic Voice Card, multiple reboots may be needed to ensure the driver is installed and loaded and installed correctly. More about that in the PiCompose documentation within the Ready-to-use Image.
 
 ## B) PulseAudio:
 
@@ -422,7 +94,7 @@ sudo vi /etc/pulse/daemon.conf
 Change the following lines in the file:
 
 ```sh
- default-sample-rate = 48000
+ default-sample-rate = 16000
 ```
 
 Enable and start Pulseaudio
@@ -439,9 +111,10 @@ pulseaudio --check
 pactl info
 ```
 
-### Reboot
+Reboot the system:
 
-After you have made the changes, reboot your system to apply the changes. 
+In some cases to get the audio hardware working you may need to restart your system.
+
 
 
 ## Additional Information:

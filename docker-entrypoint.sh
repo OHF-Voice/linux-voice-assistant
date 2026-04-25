@@ -40,6 +40,18 @@ if [ -n "${AUDIO_OUTPUT_DEVICE}" ]; then
   EXTRA_ARGS+=( "--audio-output-device" "$AUDIO_OUTPUT_DEVICE" )
 fi
 
+if [ -n "${MIC_VOLUME}" ]; then
+  EXTRA_ARGS+=( "--mic-volume" "$MIC_VOLUME" )
+fi
+
+if [ -n "${MIC_AUTO_GAIN}" ]; then
+  EXTRA_ARGS+=( "--mic-auto-gain" "$MIC_AUTO_GAIN" )
+fi
+
+if [ -n "${MIC_NOISE_SUPPRESSION}" ]; then
+  EXTRA_ARGS+=( "--mic-noise-suppression" "$MIC_NOISE_SUPPRESSION" )
+fi
+
 if [ "$ENABLE_THINKING_SOUND" = "1" ]; then
   EXTRA_ARGS+=( "--enable-thinking-sound" )
 fi
@@ -80,6 +92,14 @@ if [ -n "${UNMUTE_SOUND}" ]; then
   EXTRA_ARGS+=( "--unmute-sound" "$UNMUTE_SOUND" )
 fi
 
+if [ -n "${TIMER_MAX_RING_SECONDS}" ]; then
+  EXTRA_ARGS+=( "--timer-max-ring-seconds" "$TIMER_MAX_RING_SECONDS" )
+fi
+
+if [ "$ENABLE_OUTPUT_ONLY" = "1" ]; then
+  EXTRA_ARGS+=( "--output-only" )
+fi
+
 if [ -n "${VOLUME_CONTROLLER}" ]; then
   EXTRA_ARGS+=( "--volume-controller" "$VOLUME_CONTROLLER" )
 fi
@@ -89,14 +109,9 @@ fi
 PULSE_COOKIE=${PULSE_COOKIE:-"/run/user/1000/pulse/cookie"}
 if [[ "$PULSE_COOKIE" != "DISABLED" ]]; then
   if [ ! -f "$PULSE_COOKIE" ]; then
-    echo "PulseAudio cookie file not found at $PULSE_COOKIE"
-    PULSE_COOKIE="/app/configuration/tmp_pulse_cookie"
-    echo "changed PULSE_COOKIE to $PULSE_COOKIE"
-    if [ ! -f "$PULSE_COOKIE" ]; then
-      echo "Creating PulseAudio cookie file at $PULSE_COOKIE"
-      touch "$PULSE_COOKIE"
-      chmod 600 "$PULSE_COOKIE"
-    fi
+    echo "Creating PulseAudio cookie file at $PULSE_COOKIE"
+    touch "$PULSE_COOKIE"
+    chmod 600 "$PULSE_COOKIE"
   fi
 fi
 
