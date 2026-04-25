@@ -54,7 +54,7 @@ class ESPHomeEntity:
 # -----------------------------------------------------------------------------
 
 
-async def get_stdout(self, args):
+async def get_stdout(*args):
     proc = await asyncio.create_subprocess_exec(
         *args,
         stdout=asyncio.subprocess.PIPE,
@@ -97,8 +97,8 @@ class MediaPlayerEntity(ESPHomeEntity):
     async def pw_vol(self):
         # a bit verbose but otherwise robust and awk/grep/regex-less
         # no get-sink-volume does not support -f json, otherwise i would have DONE that
-        def_sink = json.loads(await get_stdout(["pactl", "get-default-sink"]))
-        sinks = json.loads(await get_stdout(["pactl", "-f", "json", "list", "sinks"]))
+        def_sink = json.loads(await get_stdout("pactl", "get-default-sink"))
+        sinks = json.loads(await get_stdout("pactl", "-f", "json", "list", "sinks"))
 
         def_sink_info = None
 
