@@ -23,10 +23,15 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libmpv-dev mpv
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          script/setup --dev
+          ./script/setup --dev
 
       - name: Run unit tests
         run: ./script/tests
