@@ -461,7 +461,7 @@ class VoiceSatelliteProtocol(APIServer):
             self._tts_played = False
 
         elif event_type == VoiceAssistantEventType.VOICE_ASSISTANT_ERROR:
-            self._emit(LVAEvent.ERROR, {"reason": data.get("message", "pipeline_error")})
+            self._emit(LVAEvent.PIPELINE_ERROR)
 
     # ------------------------------------------------------------------
     # Timer event handler

@@ -63,6 +63,8 @@ import json
 import logging
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Dict, Optional, Set
+from aioesphomeapi.api_pb2 import MediaPlayerStateResponse  # type: ignore[attr-defined]  # pylint: disable=no-name-in-module
+from aioesphomeapi.model import MediaPlayerState  # type: ignore[import]
 
 if TYPE_CHECKING:
     from .models import ServerState
@@ -108,6 +110,8 @@ class LVACommand(str, Enum):
     STOP_TIMER_RINGING = "stop_timer_ringing"
     STOP_MEDIA_PLAYER = "stop_media_player"
     STOP_SPEAKING = "stop_speaking"
+    PAUSE_MEDIA_PLAYER = "pause_media_player"
+    RESUME_MEDIA_PLAYER = "resume_media_player"
 
 
 # ---------------------------------------------------------------------------
@@ -127,6 +131,7 @@ class PeripheralAPIServer:
     4. Call ``emit_event_sync()`` from any thread (mpv callbacks, audio thread).
     """
 
+    
     DEFAULT_VOLUME_STEP: float = 0.05
 
     def __init__(
@@ -270,8 +275,7 @@ class PeripheralAPIServer:
                 state.media_player_entity.previous_volume = new_vol
 
                 # Push the new volume to HA so its media player entity updates in real time
-                if satellite is not None:
-                    from aioesphomeapi.api_pb2 import MediaPlayerStateResponse  # type: ignore[attr-defined]  # pylint: disable=no-name-in-module
+                if satellite is not None:                   
 
                     satellite.send_messages(
                         [
@@ -300,21 +304,24 @@ class PeripheralAPIServer:
         elif command == LVACommand.STOP_MEDIA_PLAYER:
             state.music_player.stop()
             if state.media_player_entity is not None:
-                from aioesphomeapi.api_pb2 import MediaPlayerStateResponse  # type: ignore[attr-defined]  # pylint: disable=no-name-in-module
-                from aioesphomeapi.model import MediaPlayerState  # type: ignore[import]
 
                 state.media_player_entity.state = MediaPlayerState.IDLE
                 if satellite is not None:
-                    satellite.send_messages(
-                        [
-                            MediaPlayerStateResponse(
-                                key=state.media_player_entity.key,
-                                state=MediaPlayerState.IDLE,
-                                volume=state.media_player_entity.volume,
-                                muted=state.media_player_entity.muted,
-                            )
-                        ]
-                    )
+                    satellite.send_messages([self._create_media_player_response(MediaPlayerState.IDLE)])
+
+        elif command == LVACommand.PAUSE_MEDIA_PLAYER:
+            state.music_player.pause()
+            if state.media_player_entity is not None:
+                state.media_player_entity.state = MediaPlayerState.PAUSED
+                if satellite is not None:
+                    satellite.send_messages([self._create_media_player_response(MediaPlayerState.PAUSED)])
+
+        elif command == LVACommand.RESUME_MEDIA_PLAYER:
+            state.music_player.resume()
+            if state.media_player_entity is not None:
+                state.media_player_entity.state = MediaPlayerState.PLAYING
+                if satellite is not None:
+                    satellite.send_messages([self._create_media_player_response(MediaPlayerState.PLAYING)])
 
         elif command == LVACommand.STOP_SPEAKING:
             # Stop TTS/announcement playback and clean up pipeline state.
@@ -390,3 +397,15 @@ class PeripheralAPIServer:
         if loop is None or loop.is_closed():
             return
         asyncio.run_coroutine_threadsafe(self.emit_event(event, data), loop)
+
+    def _create_media_player_response(
+        self, state: MediaPlayerState
+    ) -> MediaPlayerStateResponse:
+        """Create a MediaPlayerStateResponse with current entity state."""
+        media_entity = self._state.media_player_entity
+        return MediaPlayerStateResponse(
+            key=media_entity.key,
+            state=state,
+            volume=media_entity.volume,
+            muted=media_entity.muted,
+        )
