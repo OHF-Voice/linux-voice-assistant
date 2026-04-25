@@ -29,4 +29,4 @@ jobs:
           script/setup --dev
 
       - name: Run unit tests
-        run: python -m pytest tests/unit
+        run: ./script/tests
