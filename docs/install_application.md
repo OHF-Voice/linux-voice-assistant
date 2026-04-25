@@ -190,6 +190,7 @@ Environment=PREFERENCES_FILE="/home/pi/linux-voice-assistant/preferences.json"
 # Environment=PROCESSING_SOUND="sounds/processing.wav"
 # Environment=MUTE_SOUND="sounds/mute_switch_on.flac"
 # Environment=UNMUTE_SOUND="sounds/mute_switch_off.flac"
+# Environment=PIPELINE_ENDED_SOUND="sounds/pipeline_ended.wav"
 # Environment=ENABLE_OUTPUT_ONLY="1"
 ExecStart=/home/pi/linux-voice-assistant/docker-entrypoint.sh
 # ExecStart=/home/pi/linux-voice-assistant/docker-entrypoint.sh --additional-parameter-if-you-want
@@ -272,6 +273,7 @@ The following variables can be configured in the `.env` or in the service file:
 | `PROCESSING_SOUND` | `sounds/processing.wav` | Sound file for processing state |
 | `MUTE_SOUND` | `sounds/mute_switch_on.flac` | Sound file for mute on |
 | `UNMUTE_SOUND` | `sounds/mute_switch_off.flac` | Sound file for Configure Audio Devices
+| `PIPELINE_ENDED_SOUND` | (optional) | Sound file to play when the voice pipeline ends without a response (e.g. no speech detected) |
 | `ENABLE_OUTPUT_ONLY` | (optional) | Set to "1" to enable output-only mode |
 
 
