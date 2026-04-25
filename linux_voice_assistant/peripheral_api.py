@@ -398,9 +398,7 @@ class PeripheralAPIServer:
             return
         asyncio.run_coroutine_threadsafe(self.emit_event(event, data), loop)
 
-    def _create_media_player_response(
-        self, state: MediaPlayerState
-    ) -> MediaPlayerStateResponse:
+    def _create_media_player_response(self, state: MediaPlayerState) -> MediaPlayerStateResponse:
         """Create a MediaPlayerStateResponse with current entity state."""
         media_entity = self._state.media_player_entity
         return MediaPlayerStateResponse(
