@@ -131,7 +131,7 @@ class PeripheralAPIServer:
     4. Call ``emit_event_sync()`` from any thread (mpv callbacks, audio thread).
     """
 
-    
+
     DEFAULT_VOLUME_STEP: float = 0.05
 
     def __init__(
