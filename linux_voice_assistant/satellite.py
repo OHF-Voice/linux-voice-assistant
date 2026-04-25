@@ -654,7 +654,7 @@ class VoiceSatelliteProtocol(APIServer):
         _LOGGER.debug("Detected wake word: %s", wake_word_phrase)
         self._pipeline_active = True
         self.duck()
-        
+
         if self.state.listen_during_wake_sound:
             _LOGGER.debug("Starting audio streaming immediately (listen_during_wake_sound enabled)")
             self._start_audio_streaming(wake_word_phrase)
