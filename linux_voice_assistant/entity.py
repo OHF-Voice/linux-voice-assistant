@@ -118,7 +118,7 @@ class MediaPlayerEntity(ESPHomeEntity):
 
         volumes = []
         for volume in def_sink_info["volume"].values():
-            volumes.append(float(volume["value_percent"].replace("%", "")))
+            volumes.append(float(volume["value_percent"].replace("%", "")/100.0))
 
 
         vol = sum(volumes) / len(volumes)
