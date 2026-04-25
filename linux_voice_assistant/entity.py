@@ -1,6 +1,11 @@
+import asyncio
+import json
 import logging
+import re
+import threading
 from abc import abstractmethod
 from collections.abc import Iterable
+import subprocess
 from typing import Callable, List, Optional, Union
 
 # pylint: disable=no-name-in-module
@@ -56,6 +61,16 @@ class ESPHomeEntity:
 # -----------------------------------------------------------------------------
 
 
+async def get_stdout(*args):
+    proc = await asyncio.create_subprocess_exec(
+        *args,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.DEVNULL,
+        stdin=asyncio.subprocess.DEVNULL,
+    )
+    stdout, _ = await proc.communicate()
+    return stdout.decode('utf-8').strip()
+
 class MediaPlayerEntity(ESPHomeEntity):
     def __init__(
         self,
@@ -82,6 +97,98 @@ class MediaPlayerEntity(ESPHomeEntity):
         self._on_volume_changed = on_volume_changed
         self.apply_volume_from_state(initial_volume)
         self._log = logging.getLogger(f"{self.__class__.__name__}[{self.key}]")
+
+        if hasattr(self.server, "state") and self.server.state.volume_controller in ["pipewire", "pulseaudio"]:
+            asyncio.get_running_loop().create_task(self.volume_monitor_loop())
+
+    async def pw_vol(self):
+        # a bit verbose but otherwise robust and awk/grep/regex-less
+        # no get-sink-volume does not support -f json, otherwise i would have DONE that
+        def_sink = await get_stdout("pactl", "get-default-sink")
+        sinks = json.loads(await get_stdout("pactl", "-f", "json", "list", "sinks"))
+
+        def_sink_info = None
+
+        for sink in sinks:
+            if sink.get("name") == def_sink:
+                def_sink_info = sink
+                break
+        else:
+            def_sink_info = sinks[0]
+
+        volumes = []
+        for volume in def_sink_info["volume"].values():
+            volumes.append(float(volume["value_percent"].replace("%", "")/100.0))
+
+
+        vol = sum(volumes) / len(volumes)
+
+        return vol
+
+    async def volume_monitor_loop(self):
+        while True:
+            try:
+                process = await asyncio.create_subprocess_exec(
+                    "pactl", "-f", "json", "subscribe",
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.DEVNULL,
+                    stdin=asyncio.subprocess.DEVNULL,
+                )
+                while True:
+                    # 2. Thread sleeps here until PipeWire actually changes state
+                    line = await process.stdout.readline()
+
+                    line = json.loads(line.decode('utf-8').strip())
+
+                    if line.get("event") == "change" and line.get("on") == "sink":
+                        self._log.debug(f"pactl subscribe event {line}")
+                        volume = await self.pw_vol()
+                        self._log.debug(f"new volume: {volume}")
+
+                        normalized = max(0.0, min(1.0, float(volume)))
+
+                        self.volume = normalized
+                        self.previous_volume = normalized
+
+                        if self._on_volume_changed:
+                            self._on_volume_changed(normalized)
+
+                        self.server.state.persist_volume(normalized)
+
+                        self.server.send_messages([self._get_state_message()])
+
+            except Exception as e:
+                self._log.error("Error in volume monitor loop: %s", e, e.__traceback__)
+                await asyncio.sleep(1)  # Avoid tight error loop
+
+    def set_volume(self, volume: float) -> None:
+        # self._log.debug("Setting volume: %.2f", volume)
+        self.volume = volume
+        if hasattr(self.server, "state") and self.server.state.volume_controller in ["pipewire", "pulseaudio"]:
+            def _update_system_vol():
+                try:
+                    # vol_percent = f"{int(round(volume * 100))}%"
+                    self._log.debug("pactl start")
+                    res = subprocess.run(
+                        ["pactl", "set-sink-volume", self.server.state.audio_output_device or "@DEFAULT_SINK@", str(volume)],
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                        timeout=1
+                    )
+                    if res.returncode == 0:
+                        self._log.debug("pactl success")
+                    else:
+                        self._log.error("pactl failed with error code: %s", res.returncode)
+                except Exception as e:
+                    self._log.error("pactl err ", e)
+                    # self._log.error("Volume command failed: %s", e)
+
+            threading.Thread(target=_update_system_vol, daemon=True).start()
+        else:
+            percent = int(round(volume * 100))
+            self.music_player.set_volume(percent)
+            self.announce_player.set_volume(percent)
 
     def play(
         self,
@@ -159,18 +266,14 @@ class MediaPlayerEntity(ESPHomeEntity):
                     self._log.debug("Executing MUTE")
                     if not self.muted:
                         self.previous_volume = self.volume
-                        self.volume = 0
-                        self.music_player.set_volume(0)
-                        self.announce_player.set_volume(0)
+                        self.set_volume(0)
                         self.muted = True
                     yield self._update_state(self.state)
 
                 elif command == MediaPlayerCommand.UNMUTE:
                     self._log.debug("Executing UNMUTE")
                     if self.muted:
-                        self.volume = self.previous_volume
-                        self.music_player.set_volume(int(self.volume * 100))
-                        self.announce_player.set_volume(int(self.volume * 100))
+                        self.set_volume(self.previous_volume)
                         self.muted = False
                     yield self._update_state(self.state)
 
@@ -237,12 +340,10 @@ class MediaPlayerEntity(ESPHomeEntity):
         remember: bool = True,
     ) -> None:
         normalized = max(0.0, min(1.0, float(volume)))
-        volume_percent = int(round(normalized * 100))
 
-        self.music_player.set_volume(volume_percent)
-        self.announce_player.set_volume(volume_percent)
+        self.set_volume(normalized)
 
-        self.volume = normalized
+        # self.volume = normalized
 
         if remember:
             self.previous_volume = normalized

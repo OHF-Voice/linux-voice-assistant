@@ -40,7 +40,8 @@ RUN apt-get update && \
     ca-certificates \
     iproute2 \
     vim \
-    procps && \
+    procps  \
+    && \
 apt-get clean
 
 ### Set workdir:
