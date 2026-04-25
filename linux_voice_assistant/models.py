@@ -95,6 +95,7 @@ class ServerState:
     timer_finished_sound: str
     mute_sound: str
     unmute_sound: str
+    pipeline_ended_sound: str
     preferences: Preferences
     preferences_path: Path
     download_dir: Path
