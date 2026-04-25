@@ -275,7 +275,7 @@ class PeripheralAPIServer:
                 state.media_player_entity.previous_volume = new_vol
 
                 # Push the new volume to HA so its media player entity updates in real time
-                if satellite is not None:                   
+                if satellite is not None:
 
                     satellite.send_messages(
                         [
