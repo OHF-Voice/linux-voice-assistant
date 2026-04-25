@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 import re
 import threading
@@ -53,6 +54,16 @@ class ESPHomeEntity:
 # -----------------------------------------------------------------------------
 
 
+async def get_stdout(*args):
+    proc = await asyncio.create_subprocess_exec(
+        *args,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.DEVNULL,
+        stdin=asyncio.subprocess.DEVNULL,
+    )
+    stdout, _ = await proc.communicate()
+    return stdout.decode('utf-8').strip()
+
 class MediaPlayerEntity(ESPHomeEntity):
     def __init__(
         self,
@@ -80,28 +91,38 @@ class MediaPlayerEntity(ESPHomeEntity):
         self.apply_volume_from_state(initial_volume)
         self._log = logging.getLogger(f"{self.__class__.__name__}[{self.key}]")
 
-        loop = asyncio.get_running_loop()
-        loop.create_task(self.volume_monitor_loop())
+        if hasattr(self.server, "state") and self.server.state.volume_controller in ["pipewire", "pulseaudio"]:
+            asyncio.get_running_loop().create_task(self.volume_monitor_loop())
 
     async def pw_vol(self):
-        proc = await asyncio.create_subprocess_exec(
-            "wpctl", "get-volume", self.server.state.audio_output_device or "@DEFAULT_SINK@",
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.DEVNULL,
-            stdin=asyncio.subprocess.DEVNULL,
-        )
-        stdout, _ = await proc.communicate()
-        output = stdout.decode('utf-8').strip()  # e.g., "Volume: 0.50" or "Volume: 0.50 [MUTED]"
+        # a bit verbose but otherwise robust and awk/grep/regex-less
+        # no get-sink-volume does not support -f json, otherwise i would have DONE that
+        def_sink = await get_stdout("pactl", "get-default-sink")
+        sinks = json.loads(await get_stdout("pactl", "-f", "json", "list", "sinks"))
 
-        # Extract the float value
-        match = re.search(r'Volume:\s*([0-9.]+)', output)
-        return float(match.group(1))  # Returns exactly 0.5
+        def_sink_info = None
+
+        for sink in sinks:
+            if sink.get("name") == def_sink:
+                def_sink_info = sink
+                break
+        else:
+            def_sink_info = sinks[0]
+
+        volumes = []
+        for volume in def_sink_info["volume"].values():
+            volumes.append(float(volume["value_percent"].replace("%", "")))
+
+
+        vol = sum(volumes) / len(volumes)
+
+        return vol
 
     async def volume_monitor_loop(self):
         while True:
             try:
                 process = await asyncio.create_subprocess_exec(
-                    "pactl", "subscribe",
+                    "pactl", "-f", "json", "subscribe",
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.DEVNULL,
                     stdin=asyncio.subprocess.DEVNULL,
@@ -110,7 +131,9 @@ class MediaPlayerEntity(ESPHomeEntity):
                     # 2. Thread sleeps here until PipeWire actually changes state
                     line = await process.stdout.readline()
 
-                    if "Event 'change' on sink" in line.decode('utf-8').strip():
+                    line = json.loads(line.decode('utf-8').strip())
+
+                    if line.get("event") == "change" and line.get("on") == "sink":
                         self._log.debug(f"pactl subscribe event {line}")
                         volume = await self.pw_vol()
                         self._log.debug(f"new volume: {volume}")
@@ -128,30 +151,30 @@ class MediaPlayerEntity(ESPHomeEntity):
                         self.server.send_messages([self._get_state_message()])
 
             except Exception as e:
-                self._log.error("Error in volume monitor loop: %s", e)
+                self._log.error("Error in volume monitor loop: %s", e, e.__traceback__)
                 await asyncio.sleep(1)  # Avoid tight error loop
 
     def set_volume(self, volume: float) -> None:
         # self._log.debug("Setting volume: %.2f", volume)
         self.volume = volume
-        if hasattr(self.server, "state") and self.server.state.volume_controller == "pipewire":
+        if hasattr(self.server, "state") and self.server.state.volume_controller in ["pipewire", "pulseaudio"]:
             def _update_system_vol():
                 try:
                     # vol_percent = f"{int(round(volume * 100))}%"
-                    self._log.debug("wpctl start")
+                    self._log.debug("pactl start")
                     res = subprocess.run(
-                        ["wpctl", "set-volume", self.server.state.audio_output_device or "@DEFAULT_SINK@", str(volume)],
+                        ["pactl", "set-sink-volume", self.server.state.audio_output_device or "@DEFAULT_SINK@", str(volume)],
                         check=False,
                         capture_output=True,
                         text=True,
                         timeout=1
                     )
                     if res.returncode == 0:
-                        self._log.debug("wpctl success")
+                        self._log.debug("pactl success")
                     else:
-                        self._log.error("wpctl failed with error code: %s", res.returncode)
+                        self._log.error("pactl failed with error code: %s", res.returncode)
                 except Exception as e:
-                    self._log.error("wpctl err ", e)
+                    self._log.error("pactl err ", e)
                     # self._log.error("Volume command failed: %s", e)
 
             threading.Thread(target=_update_system_vol, daemon=True).start()
