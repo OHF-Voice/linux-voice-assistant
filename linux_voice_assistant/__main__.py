@@ -128,7 +128,7 @@ async def main() -> None:
     parser.add_argument(
         "--pipeline-ended-sound",
         default="",
-        help="Sound to play when the voice pipeline ends without a response (e.g. no speech detected). Disabled by default.",
+        help="Sound to play when the voice pipeline ends without a response (e.g. no speech detected)",
     )
     parser.add_argument(
         "--preferences-file",
