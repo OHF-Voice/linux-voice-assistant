@@ -439,7 +439,7 @@ class VoiceSatelliteProtocol(APIServer):
                 stt_text = data.get("text", "").strip()
                 if stt_text:
                     self._emit(LVAEvent.STT_TEXT, {"text": stt_text})
-                    _LOGGER.debug("STT transcript: %s", stt_text)        
+                    _LOGGER.debug("STT transcript: %s", stt_text)
 
         elif event_type == VoiceAssistantEventType.VOICE_ASSISTANT_INTENT_PROGRESS:
             if data.get("tts_start_streaming") == "1":
