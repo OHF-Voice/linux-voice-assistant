@@ -435,6 +435,11 @@ class VoiceSatelliteProtocol(APIServer):
             VoiceAssistantEventType.VOICE_ASSISTANT_STT_END,
         ):
             self._is_streaming_audio = False
+            if event_type == VoiceAssistantEventType.VOICE_ASSISTANT_STT_END:
+                stt_text = data.get("text", "").strip()
+                if stt_text:
+                    self._emit(LVAEvent.STT_TEXT, {"text": stt_text})
+                    _LOGGER.debug("STT transcript: %s", stt_text)            
 
         elif event_type == VoiceAssistantEventType.VOICE_ASSISTANT_INTENT_PROGRESS:
             if data.get("tts_start_streaming") == "1":
@@ -444,6 +449,12 @@ class VoiceSatelliteProtocol(APIServer):
         elif event_type == VoiceAssistantEventType.VOICE_ASSISTANT_INTENT_END:
             if data.get("continue_conversation") == "1":
                 self._continue_conversation = True
+
+        elif event_type == VoiceAssistantEventType.VOICE_ASSISTANT_TTS_START:
+            tts_text = data.get("text", "").strip()
+            if tts_text:
+                self._emit(LVAEvent.TTS_TEXT, {"text": tts_text})
+                _LOGGER.debug("TTS response text: %s", tts_text)
 
         elif event_type == VoiceAssistantEventType.VOICE_ASSISTANT_TTS_END:
             self._tts_url = data.get("url")

@@ -11,7 +11,14 @@ Feedback events emitted by LVA
 -------------------------------
   wake_word_detected
   listening
+  stt_text        data: {"text": str}
+              Emitted when HA returns the recognised speech transcript.
+              Use this to display what the user said on a screen or LED ticker.  
   thinking
+  tts_text        data: {"text": str}
+              Emitted when HA returns the assistant's response text, just
+              before TTS audio begins playing.
+              Use this to display the assistant's reply on a screen.  
   tts_speaking
   tts_finished
   pipeline_error  data: {"reason": <str>}
@@ -83,7 +90,9 @@ class LVAEvent(str, Enum):
 
     WAKE_WORD_DETECTED = "wake_word_detected"
     LISTENING = "listening"
+    STT_TEXT = "stt_text"
     THINKING = "thinking"
+    TTS_TEXT = "tts_text"
     TTS_SPEAKING = "tts_speaking"
     TTS_FINISHED = "tts_finished"
     PIPELINE_ERROR = "pipeline_error"
@@ -149,6 +158,10 @@ class PeripheralAPIServer:
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._server: Any = None
 
+        # Last conversation exchange — sent in the snapshot to newly-connecting clients
+        self._last_stt_text: Optional[str] = None
+        self._last_tts_text: Optional[str] = None
+
     # ------------------------------------------------------------------
     # Lifecycle
     # ------------------------------------------------------------------
@@ -209,6 +222,8 @@ class PeripheralAPIServer:
                     "muted": state.muted,
                     "volume": round(state.volume, 3),
                     "ha_connected": state.connected,
+                    "last_stt_text": self._last_stt_text,
+                    "last_tts_text": self._last_tts_text,
                 },
             }
         )
@@ -359,6 +374,16 @@ class PeripheralAPIServer:
         data: Optional[Dict[str, Any]] = None,
     ) -> None:
         """Broadcast an event to all connected peripheral clients."""
+        # Cache the last conversation text so newly-connecting clients get it in the snapshot
+        if event == LVAEvent.STT_TEXT and data:
+            self._last_stt_text = data.get("text")
+        elif event == LVAEvent.TTS_TEXT and data:
+            self._last_tts_text = data.get("text")
+        # Clear both sides at the start of a new pipeline run
+        elif event == LVAEvent.LISTENING:
+            self._last_stt_text = None
+            self._last_tts_text = None
+
         if not self._clients:
             return
 
