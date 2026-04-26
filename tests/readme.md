@@ -1,7 +1,7 @@
 # Automated testing
 
 From the root of LVA run:-
-```pytest tests/unit```
+```./script/tests```
 
 
 # Manual testing
