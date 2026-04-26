@@ -153,7 +153,7 @@ Auto-fix formatting issues (Black + isort):
 
 Run the test suite:
 ``` sh
-./script/test
+./script/tests
 ```
 
 ## License

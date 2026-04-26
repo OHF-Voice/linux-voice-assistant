@@ -1,6 +1,7 @@
 # Automated testing
 
-tbd
+From the root of LVA run:-
+```./script/tests```
 
 
 # Manual testing
