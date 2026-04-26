@@ -13,12 +13,12 @@ Feedback events emitted by LVA
   listening
   stt_text        data: {"text": str}
               Emitted when HA returns the recognised speech transcript.
-              Use this to display what the user said on a screen or LED ticker.  
+              Use this to display what the user said on a screen or LED ticker.
   thinking
   tts_text        data: {"text": str}
               Emitted when HA returns the assistant's response text, just
               before TTS audio begins playing.
-              Use this to display the assistant's reply on a screen.  
+              Use this to display the assistant's reply on a screen.
   tts_speaking
   tts_finished
   pipeline_error  data: {"reason": <str>}
