@@ -489,7 +489,7 @@ class VoiceSatelliteProtocol(APIServer):
         # total_seconds: the original timer duration.
         # seconds_left:  remaining seconds at the time of this event.
         timer_data = {
-            "id": msg.id,
+            "id": msg.timer_id,
             "name": msg.name,
             "total_seconds": msg.total_seconds,
             "seconds_left": msg.seconds_left,
