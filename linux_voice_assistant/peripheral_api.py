@@ -360,36 +360,28 @@ class PeripheralAPIServer:
             if state.button_event_sensor_entity is not None:
                 state.button_event_sensor_entity.update_state("single_press")
                 if satellite is not None:
-                    satellite.send_messages([
-                        state.button_event_sensor_entity._get_state_message()  # pylint: disable=protected-access
-                    ])
+                    satellite.send_messages([state.button_event_sensor_entity._get_state_message()])  # pylint: disable=protected-access
 
         elif command == LVACommand.BUTTON_DOUBLE_PRESS:
             state.tts_player.play(state.button_double_press_sound)
             if state.button_event_sensor_entity is not None:
                 state.button_event_sensor_entity.update_state("double_press")
                 if satellite is not None:
-                    satellite.send_messages([
-                        state.button_event_sensor_entity._get_state_message()  # pylint: disable=protected-access
-                    ])
+                    satellite.send_messages([state.button_event_sensor_entity._get_state_message()])  # pylint: disable=protected-access
 
         elif command == LVACommand.BUTTON_TRIPLE_PRESS:
             state.tts_player.play(state.button_triple_press_sound)
             if state.button_event_sensor_entity is not None:
                 state.button_event_sensor_entity.update_state("triple_press")
                 if satellite is not None:
-                    satellite.send_messages([
-                        state.button_event_sensor_entity._get_state_message()  # pylint: disable=protected-access
-                    ])
+                    satellite.send_messages([state.button_event_sensor_entity._get_state_message()])  # pylint: disable=protected-access
 
         elif command == LVACommand.BUTTON_LONG_PRESS:
             state.tts_player.play(state.button_long_press_sound)
             if state.button_event_sensor_entity is not None:
                 state.button_event_sensor_entity.update_state("long_press")
                 if satellite is not None:
-                    satellite.send_messages([
-                        state.button_event_sensor_entity._get_state_message()  # pylint: disable=protected-access
-                    ])
+                    satellite.send_messages([state.button_event_sensor_entity._get_state_message()])  # pylint: disable=protected-access
 
     # ------------------------------------------------------------------
     # Helpers
