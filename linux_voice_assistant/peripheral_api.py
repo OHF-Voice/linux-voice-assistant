@@ -59,8 +59,14 @@ Commands accepted from the peripheral container
   volume_up
   volume_down
   stop_timer_ringing
+  pause_media_player
+  resume_media_player
   stop_media_player
   stop_speaking
+  button_single_press
+  button_double_press
+  button_triple_press
+  button_long_press
 """
 
 from __future__ import annotations
@@ -122,6 +128,10 @@ class LVACommand(str, Enum):
     STOP_SPEAKING = "stop_speaking"
     PAUSE_MEDIA_PLAYER = "pause_media_player"
     RESUME_MEDIA_PLAYER = "resume_media_player"
+    BUTTON_SINGLE_PRESS = "button_single_press"
+    BUTTON_DOUBLE_PRESS = "button_double_press"
+    BUTTON_TRIPLE_PRESS = "button_triple_press"
+    BUTTON_LONG_PRESS = "button_long_press"
 
 
 # ---------------------------------------------------------------------------
@@ -345,6 +355,41 @@ class PeripheralAPIServer:
             # emitting TTS_FINISHED + IDLE to peripherals.
             if satellite is not None:
                 satellite.stop()
+
+        elif command == LVACommand.BUTTON_SINGLE_PRESS:
+            if state.button_event_sensor_entity is not None:
+                state.button_event_sensor_entity.update_state("single_press")
+                if satellite is not None:
+                    satellite.send_messages([
+                        state.button_event_sensor_entity._get_state_message()  # pylint: disable=protected-access
+                    ])
+
+        elif command == LVACommand.BUTTON_DOUBLE_PRESS:
+            state.tts_player.play(state.button_double_press_sound)
+            if state.button_event_sensor_entity is not None:
+                state.button_event_sensor_entity.update_state("double_press")
+                if satellite is not None:
+                    satellite.send_messages([
+                        state.button_event_sensor_entity._get_state_message()  # pylint: disable=protected-access
+                    ])
+
+        elif command == LVACommand.BUTTON_TRIPLE_PRESS:
+            state.tts_player.play(state.button_triple_press_sound)
+            if state.button_event_sensor_entity is not None:
+                state.button_event_sensor_entity.update_state("triple_press")
+                if satellite is not None:
+                    satellite.send_messages([
+                        state.button_event_sensor_entity._get_state_message()  # pylint: disable=protected-access
+                    ])
+
+        elif command == LVACommand.BUTTON_LONG_PRESS:
+            state.tts_player.play(state.button_long_press_sound)
+            if state.button_event_sensor_entity is not None:
+                state.button_event_sensor_entity.update_state("long_press")
+                if satellite is not None:
+                    satellite.send_messages([
+                        state.button_event_sensor_entity._get_state_message()  # pylint: disable=protected-access
+                    ])
 
     # ------------------------------------------------------------------
     # Helpers

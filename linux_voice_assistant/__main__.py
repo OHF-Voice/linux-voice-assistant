@@ -131,6 +131,21 @@ async def main() -> None:
         help="Sound to play when unmuting the assistant",
     )
     parser.add_argument(
+        "--button-double-press-sound",
+        default=str(_SOUNDS_DIR / "button_double_press.flac"),
+        help="Sound to play for button double press",
+    )
+    parser.add_argument(
+        "--button-triple-press-sound",
+        default=str(_SOUNDS_DIR / "button_triple_press.flac"),
+        help="Sound to play for button triple press",
+    )
+    parser.add_argument(
+        "--button-long-press-sound",
+        default=str(_SOUNDS_DIR / "button_long_press.flac"),
+        help="Sound to play for button long press",
+    )
+    parser.add_argument(
         "--preferences-file",
         default=_REPO_DIR / "preferences.json",
         help="Directory and file name for the preferences JSON file",
@@ -349,6 +364,9 @@ async def main() -> None:
         processing_sound=args.processing_sound,
         mute_sound=args.mute_sound,
         unmute_sound=args.unmute_sound,
+        button_double_press_sound=args.button_double_press_sound,
+        button_triple_press_sound=args.button_triple_press_sound,
+        button_long_press_sound=args.button_long_press_sound,
         preferences=preferences,
         preferences_path=preferences_path,
         refractory_seconds=args.refractory_seconds,

@@ -48,6 +48,7 @@ from pyopen_wakeword import OpenWakeWord
 
 from .api_server import APIServer
 from .entity import (
+    ButtonEventSensorEntity,
     MediaPlayerEntity,
     MicSettingEntity,
     MuteSwitchEntity,
@@ -312,6 +313,20 @@ class VoiceSatelliteProtocol(APIServer):
         self.state.mic_volume_entity.server = self
         self.state.mic_volume_entity.update_get_value(lambda: float(self.state.mic_volume))
         self.state.mic_volume_entity.update_set_value(lambda val: self.state.persist_mic_volume(float(val)))
+
+        # Button Event Sensor
+        if self.state.button_event_sensor_entity is None:
+            self.state.button_event_sensor_entity = ButtonEventSensorEntity(
+                server=self,
+                key=len(self.state.entities),
+                name="Button Press",
+                object_id="button_press_event",
+            )
+            self.state.entities.append(self.state.button_event_sensor_entity)
+        elif self.state.button_event_sensor_entity not in self.state.entities:
+            self.state.entities.append(self.state.button_event_sensor_entity)
+
+        self.state.button_event_sensor_entity.server = self
 
         # ---- Instance variables ----
 

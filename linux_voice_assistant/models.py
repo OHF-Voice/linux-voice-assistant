@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from pyopen_wakeword import OpenWakeWord
 
     from .entity import (
+        ButtonEventSensorEntity,
         ESPHomeEntity,
         MediaPlayerEntity,
         MicSettingEntity,
@@ -96,6 +97,9 @@ class ServerState:
     timer_finished_sound: str
     mute_sound: str
     unmute_sound: str
+    button_double_press_sound: str
+    button_triple_press_sound: str
+    button_long_press_sound: str
     preferences: Preferences
     preferences_path: Path
     download_dir: Path
@@ -104,6 +108,7 @@ class ServerState:
     satellite: "Optional[VoiceSatelliteProtocol]" = None
     mute_switch_entity: "Optional[MuteSwitchEntity]" = None
     thinking_sound_entity: "Optional[ThinkingSoundEntity]" = None
+    button_event_sensor_entity: "Optional[ButtonEventSensorEntity]" = None
 
     # Optional peripheral WebSocket API (LEDs, buttons, HAT boards).
     # Assigned in __main__ before the event loop starts.
