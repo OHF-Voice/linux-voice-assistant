@@ -25,12 +25,18 @@ LED behaviours
 
 Button behaviour (context action — same priority as HA Voice PE centre button)
 -------------------------------------------------------------------------------
-  timer ringing               → stop_timer_ringing
-  wake word / listening /
-    thinking (pipeline active) → stop_pipeline
-  tts speaking                → stop_speaking
-  media playing               → stop_media_player
-  idle / anything else        → start_listening
+  Single press:
+    timer ringing               → stop_timer_ringing
+    wake word / listening /
+      thinking (pipeline active) → stop_pipeline
+    tts speaking                → stop_speaking
+    media playing               → stop_media_player
+    idle / anything else        → start_listening
+
+  Multi-press (detected via timing):
+    double press (< 500ms between releases)  → button_double_press
+    triple press (< 500ms between releases)  → button_triple_press
+    long press (held > 1000ms)               → button_long_press
 
 Install dependencies
 --------------------
@@ -105,6 +111,10 @@ LED_BRIGHTNESS    = 0.6        # 0.0–1.0 default brightness
 # GPIO
 BTN_ACTION        = 17         # The single onboard button
 BTN_DEBOUNCE_MS   = 150
+
+# Button multipress timing (milliseconds)
+MULTIPRESS_TIMEOUT_MS = 500    # Time window between presses to detect multi-press
+LONG_PRESS_MS         = 1000   # Duration to detect long press
 
 RECONNECT_DELAY_S = 3.0
 
@@ -501,6 +511,113 @@ class ButtonHandler:
 
 
 # ===========================================================================
+# Button multipress handler
+# ===========================================================================
+
+class ButtonMultipressHandler:
+    """
+    Detects button press patterns: double, triple, and long press.
+    
+    Timing detection mirrors Home Assistant Voice PE center button:
+      - Double press: 2 presses within MULTIPRESS_TIMEOUT_MS
+      - Triple press: 3 presses within MULTIPRESS_TIMEOUT_MS
+      - Long press: single press held for > LONG_PRESS_MS
+    """
+
+    def __init__(
+        self,
+        state: SharedState,
+        loop: asyncio.AbstractEventLoop,
+        command_queue: asyncio.Queue,
+    ) -> None:
+        self._state = state
+        self._loop = loop
+        self._queue = command_queue
+        self._press_count = 0
+        self._last_press_time = 0.0
+        self._press_timer: Optional[threading.Timer] = None
+        self._lock = threading.Lock()
+
+    def _send(self, command: str) -> None:
+        _LOGGER.info("Button → %s", command)
+        asyncio.run_coroutine_threadsafe(
+            self._queue.put(command), self._loop
+        )
+
+    def _on_multipress_timeout(self) -> None:
+        """Called when multipress window expires; emit appropriate command."""
+        with self._lock:
+            count = self._press_count
+            self._press_count = 0
+            self._press_timer = None
+
+        if count == 2:
+            _LOGGER.debug("Double press detected")
+            self._send("button_double_press")
+        elif count >= 3:
+            _LOGGER.debug("Triple press detected")
+            self._send("button_triple_press")
+
+    def _on_long_press(self) -> None:
+        """Callback when button held for > LONG_PRESS_MS."""
+        with self._lock:
+            if self._press_count == 1:
+                _LOGGER.debug("Long press detected")
+                self._send("button_long_press")
+                self._press_count = 0
+
+    def on_press(self) -> None:
+        """Called when button is physically pressed."""
+        with self._lock:
+            current_time = time.time()
+            self._press_count += 1
+            count = self._press_count
+
+            _LOGGER.debug("Button press #%d", count)
+
+            # Cancel existing timer if any
+            if self._press_timer is not None:
+                self._press_timer.cancel()
+                self._press_timer = None
+
+            # On first press, start long-press timer
+            if count == 1:
+                self._last_press_time = current_time
+                self._press_timer = threading.Timer(
+                    LONG_PRESS_MS / 1000.0, self._on_long_press
+                )
+                self._press_timer.daemon = True
+                self._press_timer.start()
+            else:
+                # On subsequent presses within timeout window, restart multipress timer
+                self._press_timer = threading.Timer(
+                    MULTIPRESS_TIMEOUT_MS / 1000.0, self._on_multipress_timeout
+                )
+                self._press_timer.daemon = True
+                self._press_timer.start()
+
+    def on_release(self) -> None:
+        """Called when button is released. Used to detect long press end."""
+        with self._lock:
+            if self._press_count == 1 and self._press_timer is not None:
+                # Button was released quickly — cancel long-press timer
+                # and wait for multipress window
+                self._press_timer.cancel()
+                self._press_timer = threading.Timer(
+                    MULTIPRESS_TIMEOUT_MS / 1000.0, self._on_multipress_timeout
+                )
+                self._press_timer.daemon = True
+                self._press_timer.start()
+            # For multi-presses, on_release is not used; timer already running
+
+    def cleanup(self) -> None:
+        """Clean up any pending timers."""
+        with self._lock:
+            if self._press_timer is not None:
+                self._press_timer.cancel()
+                self._press_timer = None
+
+# ===========================================================================
 # WebSocket client
 # ===========================================================================
 
@@ -688,6 +805,8 @@ async def async_main(host: str, port: int) -> None:
     leds     = APA102()
     animator = LEDAnimator(leds, state)
     buttons  = ButtonHandler(state, loop, command_queue)
+    multipress  = ButtonMultipressHandler(state, loop, command_queue)
+
     client   = LVAClient(host, port, state, animator, command_queue)
 
     # Start hardware
@@ -698,6 +817,7 @@ async def async_main(host: str, port: int) -> None:
 
     def _shutdown(signum, frame) -> None:
         _LOGGER.info("Shutdown requested")
+        multipress.cleanup()
         animator.cleanup()
         buttons.cleanup()
         leds.close()
@@ -714,6 +834,7 @@ async def async_main(host: str, port: int) -> None:
     try:
         await client.run_forever()
     finally:
+        multipress.cleanup()
         animator.cleanup()
         buttons.cleanup()
         leds.close()

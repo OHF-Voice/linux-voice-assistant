@@ -12,12 +12,17 @@ Hardware layout (Satellite 1 HAT on Raspberry Pi)
   Left btn   : Volume Down                  →  GPIO 27
   Top btn    : Mute / Unmute mic            →  GPIO 22
   Bottom btn : Context action               →  GPIO 23
-                idle            → start_listening
-                listening       → stop_pipeline
-                thinking        → stop_pipeline
-                tts_speaking    → stop_speaking
-                timer_ringing   → stop_timer_ringing
-                media_playing   → stop_media_player
+                Single press:
+                    idle            → start_listening
+                    listening       → stop_pipeline
+                    thinking        → stop_pipeline
+                    tts_speaking    → stop_speaking
+                    timer_ringing   → stop_timer_ringing
+                    media_playing   → stop_media_player
+                Multi-press (detected via timing):
+                    double press (< 500ms between releases)  → button_double_press
+                    triple press (< 500ms between releases)  → button_triple_press
+                    long press (held > 1000ms)               → button_long_press
 
 Install dependencies
 ---------------------
@@ -600,6 +605,48 @@ class ButtonHandler:
         else:
             self._send("start_listening")
 
+class ButtonMultipressHandler:
+    """Handles multiple presses of the action button (double, triple, and long press) to trigger different commands.   """
+    def __init__(self):
+        self.button_pin = BTN_ACTION
+        self.last_press_time = 0
+        self.press_count = 0
+
+    def _send(self, command: str) -> None:
+        _LOGGER.info("Button → %s", command)
+        asyncio.run_coroutine_threadsafe(
+            self._queue.put(command), self._loop
+        )
+
+    def button_pressed(self):
+        current_time = time.time()
+        time_since_last_press = current_time - self.last_press_time
+
+        if time_since_last_press <= 0.5:
+            self.press_count += 1
+        else:
+            self.press_count = 1
+
+        self.last_press_time = current_time
+
+        if self.press_count == 2:
+            self.handle_double_press()
+        elif self.press_count == 3:
+            self.handle_triple_press()
+        elif time_since_last_press > 1:  # Long press considered after 1 second
+            self.handle_long_press()
+
+    def handle_double_press(self):
+        # Call LVA peripheral API for double press
+        self._send('button_double_press')
+
+    def handle_triple_press(self):
+        # Call LVA peripheral API for triple press
+        self._send('button_triple_press')
+
+    def handle_long_press(self):
+        # Call LVA peripheral API for long press
+        self._send('button_long_press')
 
 # ===========================================================================
 # WebSocket client

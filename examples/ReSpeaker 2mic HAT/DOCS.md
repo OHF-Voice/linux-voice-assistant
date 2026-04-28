@@ -2,7 +2,7 @@
 
 Peripheral controller for the [ReSpeaker 2-Mic Pi HAT](https://wiki.seeedstudio.com/ReSpeaker_2_Mics_Pi_HAT/) by Seeed Studio, running alongside the Linux Voice Assistant (LVA) container.
 
-The controller runs as a separate Docker container on the same Raspberry Pi. It connects to LVA's peripheral WebSocket API, drives the 3 APA102 RGB LEDs, and maps the single onboard button to context-aware LVA commands.
+The controller runs as a separate Docker container on the same Raspberry Pi. It connects to LVA's peripheral WebSocket API, drives the 3 APA102 RGB LEDs, and maps the single onboard button to context-aware LVA commands with multipress support.
 
 ---
 
@@ -54,7 +54,7 @@ The controller runs as a separate Docker container on the same Raspberry Pi. It 
   └──────────────────────────────────────┘
 ```
 
-LED 0 sits above MIC_L and LED 2 sits above MIC_R. When the microphone is muted, these two LEDs turn red. The centre LED (1) is used for general status animations.
+LED 0 sits above MIC_L and LED 2 sits above MIC_R. When the microphone is muted, these two LEDs turn red to visually indicate the mic positions are disabled. The centre LED (1) is used for general status animations.
 
 ---
 
@@ -78,7 +78,11 @@ LED 0 sits above MIC_L and LED 2 sits above MIC_R. When the microphone is muted,
 
 ## Button behaviour
 
-The single onboard button sends a context-aware command to LVA:
+The single onboard button supports both single-press context actions and multi-press gestures:
+
+### Single press (< 1000 ms hold time)
+
+Context-aware command based on current state, mirroring the Home Assistant Voice PE centre button priority:
 
 | Current state | Command sent |
 |---|---|
@@ -87,6 +91,23 @@ The single onboard button sends a context-aware command to LVA:
 | TTS speaking | `stop_speaking` |
 | Music / media playing | `stop_media_player` |
 | Any other (idle) | `start_listening` |
+
+### Multi-press gestures
+
+Detected via press timing within a detection window (500 ms between releases):
+
+| Gesture | Timing | Command sent |
+|---|---|---|
+| **Double press** | 2 presses < 500 ms apart | `button_double_press` |
+| **Triple press** | 3 presses < 500 ms apart | `button_triple_press` |
+| **Long press** | Single press held > 1000 ms | `button_long_press` |
+
+Multi-press commands are useful for triggering custom Home Assistant automations. For example:
+- Double press → start a specific routine or mode
+- Triple press → access a menu or configuration option
+- Long press → toggle do-not-disturb or night mode
+
+These commands are exposed as button press events to Home Assistant, allowing you to create custom automations via `button_press_event` triggers.
 
 ---
 
@@ -106,11 +127,14 @@ sudo reboot
 After rebooting, verify the microphone and speaker appear:
 
 ```bash
-arecord -l   # Should list: seeed-2mic-voicecard
-aplay -l     # Should list: seeed-2mic-voicecard
+arecord -l
+# Should list: seeded-2mic-voicecard
+
+aplay -l
+# Should list: seeded-2mic-voicecard
 ```
 
-> **Note:** The seeed-voicecard installer also enables SPI automatically. Check `/boot/firmware/config.txt` after running `install.sh` before proceeding to Step 2.
+> **Note:** The seeed-voicecard installer also enables SPI automatically. Check `/boot/firmware/config.txt` after running `install.sh` before proceeding to step 2.
 
 > **Pi 5 note:** The standard seeed-voicecard repository may not support the Pi 5 kernel (6.6+). Check the [seeed-voicecard GitHub issues](https://github.com/respeaker/seeed-voicecard/issues) for a compatible branch or fork before proceeding.
 
@@ -160,7 +184,7 @@ ReSpeaker 2mic HAT/
 ├── Dockerfile
 ├── compose.yml
 ├── requirements.txt
-└── respeaker2mic_peripheral.py
+└── respeaker_2mic_hat.py
 ```
 
 ### Step 5 — Build and start
@@ -196,7 +220,7 @@ environment:
 
 ## Configuration
 
-All configuration is at the top of `respeaker2mic_peripheral.py`:
+All configuration is at the top of `respeaker_2mic_hat.py`:
 
 ```python
 # LVA connection
@@ -213,6 +237,10 @@ LED_BRIGHTNESS = 0.6        # 0.0–1.0
 # GPIO button
 BTN_ACTION     = 17
 BTN_DEBOUNCE_MS = 150
+
+# Button multipress timing
+MULTIPRESS_TIMEOUT_MS = 500    # Time window between presses (ms)
+LONG_PRESS_MS         = 1000   # Duration to detect long press (ms)
 ```
 
 ### Command-line arguments
@@ -248,7 +276,7 @@ BTN_DEBOUNCE_MS = 150
 1. Confirm `dtparam=spi=on` is in `/boot/firmware/config.txt` and the Pi has been rebooted.
 2. Check `/dev/spidev0.0` exists: `ls /dev/spidev*`.
 3. Confirm the container user is in the `spi` group: `groups $USER`.
-4. Run with `--debug` and look for `APA102 SPI driver opened` in the logs.
+4. Run with `--debug` and look for `APA102 SPI driver opened` in the logs. If `spidev not found` appears, the Python package failed to install — rebuild the image.
 
 ### Button does not respond
 
@@ -267,5 +295,6 @@ devices:
 
 ### LVA not reachable
 
-1. Confirm LVA is running and port 6055 is open: `nc -zv localhost 6055`.
+1. Confirm LVA is running and `--disable-peripheral-api` was not passed.
 2. With `network_mode: host`, `localhost` resolves to the Pi itself.
+3. Check port 6055 is not blocked: `nc -zv localhost 6055`.
