@@ -1,5 +1,7 @@
 # ReSpeaker 4-Mic Array HAT
 
+<img src="image.png" width="300">
+
 Peripheral controller for the [ReSpeaker 4-Mic Array](https://wiki.seeedstudio.com/ReSpeaker_4_Mic_Array_for_Raspberry_Pi/) by Seeed Studio, running alongside the Linux Voice Assistant (LVA) container.
 
 The controller runs as a separate Docker container on the same Raspberry Pi. It connects to LVA's peripheral WebSocket API and drives the 12-LED APA102 ring with animations that mirror the [Home Assistant Voice PE](https://www.home-assistant.io/voice_control/voice_remote_local_assistant/) LED behaviour.

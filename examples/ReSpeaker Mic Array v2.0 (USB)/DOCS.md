@@ -1,5 +1,7 @@
 # ReSpeaker Mic Array v2.0 (USB)
 
+<img src="image.png" width="300">
+
 Peripheral controller for the [ReSpeaker Mic Array v2.0](https://wiki.seeedstudio.com/ReSpeaker_Mic_Array_v2.0/) by Seeed Studio, running alongside the Linux Voice Assistant (LVA) container.
 
 The controller runs as a separate Docker container and connects to LVA's peripheral WebSocket API. It drives the 12-LED APA102 ring via a USB HID vendor command to the device's onboard XMOS XVF3000 firmware.

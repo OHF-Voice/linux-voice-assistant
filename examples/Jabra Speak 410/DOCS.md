@@ -1,5 +1,7 @@
 # Jabra Speak 410
 
+<img src="image.png" width="300">
+
 Peripheral controller for the [Jabra Speak 410](https://www.jabra.com/business/speakerphones/jabra-speak-series/jabra-speak-410) USB speakerphone, running alongside the Linux Voice Assistant (LVA) container.
 
 The controller connects to the Jabra Speak 410 via USB HID, drives its LED ring to reflect the current assistant state, and maps its hardware buttons to LVA commands. It also optionally integrates with PipeWire for volume control and hardware mute detection.

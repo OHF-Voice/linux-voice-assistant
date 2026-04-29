@@ -1,4 +1,6 @@
-# Satellite 1 HAT Board
+# Satellite 1 HAT Board 
+
+<img src="image.png" width="400" height="200">
 
 Peripheral controller for the [Satellite1 HAT Board](https://futureproofhomes.net/products/satellite1-top-microphone-board) by FutureProofHomes, running alongside the Linux Voice Assistant (LVA) container.
 

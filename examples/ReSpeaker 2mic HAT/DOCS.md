@@ -1,5 +1,7 @@
 # ReSpeaker 2-Mic Pi HAT
 
+<img src="image.png" width="300">
+
 Peripheral controller for the [ReSpeaker 2-Mic Pi HAT](https://wiki.seeedstudio.com/ReSpeaker_2_Mics_Pi_HAT/) by Seeed Studio, running alongside the Linux Voice Assistant (LVA) container.
 
 The controller runs as a separate Docker container on the same Raspberry Pi. It connects to LVA's peripheral WebSocket API, drives the 3 APA102 RGB LEDs, and maps the single onboard button to context-aware LVA commands with multipress support.
