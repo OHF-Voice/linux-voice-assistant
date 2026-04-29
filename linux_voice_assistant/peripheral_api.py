@@ -123,6 +123,7 @@ class LVACommand(str, Enum):
     UNMUTE_MIC = "unmute_mic"
     VOLUME_UP = "volume_up"
     VOLUME_DOWN = "volume_down"
+    SET_VOLUME = "set_volume"
     STOP_TIMER_RINGING = "stop_timer_ringing"
     STOP_MEDIA_PLAYER = "stop_media_player"
     STOP_SPEAKING = "stop_speaking"
@@ -316,6 +317,40 @@ class PeripheralAPIServer:
             # persist_volume also emits VOLUME_CHANGED via models.py
             state.persist_volume(new_vol)
 
+        elif command == LVACommand.SET_VOLUME:
+            data = msg.get("data", {})
+            volume = data.get("volume")
+            if not isinstance(volume, (int, float)):
+                _LOGGER.warning("Peripheral: invalid volume in set_volume command: %s", volume)
+                return
+
+            new_vol = max(0.0, min(1.0, float(volume)))
+            vol_pct = int(round(new_vol * 100))
+
+            state.music_player.set_volume(vol_pct)
+            state.tts_player.set_volume(vol_pct)
+
+            if state.media_player_entity is not None:
+                state.media_player_entity.volume = new_vol
+                state.media_player_entity.previous_volume = new_vol
+
+                # Push the new volume to HA so its media player entity updates in real time
+                if satellite is not None:
+
+                    satellite.send_messages(
+                        [
+                            MediaPlayerStateResponse(
+                                key=state.media_player_entity.key,
+                                state=state.media_player_entity.state,
+                                volume=new_vol,
+                                muted=state.media_player_entity.muted,
+                            )
+                        ]
+                    )
+
+            # persist_volume also emits VOLUME_CHANGED via models.py
+            state.persist_volume(new_vol)
+
         elif command == LVACommand.STOP_TIMER_RINGING:
             if satellite is None:
                 return
@@ -360,28 +395,36 @@ class PeripheralAPIServer:
             if state.button_event_sensor_entity is not None:
                 state.button_event_sensor_entity.update_state("single_press")
                 if satellite is not None:
-                    satellite.send_messages([state.button_event_sensor_entity._get_state_message()])  # pylint: disable=protected-access
+                    satellite.send_messages([
+                        state.button_event_sensor_entity._get_state_message()  # pylint: disable=protected-access
+                    ])
 
         elif command == LVACommand.BUTTON_DOUBLE_PRESS:
             state.tts_player.play(state.button_double_press_sound)
             if state.button_event_sensor_entity is not None:
                 state.button_event_sensor_entity.update_state("double_press")
                 if satellite is not None:
-                    satellite.send_messages([state.button_event_sensor_entity._get_state_message()])  # pylint: disable=protected-access
+                    satellite.send_messages([
+                        state.button_event_sensor_entity._get_state_message()  # pylint: disable=protected-access
+                    ])
 
         elif command == LVACommand.BUTTON_TRIPLE_PRESS:
             state.tts_player.play(state.button_triple_press_sound)
             if state.button_event_sensor_entity is not None:
                 state.button_event_sensor_entity.update_state("triple_press")
                 if satellite is not None:
-                    satellite.send_messages([state.button_event_sensor_entity._get_state_message()])  # pylint: disable=protected-access
+                    satellite.send_messages([
+                        state.button_event_sensor_entity._get_state_message()  # pylint: disable=protected-access
+                    ])
 
         elif command == LVACommand.BUTTON_LONG_PRESS:
             state.tts_player.play(state.button_long_press_sound)
             if state.button_event_sensor_entity is not None:
                 state.button_event_sensor_entity.update_state("long_press")
                 if satellite is not None:
-                    satellite.send_messages([state.button_event_sensor_entity._get_state_message()])  # pylint: disable=protected-access
+                    satellite.send_messages([
+                        state.button_event_sensor_entity._get_state_message()  # pylint: disable=protected-access
+                    ])
 
     # ------------------------------------------------------------------
     # Helpers
