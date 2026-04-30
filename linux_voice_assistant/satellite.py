@@ -799,7 +799,6 @@ class VoiceSatelliteProtocol(APIServer):
 
         _LOGGER.debug("Button start_listening triggered")
         self._pipeline_active = True
-        self._emit(LVAEvent.WAKE_WORD_DETECTED)
         self.duck()
         self.state.tts_player.play(
             self.state.start_listening_sound,
