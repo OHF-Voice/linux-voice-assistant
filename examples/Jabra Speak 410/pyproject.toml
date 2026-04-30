@@ -1,0 +1,9 @@
+[project]
+name = "lva-jabra-speak-410"
+version = "0.1.0"
+description = "Add your description here"
+requires-python = ">=3.14"
+dependencies = [
+    "hidapi>=0.15.0",
+    "websockets>=16.0",
+]

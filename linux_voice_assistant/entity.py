@@ -5,6 +5,8 @@ from typing import Callable, List, Optional, Union
 
 # pylint: disable=no-name-in-module
 from aioesphomeapi.api_pb2 import (  # type: ignore[attr-defined]
+    EventResponse,
+    ListEntitiesEventResponse,
     ListEntitiesMediaPlayerResponse,
     ListEntitiesNumberResponse,
     ListEntitiesRequest,
@@ -612,12 +614,54 @@ class StopWordSensitivityNumberEntity(ESPHomeEntity):
             yield NumberStateResponse(key=self.key, state=self.value)
 
 
+class ButtonEventSensorEntity(ESPHomeEntity):
+    def __init__(
+        self,
+        server: APIServer,
+        key: int,
+        name: str,
+        object_id: str,
+    ) -> None:
+        ESPHomeEntity.__init__(self, server)
+
+        self.key = key
+        self.name = name
+        self.object_id = object_id
+        self.event_types = ["single_press", "double_press", "triple_press", "long_press"]
+        self._current_event: Optional[str] = None
+        self._log = logging.getLogger(f"{self.__class__.__name__}[{self.key}]")
+
+    def update_state(self, event_type: str) -> None:
+        """Update the event state with a button press event."""
+        self._current_event = event_type
+        self._log.debug("Button event state updated: %s", event_type)
+
+    def handle_message(self, msg: message.Message) -> Iterable[message.Message]:
+        if isinstance(msg, ListEntitiesRequest):
+            yield ListEntitiesEventResponse(
+                object_id=self.object_id,
+                key=self.key,
+                name=self.name,
+                device_class="button",
+                event_types=self.event_types,
+            )
+        elif isinstance(msg, SubscribeHomeAssistantStatesRequest):
+            yield self._get_state_message()
+
+    def _get_state_message(self) -> EventResponse:
+        return EventResponse(
+            key=self.key,
+            event_type=self._current_event or "",
+        )
+
+
 # Backward compatibility export aliases
 __all__ = [
     "ESPHomeEntity",
     "MediaPlayerEntity",
     "MuteSwitchEntity",
     "ThinkingSoundEntity",
+    "ButtonEventSensorEntity",
     "WakeWord1SensitivityNumberEntity",
     "WakeWord2SensitivityNumberEntity",
     "StopWordSensitivityNumberEntity",

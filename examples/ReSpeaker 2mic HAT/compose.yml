@@ -1,0 +1,123 @@
+---
+# ReSpeaker 2-Mic Pi HAT – peripheral controller
+#
+# Runs alongside the linux-voice-assistant container.
+# Connects to LVA's peripheral WebSocket API (port 6055) and drives the
+# 3 APA102 RGB LEDs and the single onboard button on the ReSpeaker 2-Mic HAT.
+#
+# See hardware notes at the bottom of this file before first run.
+
+services:
+  respeaker2mic-peripheral:
+    build: .
+    image: ohf/respeaker2mic-peripheral:local
+    container_name: respeaker2mic-peripheral
+    restart: unless-stopped
+
+    # -----------------------------------------------------------------------
+    # Device access
+    #
+    # /dev/spidev0.0  – SPI0 CE0, used by spidev for the APA102 LED strip
+    # /dev/gpiomem    – allows RPi.GPIO to access the button pin without root
+    # -----------------------------------------------------------------------
+    devices:
+      - /dev/spidev0.0:/dev/spidev0.0
+      - /dev/gpiomem:/dev/gpiomem
+
+    # -----------------------------------------------------------------------
+    # Run as normal user — no privileged mode required.
+    # Update UID:GID if your host user is not 1000:1000.
+    # -----------------------------------------------------------------------
+    user: "1000:1000"
+
+    group_add:
+      - gpio
+      - spi
+
+    environment:
+      - PYTHONUNBUFFERED=1
+
+    # -----------------------------------------------------------------------
+    # Host network so "localhost" reaches the LVA container directly.
+    # Change --host if LVA is on a different machine.
+    # -----------------------------------------------------------------------
+    network_mode: host
+
+    command:
+      - "--host"
+      - "localhost"
+      - "--port"
+      - "6055"
+      # Uncomment for verbose logging during setup:
+      # - "--debug"
+
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "respeaker_2mic_hat.py"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+
+# =============================================================================
+# HARDWARE NOTES
+# =============================================================================
+#
+# 1. AUDIO DRIVER — seeed-voicecard (REQUIRED for microphone input)
+#
+#    The ReSpeaker 2-Mic HAT uses a WM8960 I2S codec for both the
+#    microphones and the speaker output. Install the driver on the HOST Pi:
+#
+#        git clone https://github.com/respeaker/seeed-voicecard
+#        cd seeed-voicecard
+#        sudo ./install.sh
+#        sudo reboot
+#
+#    Verify after reboot:
+#        arecord -l
+#        # Should list: seeed-2mic-voicecard
+#
+#    The seeed-voicecard installer also enables SPI automatically.
+#    Check /boot/firmware/config.txt before proceeding to step 2.
+#
+# 2. SPI OVERLAY (REQUIRED for LED ring)
+#
+#    The APA102 LEDs use SPI0 CE0 (/dev/spidev0.0).
+#    If not already added by seeed-voicecard, add to /boot/firmware/config.txt:
+#
+#        dtparam=spi=on
+#
+#    Then reboot and verify:
+#        ls /dev/spidev*    # Should show /dev/spidev0.0
+#
+# 3. GPIO GROUP (REQUIRED for button input)
+#
+#    Add the host user to the gpio and spi groups:
+#
+#        sudo usermod -aG gpio,spi $USER
+#
+#    Then log out and back in. Check your UID:
+#        id -u $USER     # Update user: field above if not 1000
+#
+# 4. SPEAKER OUTPUT
+#
+#    The WM8960 codec also drives the JST 2.0 speaker connector and the
+#    3.5 mm audio jack. After installing seeed-voicecard, the speaker
+#    appears as an ALSA playback device. Pass it to LVA via:
+#
+#        --audio-output-device "seeed-2mic-voicecard"
+#
+# 5. ONBOARD AUDIO CONFLICT
+#
+#    The ReSpeaker 2-Mic HAT replaces the Pi's onboard audio.
+#    Disable it in /boot/firmware/config.txt if you see conflicts:
+#
+#        # dtparam=audio=on    ← comment this out
+#
+# =============================================================================

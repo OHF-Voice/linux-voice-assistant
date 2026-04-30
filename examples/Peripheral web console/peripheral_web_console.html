@@ -1,0 +1,404 @@
+
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: var(--font-mono, monospace); font-size: 13px; background: var(--color-background-secondary, #f5f5f5); }
+  .root { display: flex; flex-direction: column; gap: 12px; padding: 1rem; max-width: 1200px; margin: 0 auto; }
+  .row { display: flex; gap: 12px; align-items: stretch; flex-wrap: wrap; }
+  .card { background: var(--color-background-primary); border: 0.5px solid var(--color-border-tertiary); border-radius: var(--border-radius-lg); padding: 1.2rem; flex: 1; min-width: 260px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+  .card-title { font-size: 11px; font-weight: 600; color: var(--color-text-secondary); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 12px; }
+
+  /* Connection section */
+  .conn-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+  .conn-row input { flex: 1; font-family: var(--font-mono); font-size: 12px; padding: 6px 8px; border: 0.5px solid var(--color-border-secondary); border-radius: 4px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; transition: background 0.2s; }
+  .dot.off  { background: #888780; }
+  .dot.on   { background: #1D9E75; }
+  .dot.err  { background: #E24B4A; }
+  .conn-label { font-size: 12px; color: var(--color-text-secondary); min-width: 70px; font-weight: 500; }
+
+  /* State display */
+  .state-section { display: flex; gap: 12px; align-items: center; margin: 12px 0; padding: 10px; background: var(--color-background-secondary); border-radius: 6px; }
+  .state-display { display: flex; gap: 8px; align-items: center; flex: 1; }
+  .state-badge { display: inline-block; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; background: var(--color-background-secondary); color: var(--color-text-primary); border: 1px solid var(--color-border-tertiary); transition: all 0.2s; min-width: 80px; text-align: center; }
+  .state-badge.wake_word_detected { background: #EEEDFE; color: #3C3489; border-color: #AFA9EC; }
+  .state-badge.listening { background: #E1F5EE; color: #085041; border-color: #5DCAA5; }
+  .state-badge.thinking  { background: #FAEEDA; color: #633806; border-color: #EF9F27; }
+  .state-badge.tts_speaking { background: #E6F1FB; color: #0C447C; border-color: #85B7EB; }
+  .state-badge.muted     { background: #FCEBEB; color: #791F1F; border-color: #F09595; }
+  .state-badge.pipeline_error { background: #FCEBEB; color: #A32D2D; border-color: #E24B4A; animation: pulse 0.5s ease-out; }
+  .state-badge.timer_ringing { background: #FAECE7; color: #712B13; border-color: #F0997B; }
+  .state-badge.media_player_playing { background: #EAF3DE; color: #27500A; border-color: #97C459; }
+  @keyframes pulse { 0% { transform: scale(1.05); } 100% { transform: scale(1); } }
+
+  /* Meta info grid */
+  .meta-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-top: 10px; }
+  .meta-item { display: flex; flex-direction: column; }
+  .meta-label { font-size: 10px; font-weight: 600; color: var(--color-text-tertiary); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; }
+  .meta-value { font-size: 13px; font-weight: 500; color: var(--color-text-primary); font-family: var(--font-mono); }
+
+  /* Timer display - prominent */
+  .timer-box { background: linear-gradient(135deg, #0C447C 0%, #085041 100%); color: white; padding: 12px; border-radius: 8px; text-align: center; margin-top: 10px; }
+  .timer-box.hidden { display: none; }
+  .timer-name { font-size: 11px; font-weight: 500; opacity: 0.9; }
+  .timer-countdown { font-size: 24px; font-weight: 700; font-family: var(--font-mono); letter-spacing: 2px; }
+
+  /* Volume bar */
+  .vol-section { margin-top: 10px; }
+  .vol-label { font-size: 10px; font-weight: 600; color: var(--color-text-tertiary); text-transform: uppercase; margin-bottom: 4px; }
+  .vol-bar-wrap { height: 8px; background: var(--color-background-secondary); border-radius: 4px; overflow: hidden; }
+  .vol-bar { height: 100%; background: #1D9E75; border-radius: 4px; transition: width 0.3s; }
+
+  /* Feed */
+  .feed { height: 280px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+  .feed-item { display: flex; gap: 8px; align-items: flex-start; padding: 6px 8px; border-radius: 4px; font-size: 11px; }
+  .feed-item:hover { background: var(--color-background-secondary); }
+  .feed-ts { color: var(--color-text-tertiary); font-size: 10px; flex-shrink: 0; min-width: 55px; font-weight: 500; }
+  .feed-event { color: var(--color-text-primary); font-weight: 500; }
+  .feed-data { color: var(--color-text-secondary); font-size: 10px; }
+  .feed-item.sent .feed-event { color: #185FA5; }
+  .feed-item.recv .feed-event { color: #3B6D11; }
+  .feed-item.system .feed-event { color: #888780; font-style: italic; }
+  .feed-item.err-item .feed-event { color: #A32D2D; }
+
+  /* Last conversation context */
+  .context-box { background: #f9f9f9; border-left: 3px solid #85B7EB; padding: 8px 10px; margin-top: 8px; border-radius: 4px; font-size: 11px; }
+  .context-label { color: var(--color-text-tertiary); font-weight: 600; text-transform: uppercase; font-size: 9px; letter-spacing: 0.05em; }
+  .context-text { color: var(--color-text-primary); margin-top: 4px; font-style: italic; }
+  .context-box.hidden { display: none; }
+
+  /* Commands */
+  .cmd-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 6px; }
+  .cmd-btn { font-family: var(--font-mono); font-size: 11px; padding: 8px 10px; text-align: center; cursor: pointer; border-radius: 4px; background: var(--color-background-primary); border: 0.5px solid var(--color-border-secondary); color: var(--color-text-primary); transition: all 0.1s; font-weight: 500; }
+  .cmd-btn:hover  { background: var(--color-background-secondary); }
+  .cmd-btn:active { transform: scale(0.97); }
+  .cmd-btn.danger { border-color: #F09595; color: #A32D2D; }
+  .cmd-btn.danger:hover { background: #FCEBEB; }
+  .cmd-btn.primary { border-color: #85B7EB; color: #0C447C; }
+  .cmd-btn.primary:hover { background: #E6F1FB; }
+
+  /* Volume input row */
+  .vol-input-row { display: flex; gap: 6px; margin-top: 8px; }
+  #volume-input { flex: 1; padding: 6px 8px; font-family: var(--font-mono); font-size: 11px; border: 0.5px solid var(--color-border-secondary); border-radius: 4px; }
+
+  .clear-btn { font-size: 10px; padding: 4px 8px; cursor: pointer; background: none; border: 0.5px solid var(--color-border-tertiary); border-radius: 3px; color: var(--color-text-secondary); float: right; margin-top: -2px; transition: all 0.1s; }
+  .clear-btn:hover { background: var(--color-background-secondary); }
+</style>
+
+<div class="root">
+  <h2 class="sr-only" style="position:absolute;width:1px;height:1px;overflow:hidden;">LVA peripheral API web console — connect to a running LVA instance to view events and send commands</h2>
+
+  <!-- Connection & Status Card -->
+  <div class="card">
+    <div class="card-title">Connection & Status</div>
+
+    <div class="conn-row">
+      <input type="text" id="url" value="ws://localhost:6055" placeholder="ws://host:6055" />
+      <button id="conn-btn" class="cmd-btn primary" style="min-width:75px;">connect</button>
+    </div>
+
+    <div class="state-section">
+      <div class="dot off" id="dot"></div>
+      <span class="conn-label" id="conn-label">disconnected</span>
+      <span style="margin-left:auto; font-size:10px; color:var(--color-text-secondary); text-transform: uppercase; font-weight: 600;">state</span>
+      <span class="state-badge" id="state-badge">idle</span>
+    </div>
+
+    <!-- Meta info -->
+    <div class="meta-grid">
+      <div class="meta-item">
+        <span class="meta-label">Volume</span>
+        <span class="meta-value" id="meta-vol">—</span>
+      </div>
+      <div class="meta-item">
+        <span class="meta-label">Muted</span>
+        <span class="meta-value" id="meta-muted">—</span>
+      </div>
+      <div class="meta-item">
+        <span class="meta-label">HA Connected</span>
+        <span class="meta-value" id="meta-ha">—</span>
+      </div>
+    </div>
+
+    <!-- Volume bar -->
+    <div class="vol-section">
+      <div class="vol-label">Audio Level</div>
+      <div class="vol-bar-wrap"><div class="vol-bar" id="vol-bar" style="width:0%"></div></div>
+    </div>
+
+    <!-- Timer display (prominent) -->
+    <div class="timer-box hidden" id="timer-box">
+      <div class="timer-name" id="timer-name"></div>
+      <div class="timer-countdown" id="timer-countdown">0:00</div>
+    </div>
+
+    <!-- Last conversation context -->
+    <div class="context-box hidden" id="stt-context">
+      <div class="context-label">You said:</div>
+      <div class="context-text" id="stt-text"></div>
+    </div>
+    <div class="context-box hidden" id="tts-context">
+      <div class="context-label">Assistant said:</div>
+      <div class="context-text" id="tts-text"></div>
+    </div>
+  </div>
+
+  <!-- Main layout: Feed + Commands -->
+  <div class="row">
+    <div class="card" style="flex:2; min-width:340px;">
+      <div class="card-title">Event Feed <button class="clear-btn" id="clear-btn">clear</button></div>
+      <div class="feed" id="feed"></div>
+    </div>
+
+    <div class="card" style="flex:1; min-width:280px;">
+      <div class="card-title">Commands</div>
+      <div class="cmd-grid">
+        <button class="cmd-btn primary" onclick="send('start_listening')">Start listening</button>
+        <button class="cmd-btn danger"  onclick="send('stop_pipeline')">■ Stop pipeline</button>
+        <button class="cmd-btn danger"  onclick="send('stop_speaking')">■ Stop speaking</button>
+        <button class="cmd-btn danger"  onclick="send('stop_timer_ringing')">■ Stop timer ringing</button>
+        <button class="cmd-btn"         onclick="send('mute_mic')">Mute microphone</button>
+        <button class="cmd-btn"         onclick="send('unmute_mic')">Unmute microphone</button>
+        <button class="cmd-btn"         onclick="send('volume_up')">Volume up</button>
+        <button class="cmd-btn"         onclick="send('volume_down')">Volume down</button>
+        <button class="cmd-btn"         onclick="send('pause_media_player')">⏸ Pause media player</button>
+        <button class="cmd-btn"         onclick="send('resume_media_player')">▶ Resume media player</button>
+        <button class="cmd-btn"         onclick="send('stop_media_player')">■ Stop media player</button>
+        <button class="cmd-btn"         onclick="send('button_single_press')">◉ Single press</button>
+        <button class="cmd-btn"         onclick="send('button_double_press')">◉ Double press</button>
+        <button class="cmd-btn"         onclick="send('button_triple_press')">◉ Triple press</button>
+        <button class="cmd-btn"         onclick="send('button_long_press')">◉ Long press</button>
+      </div>
+
+      <!-- Volume input -->
+      <div class="vol-input-row">
+        <button class="cmd-btn primary" style="flex: 0 0 auto;" onclick="sendSetVolume()">Set volume</button>
+        <input type="text" id="volume-input" placeholder="0.0–1.0" />
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  let ws = null;
+  let timerInterval = null;
+  let errorTimeout = null;
+  let currentTimer = null;
+  let previousState = null;
+
+  const feed    = document.getElementById('feed');
+  const dot     = document.getElementById('dot');
+  const label   = document.getElementById('conn-label');
+  const badge   = document.getElementById('state-badge');
+  const btn     = document.getElementById('conn-btn');
+  const volBar  = document.getElementById('vol-bar');
+  const metaVol   = document.getElementById('meta-vol');
+  const metaMuted = document.getElementById('meta-muted');
+  const metaHa    = document.getElementById('meta-ha');
+
+  const timerBox = document.getElementById('timer-box');
+  const timerName = document.getElementById('timer-name');
+  const timerCountdown = document.getElementById('timer-countdown');
+
+  const sttContext = document.getElementById('stt-context');
+  const sttText = document.getElementById('stt-text');
+  const ttsContext = document.getElementById('tts-context');
+  const ttsText = document.getElementById('tts-text');
+
+  const STATES = ['wake_word_detected','listening','thinking','tts_speaking','muted','pipeline_error','timer_ringing','media_player_playing'];
+
+  function ts() {
+    const d = new Date();
+    return d.getHours().toString().padStart(2,'0') + ':' +
+           d.getMinutes().toString().padStart(2,'0') + ':' +
+           d.getSeconds().toString().padStart(2,'0');
+  }
+
+  function log(cls, eventStr, dataStr) {
+    const item = document.createElement('div');
+    item.className = 'feed-item ' + cls;
+    item.innerHTML =
+      '<span class="feed-ts">' + ts() + '</span>' +
+      '<div><div class="feed-event">' + eventStr + '</div>' +
+      (dataStr ? '<div class="feed-data">' + dataStr + '</div>' : '') +
+      '</div>';
+    feed.appendChild(item);
+    feed.scrollTop = feed.scrollHeight;
+  }
+
+  function setState(ev) {
+    // Temporary error display: show for 4 seconds then clear
+    if (ev === 'pipeline_error') {
+      badge.textContent = ev;
+      badge.className = 'state-badge ' + ev;
+      clearTimeout(errorTimeout);
+      errorTimeout = setTimeout(() => {
+        badge.textContent = previousState || 'idle';
+        badge.className = 'state-badge ' + (previousState || 'idle');
+      }, 3000);
+    } else {
+      previousState = ev;
+      badge.textContent = ev;
+      badge.className = 'state-badge ' + (STATES.includes(ev) ? ev : '');
+    }
+  }
+
+  function setConnected(ok, err) {
+    dot.className = 'dot ' + (ok ? 'on' : err ? 'err' : 'off');
+    label.textContent = ok ? 'connected' : err ? 'error' : 'disconnected';
+    btn.textContent = ok ? 'disconnect' : 'connect';
+  }
+
+  function updateTimerDisplay() {
+    if (!currentTimer) {
+      clearInterval(timerInterval);
+      return;
+    }
+
+    const remaining = currentTimer.seconds_left;
+    const m = Math.floor(remaining / 60);
+    const s = remaining % 60;
+    timerCountdown.textContent = m + ':' + s.toString().padStart(2, '0');
+    timerName.textContent = currentTimer.name || 'timer';
+
+    timerBox.classList.remove('hidden');
+
+    // Only decrement if still counting (not ringing)
+    if (!currentTimer.ringing) {
+      currentTimer.seconds_left -= 1;
+    }
+  }
+
+  function startTimerCountdown() {
+    clearInterval(timerInterval);
+    timerInterval = setInterval(updateTimerDisplay, 1000);
+    updateTimerDisplay();  // Immediate update
+  }
+
+  function connect() {
+    const url = document.getElementById('url').value.trim();
+    log('system', '→ connecting to ' + url);
+    ws = new WebSocket(url);
+
+    ws.onopen = () => {
+      setConnected(true, false);
+      log('system', '→ connected');
+    };
+
+    ws.onclose = () => {
+      setConnected(false, false);
+      setState('idle');
+      log('system', '→ disconnected');
+      ws = null;
+    };
+
+    ws.onerror = () => {
+      setConnected(false, true);
+      log('err-item', '→ connection error — check host/port');
+      ws = null;
+    };
+
+    ws.onmessage = (e) => {
+      let msg;
+      try { msg = JSON.parse(e.data); } catch { log('recv', e.data); return; }
+
+      const ev   = msg.event || '?';
+      const data = msg.data;
+
+      let dataStr = data ? JSON.stringify(data) : '';
+
+      if (ev === 'snapshot') {
+        metaVol.textContent   = data.volume !== undefined ? (data.volume * 100).toFixed(0) + '%' : '—';
+        metaMuted.textContent = data.muted !== undefined ? (data.muted ? 'yes' : 'no') : '—';
+        metaHa.textContent    = data.ha_connected !== undefined ? (data.ha_connected ? 'yes' : 'no') : '—';
+        volBar.style.width    = (data.volume !== undefined ? data.volume * 100 : 0).toFixed(0) + '%';
+
+        // Restore last conversation context
+        if (data.last_stt_text) {
+          sttText.textContent = data.last_stt_text;
+          sttContext.classList.remove('hidden');
+        }
+        if (data.last_tts_text) {
+          ttsText.textContent = data.last_tts_text;
+          ttsContext.classList.remove('hidden');
+        }
+
+        log('recv', 'snapshot', dataStr);
+        return;
+      }
+
+      if (ev === 'volume_changed' && data) {
+        const pct = (data.volume * 100).toFixed(0);
+        metaVol.textContent = pct + '%';
+        volBar.style.width  = pct + '%';
+      }
+      if (ev === 'volume_muted' && data) {
+        metaMuted.textContent = data.muted ? 'yes' : 'no';
+      }
+      if (ev === 'zeroconf' && data) {
+        metaHa.textContent = data.status === 'connected' ? 'yes' : 'connecting…';
+      }
+
+      if (ev === 'stt_text' && data) {
+        sttText.textContent = data.text;
+        sttContext.classList.remove('hidden');
+      }
+      if (ev === 'tts_text' && data) {
+        ttsText.textContent = data.text;
+        ttsContext.classList.remove('hidden');
+      }
+
+      if ((ev === 'timer_ticking' || ev === 'timer_updated') && data) {
+        currentTimer = {
+          id: data.id,
+          name: data.name,
+          seconds_left: data.seconds_left,
+          ringing: false
+        };
+        startTimerCountdown();
+      }
+      if (ev === 'timer_ringing' && data) {
+        if (currentTimer) {
+          currentTimer.ringing = true;
+          timerName.textContent = (data && data.name) ? data.name + ' 🔔' : 'ringing';
+          timerCountdown.textContent = '0:00';
+          timerBox.classList.remove('hidden');
+        }
+      }
+
+      setState(ev);
+      log('recv', ev, dataStr);
+    };
+  }
+
+  function disconnect() {
+    if (ws) { ws.close(); ws = null; }
+  }
+
+  btn.onclick = () => ws ? disconnect() : connect();
+  document.getElementById('clear-btn').onclick = () => { feed.innerHTML = ''; };
+
+  function send(command, data) {
+    if (!ws || ws.readyState !== 1) {
+      log('err-item', '✗ not connected — connect first');
+      return;
+    }
+    const msg = { command };
+    if (data) msg.data = data;
+    ws.send(JSON.stringify(msg));
+    log('sent', '↑ ' + command, data ? JSON.stringify(data) : '');
+  }
+
+  function sendSetVolume() {
+    const volumeInput = document.getElementById('volume-input');
+    const volume = parseFloat(volumeInput.value);
+
+    if (isNaN(volume)) {
+      log('err-item', '✗ invalid volume — enter 0.0–1.0');
+      return;
+    }
+
+    const clamped = Math.max(0.0, Math.min(1.0, volume));
+    send('set_volume', { volume: clamped });
+    volumeInput.value = '';  // Clear after sending
+  }
+</script>
