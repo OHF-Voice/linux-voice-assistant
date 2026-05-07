@@ -58,6 +58,7 @@ Commands accepted from the peripheral container
   unmute_mic
   volume_up
   volume_down
+  set_volume        data: {"volume": 0.0–1.0}
   stop_timer_ringing
   pause_media_player
   resume_media_player
@@ -173,6 +174,14 @@ class PeripheralAPIServer:
         self._last_stt_text: Optional[str] = None
         self._last_tts_text: Optional[str] = None
 
+        # Current event state — replayed to newly-connecting clients so they can
+        # show the correct animation immediately without waiting for the next event.
+        # Only "state" events are tracked (pipeline, timer, media, muted, idle).
+        # Transient/informational events (stt_text, tts_text, volume_changed, etc.)
+        # are not tracked because they carry no ongoing visual state.
+        self._current_state: Optional[LVAEvent] = None
+        self._current_state_data: Optional[Dict[str, Any]] = None
+
     # ------------------------------------------------------------------
     # Lifecycle
     # ------------------------------------------------------------------
@@ -241,7 +250,19 @@ class PeripheralAPIServer:
         try:
             await websocket.send(payload)
         except Exception:  # pylint: disable=broad-except
-            pass
+            return
+
+        # Replay the current event state so the client immediately shows the
+        # right animation — e.g. a timer ticking animation when reconnecting
+        # mid-timer, or the muted indicator when reconnecting while muted.
+        if self._current_state is not None:
+            state_payload: Dict[str, Any] = {"event": self._current_state.value}
+            if self._current_state_data:
+                state_payload["data"] = self._current_state_data
+            try:
+                await websocket.send(json.dumps(state_payload))
+            except Exception:  # pylint: disable=broad-except
+                pass
 
     # ------------------------------------------------------------------
     # Command dispatch
@@ -455,6 +476,32 @@ class PeripheralAPIServer:
         elif event == LVAEvent.LISTENING:
             self._last_stt_text = None
             self._last_tts_text = None
+
+        # ----------------------------------------------------------------
+        # Track current "state" so newly-connecting clients receive it on
+        # connect via _send_snapshot.  Only persistent/visual states are
+        # stored — transient informational events are skipped.
+        # ----------------------------------------------------------------
+        _STATE_EVENTS = {
+            LVAEvent.WAKE_WORD_DETECTED,
+            LVAEvent.LISTENING,
+            LVAEvent.THINKING,
+            LVAEvent.TTS_SPEAKING,
+            LVAEvent.TTS_FINISHED,
+            LVAEvent.IDLE,
+            LVAEvent.MUTED,
+            LVAEvent.TIMER_TICKING,
+            LVAEvent.TIMER_RINGING,
+            LVAEvent.MEDIA_PLAYER_PLAYING,
+            LVAEvent.DISCONNECTED,
+            LVAEvent.PIPELINE_ERROR,
+        }
+        if event in _STATE_EVENTS:
+            self._current_state = event
+            self._current_state_data = data or None
+        elif event == LVAEvent.TIMER_UPDATED and self._current_state == LVAEvent.TIMER_TICKING:
+            # Keep state as TIMER_TICKING but refresh the countdown data
+            self._current_state_data = data or None
 
         if not self._clients:
             return
