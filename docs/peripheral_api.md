@@ -153,7 +153,6 @@ Send these to control LVA from your peripheral hardware.
 |---------|------|-------------|
 | `start_listening` | — | Play the start-listening chime and begin a voice pipeline run, as if the user pressed the action button. No-op if already muted or pipeline already active. |
 | `stop_pipeline` | — | Abort the active voice pipeline at any phase (listening, thinking, or TTS speaking). Cleans up STT streaming, sends `AnnounceFinished` to HA, unducking music, and emits `idle`. |
-| `stop_speaking` | — | Stop TTS or announcement playback. Equivalent to `stop_pipeline` for the speaking phase. |
 
 ### Microphone
 
@@ -261,10 +260,8 @@ async def main():
 def _context_command() -> str:
     if assist_state == "timer_ringing":
         return "stop_timer_ringing"
-    if assist_state in ("wake_word_detected", "listening", "thinking"):
+    if assist_state in ("wake_word_detected", "listening", "thinking", "tts_speaking"):
         return "stop_pipeline"
-    if assist_state == "tts_speaking":
-        return "stop_speaking"
     if assist_state == "media_player_playing":
         return "stop_media_player"
     return "start_listening"

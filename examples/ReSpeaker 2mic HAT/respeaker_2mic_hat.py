@@ -28,8 +28,8 @@ Button behaviour (context action — same priority as HA Voice PE centre button)
   Single press:
     timer ringing               → stop_timer_ringing
     wake word / listening /
-      thinking (pipeline active) → stop_pipeline
-    tts speaking                → stop_speaking
+      thinking (pipeline active) /
+        tts speaking                → stop_pipeline
     media playing               → stop_media_player
     idle / anything else        → start_listening
 
@@ -491,19 +491,16 @@ class ButtonHandler:
         Context-sensitive action — mirrors HA Voice PE centre button priority:
           1. Timer ringing              → stop_timer_ringing
           2. Pipeline active            → stop_pipeline
-             (wake word / listening / thinking)
-          3. TTS speaking               → stop_speaking
-          4. Media playing              → stop_media_player
-          5. Idle / anything else       → start_listening
+             (wake word / listening / thinking / speaking)
+          3. Media playing              → stop_media_player
+          4. Idle / anything else       → start_listening
         """
         assist = self._state.assist_state
 
         if assist == AssistState.TIMER_RINGING:
             self._send("stop_timer_ringing")
-        elif assist in (AssistState.WAKE_WORD, AssistState.LISTENING, AssistState.THINKING):
+        elif assist in (AssistState.WAKE_WORD, AssistState.LISTENING, AssistState.THINKING, AssistState.SPEAKING):
             self._send("stop_pipeline")
-        elif assist == AssistState.SPEAKING:
-            self._send("stop_speaking")
         elif assist == AssistState.MEDIA_PLAYING:
             self._send("stop_media_player")
         else:

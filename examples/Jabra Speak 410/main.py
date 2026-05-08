@@ -93,7 +93,7 @@ class LVAEvent(str, Enum):
     THINKING = "thinking"
     TTS_SPEAKING = "tts_speaking"
     TTS_FINISHED = "tts_finished"
-    ERROR = "error"
+    PIPELINE_ERROR = "pipeline_error"
     IDLE = "idle"
     MUTED = "muted"
     TIMER_TICKING = "timer_ticking"
@@ -103,20 +103,20 @@ class LVAEvent(str, Enum):
     VOLUME_CHANGED = "volume_changed"
     VOLUME_MUTED = "volume_muted"
     ZEROCONF = "zeroconf"
+    DISCONNECTED = "disconnected"
 
 
 class LVACommand(str, Enum):
     """Commands accepted from peripheral clients."""
 
     START_LISTENING = "start_listening"
-    STOP_LISTENING = "stop_listening"
     MUTE_MIC = "mute_mic"
     UNMUTE_MIC = "unmute_mic"
     VOLUME_UP = "volume_up"
     VOLUME_DOWN = "volume_down"
     STOP_TIMER_RINGING = "stop_timer_ringing"
     STOP_MEDIA_PLAYER = "stop_media_player"
-    STOP_SPEAKING = "stop_speaking"
+    STOP_PIPELINE = "stop_pipeline"
 
 
 class JabraSpeak:
@@ -168,8 +168,7 @@ class JabraSpeak:
                 ):
                     print("jabra to lva: hangup detected")
                     await write_to_lva(LVACommand.STOP_TIMER_RINGING)
-                    await write_to_lva(LVACommand.STOP_SPEAKING)
-                    await write_to_lva(LVACommand.STOP_LISTENING)
+                    await write_to_lva(LVACommand.STOP_PIPELINE)
                 # mute switch
                 elif event & Telephony.mute:
                     print("jabra to lva: mute toggle detected")
@@ -220,7 +219,7 @@ class JabraSpeak:
 async def listening_bodge():
     await asyncio.sleep(0.5)
     if current_state == LVAEvent.WAKE_WORD_DETECTED:
-        await write_to_lva(LVACommand.STOP_LISTENING)
+        await write_to_lva(LVACommand.STOP_PIPELINE)
         await write_to_jabra(LEDState.three_green)
 
 
@@ -273,13 +272,20 @@ async def set_mute(m: bool, write_lva: bool = True):
         await asyncio.gather(*commands)
 
 
-async def cool_error():
+async def pipeline_error():
     for _ in range(4):
         await write_to_jabra(LEDState.all_red)
         await asyncio.sleep(0.1)
         await write_to_jabra(LEDState.default)
         await asyncio.sleep(0.1)
 
+async def ha_disconnected():
+    """All surround leds blink repeatedly with red color to indicate disconnected state from LVA."""
+    while True:
+        await write_to_jabra(LEDState.all_red)
+        await asyncio.sleep(0.5)
+        await write_to_jabra(LEDState.default)
+        await asyncio.sleep(0.5)
 
 current_state: None | LVAEvent = None
 
@@ -350,8 +356,8 @@ async def wsloop():
                             await write_to_jabra(LEDState.partial_flash)
                         case LVAEvent.TTS_FINISHED:
                             await write_to_jabra(LEDState.default)
-                        case LVAEvent.ERROR:
-                            asyncio.create_task(cool_error())
+                        case LVAEvent.PIPELINE_ERROR:
+                            asyncio.create_task(pipeline_error())
                         case LVAEvent.IDLE:
                             await set_mute(False, write_lva=False)
                         case LVAEvent.MUTED:
@@ -370,6 +376,8 @@ async def wsloop():
                             pass
                         case LVAEvent.ZEROCONF:
                             pass
+                        case LVAEvent.DISCONNECTED:
+                            await write_to_jabra(ha_disconnected())
                         case event:
                             print(f"Unknown event: {event}")
         except asyncio.CancelledError:

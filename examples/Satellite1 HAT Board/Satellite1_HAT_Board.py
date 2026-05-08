@@ -16,7 +16,7 @@ Hardware layout (Satellite 1 HAT on Raspberry Pi)
                     idle            → start_listening
                     listening       → stop_pipeline
                     thinking        → stop_pipeline
-                    tts_speaking    → stop_speaking
+                    tts_speaking    → stop_pipeline
                     timer_ringing   → stop_timer_ringing
                     media_playing   → stop_media_player
                 Multi-press (detected via timing):
@@ -587,19 +587,16 @@ class ButtonHandler:
         Context-sensitive bottom button — mirrors HA Voice PE priority:
           1. Timer ringing           → stop_timer_ringing
           2. Pipeline active         → stop_pipeline
-          3. TTS speaking            → stop_speaking
-          4. Media playing           → stop_media_player
-          5. Idle / anything else    → start_listening
+          3. Media playing           → stop_media_player
+          4. Idle / anything else    → start_listening
         """
         assist = self._state.assist_state
 
         if assist == AssistState.TIMER_RINGING:
             self._send("stop_timer_ringing")
-        elif assist in (AssistState.WAKE_WORD, AssistState.LISTENING, AssistState.THINKING):
+        elif assist in (AssistState.WAKE_WORD, AssistState.LISTENING, AssistState.THINKING, AssistState.SPEAKING):
             # stop_pipeline aborts the voice pipeline at any of these phases
             self._send("stop_pipeline")
-        elif assist == AssistState.SPEAKING:
-            self._send("stop_speaking")
         elif assist == AssistState.MEDIA_PLAYING:
             self._send("stop_media_player")
         else:

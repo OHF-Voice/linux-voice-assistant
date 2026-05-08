@@ -63,8 +63,7 @@ Context-aware command based on current assistant state, mirroring the Home Assis
 | Current state | Command sent |
 |---|---|
 | Timer ringing | `stop_timer_ringing` |
-| Wake word / listening / thinking | `stop_pipeline` |
-| TTS speaking | `stop_speaking` |
+| Wake word / listening / thinking / TTS speaking / | `stop_pipeline` |
 | Music / media playing | `stop_media_player` |
 | Any other (idle) | `start_listening` |
 

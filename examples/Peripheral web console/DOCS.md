@@ -112,7 +112,6 @@ Send commands to LVA by clicking buttons:
 **Listening & Pipeline:**
 - **Start listening** - Manually trigger listening (as if wake word was detected)
 - **Stop pipeline** - Abort the current voice pipeline (stops listening, thinking, speaking)
-- **Stop speaking** - Stop TTS playback only
 
 **Audio Control:**
 - **Volume up** / **Volume down** - Adjust volume by small increments

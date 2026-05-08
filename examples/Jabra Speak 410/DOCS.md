@@ -174,8 +174,6 @@ All options are set via environment variables in `docker-compose.yml`:
 
 **LED pattern constraints** — The Jabra Speak 410 firmware enforces a telephony state machine. LED patterns are limited to what the device's HID protocol supports; custom animations or per-pixel colour control are not possible.
 
-**`stop_pipeline` compatibility** — This controller was developed against an earlier version of the LVA peripheral API that used `stop_listening` as the command name. The current LVA peripheral API uses `stop_pipeline`. If you encounter issues with the hang-up button not stopping an active pipeline, check that your LVA version matches the controller version.
-
 ---
 
 ## Troubleshooting

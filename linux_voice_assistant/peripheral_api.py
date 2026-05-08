@@ -51,7 +51,7 @@ Commands accepted from the peripheral container
 ------------------------------------------------
   start_listening
   stop_pipeline     Abort the active voice pipeline at any phase — listening,
-                    thinking, or wake word active. Calls satellite.stop() which
+                    thinking, speaking or wake word active. Calls satellite.stop() which
                     cleans up STT streaming, sends VoiceAssistantAnnounceFinished
                     to HA, unducking music, and emits idle to peripherals.
   mute_mic
@@ -63,7 +63,6 @@ Commands accepted from the peripheral container
   pause_media_player
   resume_media_player
   stop_media_player
-  stop_speaking
   button_single_press
   button_double_press
   button_triple_press
@@ -127,7 +126,6 @@ class LVACommand(str, Enum):
     SET_VOLUME = "set_volume"
     STOP_TIMER_RINGING = "stop_timer_ringing"
     STOP_MEDIA_PLAYER = "stop_media_player"
-    STOP_SPEAKING = "stop_speaking"
     PAUSE_MEDIA_PLAYER = "pause_media_player"
     RESUME_MEDIA_PLAYER = "resume_media_player"
     BUTTON_SINGLE_PRESS = "button_single_press"
@@ -295,7 +293,7 @@ class PeripheralAPIServer:
 
         elif command == LVACommand.STOP_PIPELINE:
             # Stops the voice pipeline at any active phase:
-            # listening, thinking, or wake word active.
+            # listening, thinking, speaking or wake word active.
             if satellite is not None:
                 satellite.stop()
 
@@ -403,14 +401,6 @@ class PeripheralAPIServer:
                 state.media_player_entity.state = MediaPlayerState.PLAYING
                 if satellite is not None:
                     satellite.send_messages([self._create_media_player_response(MediaPlayerState.PLAYING)])
-
-        elif command == LVACommand.STOP_SPEAKING:
-            # Stop TTS/announcement playback and clean up pipeline state.
-            # Delegates to satellite.stop() which handles unducking, clearing
-            # the stop word, sending VoiceAssistantAnnounceFinished, and
-            # emitting TTS_FINISHED + IDLE to peripherals.
-            if satellite is not None:
-                satellite.stop()
 
         elif command == LVACommand.BUTTON_SINGLE_PRESS:
             if state.button_event_sensor_entity is not None:
