@@ -8,7 +8,7 @@ import shutil
 import threading
 import time
 from collections.abc import Iterable
-from typing import Dict, List, Optional, Set, Union
+from typing import Any, Dict, List, Optional, Set, Union
 from urllib.parse import urlparse, urlunparse
 from urllib.request import urlopen
 
@@ -60,7 +60,6 @@ from .entity import (
 from .models import AvailableWakeWord, ServerState, WakeWordType
 from .peripheral_api import LVAEvent
 from .util import call_all
-from typing import Any
 
 _LOGGER = logging.getLogger(__name__)
 
