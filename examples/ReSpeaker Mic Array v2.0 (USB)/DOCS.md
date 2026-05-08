@@ -115,6 +115,8 @@ ReSpeaker Mic Array v2.0 (USB)/
 
 ### Step 4 — Build and start
 
+#### Option A — Run with Docker Compose (recommended)
+
 ```bash
 cd respeaker_usb
 docker compose up -d
@@ -124,6 +126,13 @@ Check logs:
 
 ```bash
 docker compose logs -f
+```
+
+#### Option B — Run directly with Python
+
+```bash
+pip install -r requirements.txt
+python respeaker_usb_mic_array.py --host localhost --port 6055
 ```
 
 ---

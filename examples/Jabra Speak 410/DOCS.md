@@ -39,7 +39,7 @@ The Jabra Speak 410 has an internal telephony state machine that maps LED patter
 | TTS speaking | Partial flash | Ring partially flashing |
 | TTS finished | Off | Returns to default |
 | Muted | All red | Entire ring solid red |
-| Error | Red flash (×4) | Ring rapidly flashes red then returns to off |
+| Pipeline error | Red flash (×4) | Ring rapidly flashes red then returns to off |
 | Timer ringing | Flashing | Ring flashes |
 | No HA connection | Flashing | Ring flashes |
 
@@ -122,6 +122,11 @@ Jabra Speak 410/
 
 ```bash
 cd jabra_speak_410
+```
+
+#### Option A — Run with Docker Compose (recommended)
+
+```bash
 docker compose up -d
 ```
 
@@ -129,6 +134,16 @@ Check logs:
 
 ```bash
 docker compose logs -f
+```
+
+#### Option B — Run directly with Python
+
+```bash
+pip install hidapi websocket-client pycaw pycaw[pipewire]
+export LVA_WS_URL=ws://localhost:6055
+export XDG_RUNTIME_DIR=/run/user/1000
+export PULSE_SERVER=unix:/run/user/1000/pulse/native
+python main.py
 ```
 
 ---

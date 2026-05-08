@@ -165,6 +165,8 @@ Satellite1 HAT Board/
 
 ### Step 4 — Build and start
 
+#### Option A — Run with Docker Compose (recommended)
+
 ```bash
 docker compose up -d
 ```
@@ -173,6 +175,12 @@ Check logs:
 
 ```bash
 docker compose logs -f
+```
+
+#### Option B — Run directly with Python
+```bash
+pip install -r requirements.txt
+python Satellite1_HAT_Board.py --host localhost --port 6055
 ```
 
 ---
