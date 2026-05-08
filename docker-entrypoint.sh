@@ -100,6 +100,10 @@ if [ "$ENABLE_OUTPUT_ONLY" = "1" ]; then
   EXTRA_ARGS+=( "--output-only" )
 fi
 
+if [ -n "${VOLUME_CONTROLLER}" ]; then
+  EXTRA_ARGS+=( "--volume-controller" "$VOLUME_CONTROLLER" )
+fi
+
 
 # Add cookie file for pulseaudio to prevent errors
 PULSE_COOKIE=${PULSE_COOKIE:-"/run/user/1000/pulse/cookie"}

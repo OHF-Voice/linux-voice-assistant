@@ -271,6 +271,8 @@ The following variables can be configured in the `.env` or in the service file:
 | `TIMER_FINISHED_SOUND` | `sounds/timer_finished.flac` | Sound file for timer finished |
 | `PROCESSING_SOUND` | `sounds/processing.wav` | Sound file for processing state |
 | `MUTE_SOUND` | `sounds/mute_switch_on.flac` | Sound file for mute on |
+| `UNMUTE_SOUND` | `sounds/mute_switch_off.flac` | Sound file for Configure Audio Devices |
+| `VOLUME_CONTROLLER` | `mpv` | Which program handles the master volume control. See [Additional Audio Settings](docs/additional_audio_settings.md#pipewire-based-volume-control) |
 | `UNMUTE_SOUND` | `sounds/mute_switch_off.flac` | Sound file for Configure Audio Devices
 | `ENABLE_OUTPUT_ONLY` | (optional) | Set to "1" to enable output-only mode |
 
