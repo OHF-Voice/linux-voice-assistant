@@ -32,7 +32,7 @@ The Jabra Speak 410 has an internal telephony state machine that maps LED patter
 
 | LVA state | LED pattern | Description |
 |---|---|---|
-| Idle / not connected | Off | Default state |
+| Idle | Off | Default state |
 | Wake word detected | Flashing | Ring flashes |
 | Listening | 3 green | Ring solid green |
 | Thinking | Flashing | Ring flashes |
@@ -41,6 +41,7 @@ The Jabra Speak 410 has an internal telephony state machine that maps LED patter
 | Muted | All red | Entire ring solid red |
 | Error | Red flash (×4) | Ring rapidly flashes red then returns to off |
 | Timer ringing | Flashing | Ring flashes |
+| No HA connection | Flashing | Ring flashes |
 
 > **Note:** The Jabra Speak 410 is a telephony device with a fixed firmware state machine. The LED patterns are constrained by its HID protocol — custom per-pixel colours are not possible.
 

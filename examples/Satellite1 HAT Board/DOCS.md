@@ -99,7 +99,7 @@ All animations mirror the Home Assistant Voice PE ESPHome firmware exactly.
 | Thinking | Pulsing pair | Two opposing LEDs fade in and out |
 | TTS speaking | Anticlockwise spin | Dual-arc spin in reverse direction |
 | Muted | Solid ring + red indicators | Full ring on; red at positions 0, 3, 6 & 9 (mic locations) |
-| Error | Red pulse | All LEDs red, pulsing |
+| Pipeline error | Red pulse | All LEDs red, pulsing |
 | Timer ticking | Countdown arc | Arc length proportional to `seconds_left / total_seconds` |
 | Timer ringing | Pulse + optional red | Full ring pulsing; red at 0, 3, 6, 9 if muted |
 
