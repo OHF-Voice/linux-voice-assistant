@@ -60,6 +60,7 @@ from .entity import (
 from .models import AvailableWakeWord, ServerState, WakeWordType
 from .peripheral_api import LVAEvent
 from .util import call_all
+from typing import Any
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -348,7 +349,7 @@ class VoiceSatelliteProtocol(APIServer):
     def _emit(
         self,
         event: LVAEvent,
-        data: Optional[Dict[str, object]] = None,
+        data: Optional[Dict[str, Any]] = None,
     ) -> None:
         """
         Emit a peripheral LED/button event.

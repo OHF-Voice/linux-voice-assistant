@@ -534,7 +534,9 @@ class PeripheralAPIServer:
 
     def _create_media_player_response(self, state: MediaPlayerState) -> MediaPlayerStateResponse:
         """Create a MediaPlayerStateResponse with current entity state."""
+        assert self._state is not None
         media_entity = self._state.media_player_entity
+        assert media_entity is not None
         return MediaPlayerStateResponse(
             key=media_entity.key,
             state=state,
