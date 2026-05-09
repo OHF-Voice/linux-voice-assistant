@@ -4,6 +4,9 @@ ENV LANG C.UTF-8
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 
+ARG VERSION=0.0.0
+ENV SETUPTOOLS_SCM_PRETEND_VERSION=${VERSION}
+
 LABEL \
     org.opencontainers.image.authors="Open Home Foundation" \
     org.opencontainers.image.description="Voice assistant for Home Assistant" \
