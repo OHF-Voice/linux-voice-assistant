@@ -38,6 +38,11 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      - name: Derive version information
+        id: version
+        run: |
+          echo "version=$(git describe --always | sed 's/^v//')-nightly" >> $GITHUB_OUTPUT
+
       - name: Create version files
         run: |
           echo "nightly" > version.txt
@@ -53,6 +58,9 @@ jobs:
           push: true
           tags: ${{ env.REGISTRY_LOWER }}/${{ env.REPOSITORY_LOWER }}:nightly
           labels: "nightly"
+          build-args: |
+            VERSION=${{ setps.version.outputs.version }}
+
       - name: Generate artifact attestation
         uses: actions/attest-build-provenance@v1.4.4
         with:

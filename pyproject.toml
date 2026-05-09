@@ -62,6 +62,8 @@ include-package-data = true
 include = ["linux_voice_assistant", "linux_voice_assistant.*"]
 exclude = ["tests", "tests.*"]
 
+[tool.setuptools_scm]
+
 [tool.black]
 line-length = 200
 target-version = ['py312', 'py313']

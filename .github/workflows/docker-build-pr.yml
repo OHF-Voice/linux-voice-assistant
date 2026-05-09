@@ -43,6 +43,11 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      - name: Derive version info
+        id: version
+        run: |
+          echo "version=$(git describe --tags | sed 's/^v//')-pr${{ env.PR_NUMBER }}" >> $GITHUB_OUTPUT
+
       - name: Create version files
         run: |
           echo "${{ env.PR_NUMBER }}" > version.txt
@@ -58,6 +63,9 @@ jobs:
           push: true
           tags: "${{ env.REGISTRY_LOWER }}/${{ env.REPOSITORY_LOWER }}-pr:${{ env.PR_NUMBER }}"
           labels: "${{ env.PR_NUMBER }}"
+          build-args: |
+            VERSION=${{ steps.version.output.version }}
+
       - name: Generate artifact attestation
         uses: actions/attest-build-provenance@v1.4.4
         with:
