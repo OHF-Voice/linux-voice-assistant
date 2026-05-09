@@ -316,4 +316,4 @@ Have you built a peripheral controller for a board not listed above? Contributio
 - A `Dockerfile` and `compose.yml` so others can run it with one command
 - A `DOCS.md` following the same structure as the existing examples (hardware layout, GPIO mapping, LED animations, installation steps, troubleshooting)
 
-Please make sure your example handles reconnection gracefully (retry on WebSocket failure) and shows a "not ready" animation when LVA is not reachable or HA is disconnected.
+Please make sure your example handles reconnection gracefully (retry on WebSocket failure) and shows a "not ready" effect when LVA is not reachable or HA is disconnected.
