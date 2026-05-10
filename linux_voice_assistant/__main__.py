@@ -126,6 +126,11 @@ async def main() -> None:
         help="Sound to play when unmuting the assistant",
     )
     parser.add_argument(
+        "--pipeline-ended-sound",
+        default="",
+        help="Sound to play when the voice pipeline ends without a response (e.g. no speech detected)",
+    )
+    parser.add_argument(
         "--preferences-file",
         default=_REPO_DIR / "preferences.json",
         help="Directory and file name for the file where the preferences are stored in JSON format",
@@ -316,6 +321,7 @@ async def main() -> None:
         processing_sound=args.processing_sound,
         mute_sound=args.mute_sound,
         unmute_sound=args.unmute_sound,
+        pipeline_ended_sound=args.pipeline_ended_sound,
         preferences=preferences,
         preferences_path=preferences_path,
         refractory_seconds=args.refractory_seconds,
