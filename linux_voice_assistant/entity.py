@@ -646,7 +646,11 @@ class ButtonEventSensorEntity(ESPHomeEntity):
                 event_types=self.event_types,
             )
         elif isinstance(msg, SubscribeHomeAssistantStatesRequest):
-            yield self._get_state_message()
+            # Wait until a press fires: yielding with an empty
+            # event_type makes HA reject the state and fail the
+            # whole ESPHome config entry to load.
+            if self._current_event:
+                yield self._get_state_message()
 
     def _get_state_message(self) -> EventResponse:
         return EventResponse(
