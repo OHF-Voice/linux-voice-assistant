@@ -2,7 +2,17 @@
 
 Acoustic Echo Cancellation (AEC) is a type of sound processing used to cancel out the noise coming out of your speaker and going into your mic. In LVA this functionality can be useful to allow LVA to listen to wake words even when audio is playing, particularly when a timer is playing. PulseAudio and PipeWire already provide built-in modules for AEC.
 
-## Enabling AEC
+## Docker
+
+Set `ENABLE_ECHO_CANCEL=1` in your `.env` file. The container will automatically load the PulseAudio AEC module and set `AUDIO_INPUT_DEVICE` to `aec_mic` at startup. If the module fails to load, a warning is logged and the application continues with the default audio devices.
+
+```env
+ENABLE_ECHO_CANCEL=1
+```
+
+For PipeWire or custom configurations, use the manual setup below and set `AUDIO_INPUT_DEVICE` directly.
+
+## Manual Setup
 
 ### PulseAudio
 ```sh
