@@ -74,6 +74,13 @@ async def main() -> None:
     parser.add_argument("--mic-auto-gain", type=int, default=0, choices=list(range(32)))
     parser.add_argument("--mic-noise-suppression", type=int, default=0, choices=(0, 1, 2, 3, 4))
     parser.add_argument(
+        "--audio-input-channels",
+        type=int,
+        default=1,
+        choices=(1, 2),
+        help="Number of mic channels to capture and stream (1=mono, 2=dual-channel voice)",
+    )
+    parser.add_argument(
         "--wake-word-dir",
         default=[_WAKEWORDS_DIR],
         action="append",
@@ -325,6 +332,7 @@ async def main() -> None:
         mic_volume=preferences.mic_volume,
         mic_auto_gain=preferences.mic_auto_gain,
         mic_noise_suppression=preferences.mic_noise_suppression,
+        audio_input_channels=args.audio_input_channels,
         timer_max_ring_seconds=args.timer_max_ring_seconds,
     )
 
@@ -410,6 +418,7 @@ async def main() -> None:
 
 def process_audio(state: ServerState, mic, block_size: int):
     """Process audio chunks from the microphone."""
+    n_channels = state.audio_input_channels
 
     wake_words: List[Union[MicroWakeWord, OpenWakeWord]] = []
     micro_features: Optional[MicroWakeWordFeatures] = None
@@ -424,12 +433,27 @@ def process_audio(state: ServerState, mic, block_size: int):
 
     try:
         _LOGGER.debug("Opening audio input device: %s", mic.name)
-        with mic.recorder(samplerate=16000, channels=1, blocksize=block_size) as mic_in:
+        with mic.recorder(samplerate=16000, channels=n_channels, blocksize=block_size) as mic_in:
             while True:
-                audio_chunk_array = mic_in.record(block_size).reshape(-1)
-                # little-endian 16-bit signed
+                # Shape: (block_size, n_channels) for stereo, (block_size, 1) for mono.
+                raw = mic_in.record(block_size)  # float32, range [-1, 1]
                 mic_vol_scalar = max(0.1, min(1.0, state.mic_volume / 100.0))
-                audio_chunk = (np.clip(audio_chunk_array * mic_vol_scalar, -1.0, 1.0) * 32767.0).astype("<i2").tobytes()
+
+                # Build per-channel byte arrays.  Channel 0 is the primary
+                # microphone; channel 1 (when present) is the reference/speaker
+                # feed used for server-side AEC.
+                channel_chunks: list[bytes] = []
+                for ch in range(n_channels):
+                    col = raw[:, ch] if n_channels > 1 else raw.reshape(-1)
+                    chunk = (
+                        (np.clip(col * mic_vol_scalar, -1.0, 1.0) * 32767.0)
+                        .astype("<i2")
+                        .tobytes()
+                    )
+                    channel_chunks.append(chunk)
+
+                # Primary channel drives WebRTC and wake-word detection.
+                audio_chunk = channel_chunks[0]
                 agc = state.preferences.mic_auto_gain or 0
                 ns = state.preferences.mic_noise_suppression or 0
 
@@ -529,7 +553,11 @@ def process_audio(state: ServerState, mic, block_size: int):
                         oww_features = OpenWakeWordFeatures.from_builtin()
 
                 try:
-                    state.satellite.handle_audio(audio_chunk)
+                    # Stream channel 0 (primary mic).
+                    state.satellite.handle_audio(audio_chunk, channel=0)
+                    # Stream additional channels (e.g. speaker reference for AEC).
+                    for ch in range(1, n_channels):
+                        state.satellite.handle_audio(channel_chunks[ch], channel=ch)
 
                     assert micro_features is not None
                     micro_inputs.clear()
