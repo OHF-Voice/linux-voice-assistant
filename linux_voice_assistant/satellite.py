@@ -82,6 +82,9 @@ class VoiceSatelliteProtocol(APIServer):
             self.supported_features = (
                 VoiceAssistantFeature.VOICE_ASSISTANT | VoiceAssistantFeature.API_AUDIO | VoiceAssistantFeature.ANNOUNCE | VoiceAssistantFeature.START_CONVERSATION | VoiceAssistantFeature.TIMERS
             )
+            # Channel 1 carries echo-reference audio; advertise SPEAKER so HA knows to use it for server-side AEC.
+            if state.audio_input_channels >= 2:
+                self.supported_features |= VoiceAssistantFeature.SPEAKER
 
         existing_media_players = [entity for entity in self.state.entities if isinstance(entity, MediaPlayerEntity)]
 
@@ -607,12 +610,12 @@ class VoiceSatelliteProtocol(APIServer):
             self.state.save_preferences()
             self.state.wake_words_changed = True
 
-    def handle_audio(self, audio_chunk: bytes) -> None:
+    def handle_audio(self, audio_chunk: bytes, channel: int = 0) -> None:
 
         if not self._is_streaming_audio or self.state.muted:
             return
 
-        self.send_messages([VoiceAssistantAudio(data=audio_chunk)])
+        self.send_messages([VoiceAssistantAudio(data=audio_chunk, channel=channel)])
 
     def wakeup(self, wake_word: Union[MicroWakeWord, OpenWakeWord]) -> None:
         if self._timer_finished:
