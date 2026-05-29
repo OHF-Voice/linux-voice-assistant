@@ -132,6 +132,10 @@ async def main() -> None:
         help="Directory and file name for the file where the preferences are stored in JSON format",
     )
     parser.add_argument(
+        "--state-file",
+        help="Optional path to write a JSON state file containing real-time conversation state.",
+    )
+    parser.add_argument(
         "--host",
         help="Optional host IP address to bind to (default: Autodetected by network interface)",  # 0.0.0.0 is IPv4, None is all interfaces
     )
@@ -321,6 +325,7 @@ async def main() -> None:
         unmute_sound=args.unmute_sound,
         preferences=preferences,
         preferences_path=preferences_path,
+        state_file=Path(args.state_file) if args.state_file else None,
         refractory_seconds=args.refractory_seconds,
         output_only=args.output_only,
         download_dir=args.download_dir,

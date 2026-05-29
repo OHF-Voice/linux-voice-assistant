@@ -18,6 +18,10 @@ if [ -n "${PREFERENCES_FILE}" ]; then
   EXTRA_ARGS+=( "--preferences-file" "$PREFERENCES_FILE" )
 fi
 
+if [ -n "${STATE_FILE}" ]; then
+  EXTRA_ARGS+=( "--state-file" "$STATE_FILE" )
+fi
+
 if [ -n "${NETWORK_INTERFACE}" ]; then
   EXTRA_ARGS+=( "--network-interface" "$NETWORK_INTERFACE" )
 fi

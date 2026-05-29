@@ -2,8 +2,10 @@
 
 import asyncio
 import hashlib
+import json
 import logging
 import posixpath
+from pathlib import Path
 import shutil
 import threading
 import time
@@ -72,6 +74,8 @@ class VoiceSatelliteProtocol(APIServer):
         self.state = state
         self.state.satellite = self
         self.state.connected = False
+
+        self._write_state("idle", clear_fields=True)
 
         # Report capabilities appropriately
         if state.output_only:
@@ -325,6 +329,49 @@ class VoiceSatelliteProtocol(APIServer):
         self._external_wake_words: Dict[str, VoiceAssistantExternalWakeWord] = {}
         self._disconnect_event = asyncio.Event()
 
+    def _write_state(
+        self,
+        status: str,
+        wake_word: Optional[str] = None,
+        stt_text: Optional[str] = None,
+        tts_text: Optional[str] = None,
+        clear_fields: bool = False,
+    ) -> None:
+        if not hasattr(self.state, "state_file") or not self.state.state_file:
+            return
+
+        if not hasattr(self, "_state_dict"):
+            self._state_dict = {
+                "timestamp": 0.0,
+                "status": "idle",
+                "wake_word": None,
+                "stt_text": None,
+                "tts_text": None,
+            }
+
+        self._state_dict["timestamp"] = time.time()
+        self._state_dict["status"] = status
+
+        if clear_fields:
+            self._state_dict["wake_word"] = None
+            self._state_dict["stt_text"] = None
+            self._state_dict["tts_text"] = None
+
+        if wake_word is not None:
+            self._state_dict["wake_word"] = wake_word
+        if stt_text is not None:
+            self._state_dict["stt_text"] = stt_text
+        if tts_text is not None:
+            self._state_dict["tts_text"] = tts_text
+
+        try:
+            temp_file = Path(self.state.state_file).with_suffix(".tmp")
+            with open(temp_file, "w", encoding="utf-8") as f:
+                json.dump(self._state_dict, f, ensure_ascii=False, indent=2)
+            temp_file.replace(self.state.state_file)
+        except Exception:
+            _LOGGER.exception("Failed to write LVA state to %s", self.state.state_file)
+
     def _set_thinking_sound_enabled(self, new_state: bool) -> None:
         self.state.thinking_sound_enabled = bool(new_state)
         self.state.preferences.thinking_sound = 1 if self.state.thinking_sound_enabled else 0
@@ -398,11 +445,13 @@ class VoiceSatelliteProtocol(APIServer):
                 self._processing = True
                 self.duck()
                 self.state.tts_player.play(self.state.processing_sound)
-        elif event_type in (
-            VoiceAssistantEventType.VOICE_ASSISTANT_STT_VAD_END,
-            VoiceAssistantEventType.VOICE_ASSISTANT_STT_END,
-        ):
+        elif event_type == getattr(VoiceAssistantEventType, "VOICE_ASSISTANT_STT_VAD_END", None) or event_type.name == "VOICE_ASSISTANT_STT_VAD_END":
             self._is_streaming_audio = False
+        elif event_type == getattr(VoiceAssistantEventType, "VOICE_ASSISTANT_STT_END", None) or event_type.name == "VOICE_ASSISTANT_STT_END":
+            self._is_streaming_audio = False
+            self._write_state("processing", stt_text=data.get("text"))
+        elif event_type.name == "VOICE_ASSISTANT_TTS_START":
+            self._write_state("responding", tts_text=data.get("text"))
         elif event_type == VoiceAssistantEventType.VOICE_ASSISTANT_INTENT_PROGRESS:
             if data.get("tts_start_streaming") == "1":
                 # Start streaming early
@@ -626,6 +675,7 @@ class VoiceSatelliteProtocol(APIServer):
             _LOGGER.debug("Stopping timer finished sound; will wake up in 1 s")
 
             wake_word_phrase = wake_word.wake_word  # type: ignore
+            self._write_state("listening", wake_word=wake_word_phrase, clear_fields=True)
 
             def _delayed_wakeup() -> None:
                 if self.state.muted or self._pipeline_active:
@@ -651,7 +701,9 @@ class VoiceSatelliteProtocol(APIServer):
             return
 
         wake_word_phrase = wake_word.wake_word  # type: ignore
-        _LOGGER.debug("Detected wake word: %s", wake_word_phrase)
+        self._write_state("listening", wake_word=wake_word_phrase, clear_fields=True)
+
+        _LOGGER.debug("Wakeup word detected: %s", wake_word_phrase)
         self._pipeline_active = True
         self.duck()
         self.state.tts_player.play(
@@ -668,6 +720,7 @@ class VoiceSatelliteProtocol(APIServer):
         self._is_streaming_audio = True
 
     def stop(self) -> None:
+        self._write_state("idle", clear_fields=True)
         self.state.active_wake_words.discard(self.state.stop_word.id)
         self._pipeline_active = False
 
@@ -710,9 +763,11 @@ class VoiceSatelliteProtocol(APIServer):
             self.send_messages([VoiceAssistantRequest(start=True)])
             self._is_streaming_audio = True
             self._pipeline_active = True
+            self._write_state("listening", clear_fields=True)
             _LOGGER.debug("Continuing conversation")
         else:
             self.unduck()
+            self._write_state("idle", clear_fields=True)
 
         _LOGGER.debug("TTS response finished")
 
@@ -749,6 +804,7 @@ class VoiceSatelliteProtocol(APIServer):
     def connection_lost(self, exc):
         super().connection_lost(exc)
 
+        self._write_state("idle", clear_fields=True)
         self._disconnect_event.set()
         self._is_streaming_audio = False
         self._tts_url = None

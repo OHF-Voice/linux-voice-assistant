@@ -99,6 +99,7 @@ class ServerState:
     preferences_path: Path
     download_dir: Path
 
+    state_file: Optional[Path] = None
     media_player_entity: "Optional[MediaPlayerEntity]" = None
     satellite: "Optional[VoiceSatelliteProtocol]" = None
     mute_switch_entity: "Optional[MuteSwitchEntity]" = None

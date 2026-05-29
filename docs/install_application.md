@@ -253,6 +253,7 @@ The following variables can be configured in the `.env` or in the service file:
 | `LVA_XDG_RUNTIME_DIR` | `/run/user/${LVA_USER_ID}` | XDG runtime directory |
 | `LVA_PULSE_COOKIE` | `/app/configuration/tmp_pulse_cookie` | Cookie file for PulseAudio if you use encryption. By default disabled. We use a tmp file to avoid errors if the file is not found |
 | `PREFERENCES_FILE` | (optional) | Path to a custom preferences JSON file |
+| `STATE_FILE` | (optional) | Optional Path to conversation state JSON file |
 | `NETWORK_INTERFACE` | Autodetected | network card for server |
 | `HOST` | Autodetected | API server IP-Address, can be 0.0.0.0 for all interfaces, but only one network card works for MAC-ADDRESS and ESP protocol |
 | `PORT` | `6053` | API server port |
