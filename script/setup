@@ -27,6 +27,15 @@ if args.cxxflags:
 if args.makeflags:
     env["MAKEFLAGS"] = args.makeflags
 
+# Derive version information from Git
+try:
+    version = subprocess.check_output(["git", "describe", "--tags"]).decode()
+    version = version.lstrip("v")
+except (subprocess.CalledProcessError, FileNotFoundError):
+    version = "0.0.0"
+
+env["SETUPTOOLS_SCM_PRETEND_VERSION"] = version
+
 # Upgrade dependencies
 pip = [context.env_exe, "-m", "pip"]
 subprocess.check_call(pip + ["install", "--upgrade", "pip"])
