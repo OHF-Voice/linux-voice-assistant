@@ -71,6 +71,7 @@ usage: __main__.py [-h] [--name NAME] [--audio-input-device AUDIO_INPUT_DEVICE] 
 | `--mic-volume`             | Control microphone volume                                     | 1.0                               |
 | `--mic-auto-gain`          | Add WebRTC Gain to Mic                                        | 0                                 |
 | `--mic-noise-suppression`  | Add WebRTC Noise Suppression to Mic                           | 0                                 |
+| `--audio-input-channels`   | Number of microphone audio channels to stream                 | 2                                 |
 | `--wake-word-dir`          | Directory with wake word models (.tflite) and configs (.json) | `wakewords/`                      |
 | `--wake-model`             | ID of active wake word model                                  | `okay_nabu`                       |
 | `--stop-model`             | ID of stop model                                              | `stop`                            |
