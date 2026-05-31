@@ -92,6 +92,10 @@ class MpvMediaPlayer:
         self._log.debug("resume() called")
         self._player.resume()
 
+    def set_audio_device(self, device: str | None) -> None:
+        """Set the mpv audio output device at runtime."""
+        self._player.set_audio_device(device)
+
     def stop(self) -> None:
         """Stop playback and invoke the done callback if present."""
         self._log.debug("stop() called")

@@ -93,6 +93,18 @@ class LibMpvPlayer(AudioPlayer):
             self._mpv.pause = False
             self._set_state(PlayerState.PLAYING)
 
+    def set_audio_device(self, device: str | None) -> None:
+        """Set the mpv audio output device at runtime."""
+        with self._state_lock:
+            self._mpv.stop()
+
+            if device:
+                self._mpv["audio-device"] = device
+            else:
+                self._mpv["audio-device"] = "auto"
+
+            self._set_state(PlayerState.IDLE)
+
     def stop(self, for_replacement: bool = False) -> None:
         """
         Stop playback.
