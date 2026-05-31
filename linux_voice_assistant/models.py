@@ -125,7 +125,7 @@ class ServerState:
     mic_auto_gain: int = 0
     mic_noise_suppression: int = 0
     mic_volume: int = 100  # 1–100, default maximum
-    audio_input_channels: int = 2    # number of mic channels to stream
+    audio_input_channels: int = 2  # number of mic channels to stream
     timer_max_ring_seconds: float = 900.0
 
     def save_preferences(self) -> None:
