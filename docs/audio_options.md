@@ -4,7 +4,7 @@
 
 ### Gain
 
-When you change gain, LVA(using the webrtc library) automatically adjusts the microphone input volume to keep it at a consistent level. If you're speaking quietly it boosts the signal, if you're speaking loudly it reduces it. Useful in the following ways:-
+When you change gain, LVA(using the [webrtc](https://github.com/OHF-Voice/webrtc-noise-gain) library) automatically adjusts the microphone input volume to keep it at a consistent level. If you're speaking quietly it boosts the signal, if you're speaking loudly it reduces it. Useful in the following ways:-
 
 - Microphones that are too quiet by default
 - Environments where you move around relative to the mic
@@ -12,7 +12,7 @@ When you change gain, LVA(using the webrtc library) automatically adjusts the mi
 
 ### Noise Suppression
 
-When you change noise suppression, LVA(using the webrtc library) filters out constant background noise from the audio signal. It works by learning what "silence" sounds like in your environment and subtracting that from the audio. Useful in the following ways:
+When you change noise suppression, LVA(using the [webrtc](https://github.com/OHF-Voice/webrtc-noise-gain) library) filters out constant background noise from the audio signal. It works by learning what "silence" sounds like in your environment and subtracting that from the audio. Useful in the following ways:
 
 - Noisy environments
 - Improving STT accuracy by sending cleaner audio to Home Assistant
