@@ -52,6 +52,11 @@ class LibMpvPlayer(AudioPlayer):
         # unmute) never lose their first samples regardless of system load.
         self._mpv["audio-stream-silence"] = True
 
+        # Limit cache size to prevent excessive memory usage during network streaming.
+        # 65536 KiB = 64 MiB. Adjust as needed.
+        self._mpv["cache"] = True
+        self._mpv["cache-size"] = 65536
+
         # Callback Handling
         self._done_callback: Optional[Callable[[], None]] = None
         self._mpv.event_callback("end-file")(self._on_end_file)
