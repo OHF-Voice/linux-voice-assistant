@@ -445,11 +445,7 @@ def process_audio(state: ServerState, mic, block_size: int):
                 channel_chunks: list[bytes] = []
                 for ch in range(n_channels):
                     col = raw[:, ch] if n_channels > 1 else raw.reshape(-1)
-                    chunk = (
-                        (np.clip(col * mic_vol_scalar, -1.0, 1.0) * 32767.0)
-                        .astype("<i2")
-                        .tobytes()
-                    )
+                    chunk = (np.clip(col * mic_vol_scalar, -1.0, 1.0) * 32767.0).astype("<i2").tobytes()
                     channel_chunks.append(chunk)
 
                 # Primary channel drives WebRTC and wake-word detection.
