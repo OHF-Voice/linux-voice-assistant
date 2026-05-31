@@ -553,11 +553,9 @@ def process_audio(state: ServerState, mic, block_size: int):
                         oww_features = OpenWakeWordFeatures.from_builtin()
 
                 try:
-                    # Stream channel 0 (primary mic).
-                    state.satellite.handle_audio(audio_chunk, channel=0)
-                    # Stream additional channels (e.g. speaker reference for AEC).
-                    for ch in range(1, n_channels):
-                        state.satellite.handle_audio(channel_chunks[ch], channel=ch)
+                    # Both channels travel in one message: data=ch0 (enhanced), data2=ch1 (raw reference)
+                    audio_chunk_2 = channel_chunks[1] if n_channels >= 2 else None
+                    state.satellite.handle_audio(audio_chunk, audio_chunk_2)
 
                     assert micro_features is not None
                     micro_inputs.clear()
