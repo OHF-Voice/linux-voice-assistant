@@ -20,6 +20,7 @@ from pyopen_wakeword import OpenWakeWord, OpenWakeWordFeatures
 
 from .models import Preferences, ServerState
 from .mpv_player import MpvMediaPlayer
+from .peripheral_api import LVAEvent, PeripheralAPIServer
 from .satellite import VoiceSatelliteProtocol
 from .util import (
     get_default_interface,
@@ -60,7 +61,6 @@ async def main() -> None:
         "--audio-input-block-size",
         type=int,
         default=1024,
-        # todo
     )
     parser.add_argument(
         "--audio-output-device",
@@ -106,6 +106,11 @@ async def main() -> None:
         help="Directory and file name for wake sound (when you say the wake word)",
     )
     parser.add_argument(
+        "--start-listening-sound",
+        default=str(_SOUNDS_DIR / "start_listening_button.flac"),
+        help="Directory and file name and sound for start listening button (when you press button to talk)",
+    )
+    parser.add_argument(
         "--timer-finished-sound",
         default=str(_SOUNDS_DIR / "timer_finished.flac"),
         help="Directory and file name for timer finished sound",
@@ -126,30 +131,72 @@ async def main() -> None:
         help="Sound to play when unmuting the assistant",
     )
     parser.add_argument(
+        "--button-double-press-sound",
+        default=str(_SOUNDS_DIR / "button_double_press.flac"),
+        help="Sound to play for button double press",
+    )
+    parser.add_argument(
+        "--button-triple-press-sound",
+        default=str(_SOUNDS_DIR / "button_triple_press.flac"),
+        help="Sound to play for button triple press",
+    )
+    parser.add_argument(
+        "--button-long-press-sound",
+        default=str(_SOUNDS_DIR / "button_long_press.flac"),
+        help="Sound to play for button long press",
+    )
+    parser.add_argument(
         "--preferences-file",
         default=_REPO_DIR / "preferences.json",
-        help="Directory and file name for the file where the preferences are stored in JSON format",
+        help="Directory and file name for the preferences JSON file",
     )
     parser.add_argument(
         "--host",
-        help="Optional host IP address to bind to (default: Autodetected by network interface)",  # 0.0.0.0 is IPv4, None is all interfaces
+        help="Optional host IP address to bind to (default: auto-detected by network interface)",
     )
     parser.add_argument(
         "--network-interface",
-        help="Network interface the application will be listening on (default: will be automatically detected by gateway)",
+        help="Network interface the application listens on (default: auto-detected by gateway)",
     )
     # Note that default port is also set in docker-entrypoint.sh
     parser.add_argument(
         "--port",
         type=int,
         default=6053,
-        help="Port the application is listenening on (default: 6053)",
+        help="Port the application is listening on (default: 6053)",
     )
     parser.add_argument(
         "--enable-thinking-sound",
         action="store_true",
-        help="Enable thinking finish sound, when the assistant is done thinking and needed more time to process",
+        help="Enable thinking sound on startup",
     )
+    # ------------------------------------------------------------------
+    # Peripheral API (LEDs, buttons, HAT boards)
+    # ------------------------------------------------------------------
+    parser.add_argument(
+        "--peripheral-host",
+        default="0.0.0.0",
+        help="Bind address for the peripheral WebSocket API (default: 0.0.0.0)",
+    )
+    parser.add_argument(
+        "--peripheral-port",
+        type=int,
+        default=6055,
+        help="Port for the peripheral WebSocket API (default: 6055)",
+    )
+    parser.add_argument(
+        "--peripheral-volume-step",
+        type=float,
+        default=PeripheralAPIServer.DEFAULT_VOLUME_STEP,
+        metavar="STEP",
+        help="Volume change per button press, 0.0–1.0 (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--disable-peripheral-api",
+        action="store_true",
+        help="Disable the peripheral WebSocket API entirely",
+    )
+    # ------------------------------------------------------------------
     parser.add_argument(
         "--timer-max-ring-seconds",
         type=float,
@@ -312,10 +359,14 @@ async def main() -> None:
         music_player=MpvMediaPlayer(device=args.audio_output_device),
         tts_player=MpvMediaPlayer(device=args.audio_output_device),
         wakeup_sound=args.wakeup_sound,
+        start_listening_sound=args.start_listening_sound,
         timer_finished_sound=args.timer_finished_sound,
         processing_sound=args.processing_sound,
         mute_sound=args.mute_sound,
         unmute_sound=args.unmute_sound,
+        button_double_press_sound=args.button_double_press_sound,
+        button_triple_press_sound=args.button_triple_press_sound,
+        button_long_press_sound=args.button_long_press_sound,
         preferences=preferences,
         preferences_path=preferences_path,
         refractory_seconds=args.refractory_seconds,
@@ -344,6 +395,22 @@ async def main() -> None:
     state.music_player.set_volume(initial_volume_percent)
     state.tts_player.set_volume(initial_volume_percent)
 
+    # ------------------------------------------------------------------
+    # Peripheral API (optional – LEDs, buttons, HAT boards)
+    # ------------------------------------------------------------------
+    peripheral_api: Optional[PeripheralAPIServer] = None
+    if not args.disable_peripheral_api:
+        peripheral_api = PeripheralAPIServer(
+            host=args.peripheral_host,
+            port=args.peripheral_port,
+            volume_step=args.peripheral_volume_step,
+        )
+        peripheral_api.set_state(state)
+        state.peripheral_api = peripheral_api
+
+    # ------------------------------------------------------------------
+    # ESPHome TCP server (with retry on EADDRINUSE)
+    # ------------------------------------------------------------------
     loop = asyncio.get_running_loop()
     max_attempts = 15
     attempt = 1
@@ -367,20 +434,40 @@ async def main() -> None:
 
     while attempt <= max_attempts:
         try:
-            server = await loop.create_server(lambda: VoiceSatelliteProtocol(state), host=host_ip_address, port=args.port)
-            break  # connect successful, exit the loop
+            server = await loop.create_server(
+                lambda: VoiceSatelliteProtocol(state),
+                host=host_ip_address,
+                port=args.port,
+            )
+            break  # connection successful, exit the loop
         except OSError as err:
             message = err.strerror or str(err)
             if err.errno == errno.EADDRINUSE:
                 message = "address already in use"
             if attempt < max_attempts:
-                _LOGGER.warning("Attempt %d/%d failed to bind on address (%s, %s): %s. Retrying in 1 second...", attempt, max_attempts, host_ip_address, args.port, message)
+                _LOGGER.warning(
+                    "Attempt %d/%d failed to bind on address (%s, %s): %s. " "Retrying in 1 second...",
+                    attempt,
+                    max_attempts,
+                    host_ip_address,
+                    args.port,
+                    message,
+                )
                 await asyncio.sleep(1)
                 attempt += 1
             else:
-                _LOGGER.exception("All %d attempts failed to bind on address (%s, %s): %s", max_attempts, host_ip_address, args.port, message)
+                _LOGGER.exception(
+                    "All %d attempts failed to bind on address (%s, %s): %s",
+                    max_attempts,
+                    host_ip_address,
+                    args.port,
+                    message,
+                )
                 sys.exit(1)
 
+    # ------------------------------------------------------------------
+    # Audio processing thread
+    # ------------------------------------------------------------------
     process_audio_thread = threading.Thread(
         target=process_audio,
         args=(state, mic, args.audio_input_block_size),
@@ -389,18 +476,32 @@ async def main() -> None:
     process_audio_thread.start()
 
     # Auto discovery (zeroconf, mDNS)
-    discovery = HomeAssistantZeroconf(port=args.port, name=state.name, mac_address=state.mac_address, host_ip_address=host_ip_address)
+    discovery = HomeAssistantZeroconf(
+        port=args.port,
+        name=state.name,
+        mac_address=state.mac_address,
+        host_ip_address=host_ip_address,
+    )
     await discovery.register_server()
 
+    # ------------------------------------------------------------------
+    # Start peripheral API and signal "getting started" to peripherals
+    # ------------------------------------------------------------------
+    if peripheral_api is not None:
+        await peripheral_api.start()
+        await peripheral_api.emit_event(LVAEvent.ZEROCONF, {"status": "getting_started"})
+
     try:
-        async with server:  # type: ignore
+        async with server:  # type: ignore[union-attr]
             _LOGGER.info("Server started (host=%s, port=%s)", host_ip_address, args.port)
-            await server.serve_forever()  # type: ignore
+            await server.serve_forever()  # type: ignore[union-attr]
     except KeyboardInterrupt:
         pass
     finally:
         state.audio_queue.put_nowait(None)
         process_audio_thread.join()
+        if peripheral_api is not None:
+            await peripheral_api.stop()
 
     _LOGGER.debug("Server stopped")
 
@@ -596,9 +697,9 @@ def process_audio(state: ServerState, mic, block_size: int):
                     if stopped and (state.stop_word.id in state.active_wake_words) and not state.muted:
                         _LOGGER.debug("Stop word detected")
                         state.satellite.stop()
-                except Exception:
+                except Exception:  # pylint: disable=broad-except
                     _LOGGER.exception("Unexpected error handling audio")
-    except Exception:
+    except Exception:  # pylint: disable=broad-except
         _LOGGER.exception("Unexpected error processing audio")
         sys.exit(1)
 

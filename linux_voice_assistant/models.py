@@ -6,13 +6,14 @@ from dataclasses import asdict, dataclass, field
 from enum import Enum
 from pathlib import Path
 from queue import Queue
-from typing import TYPE_CHECKING, Dict, List, Optional, Set, Union
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Union
 
 if TYPE_CHECKING:
     from pymicro_wakeword import MicroWakeWord
     from pyopen_wakeword import OpenWakeWord
 
     from .entity import (
+        ButtonEventSensorEntity,
         ESPHomeEntity,
         MediaPlayerEntity,
         MicSettingEntity,
@@ -91,10 +92,14 @@ class ServerState:
     music_player: "MpvMediaPlayer"
     tts_player: "MpvMediaPlayer"
     wakeup_sound: str
+    start_listening_sound: str
     processing_sound: str
     timer_finished_sound: str
     mute_sound: str
     unmute_sound: str
+    button_double_press_sound: str
+    button_triple_press_sound: str
+    button_long_press_sound: str
     preferences: Preferences
     preferences_path: Path
     download_dir: Path
@@ -103,6 +108,12 @@ class ServerState:
     satellite: "Optional[VoiceSatelliteProtocol]" = None
     mute_switch_entity: "Optional[MuteSwitchEntity]" = None
     thinking_sound_entity: "Optional[ThinkingSoundEntity]" = None
+    button_event_sensor_entity: "Optional[ButtonEventSensorEntity]" = None
+
+    # Optional peripheral WebSocket API (LEDs, buttons, HAT boards).
+    # Assigned in __main__ before the event loop starts.
+    peripheral_api: "Optional[Any]" = None  # PeripheralAPIServer at runtime
+
     sensitivity_1_number_entity: "Optional[WakeWord1SensitivityNumberEntity]" = None
     sensitivity_2_number_entity: "Optional[WakeWord2SensitivityNumberEntity]" = None
     stop_sensitivity_number_entity: "Optional[StopWordSensitivityNumberEntity]" = None
@@ -158,6 +169,13 @@ class ServerState:
         _LOGGER.info("Saving volume %s to %s", clamped_volume, self.preferences_path)
         self.save_preferences()
         _LOGGER.info("Volume saved successfully")
+
+        # Notify peripheral container (thread-safe; may be called from mpv callbacks)
+        api = self.peripheral_api
+        if api is not None:
+            from .peripheral_api import LVAEvent  # local import avoids circular dep
+
+            api.emit_event_sync(LVAEvent.VOLUME_CHANGED, {"volume": round(clamped_volume, 3)})
 
     def persist_mic_gain(self, gain: float) -> None:
         """Persist the microphone auto gain value."""

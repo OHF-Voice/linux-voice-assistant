@@ -76,6 +76,10 @@ if [ -n "${WAKEUP_SOUND}" ]; then
   EXTRA_ARGS+=( "--wakeup-sound" "$WAKEUP_SOUND" )
 fi
 
+if [ -n "${START_LISTENING_SOUND}" ]; then
+  EXTRA_ARGS+=( "--start-listening-sound" "$START_LISTENING_SOUND" )
+fi
+
 if [ -n "${TIMER_FINISHED_SOUND}" ]; then
   EXTRA_ARGS+=( "--timer-finished-sound" "$TIMER_FINISHED_SOUND" )
 fi
@@ -94,6 +98,22 @@ fi
 
 if [ -n "${TIMER_MAX_RING_SECONDS}" ]; then
   EXTRA_ARGS+=( "--timer-max-ring-seconds" "$TIMER_MAX_RING_SECONDS" )
+fi
+
+if [ -n "${PERIPHERAL_HOST}" ]; then
+  EXTRA_ARGS+=( "--peripheral-host" "$PERIPHERAL_HOST" )
+fi
+
+if [ -n "${PERIPHERAL_PORT}" ]; then
+  EXTRA_ARGS+=( "--peripheral-port" "$PERIPHERAL_PORT" )
+fi
+
+if [ -n "${PERIPHERAL_VOLUME_STEP}" ]; then
+  EXTRA_ARGS+=( "--peripheral-volume-step" "$PERIPHERAL_VOLUME_STEP" )
+fi
+
+if [ -n "${DISABLE_PERIPHERAL_API}" ]; then
+  EXTRA_ARGS+=( "--disable-peripheral-api" "$DISABLE_PERIPHERAL_API" )
 fi
 
 if [ "$ENABLE_OUTPUT_ONLY" = "1" ]; then
