@@ -252,6 +252,9 @@ The following variables can be configured in the `.env` or in the service file:
 | `LVA_PULSE_SERVER` | `/run/user/${LVA_USER_ID}/pulse/native` | Path to the PulseAudio/PipeWire socket (In some cases a `:unix`infront of the path is needed) |
 | `LVA_XDG_RUNTIME_DIR` | `/run/user/${LVA_USER_ID}` | XDG runtime directory |
 | `LVA_PULSE_COOKIE` | `/app/configuration/tmp_pulse_cookie` | Cookie file for PulseAudio if you use encryption. By default disabled. We use a tmp file to avoid errors if the file is not found |
+| `ENABLE_DEBUG` | (optional) | Set to "1" to enable debug mode |
+| `ENABLE_COLORED_DEBUG` | (optional) | Set to "1" to enable colored debug mode |
+| `LIST_DEVICES` | (optional) | Set to "1" to list audio devices instead of starting |
 | `PREFERENCES_FILE` | (optional) | Path to a custom preferences JSON file |
 | `NETWORK_INTERFACE` | Autodetected | network card for server |
 | `HOST` | Autodetected | API server IP-Address, can be 0.0.0.0 for all interfaces, but only one network card works for MAC-ADDRESS and ESP protocol |
