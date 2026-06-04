@@ -47,9 +47,21 @@ Alternatively if on a lower budget then suggest could use other microphone-array
 
 ### Installation
 
+**Assist Satellite app for Home Assistant OS**
+
+For HA OS, we provide a finished [Assist Satellite](https://github.com/OHF-Voice/apps/tree/main/assist_satellite) app (formerly add-on), which uses the Linux Voice Assistant runtime to turn your HA host into a voice satellite. Install it directly from the official add-on repository:
+
+[![Add repository to your Home Assistant instance.](https://my.home-assistant.io/badges/supervisor_addon.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https://github.com/home-assistant/addons)
+
+Once installed, the satellite is automatically discovered by Home Assistant via the ESPHome integration.
+
+**Raspberry Pi prebuilt image**
+
 For Raspberry Pi users, we provide a prebuild image that can be flashed to a SD card. See [PiCompose](https://github.com/florian-asche/PiCompose).
 
-For all other users, we have different installation methods available (Docker, systemd), each with its own dedicated instructions. See [Linux-Voice-Assistant - Installation](docs/install.md).
+**Docker / bare metal**
+
+For all other users, we have different installation methods available (Docker, systemd), each with its own dedicated instructions. See [Linux-Voice-Assistant - Installation](docs/install.md). 
 
 ### Parameter overview
 
