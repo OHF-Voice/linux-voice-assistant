@@ -1094,9 +1094,7 @@ class SendspinBridge:
         if server_url:
             asyncio.create_task(self._connection_loop(server_url))
         else:
-            _LOGGER.info(
-                "SendSpin bridge started (no server URL - waiting for connections)"
-            )
+            _LOGGER.info("SendSpin bridge started (no server URL - waiting for connections)")
 
     async def disconnect(self) -> None:
         """Stop the SendSpin client."""
