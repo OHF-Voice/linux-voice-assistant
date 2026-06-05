@@ -408,8 +408,8 @@ async def main() -> None:
     vsp = VoiceSatelliteProtocol(state)
     # Initialize SendSpin bridge if URL provided
     if args.sendspin_url:
-        from .sendspin_bridge import SendspinBridge
         from .audio_device_util import find_sounddevice_by_name
+        from .sendspin_bridge import SendspinBridge
 
         # Resolve MPV device name to sounddevice index
         sounddevice_index = find_sounddevice_by_name(args.audio_output_device)
