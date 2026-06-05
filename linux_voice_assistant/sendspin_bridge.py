@@ -165,9 +165,7 @@ class AudioPlayer:
         self._queued_duration_us = 0
 
         # DAC timing for accurate playback position tracking
-        self._dac_loop_calibrations: collections.deque[tuple[int, int]] = (
-            collections.deque(maxlen=100)
-        )
+        self._dac_loop_calibrations: collections.deque[tuple[int, int]] = collections.deque(maxlen=100)
         self._last_known_playback_position_us: int = 0
         self._last_dac_calibration_time_us: int = 0
 
@@ -330,9 +328,7 @@ class AudioPlayer:
         try:
             # Pre-start gating: fill silence until scheduled start time
             if self._playback_state == PlaybackState.WAITING_FOR_START:
-                bytes_written = self._handle_start_gating(
-                    output_buffer, bytes_written, frames, time
-                )
+                bytes_written = self._handle_start_gating(output_buffer, bytes_written, frames, time)
 
             # If still waiting after gating, fill remaining buffer with silence
             if self._playback_state == PlaybackState.WAITING_FOR_START:
@@ -351,9 +347,7 @@ class AudioPlayer:
                 if insert_every_n == 0 and drop_every_n == 0:
                     frames_data = self._read_input_frames_bulk(frames)
                     frames_bytes = len(frames_data)
-                    output_buffer[bytes_written : bytes_written + frames_bytes] = (
-                        frames_data
-                    )
+                    output_buffer[bytes_written : bytes_written + frames_bytes] = frames_data
                     bytes_written += frames_bytes
                 else:
                     # Slow path: sync corrections active
@@ -370,25 +364,15 @@ class AudioPlayer:
                     frames_remaining = frames
 
                     while frames_remaining > 0:
-                        frames_until_insert = (
-                            insert_counter
-                            if insert_every_n > 0
-                            else frames_remaining + 1
-                        )
-                        frames_until_drop = (
-                            drop_counter if drop_every_n > 0 else frames_remaining + 1
-                        )
+                        frames_until_insert = insert_counter if insert_every_n > 0 else frames_remaining + 1
+                        frames_until_drop = drop_counter if drop_every_n > 0 else frames_remaining + 1
 
-                        next_event_in = min(
-                            frames_until_insert, frames_until_drop, frames_remaining
-                        )
+                        next_event_in = min(frames_until_insert, frames_until_drop, frames_remaining)
 
                         if next_event_in > 0:
                             segment_data = self._read_input_frames_bulk(next_event_in)
                             segment_bytes = len(segment_data)
-                            output_buffer[
-                                bytes_written : bytes_written + segment_bytes
-                            ] = segment_data
+                            output_buffer[bytes_written : bytes_written + segment_bytes] = segment_data
                             bytes_written += segment_bytes
                             frames_remaining -= next_event_in
                             insert_counter -= next_event_in
@@ -402,9 +386,7 @@ class AudioPlayer:
                                 _ = self._read_one_input_frame()
                                 drop_counter = drop_every_n
                                 self._frames_dropped_since_log += 1
-                                output_buffer[
-                                    bytes_written : bytes_written + frame_size
-                                ] = self._last_output_frame
+                                output_buffer[bytes_written : bytes_written + frame_size] = self._last_output_frame
                                 bytes_written += frame_size
                                 frames_remaining -= 1
                                 insert_counter -= 1
@@ -412,9 +394,7 @@ class AudioPlayer:
                                 # Insert frame: output duplicate without reading
                                 insert_counter = insert_every_n
                                 self._frames_inserted_since_log += 1
-                                output_buffer[
-                                    bytes_written : bytes_written + frame_size
-                                ] = self._last_output_frame
+                                output_buffer[bytes_written : bytes_written + frame_size] = self._last_output_frame
                                 bytes_written += frame_size
                                 frames_remaining -= 1
                                 drop_counter -= 1
@@ -426,9 +406,7 @@ class AudioPlayer:
             _LOGGER.exception("Error in audio callback")
             if bytes_written < bytes_needed:
                 silence_bytes = bytes_needed - bytes_written
-                output_buffer[bytes_written : bytes_written + silence_bytes] = (
-                    b"\x00" * silence_bytes
-                )
+                output_buffer[bytes_written : bytes_written + silence_bytes] = b"\x00" * silence_bytes
             self._current_chunk = None
             self._current_chunk_offset = 0
 
@@ -453,22 +431,15 @@ class AudioPlayer:
             except Exception:
                 _LOGGER.debug("Failed to estimate playback position", exc_info=True)
 
-            if (
-                self._scheduled_start_dac_time_us is None
-                and self._scheduled_start_loop_time_us
-            ):
+            if self._scheduled_start_dac_time_us is None and self._scheduled_start_loop_time_us:
                 try:
                     loop_start = self._scheduled_start_loop_time_us
-                    est_dac = self._estimate_dac_time_for_server_timestamp(
-                        self._compute_server_time(loop_start)
-                    )
+                    est_dac = self._estimate_dac_time_for_server_timestamp(self._compute_server_time(loop_start))
                     if est_dac:
                         self._scheduled_start_dac_time_us = est_dac
                 except Exception:
                     _LOGGER.debug("Failed to estimate DAC start time", exc_info=True)
-                    self._scheduled_start_dac_time_us = (
-                        self._scheduled_start_loop_time_us
-                    )
+                    self._scheduled_start_dac_time_us = self._scheduled_start_loop_time_us
 
         except (AttributeError, TypeError):
             _LOGGER.debug("Could not extract timing info from callback")
@@ -537,9 +508,7 @@ class AudioPlayer:
             available_bytes = len(chunk_data) - self._current_chunk_offset
             bytes_to_read = min(available_bytes, total_bytes_needed - bytes_written)
 
-            result[bytes_written : bytes_written + bytes_to_read] = chunk_data[
-                self._current_chunk_offset : self._current_chunk_offset + bytes_to_read
-            ]
+            result[bytes_written : bytes_written + bytes_to_read] = chunk_data[self._current_chunk_offset : self._current_chunk_offset + bytes_to_read]
 
             self._current_chunk_offset += bytes_to_read
             bytes_written += bytes_to_read
@@ -550,9 +519,7 @@ class AudioPlayer:
                 self._advance_finished_chunk()
 
         if bytes_written >= frame_size:
-            self._last_output_frame = bytes(
-                result[bytes_written - frame_size : bytes_written]
-            )
+            self._last_output_frame = bytes(result[bytes_written - frame_size : bytes_written])
 
         return bytes(result)
 
@@ -562,9 +529,7 @@ class AudioPlayer:
             return
         data = self._current_chunk.audio_data
         chunk_frames = len(data) // self._format.frame_size
-        chunk_duration_us = (
-            chunk_frames * self._MICROSECONDS_PER_SECOND
-        ) // self._format.sample_rate
+        chunk_duration_us = (chunk_frames * self._MICROSECONDS_PER_SECOND) // self._format.sample_rate
         self._queued_duration_us = max(0, self._queued_duration_us - chunk_duration_us)
         self._current_chunk = None
         self._current_chunk_offset = 0
@@ -627,9 +592,7 @@ class AudioPlayer:
         dac_per_loop = 1.0
         if loop_prev_us and dac_prev_us and (loop_ref_us != loop_prev_us):
             dac_per_loop = (dac_ref_us - dac_prev_us) / (loop_ref_us - loop_prev_us)
-            dac_per_loop = max(
-                self._DAC_PER_LOOP_MIN, min(self._DAC_PER_LOOP_MAX, dac_per_loop)
-            )
+            dac_per_loop = max(self._DAC_PER_LOOP_MIN, min(self._DAC_PER_LOOP_MAX, dac_per_loop))
 
         return round(dac_ref_us + (loop_time_us - loop_ref_us) * dac_per_loop)
 
@@ -646,9 +609,7 @@ class AudioPlayer:
         loop_per_dac = 1.0
         if dac_prev_us and (dac_ref_us != dac_prev_us):
             loop_per_dac = (loop_ref_us - loop_prev_us) / (dac_ref_us - dac_prev_us)
-            loop_per_dac = max(
-                self._DAC_PER_LOOP_MIN, min(self._DAC_PER_LOOP_MAX, loop_per_dac)
-            )
+            loop_per_dac = max(self._DAC_PER_LOOP_MIN, min(self._DAC_PER_LOOP_MAX, loop_per_dac))
         return round(loop_ref_us + (dac_time_us - dac_ref_us) * loop_per_dac)
 
     def _smooth_sync_error(self, error_us: int) -> None:
@@ -662,9 +623,7 @@ class AudioPlayer:
         )
         self._sync_error_filtered_us = self._sync_error_filter.offset
 
-    def _fill_silence(
-        self, output_buffer: memoryview, offset: int, num_bytes: int
-    ) -> None:
+    def _fill_silence(self, output_buffer: memoryview, offset: int, num_bytes: int) -> None:
         """Fill output buffer range with silence."""
         if num_bytes > 0:
             output_buffer[offset : offset + num_bytes] = b"\x00" * num_bytes
@@ -692,14 +651,10 @@ class AudioPlayer:
     def _compute_and_set_loop_start(self, server_timestamp_us: int) -> None:
         """Compute and set scheduled start time from server timestamp."""
         try:
-            self._scheduled_start_loop_time_us = self._compute_client_time(
-                server_timestamp_us
-            )
+            self._scheduled_start_loop_time_us = self._compute_client_time(server_timestamp_us)
         except Exception:
             _LOGGER.exception("Failed to compute client time for start")
-            self._scheduled_start_loop_time_us = int(
-                self._loop.time() * self._MICROSECONDS_PER_SECOND
-            )
+            self._scheduled_start_loop_time_us = int(self._loop.time() * self._MICROSECONDS_PER_SECOND)
 
     def _handle_start_gating(
         self,
@@ -715,9 +670,7 @@ class AudioPlayer:
         dac_now_us = 0
         if time is not None and self._scheduled_start_dac_time_us is not None:
             try:
-                dac_now_us = int(
-                    time.outputBufferDacTime * self._MICROSECONDS_PER_SECOND
-                )
+                dac_now_us = int(time.outputBufferDacTime * self._MICROSECONDS_PER_SECOND)
                 if dac_now_us > 0:
                     use_dac_gating = True
             except (AttributeError, TypeError):
@@ -739,20 +692,14 @@ class AudioPlayer:
             return bytes_written
 
         if delta_us > 0:
-            frames_until_start = int(
-                (delta_us * self._format.sample_rate + 999_999)
-                // self._MICROSECONDS_PER_SECOND
-            )
+            frames_until_start = int((delta_us * self._format.sample_rate + 999_999) // self._MICROSECONDS_PER_SECOND)
             frames_to_silence = min(frames_until_start, frames)
             silence_bytes = frames_to_silence * self._format.frame_size
             self._fill_silence(output_buffer, bytes_written, silence_bytes)
             bytes_written += silence_bytes
         elif delta_us < 0 and can_drop_frames:
             if not (self._early_start_suspect and not self._has_reanchored):
-                frames_to_drop = int(
-                    ((-delta_us) * self._format.sample_rate + 999_999)
-                    // self._MICROSECONDS_PER_SECOND
-                )
+                frames_to_drop = int(((-delta_us) * self._format.sample_rate + 999_999) // self._MICROSECONDS_PER_SECOND)
                 self._skip_input_frames(frames_to_drop)
                 self._playback_state = PlaybackState.PLAYING
 
@@ -778,12 +725,7 @@ class AudioPlayer:
 
         # Re-anchor if error is very large and cooldown has elapsed
         now_loop_us = int(self._loop.time() * self._MICROSECONDS_PER_SECOND)
-        if (
-            abs_err > self._REANCHOR_THRESHOLD_US
-            and self._playback_state == PlaybackState.PLAYING
-            and now_loop_us - self._last_reanchor_loop_time_us
-            > self._REANCHOR_COOLDOWN_US
-        ):
+        if abs_err > self._REANCHOR_THRESHOLD_US and self._playback_state == PlaybackState.PLAYING and now_loop_us - self._last_reanchor_loop_time_us > self._REANCHOR_COOLDOWN_US:
             _LOGGER.info("Sync error %.1f ms too large; re-anchoring", abs_err / 1000.0)
             self._insert_every_n_frames = 0
             self._drop_every_n_frames = 0
@@ -794,9 +736,7 @@ class AudioPlayer:
             return
 
         # Proportional control: correction rate proportional to error
-        frames_error = (
-            abs_err * self._format.sample_rate / self._MICROSECONDS_PER_SECOND
-        )
+        frames_error = abs_err * self._format.sample_rate / self._MICROSECONDS_PER_SECOND
         desired_corrections_per_sec = frames_error / self._CORRECTION_TARGET_SECONDS
 
         max_corrections_per_sec = self._format.sample_rate * self._MAX_SPEED_CORRECTION
@@ -826,18 +766,13 @@ class AudioPlayer:
             self._last_sync_error_log_us = now_us
             if self._format is not None:
                 expected_frames = self._format.sample_rate
-                track_frames = (
-                    expected_frames
-                    + self._frames_dropped_since_log
-                    - self._frames_inserted_since_log
-                )
+                track_frames = expected_frames + self._frames_dropped_since_log - self._frames_inserted_since_log
                 playback_speed_percent = (track_frames / expected_frames) * 100.0
             else:
                 playback_speed_percent = 100.0
 
             _LOGGER.debug(
-                "Sync error: %.1f ms, buffer: %.2f s, speed: %.2f%%, "
-                "inserted: %d, dropped: %d",
+                "Sync error: %.1f ms, buffer: %.2f s, speed: %.2f%%, " "inserted: %d, dropped: %d",
                 self._sync_error_filtered_us / 1000.0,
                 self._queued_duration_us / self._MICROSECONDS_PER_SECOND,
                 playback_speed_percent,
@@ -883,42 +818,23 @@ class AudioPlayer:
             self._playback_state = PlaybackState.WAITING_FOR_START
             self._first_server_timestamp_us = server_timestamp_us
             scheduled_start = self._scheduled_start_loop_time_us
-            if (
-                scheduled_start is not None
-                and scheduled_start - now_us <= self._EARLY_START_THRESHOLD_US
-            ):
+            if scheduled_start is not None and scheduled_start - now_us <= self._EARLY_START_THRESHOLD_US:
                 self._early_start_suspect = True
 
         # While waiting to start, update scheduled start as time sync improves
-        elif (
-            self._playback_state == PlaybackState.WAITING_FOR_START
-            and self._first_server_timestamp_us is not None
-        ):
+        elif self._playback_state == PlaybackState.WAITING_FOR_START and self._first_server_timestamp_us is not None:
             try:
-                updated_loop_start = self._compute_client_time(
-                    self._first_server_timestamp_us
-                )
-                if (
-                    abs(updated_loop_start - (self._scheduled_start_loop_time_us or 0))
-                    > self._START_TIME_UPDATE_THRESHOLD_US
-                ):
+                updated_loop_start = self._compute_client_time(self._first_server_timestamp_us)
+                if abs(updated_loop_start - (self._scheduled_start_loop_time_us or 0)) > self._START_TIME_UPDATE_THRESHOLD_US:
                     self._scheduled_start_loop_time_us = updated_loop_start
-                    est_dac = self._estimate_dac_time_for_server_timestamp(
-                        self._first_server_timestamp_us
-                    )
+                    est_dac = self._estimate_dac_time_for_server_timestamp(self._first_server_timestamp_us)
                     self._scheduled_start_dac_time_us = est_dac if est_dac else None
             except Exception:
                 _LOGGER.debug("Failed to update start time", exc_info=True)
 
         # Compute sync error and schedule corrections when playing
-        if (
-            self._playback_state == PlaybackState.PLAYING
-            and self._last_known_playback_position_us > 0
-            and self._server_ts_cursor_us > 0
-        ):
-            sync_error_us = (
-                self._last_known_playback_position_us - self._server_ts_cursor_us
-            )
+        if self._playback_state == PlaybackState.PLAYING and self._last_known_playback_position_us > 0 and self._server_ts_cursor_us > 0:
+            sync_error_us = self._last_known_playback_position_us - self._server_ts_cursor_us
             self._update_correction_schedule(sync_error_us)
 
         self._log_sync_status()
@@ -929,9 +845,7 @@ class AudioPlayer:
         # Handle gap: insert silence
         elif server_timestamp_us > self._expected_next_timestamp:
             gap_us = server_timestamp_us - self._expected_next_timestamp
-            gap_frames = (
-                gap_us * self._format.sample_rate
-            ) // self._MICROSECONDS_PER_SECOND
+            gap_frames = (gap_us * self._format.sample_rate) // self._MICROSECONDS_PER_SECOND
             silence_bytes = gap_frames * self._format.frame_size
             silence = b"\x00" * silence_bytes
             self._queue.put_nowait(
@@ -940,9 +854,7 @@ class AudioPlayer:
                     audio_data=silence,
                 )
             )
-            silence_duration_us = (
-                gap_frames * self._MICROSECONDS_PER_SECOND
-            ) // self._format.sample_rate
+            silence_duration_us = (gap_frames * self._MICROSECONDS_PER_SECOND) // self._format.sample_rate
             self._queued_duration_us += silence_duration_us
             _LOGGER.debug("Gap: %.1f ms filled with silence", gap_us / 1000.0)
             self._expected_next_timestamp = server_timestamp_us
@@ -950,9 +862,7 @@ class AudioPlayer:
         # Handle overlap: trim the start
         elif server_timestamp_us < self._expected_next_timestamp:
             overlap_us = self._expected_next_timestamp - server_timestamp_us
-            overlap_frames = (
-                overlap_us * self._format.sample_rate
-            ) // self._MICROSECONDS_PER_SECOND
+            overlap_frames = (overlap_us * self._format.sample_rate) // self._MICROSECONDS_PER_SECOND
             trim_bytes = overlap_frames * self._format.frame_size
             if trim_bytes < len(payload):
                 payload = payload[trim_bytes:]
@@ -965,9 +875,7 @@ class AudioPlayer:
         # Queue the chunk
         if len(payload) > 0:
             chunk_frames = len(payload) // self._format.frame_size
-            chunk_duration_us = (
-                chunk_frames * self._MICROSECONDS_PER_SECOND
-            ) // self._format.sample_rate
+            chunk_duration_us = (chunk_frames * self._MICROSECONDS_PER_SECOND) // self._format.sample_rate
             chunk = _QueuedChunk(
                 server_timestamp_us=server_timestamp_us,
                 audio_data=payload,
@@ -977,18 +885,10 @@ class AudioPlayer:
             self._expected_next_timestamp = server_timestamp_us + chunk_duration_us
 
         # Start stream when first chunk arrives
-        if (
-            not self._stream_started
-            and self._queue.qsize() > 0
-            and self._stream is not None
-        ):
+        if not self._stream_started and self._queue.qsize() > 0 and self._stream is not None:
             self._stream.start()
             self._stream_started = True
-            _LOGGER.info(
-                "Stream STARTED: %d chunks, %.2f seconds buffered",
-                self._queue.qsize(),
-                self._queued_duration_us / self._MICROSECONDS_PER_SECOND,
-            )
+            _LOGGER.info("SendSpin bridge started (no server URL - waiting for connections)")
 
     def _close_stream(self) -> None:
         """Close the audio output stream."""
@@ -1324,9 +1224,7 @@ class SendspinBridge:
 
         # Update MediaPlayerEntity state to idle
         if self.media_player:
-            self.media_player.server.send_messages(
-                [self.media_player._update_state(MediaPlayerState.IDLE)]
-            )
+            self.media_player.server.send_messages([self.media_player._update_state(MediaPlayerState.IDLE)])
 
     def _on_server_command(self, payload: ServerCommandPayload) -> None:
         """Handle volume/mute commands from SendSpin server."""
@@ -1344,9 +1242,7 @@ class SendspinBridge:
                 self.media_player.volume = self._volume / 100.0
                 self.media_player.music_player.set_volume(self._volume)
                 self.media_player.announce_player.set_volume(self._volume)
-                self.media_player.server.send_messages(
-                    [self.media_player._update_state(self.media_player.state)]
-                )
+                self.media_player.server.send_messages([self.media_player._update_state(self.media_player.state)])
 
         elif player_cmd.command == PlayerCommand.MUTE and player_cmd.mute is not None:
             self._muted = player_cmd.mute
@@ -1354,12 +1250,8 @@ class SendspinBridge:
             # Sync with MediaPlayerEntity
             if self.media_player:
                 self.media_player.muted = self._muted
-                self.media_player.server.send_messages(
-                    [self.media_player._update_state(self.media_player.state)]
-                )
-            _LOGGER.info(
-                "SendSpin server %s player", "muted" if player_cmd.mute else "unmuted"
-            )
+                self.media_player.server.send_messages([self.media_player._update_state(self.media_player.state)])
+            _LOGGER.info("SendSpin server %s player", "muted" if player_cmd.mute else "unmuted")
 
         # Send state update back to server (same 0-100 scale, no conversion)
         asyncio.get_event_loop().call_soon(
