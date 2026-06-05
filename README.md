@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/OHF-Voice/linux-voice-assistant/actions/workflows/docker-build-release.yml/badge.svg)](https://github.com/OHF-Voice/linux-voice-assistant/actions/workflows/docker-build-release.yml) [![GitHub Package Version](https://img.shields.io/github/v/tag/OHF-Voice/linux-voice-assistant?label=version)](https://github.com/OHF-Voice/linux-voice-assistant/pkgs/container/linux-voice-assistant) [![GitHub License](https://img.shields.io/github/license/OHF-Voice/linux-voice-assistant)](https://github.com/OHF-Voice/linux-voice-assistant/blob/main/LICENSE.md) [![GitHub last commit](https://img.shields.io/github/last-commit/OHF-Voice/linux-voice-assistant)](https://github.com/OHF-Voice/linux-voice-assistant/commits) [![GitHub Container Registry](https://img.shields.io/badge/Container%20Registry-GHCR-blue)](https://github.com/OHF-Voice/linux-voice-assistant/pkgs/container/linux-voice-assistant)
 
-An experimental Linux-Voice-Assistant software for [Home Assistant](https://www.home-assistant.io/) remote voice control and interaction.
+An experimental voice satellite software for [Home Assistant](https://www.home-assistant.io/) remote voice control and interaction.
 
 This project enables you to build a Linux-based voice assistant designed to use [Assist](https://www.home-assistant.io/voice_control/) for Home Assistant. It allows you to create your own smart speaker that runs on any x64 or ARM64 hardware capable of handling local audio processing (using PulseAudio).
 
@@ -26,13 +26,13 @@ Because it runs on a full Linux system and offers access significantly more loca
 
 ## Requirements
 
-- Microphone: Device must support 16kHz mono audio
-- CPU: 1Ghz
-- Memory: min. 512MB
-- Storage: The OS and software is around 4GB
-- OS: linux/amd64 or linux/aarch64
+- **Microphone:** Device must support 16kHz mono audio
+- **CPU:** 1Ghz
+- **Memory:** min. 512MB
+- **Storage:** The OS and software is around 4GB
+- **OS:** linux/amd64 or linux/aarch64
 
-A more extensive list for possible compatible hardware can be found in the [PiCompose documentation](https://github.com/florian-asche/PiCompose) but basically any microphone that works with [PipeWire (multimedia framework for Linux)](https://pipewire.org/) can in theory be used for voice input with the prebuild image from there, you should however preferably use a far-field microphone-array solution if want better result. However if you're using your own USB microphone, **the microphone device must support 16kHz mono audio** for optimal voice recognition performance.
+A more extensive list for possible compatible hardware can be found in the [PiCompose documentation](https://github.com/florian-asche/PiCompose) but basically any microphone that works with [PipeWire (multimedia framework for Linux)](https://pipewire.org/) can in theory be used for voice input with the prebuild image from there, you should however preferably use a far-field microphone-array solution if want better result.
 
 Two solutions recommended for setups today is:
 
@@ -47,9 +47,21 @@ Alternatively if on a lower budget then suggest could use other microphone-array
 
 ### Installation
 
+**Assist Satellite app for Home Assistant OS**
+
+For HA OS, we provide a finished [Assist Satellite](https://github.com/OHF-Voice/apps/tree/main/assist_satellite) app (formerly add-on), which uses the Linux Voice Assistant runtime to turn your HA host into a voice satellite. Install it directly from the official add-on repository:
+
+[![Add repository to your Home Assistant instance.](https://my.home-assistant.io/badges/supervisor_addon.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https://github.com/home-assistant/addons)
+
+Once installed, the satellite is automatically discovered by Home Assistant via the ESPHome integration.
+
+**Raspberry Pi prebuilt image**
+
 For Raspberry Pi users, we provide a prebuild image that can be flashed to a SD card. See [PiCompose](https://github.com/florian-asche/PiCompose).
 
-For all other users, we have different installation methods available (Docker, systemd), each with its own dedicated instructions. See [Linux-Voice-Assistant - Installation](docs/install.md).
+**Docker / bare metal**
+
+For all other users, we have different installation methods available (Docker, systemd), each with its own dedicated instructions. See [Linux-Voice-Assistant - Installation](docs/install.md). 
 
 ### Parameter overview
 
