@@ -26,11 +26,11 @@ Because it runs on a full Linux system and offers access significantly more loca
 
 ## Requirements
 
-- Microphone: Device must support 16kHz mono audio
-- CPU: 1Ghz
-- Memory: min. 512MB
-- Storage: The OS and software is around 4GB
-- OS: linux/amd64 or linux/aarch64
+- **Microphone:** Device must support 16kHz mono audio
+- **CPU:** 1Ghz
+- **Memory:** min. 512MB
+- **Storage:** The OS and software is around 4GB
+- **OS:** linux/amd64 or linux/aarch64
 
 A more extensive list for possible compatible hardware can be found in the [PiCompose documentation](https://github.com/florian-asche/PiCompose) but basically any microphone that works with [PipeWire (multimedia framework for Linux)](https://pipewire.org/) can in theory be used for voice input with the prebuild image from there, you should however preferably use a far-field microphone-array solution if want better result.
 
