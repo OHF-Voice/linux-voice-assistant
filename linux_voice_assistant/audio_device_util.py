@@ -77,8 +77,7 @@ def find_sounddevice_by_name(mpv_device_name: Optional[str]) -> Optional[int]:
 
     # No match found
     _LOGGER.warning(
-        "Could not find sounddevice match for MPV device '%s'. "
-        "Using default sounddevice. Run with --list-output-devices to see available devices.",
+        "Could not find sounddevice match for MPV device '%s'. " "Using default sounddevice. Run with --list-output-devices to see available devices.",
         mpv_device_name,
     )
     return None
@@ -107,10 +106,7 @@ def list_output_devices() -> None:
         dev = devices[i]
         if dev["max_output_channels"] > 0:
             default_marker = " (default)" if i == default_output else ""
-            print(
-                f"  [{i}] {dev['name']}{default_marker}\n"
-                f"      Channels: {dev['max_output_channels']}, "
-                f"Sample rate: {dev['default_samplerate']} Hz"
+            print(f"  [{i}] {dev['name']}{default_marker}\n" f"      Channels: {dev['max_output_channels']}, " f"Sample rate: {dev['default_samplerate']} Hz")
             )
 
     print()
