@@ -286,6 +286,8 @@ If you want to use your own sounds, you can add them to the `sounds/custom` aka 
 
 #### Available Wake Word Models:
 
+The following wake word models are available:
+
 **microWakeWord:**
 - `okay_nabu` - Default wake word
 - `alexa` - Alexa wake word
