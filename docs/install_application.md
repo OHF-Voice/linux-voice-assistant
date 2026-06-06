@@ -293,6 +293,7 @@ The following wake word models are available:
 - `alexa` - Alexa wake word
 - `hey_jarvis` - Jarvis wake word
 - `hey_mycroft` - Mycroft wake word
+- `hey_morgan` - Morgan wake word
 - `hey_luna` - Luna wake word
 - `hey_home_assistant` - Home Assistant wake word
 - `stop` - Stop wake word
