@@ -71,13 +71,7 @@ async def main() -> None:
         action="store_true",
         help="List audio output devices and exit",
     )
-    parser.add_argument(
-        "--mic-volume",
-        type=int,
-        default=100,
-        choices=list(range(1, 101)),
-        help="Microphone volume level (1 to 100)"
-    )
+    parser.add_argument("--mic-volume", type=int, default=100, choices=list(range(1, 101)), help="Microphone volume level (1 to 100)")
     parser.add_argument("--mic-auto-gain", type=int, default=0, choices=list(range(32)))
     parser.add_argument("--mic-noise-suppression", type=int, default=0, choices=(0, 1, 2, 3, 4))
     parser.add_argument(
