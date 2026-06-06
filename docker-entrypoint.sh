@@ -135,6 +135,24 @@ for i in $(seq 1 $CP_MAX_RETRIES); do
 done
 
 
+### Acoustic Echo Cancellation
+# Convenience wrapper for the setup described in docs/enabling_aec.md.
+# Loads the PulseAudio AEC module and sets AUDIO_INPUT_DEVICE automatically.
+# See docs/enabling_aec.md for manual setup and PipeWire instructions.
+if [ "${ENABLE_ECHO_CANCEL}" = "1" ]; then
+  if pactl list modules short 2>/dev/null | grep -q module-echo-cancel; then
+    echo "✅ Echo cancellation module already loaded"
+  else
+    if pactl load-module module-echo-cancel source_name=aec_mic aec_method=webrtc; then
+      echo "✅ Echo cancellation enabled"
+    else
+      echo "⚠️  Failed to load echo cancellation module (continuing without it)"
+    fi
+  fi
+  AUDIO_INPUT_DEVICE="${AUDIO_INPUT_DEVICE:-aec_mic}"
+fi
+
+
 ### Start application
 if [ "$LIST_DEVICES" = "1" ]; then
   echo "list input devices"
