@@ -91,13 +91,13 @@ class VoiceSatelliteProtocol(APIServer):
         if existing_media_players:
             # Keep the first instance and remove any extras.
             self.state.media_player_entity = existing_media_players[0]
-            for extra in existing_media_players[1:]:
-                self.state.entities.remove(extra)
+            for extra_player in existing_media_players[1:]:
+                self.state.entities.remove(extra_player)
 
         if existing_mute_switches:
-            self.state.mute_switch_entity = existing_mute_switches[0]  # type: ignore[assignment]
-            for extra in existing_mute_switches[1:]:  # type: ignore[index]
-                self.state.entities.remove(extra)
+            self.state.mute_switch_entity = existing_mute_switches[0]
+            for extra_mute in existing_mute_switches[1:]:
+                self.state.entities.remove(extra_mute)
 
         if self.state.media_player_entity is None:
             self.state.media_player_entity = MediaPlayerEntity(
@@ -141,8 +141,8 @@ class VoiceSatelliteProtocol(APIServer):
         existing_thinking_sound_switches = [entity for entity in self.state.entities if isinstance(entity, ThinkingSoundEntity)]
         if existing_thinking_sound_switches:
             self.state.thinking_sound_entity = existing_thinking_sound_switches[0]  # type: ignore[assignment]
-            for extra in existing_thinking_sound_switches[1:]:  # type: ignore[index]
-                self.state.entities.remove(extra)
+            for extra_thinking in existing_thinking_sound_switches[1:]:  # type: ignore[index]
+                self.state.entities.remove(extra_thinking)
 
         # Add/update thinking sound entity
         thinking_sound_switch = self.state.thinking_sound_entity
@@ -735,7 +735,7 @@ class VoiceSatelliteProtocol(APIServer):
             self.state.tts_player.stop()
             _LOGGER.debug("Stopping timer finished sound; will wake up in 1 s")
 
-            wake_word_phrase = wake_word.wake_word  # type: ignore
+            wake_word_phrase = wake_word.wake_word  # type: ignore[union-attr]
 
             def _delayed_wakeup() -> None:
                 if self.state.muted or self._pipeline_active:
@@ -760,7 +760,7 @@ class VoiceSatelliteProtocol(APIServer):
             _LOGGER.debug("Ignoring wake word - pipeline already active")
             return
 
-        wake_word_phrase = wake_word.wake_word  # type: ignore[attr-defined]
+        wake_word_phrase = wake_word.wake_word  # type: ignore[union-attr]
         _LOGGER.debug("Detected wake word: %s", wake_word_phrase)
 
         self._pipeline_active = True
