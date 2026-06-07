@@ -263,7 +263,7 @@ The following variables can be configured in the `.env` or in the service file:
 | `PORT` | `6053` | API server port |
 | `AUDIO_INPUT_DEVICE` | Autodetected | Audio input device name |
 | `AUDIO_OUTPUT_DEVICE` | Autodetected | Audio output device name |
-| `MIC_VOLUME` | Control microphone volume | 1.0 |
+| `MIC_VOLUME` | Control microphone volume | 100 |
 | `MIC_AUTO_GAIN` | Add WebRTC Gain to Mic | 0 |
 | `MIC_NOISE_SUPPRESSION` | Add WebRTC Noise Suppresion to Mic | 0 |
 | `ENABLE_THINKING_SOUND` | false | Set to "1" to enable thinking sound |
