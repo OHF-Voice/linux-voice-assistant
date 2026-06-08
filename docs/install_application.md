@@ -287,15 +287,25 @@ If you want to use your own sounds, you can add them to the `sounds/custom` aka 
 #### Available Wake Word Models:
 
 The following wake word models are available:
+
+**microWakeWord:**
 - `okay_nabu` - Default wake word
 - `alexa` - Alexa wake word
 - `hey_jarvis` - Jarvis wake word
 - `hey_mycroft` - Mycroft wake word
+- `hey_morgan` - Morgan wake word
 - `hey_luna` - Luna wake word
 - `hey_home_assistant` - Home Assistant wake word
 - `stop` - Stop wake word
 - `okay_computer` - Okay Computer wake word
 - `choo_choo_homie` - Choo Choo Homie wake word
+
+**openWakeWord:**
+- `ok_nabu` - Default wake word
+- `alexa` - Alexa wake word
+- `hey_jarvis` - Jarvis wake word
+- `hey_mycroft` - Mycroft wake word
+- `hey_rhasspy` - Rhasspy wake word
 
 
 ### Custom Wake Word:
