@@ -51,9 +51,8 @@ Alternatively if on a lower budget then suggest could use other microphone-array
 
 For HA OS, we provide a finished [Assist Satellite](https://github.com/OHF-Voice/apps/tree/main/assist_satellite) app (formerly add-on), which uses the Linux Voice Assistant runtime to turn your HA host into a voice satellite. 
 
-Note! For now you first have to add the "OHF-Voice apps" repo manually to the App Store repositroy inside Home Assistant before you can install it:
-
-* https://github.com/OHF-Voice/apps
+> [!NOTE]
+> For now you first have to add the [OHF-Voice apps](https://github.com/OHF-Voice/apps) repo manually to the App Store repositroy inside Home Assistant before you can install it.
 
 Later you will be able to install it directly from the official add-on repository (but it is not yet published publicly there):
 
