@@ -184,10 +184,10 @@ class SharedState:
         # default, like the Voice PE LED Ring, so idle stays dark until the
         # user turns the light on.
         self.light_is_on: bool = False
-        self.light_brightness: float = 1.0
-        self.light_red: float = 0.0
-        self.light_green: float = 0.2
-        self.light_blue: float = 1.0
+        self.light_brightness: float = 0.66
+        self.light_red: float = 0.094
+        self.light_green: float = 0.733
+        self.light_blue: float = 0.949
         # Monotonic deadline used by _timer_tick to fade brightness
         # smoothly between sparse timer_updated events.
         self.timer_ends_at: float = 0.0
@@ -942,10 +942,10 @@ class LVAClient:
                 return
             self._state.update(
                 light_is_on=bool(data.get("state", True)),
-                light_brightness=float(data.get("brightness", 1.0)),
-                light_red=float(data.get("red", 0.0)),
-                light_green=float(data.get("green", 0.2)),
-                light_blue=float(data.get("blue", 1.0)),
+                light_brightness=float(data.get("brightness", 0.66)),
+                light_red=float(data.get("red", 0.094)),
+                light_green=float(data.get("green", 0.733)),
+                light_blue=float(data.get("blue", 0.949)),
             )
             self._animator.set_state(self._state.assist_state, force=True)
             return

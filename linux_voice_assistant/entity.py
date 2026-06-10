@@ -653,11 +653,12 @@ class LEDLightEntity(ESPHomeEntity):
         # until the user turns the light on. Voice animations are driven
         # separately by the peripheral and play regardless.
         self.is_on: bool = False
-        self.brightness: float = 1.0
-        # Default to HA Voice PE "voice assistant blue" when RGB is supported.
-        self.red: float = 0.0
-        self.green: float = 0.2
-        self.blue: float = 1.0
+        # Match the HA Voice PE LED Ring initial state: a light blue at 66%
+        # brightness (red 9.4%, green 73.3%, blue 94.9%).
+        self.brightness: float = 0.66
+        self.red: float = 0.094
+        self.green: float = 0.733
+        self.blue: float = 0.949
         # Default effect: first declared, or empty if none.
         self.effect: str = self.effects_list[0] if self.effects_list else ""
 
