@@ -56,7 +56,7 @@ For HA OS, we provide a finished [Assist Satellite](https://github.com/OHF-Voice
 
 Later you will be able to install it directly from the official add-on repository (but it is not yet published publicly there):
 
-- [![Add repository to your Home Assistant instance.](https://my.home-assistant.io/badges/supervisor_addon.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https://github.com/home-assistant/addons)
+[![Add repository to your Home Assistant instance.](https://my.home-assistant.io/badges/supervisor_addon.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https://github.com/home-assistant/addons)
 
 Once installed, the satellite is automatically discovered by Home Assistant via the ESPHome integration.
 
