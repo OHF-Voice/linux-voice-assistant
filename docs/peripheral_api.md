@@ -141,11 +141,29 @@ These are all the events LVA emits. Your peripheral script receives them and rea
 | `volume_changed` | `{"volume": float}` | The speaker volume changed (0.0–1.0). Update any volume display or indicator ring. |
 | `volume_muted` | `{"muted": bool}` | The media player mute state changed. Distinct from microphone mute (`muted` event). |
 
+### HA driven entity events
+
+These events fire when a user changes a peripheral registered HA entity from Home Assistant. Use them to apply the user's preferences to your hardware in real time.
+
+| Event | Data | Description |
+|-------|------|-------------|
+| `light_command` | `{"object_id": str, "state": bool, "brightness": float, "red": float, "green": float, "blue": float, "effect": str}` | An HA Light entity that a peripheral registered via `register_light` was changed. The event is broadcast to every connected peripheral, so filter on `object_id` to route it to the right hardware. `brightness` and RGB values are 0.0 to 1.0. `effect` is one of the strings declared when the Light was registered. |
+
 ---
 
 ## Commands (your script → LVA)
 
 Send these to control LVA from your peripheral hardware.
+
+### Entity registration
+
+A peripheral that wants Home Assistant to control its hardware declares its entities at connect time. LVA materialises matching ESPHome entities, HA enumerates and shows them as it would any other ESPHome device, and user changes flow back as events.
+
+For HA to see your entity, your peripheral must register before HA enumerates the LVA API. LVA waits briefly at startup (see `--peripheral-startup-wait`, default 2 seconds) so peripherals have a window to connect and register. Peripherals that connect later still work, but the new entities only appear in HA after the integration is reloaded.
+
+| Command | Data | Description |
+|---------|------|-------------|
+| `register_light` | `{"name": str, "object_id": str, "effects": [str], "supports_rgb": bool, "supports_brightness": bool}` | Register a Light entity for an LED strip, ring, or single LED. HA exposes it as `light.<satellite>_<object_id>` with on/off, brightness, RGB, and a selectable effect from the declared list. Subsequent HA changes are delivered as `light_command` events. Send once after connecting; repeat registrations for the same `object_id` are idempotent (no-op). Example: `{"command": "register_light", "data": {"name": "LEDs", "object_id": "leds", "effects": ["Voice Assistant"], "supports_rgb": true, "supports_brightness": true}}` |
 
 ### Voice pipeline
 

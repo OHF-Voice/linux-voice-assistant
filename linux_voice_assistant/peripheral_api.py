@@ -46,6 +46,14 @@ Feedback events emitted by LVA
   volume_changed        data: {"volume": 0.0–1.0}
   volume_muted          data: {"muted": true/false}
   zeroconf              data: {"status": "getting_started" | "connected"}
+  light_command         data: {"object_id": str, "state": bool, "brightness": float,
+                              "red": float, "green": float, "blue": float, "effect": str}
+              Fires when HA changes a Light entity that a peripheral
+              previously registered via register_light. The peripheral
+              matches on object_id and applies the new state. The
+              effect names are those the peripheral declared at
+              registration; e.g. "Voice Assistant" runs the pipeline
+              animations.
 
 Commands accepted from the peripheral container
 ------------------------------------------------
@@ -67,6 +75,14 @@ Commands accepted from the peripheral container
   button_double_press
   button_triple_press
   button_long_press
+  register_light    data: {"name": str, "object_id": str, "effects": [str],
+                           "supports_rgb": bool, "supports_brightness": bool}
+              The peripheral declares an LED Light it wants exposed in
+              HA. LVA creates a matching ESPHome Light entity (visible
+              as light.<satellite>_<object_id>) and routes HA changes
+              back to the peripheral as light_command events. Send
+              once after connecting; duplicate registrations for the
+              same object_id are ignored.
 """
 
 from __future__ import annotations
@@ -112,6 +128,7 @@ class LVAEvent(str, Enum):
     VOLUME_CHANGED = "volume_changed"
     VOLUME_MUTED = "volume_muted"
     ZEROCONF = "zeroconf"
+    LIGHT_COMMAND = "light_command"
 
 
 class LVACommand(str, Enum):
@@ -132,6 +149,7 @@ class LVACommand(str, Enum):
     BUTTON_DOUBLE_PRESS = "button_double_press"
     BUTTON_TRIPLE_PRESS = "button_triple_press"
     BUTTON_LONG_PRESS = "button_long_press"
+    REGISTER_LIGHT = "register_light"
 
 
 # ---------------------------------------------------------------------------
@@ -193,7 +211,7 @@ class PeripheralAPIServer:
         try:
             from websockets.server import serve  # type: ignore[import]
         except ImportError:
-            _LOGGER.error("websockets package not installed – peripheral API disabled. " "Install with: pip install websockets")
+            _LOGGER.error("websockets package not installed – peripheral API disabled. Install with: pip install websockets")
             return
 
         self._loop = asyncio.get_running_loop()
@@ -428,6 +446,46 @@ class PeripheralAPIServer:
                 state.button_event_sensor_entity.update_state("long_press")
                 if satellite is not None:
                     satellite.send_messages([state.button_event_sensor_entity._get_state_message()])  # pylint: disable=protected-access
+
+        elif command == LVACommand.REGISTER_LIGHT:
+            self._register_light(msg.get("data") or {}, satellite)
+
+    def _register_light(self, data: Dict[str, Any], satellite: Any) -> None:
+        """Register a Light declared by a peripheral.
+
+        Idempotent on object_id: repeat registrations (e.g. after a
+        peripheral reconnect) keep the existing entity and its state.
+        """
+        from .models import LightRegistration  # local import to avoid a cycle
+
+        object_id = str(data.get("object_id", "")).strip()
+        if not object_id:
+            _LOGGER.warning("register_light without object_id; ignoring")
+            return
+
+        state = self._state
+        if state is None:
+            return
+
+        if any(spec.object_id == object_id for spec in state.pending_lights):
+            # Same light already on file; nothing to do.
+            return
+
+        spec = LightRegistration(
+            name=str(data.get("name", "LEDs")),
+            object_id=object_id,
+            effects=[str(e) for e in data.get("effects", []) if e],
+            supports_rgb=bool(data.get("supports_rgb", True)),
+            supports_brightness=bool(data.get("supports_brightness", True)),
+        )
+        state.pending_lights.append(spec)
+        _LOGGER.info("Light registered: %s (effects=%s)", object_id, spec.effects)
+
+        # If the satellite is already running, materialise the entity
+        # now so future messages route correctly. HA only sees it
+        # after the integration reconnects, but LVA stays consistent.
+        if satellite is not None:
+            satellite.register_pending_lights()
 
     # ------------------------------------------------------------------
     # Helpers

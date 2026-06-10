@@ -30,9 +30,19 @@ services:
     # -----------------------------------------------------------------------
     user: "1000:1000"
 
+    # -----------------------------------------------------------------------
+    # SPI / GPIO group membership
+    #
+    # docker compose's group_add resolves names against /etc/group inside
+    # the container, but the python:slim base does not define gpio or
+    # spi. Pass numeric GIDs instead so they match the host's groups.
+    # The defaults below match a stock Raspberry Pi OS install. Check
+    # yours with "getent group gpio spi" and override in .env if they
+    # differ.
+    # -----------------------------------------------------------------------
     group_add:
-      - gpio
-      - spi
+      - "${GPIO_GID:-986}"
+      - "${SPI_GID:-989}"
 
     environment:
       - PYTHONUNBUFFERED=1

@@ -11,9 +11,9 @@ Hardware layout
 
 LED behaviours
 --------------
-  idle             : all off
-  wake_word        : brief blue flash on all 3 LEDs
-  listening        : cyan chase (one LED sweeps left → right → left)
+  idle             : solid user color when the LED light is on, else dark
+  wake_word        : brief flash on all 3 LEDs (user color from HA Light entity)
+  listening        : chase across the LEDs (user color from HA Light entity)
   thinking         : yellow pulse on all 3 LEDs
   tts_speaking     : green breathe on all 3 LEDs
   muted            : LED 0 and LED 2 solid red (mic positions), centre off
@@ -22,6 +22,14 @@ LED behaviours
   timer_ticking    : all 3 dim cyan, brightness proportional to time left
   media_playing    : dim green steady on all 3 LEDs
   not_ready/no_ha  : dim red pulse on all 3 LEDs
+
+On connect the script registers an HA Light entity with LVA via the
+register_light command, exposing a single "Voice Assistant" effect to
+match the HA Voice PE. Like the Voice PE LED Ring, the light defaults
+off: while idle the LEDs hold the user color when it is on and stay
+dark when it is off. The pipeline animations always run regardless,
+tinted by the user color, so turning the light off only removes the
+idle glow; brightness scales every animation.
 
 Button behaviour (context action — same priority as HA Voice PE centre button)
 -------------------------------------------------------------------------------
@@ -34,8 +42,8 @@ Button behaviour (context action — same priority as HA Voice PE centre button)
     idle / anything else        → start_listening
 
   Multi-press (detected via timing):
-    double press (< 500ms between releases)  → button_double_press
-    triple press (< 500ms between releases)  → button_triple_press
+    double press (< 250ms between releases)  → button_double_press
+    triple press (< 250ms between releases)  → button_triple_press
     long press (held > 1000ms)               → button_long_press
 
 Install dependencies
@@ -68,7 +76,7 @@ import sys
 import threading
 import time
 from enum import Enum
-from typing import Optional, Tuple
+from typing import Callable, Optional, Tuple, Union
 
 # ---------------------------------------------------------------------------
 # Hardware dependencies — gracefully stubbed when not on real Pi hardware
@@ -110,13 +118,18 @@ LED_BRIGHTNESS    = 0.6        # 0.0–1.0 default brightness
 
 # GPIO
 BTN_ACTION        = 17         # The single onboard button
-BTN_DEBOUNCE_MS   = 150
+BTN_DEBOUNCE_MS   = 30         # Mechanical bounce; well inside the 250 ms gesture window.
 
-# Button multipress timing (milliseconds)
-MULTIPRESS_TIMEOUT_MS = 500    # Time window between presses to detect multi-press
-LONG_PRESS_MS         = 1000   # Duration to detect long press
+# Button gesture timing in milliseconds, matching HAVPE's on_multi_click.
+MULTIPRESS_TIMEOUT_MS = 250
+LONG_PRESS_MS         = 1000
 
 RECONNECT_DELAY_S = 3.0
+
+# HA Light entity registered with LVA via register_light. The same object_id
+# is used to route incoming light_command events back to this script.
+LIGHT_OBJECT_ID = "leds"
+LIGHT_NAME      = "LEDs"
 
 
 # ===========================================================================
@@ -145,6 +158,13 @@ class AssistState(str, Enum):
     MEDIA_PLAYING = "media_player_playing"
 
 
+# Effect name. Must match the LEDLightEntity effects list the peripheral
+# registers with LVA via register_light below. Like the HA Voice PE, this
+# example exposes only the pipeline animations, which always run and
+# cannot be switched off from HA.
+EFFECT_VOICE_ASSISTANT = "Voice Assistant"
+
+
 # ---------------------------------------------------------------------------
 # Shared state
 # ---------------------------------------------------------------------------
@@ -158,6 +178,16 @@ class SharedState:
         self.volume: float = 1.0
         self.timer_total_seconds: int = 0
         self.timer_seconds_left: int = 0
+        # Light entity state, driven by HA via light_command events.
+        # Defaults match the LEDLightEntity in LVA core so the script
+        # behaves sensibly before the first light_command arrives: off by
+        # default, like the Voice PE LED Ring, so idle stays dark until the
+        # user turns the light on.
+        self.light_is_on: bool = False
+        self.light_brightness: float = 1.0
+        self.light_red: float = 0.0
+        self.light_green: float = 0.2
+        self.light_blue: float = 1.0
         # Monotonic deadline used by _timer_tick to fade brightness
         # smoothly between sparse timer_updated events.
         self.timer_ends_at: float = 0.0
@@ -184,6 +214,11 @@ class SharedState:
                 "volume":              self.volume,
                 "timer_total_seconds": self.timer_total_seconds,
                 "timer_seconds_left":  self.timer_seconds_left,
+                "light_is_on":         self.light_is_on,
+                "light_brightness":    self.light_brightness,
+                "light_red":           self.light_red,
+                "light_green":         self.light_green,
+                "light_blue":          self.light_blue,
                 "timer_ends_at":       self.timer_ends_at,
             }
 
@@ -193,6 +228,7 @@ class SharedState:
 # ===========================================================================
 
 RGB = Tuple[int, int, int]
+ColorSource = Union[RGB, Callable[[], RGB]]
 
 OFF    : RGB = (0,   0,   0)
 RED    : RGB = (255, 0,   0)
@@ -206,6 +242,17 @@ DIM_RED: RGB = (80,  0,   0)
 def _scale(color: RGB, factor: float) -> RGB:
     f = max(0.0, min(1.0, factor))
     return (int(color[0] * f), int(color[1] * f), int(color[2] * f))
+
+
+def _resolve(color: ColorSource) -> RGB:
+    """Return an RGB tuple from either a fixed value or a callable.
+
+    Animations that want to follow the user's HA color pass a callable
+    so each frame can pick up the latest value. Animations that use a
+    fixed semantic color (yellow for thinking, green for speaking, and
+    so on) pass the tuple directly.
+    """
+    return color() if callable(color) else color
 
 
 class APA102:
@@ -293,15 +340,17 @@ class LEDAnimator:
         self._task: Optional[asyncio.Task] = None
         self._current_state: AssistState = AssistState.NOT_READY
 
-    def set_state(self, state: AssistState) -> None:
-        if self._current_state == state:
+    def set_state(self, state: AssistState, force: bool = False) -> None:
+        # Pass force=True to bypass the no-op guard so a light_command can
+        # re-render with the new color or brightness even when the assist
+        # state hasn't changed. The light's on/off only gates the idle glow
+        # (see _idle); pipeline animations always run, matching the Voice PE.
+        if not force and self._current_state == state:
             return
         self._current_state = state
         self._cancel()
 
         _LOGGER.debug("LED state → %s", state.value)
-
-        snap = self._shared.snapshot
 
         if state == AssistState.IDLE:
             self._task = asyncio.create_task(self._idle())
@@ -310,12 +359,14 @@ class LEDAnimator:
             self._task = asyncio.create_task(self._pulse_all(DIM_RED))
 
         elif state == AssistState.WAKE_WORD:
+            # Flash on all 3 LEDs in the user color (HAVPE style tint).
             self._task = asyncio.create_task(
-                self._flash_all(BLUE, flashes=2, on_ms=120, off_ms=80)
+                self._flash_all(self._user_color, flashes=2, on_ms=120, off_ms=80)
             )
 
         elif state == AssistState.LISTENING:
-            self._task = asyncio.create_task(self._chase(CYAN))
+            # Chase across the LEDs in the user color (HAVPE style tint).
+            self._task = asyncio.create_task(self._chase(self._user_color))
 
         elif state == AssistState.THINKING:
             self._task = asyncio.create_task(self._pulse_all(YELLOW))
@@ -352,6 +403,21 @@ class LEDAnimator:
         else:
             self._task = asyncio.create_task(self._idle())
 
+    # Helpers that read the HA Light entity state from shared state.
+
+    def _user_color(self) -> RGB:
+        snap = self._shared.snapshot
+        return (
+            int(max(0.0, min(1.0, snap["light_red"])) * 255),
+            int(max(0.0, min(1.0, snap["light_green"])) * 255),
+            int(max(0.0, min(1.0, snap["light_blue"])) * 255),
+        )
+
+    def _brightness(self, base: float = 1.0) -> float:
+        """Scale an animation's calculated brightness by user brightness."""
+        snap = self._shared.snapshot
+        return max(0.0, min(1.0, base * float(snap["light_brightness"])))
+
     def _cancel(self) -> None:
         if self._task and not self._task.done():
             self._task.cancel()
@@ -365,22 +431,33 @@ class LEDAnimator:
     # ------------------------------------------------------------------
 
     async def _idle(self) -> None:
-        self._leds.off()
+        """Resting state, matching the HA Voice PE LED Ring.
 
-    async def _steady_all(self, color: RGB, brightness: float = LED_BRIGHTNESS) -> None:
-        self._leds.set_all(color)
-        self._leds.show(brightness)
+        Holds the user's color when the HA light is on and stays dark
+        when it is off (the light defaults off). Pipeline animations run
+        regardless, so turning the light off only removes this idle glow.
+        Renders once; set_state(force=True) re-renders on changes.
+        """
+        if self._shared.snapshot["light_is_on"]:
+            self._leds.set_all(self._user_color())
+            self._leds.show(self._brightness())
+        else:
+            self._leds.off()
+
+    async def _steady_all(self, color: ColorSource, brightness: float = LED_BRIGHTNESS) -> None:
+        self._leds.set_all(_resolve(color))
+        self._leds.show(self._brightness(brightness))
 
     async def _muted(self) -> None:
         """Left (MIC_L) and right (MIC_R) LEDs red; centre off."""
         self._leds.set(0, RED)
         self._leds.set(1, OFF)
         self._leds.set(2, RED)
-        self._leds.show(0.6)
+        self._leds.show(self._brightness(0.6))
 
     async def _flash_all(
         self,
-        color: RGB,
+        color: ColorSource,
         flashes: int = 2,
         on_ms: int = 150,
         off_ms: int = 100,
@@ -395,8 +472,8 @@ class LEDAnimator:
         """
         count = 0
         while True:
-            self._leds.set_all(color)
-            self._leds.show(1.0)
+            self._leds.set_all(_resolve(color))
+            self._leds.show(self._brightness())
             await asyncio.sleep(on_ms / 1000)
             self._leds.off()
             await asyncio.sleep(off_ms / 1000)
@@ -406,7 +483,7 @@ class LEDAnimator:
         if then_off:
             self._leds.off()
 
-    async def _chase(self, color: RGB, step_s: float = 0.12) -> None:
+    async def _chase(self, color: ColorSource, step_s: float = 0.12) -> None:
         """
         One lit LED bounces left → right → left.
         Gives the impression of listening / scanning.
@@ -416,27 +493,27 @@ class LEDAnimator:
         while True:
             for i in range(LED_COUNT):
                 self._leds.set(i, OFF)
-            self._leds.set(sequence[pos % len(sequence)], color)
-            self._leds.show(1.0)
+            self._leds.set(sequence[pos % len(sequence)], _resolve(color))
+            self._leds.show(self._brightness())
             pos += 1
             await asyncio.sleep(step_s)
 
-    async def _pulse_all(self, color: RGB, period: float = 1.0) -> None:
+    async def _pulse_all(self, color: ColorSource, period: float = 1.0) -> None:
         """All 3 LEDs pulse together in brightness."""
         while True:
             t = time.monotonic()
             brightness = 0.2 + 0.8 * (0.5 + 0.5 * math.sin(2 * math.pi * t / period))
-            self._leds.set_all(color)
-            self._leds.show(brightness)
+            self._leds.set_all(_resolve(color))
+            self._leds.show(self._brightness(brightness))
             await asyncio.sleep(0.03)
 
-    async def _breathe_all(self, color: RGB, period: float = 2.0) -> None:
+    async def _breathe_all(self, color: ColorSource, period: float = 2.0) -> None:
         """Slow sine-wave breathe on all 3 LEDs."""
         while True:
             t = time.monotonic()
             brightness = 0.1 + 0.9 * (0.5 + 0.5 * math.sin(2 * math.pi * t / period))
-            self._leds.set_all(color)
-            self._leds.show(brightness)
+            self._leds.set_all(_resolve(color))
+            self._leds.show(self._brightness(brightness))
             await asyncio.sleep(0.03)
 
     async def _timer_tick(self) -> None:
@@ -451,7 +528,7 @@ class LEDAnimator:
             left  = max(0.0, snap["timer_ends_at"] - time.monotonic())
             brightness = max(0.05, min(1.0, left / total))
             self._leds.set_all(CYAN)
-            self._leds.show(brightness)
+            self._leds.show(self._brightness(brightness))
             await asyncio.sleep(0.5)
 
 
@@ -477,20 +554,37 @@ class ButtonHandler:
         self._loop = loop
         self._queue = command_queue
         self._button: Optional[object] = None
+        self._multipress: Optional["ButtonMultipressHandler"] = None
 
-    def setup(self) -> None:
+    def setup(self, multipress: Optional["ButtonMultipressHandler"] = None) -> None:
         if not _HAS_GPIO:
             _LOGGER.warning("GPIO unavailable – button not configured")
             return
 
+        self._multipress = multipress
+        if multipress is not None:
+            # Let the multipress state machine call the context action
+            # when (and only when) a single click resolves.
+            multipress.set_single_click_action(self._on_press)
         self._button = Button(BTN_ACTION, pull_up=True, bounce_time=BTN_DEBOUNCE_MS / 1000.0)
-        self._button.when_pressed = self._on_press  # type: ignore[union-attr]
+        self._button.when_pressed = self._on_button_pressed  # type: ignore[union-attr]
+        if multipress is not None:
+            self._button.when_released = multipress.on_release  # type: ignore[union-attr]
         _LOGGER.info("Button configured (gpiozero BCM %d)", BTN_ACTION)
 
     def cleanup(self) -> None:
         if self._button is not None:
             self._button.close()  # type: ignore[union-attr]
             self._button = None
+
+    def _on_button_pressed(self) -> None:
+        if self._multipress is not None:
+            # The detector dispatches the context action itself once
+            # the gesture resolves.
+            self._multipress.on_press()
+        else:
+            # No detector wired: fire immediately on press down.
+            self._on_press()
 
     def _send(self, command: str) -> None:
         _LOGGER.info("Button → %s", command)
@@ -499,8 +593,11 @@ class ButtonHandler:
         )
 
     def _on_press(self) -> None:
-        """
-        Context-sensitive action — mirrors HA Voice PE centre button priority:
+        """Single-click action, mirroring the HA Voice PE centre button.
+
+        Fires once the multipress window resolves with a single press,
+        so a double or triple click does not also trigger this. Priority:
+
           1. Timer ringing              → stop_timer_ringing
           2. Pipeline active            → stop_pipeline
              (wake word / listening / thinking / speaking)
@@ -546,6 +643,12 @@ class ButtonMultipressHandler:
         self._last_press_time = 0.0
         self._press_timer: Optional[threading.Timer] = None
         self._lock = threading.Lock()
+        self._single_click_action: Optional[Callable[[], None]] = None
+
+    def set_single_click_action(self, action: Callable[[], None]) -> None:
+        """Callback fired when the gesture resolves as a single click.
+        Invoked from the timer thread."""
+        self._single_click_action = action
 
     def _send(self, command: str) -> None:
         _LOGGER.info("Button → %s", command)
@@ -554,13 +657,17 @@ class ButtonMultipressHandler:
         )
 
     def _on_multipress_timeout(self) -> None:
-        """Called when multipress window expires; emit appropriate command."""
+        """Multipress window expired; dispatch based on the press count."""
         with self._lock:
             count = self._press_count
             self._press_count = 0
             self._press_timer = None
 
-        if count == 2:
+        if count == 1:
+            _LOGGER.debug("Single click resolved")
+            if self._single_click_action is not None:
+                self._single_click_action()
+        elif count == 2:
             _LOGGER.debug("Double press detected")
             self._send("button_double_press")
         elif count >= 3:
@@ -667,6 +774,19 @@ class LVAClient:
             self._uri, ping_interval=20, ping_timeout=10
         ) as ws:
             _LOGGER.info("Connected to LVA peripheral API")
+            # Register the LED Light entity with LVA so HA can control it.
+            # LVA treats repeat registrations for the same object_id as a
+            # no-op, so it's safe to send this on every connect.
+            await ws.send(json.dumps({
+                "command": "register_light",
+                "data": {
+                    "name": LIGHT_NAME,
+                    "object_id": LIGHT_OBJECT_ID,
+                    "effects": [EFFECT_VOICE_ASSISTANT],
+                    "supports_rgb": True,
+                    "supports_brightness": True,
+                },
+            }))
             recv_task = asyncio.create_task(self._recv_loop(ws))
             send_task = asyncio.create_task(self._send_loop(ws))
             done, pending = await asyncio.wait(
@@ -800,9 +920,35 @@ class LVAClient:
             status = data.get("status", "")
             if status == "connected":
                 self._state.update(ha_connected=True)
+                # If we were sitting in NOT_READY (from an earlier
+                # disconnect or from boot), transition back to IDLE now
+                # that HA is reachable again. Otherwise keep whatever
+                # pipeline state we're already tracking.
+                if self._state.assist_state == AssistState.NOT_READY:
+                    self._state.update(
+                        assist_state=AssistState.MUTED if self._state.muted else AssistState.IDLE,
+                    )
                 _LOGGER.info("Home Assistant connected")
             elif status == "getting_started":
                 _LOGGER.info("LVA starting up, waiting for HA …")
+
+        elif event == "light_command":
+            # LVA broadcasts to every connected peripheral; only act on
+            # commands targeting our registered Light. The Light exposes a
+            # single "Voice Assistant" effect, so there is no effect to
+            # switch on: we apply on/off, brightness, and color and let the
+            # pipeline animations run.
+            if data.get("object_id") != LIGHT_OBJECT_ID:
+                return
+            self._state.update(
+                light_is_on=bool(data.get("state", True)),
+                light_brightness=float(data.get("brightness", 1.0)),
+                light_red=float(data.get("red", 0.0)),
+                light_green=float(data.get("green", 0.2)),
+                light_blue=float(data.get("blue", 1.0)),
+            )
+            self._animator.set_state(self._state.assist_state, force=True)
+            return
 
         # Sync animator with current state
         self._animator.set_state(self._state.assist_state)
@@ -824,8 +970,9 @@ async def async_main(host: str, port: int) -> None:
 
     client   = LVAClient(host, port, state, animator, command_queue)
 
-    # Start hardware
-    buttons.setup()
+    # Wire the button into the multipress detector so double, triple,
+    # and long presses fire their sounds on LVA.
+    buttons.setup(multipress)
 
     # Show "not ready" until LVA connects
     animator.set_state(AssistState.NOT_READY)

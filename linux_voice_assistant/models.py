@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from .entity import (
         ButtonEventSensorEntity,
         ESPHomeEntity,
+        LEDLightEntity,
         MediaPlayerEntity,
         MicSettingEntity,
         MuteSwitchEntity,
@@ -58,6 +59,22 @@ class AvailableWakeWord:
             return oww_model
 
         raise ValueError(f"Unexpected wake word type: {self.type}")
+
+
+@dataclass
+class LightRegistration:
+    """Capabilities a peripheral declares for one of its Light entities.
+
+    The peripheral sends this with the register_light command after
+    connecting. LVA materialises a matching LEDLightEntity so HA can
+    control it.
+    """
+
+    name: str
+    object_id: str
+    effects: List[str] = field(default_factory=list)
+    supports_rgb: bool = True
+    supports_brightness: bool = True
 
 
 @dataclass
@@ -109,6 +126,14 @@ class ServerState:
     mute_switch_entity: "Optional[MuteSwitchEntity]" = None
     thinking_sound_entity: "Optional[ThinkingSoundEntity]" = None
     button_event_sensor_entity: "Optional[ButtonEventSensorEntity]" = None
+
+    # Lights declared by peripherals via register_light. Survives HA
+    # reconnects so the satellite can rebuild its entities whenever it
+    # is constructed again.
+    pending_lights: "List[LightRegistration]" = field(default_factory=list)
+    # Materialised LightEntities keyed by object_id, so light_command
+    # events can be routed back to the right peripheral hardware.
+    led_light_entities: "Dict[str, LEDLightEntity]" = field(default_factory=dict)
 
     # Optional peripheral WebSocket API (LEDs, buttons, HAT boards).
     # Assigned in __main__ before the event loop starts.
