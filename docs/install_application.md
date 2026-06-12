@@ -258,7 +258,7 @@ The following variables can be configured in the `.env` or in the service file:
 | `PORT` | `6053` | API server port |
 | `AUDIO_INPUT_DEVICE` | Autodetected | Audio input device name |
 | `AUDIO_OUTPUT_DEVICE` | Autodetected | Audio output device name |
-| `MIC_VOLUME` | Control microphone volume | 1.0 |
+| `MIC_VOLUME` | Control microphone volume | 100 |
 | `MIC_AUTO_GAIN` | Add WebRTC Gain to Mic | 0 |
 | `MIC_NOISE_SUPPRESSION` | Add WebRTC Noise Suppresion to Mic | 0 |
 | `ENABLE_THINKING_SOUND` | false | Set to "1" to enable thinking sound |
@@ -287,15 +287,25 @@ If you want to use your own sounds, you can add them to the `sounds/custom` aka 
 #### Available Wake Word Models:
 
 The following wake word models are available:
+
+**microWakeWord:**
 - `okay_nabu` - Default wake word
 - `alexa` - Alexa wake word
 - `hey_jarvis` - Jarvis wake word
 - `hey_mycroft` - Mycroft wake word
+- `hey_morgan` - Morgan wake word
 - `hey_luna` - Luna wake word
 - `hey_home_assistant` - Home Assistant wake word
 - `stop` - Stop wake word
 - `okay_computer` - Okay Computer wake word
 - `choo_choo_homie` - Choo Choo Homie wake word
+
+**openWakeWord:**
+- `ok_nabu` - Default wake word
+- `alexa` - Alexa wake word
+- `hey_jarvis` - Jarvis wake word
+- `hey_mycroft` - Mycroft wake word
+- `hey_rhasspy` - Rhasspy wake word
 
 
 ### Custom Wake Word:
