@@ -86,7 +86,7 @@ class VoiceSatelliteProtocol(APIServer):
             )
             # Channel 1 carries echo-reference audio; advertise SPEAKER so HA knows to use it for server-side AEC.
             if state.audio_input_channels >= 2:
-                self.supported_features |= VoiceAssistantFeature.MULTI_CHANNEL_AUDIO  # type: ignore[attr-defined]
+                self.supported_features |= VoiceAssistantFeature.MULTI_CHANNEL_AUDIO  # type: ignore
 
         existing_media_players = [entity for entity in self.state.entities if isinstance(entity, MediaPlayerEntity)]
 
