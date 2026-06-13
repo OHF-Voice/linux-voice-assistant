@@ -49,7 +49,12 @@ Alternatively if on a lower budget then suggest could use other microphone-array
 
 **Assist Satellite app for Home Assistant OS**
 
-For HA OS, we provide a finished [Assist Satellite](https://github.com/OHF-Voice/apps/tree/main/assist_satellite) app (formerly add-on), which uses the Linux Voice Assistant runtime to turn your HA host into a voice satellite. Install it directly from the official add-on repository:
+For HA OS, we provide a finished [Assist Satellite](https://github.com/OHF-Voice/apps/tree/main/assist_satellite) app (formerly add-on), which uses the Linux Voice Assistant runtime to turn your HA host into a voice satellite. 
+
+> [!NOTE]
+> For now you first have to add the [OHF-Voice apps](https://github.com/OHF-Voice/apps) repo manually to the App Store repositroy inside Home Assistant before you can install it.
+
+Later you will be able to install it directly from the official add-on repository (but it is not yet published publicly there):
 
 [![Add repository to your Home Assistant instance.](https://my.home-assistant.io/badges/supervisor_addon.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https://github.com/home-assistant/addons)
 
@@ -80,7 +85,7 @@ usage: __main__.py [-h] [--name NAME] [--audio-input-device AUDIO_INPUT_DEVICE] 
 | `--audio-input-device`     | Soundcard name for input device                               | Autodetected                      |
 | `--audio-input-block-size` | Audio input block size in samples                             | 1024                              |
 | `--audio-output-device`    | mpv name for output device                                    | Autodetected                      |
-| `--mic-volume`             | Control microphone volume                                     | 1.0                               |
+| `--mic-volume`             | Control microphone volume                                     | 100                               |
 | `--mic-auto-gain`          | Add WebRTC Gain to Mic                                        | 0                                 |
 | `--mic-noise-suppression`  | Add WebRTC Noise Suppression to Mic                           | 0                                 |
 | `--wake-word-dir`          | Directory with wake word models (.tflite) and configs (.json) | `wakewords/`                      |
