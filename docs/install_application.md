@@ -188,6 +188,7 @@ Environment=PREFERENCES_FILE="/home/pi/linux-voice-assistant/preferences.json"
 # Environment=WAKEUP_SOUND="sounds/wake_word_triggered.flac"
 # Environment=TIMER_FINISHED_SOUND="sounds/timer_finished.flac"
 # Environment=PROCESSING_SOUND="sounds/processing.wav"
+# Environment=LISTEN_DURING_WAKE_SOUND="0"
 # Environment=MUTE_SOUND="sounds/mute_switch_on.flac"
 # Environment=UNMUTE_SOUND="sounds/mute_switch_off.flac"
 # Environment=ENABLE_OUTPUT_ONLY="1"
@@ -270,12 +271,24 @@ The following variables can be configured in the `.env` or in the service file:
 | `WAKEUP_SOUND` | `sounds/wake_word_triggered.flac` | Sound file for wake word triggered |
 | `TIMER_FINISHED_SOUND` | `sounds/timer_finished.flac` | Sound file for timer finished |
 | `PROCESSING_SOUND` | `sounds/processing.wav` | Sound file for processing state |
+| `LISTEN_DURING_WAKE_SOUND` | false | Set to "1" to start listening immediately after wake word detection, without waiting for the wake sound to finish |
 | `MUTE_SOUND` | `sounds/mute_switch_on.flac` | Sound file for mute on |
 | `UNMUTE_SOUND` | `sounds/mute_switch_off.flac` | Sound file for Configure Audio Devices
 | `ENABLE_OUTPUT_ONLY` | (optional) | Set to "1" to enable output-only mode |
 
 
 💡 **Note:** For the systemd installation some variables set in the service need to be without `LVA_` prefix.
+
+### Feature: Listen During Wake Sound
+
+By default, LVA waits until the wake sound has finished playing before it starts listening for your spoken command. This can force a short pause between saying the wake word and the rest of your request. For example:  `Okay Nabu <pause until wake sound finishes> turn on the kitchen lights`.
+
+Enable `LISTEN_DURING_WAKE_SOUND="1"` to let LVA begin listening immediately after the wake word is detected, even while the wake sound is still playing. This allows you to say the wake word and the full command in one go.
+
+This feature is especially useful when you want a more natural interaction flow and do not want to wait to confirm that the wake word was detected before speaking the command.
+
+Keep in mind that listening while the wake sound is playing can also make the microphone pick up some of that wake sound as echo, depending on your speaker and microphone setup. This echo can interfere with speech-to-text and make commands less accurate. If you run into this, see [Enabling Acoustic Echo Cancellation (AEC)](enabling_aec.md).
+
 
 ### Use own soundfiles:
 
