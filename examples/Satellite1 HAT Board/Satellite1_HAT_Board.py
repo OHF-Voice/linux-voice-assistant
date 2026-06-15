@@ -110,10 +110,97 @@ EFFECT_VOICE_ASSISTANT = "Voice Assistant"
 # Reconnect delay when WebSocket connection to LVA is lost
 RECONNECT_DELAY_S = 3.0
 
+# Color wheel parameters (matches Home Assistant Voice PE)
+# HSV hue rotation: ±10° per volume button press
+HUE_INCREMENT = 10  # Degrees
+DEFAULT_HUE = 195   # Cyan (matches default RGB 24, 187, 242)
+DEFAULT_SATURATION = 1.0  # 100%
+DEFAULT_VALUE = 1.0  # 100%
+
+
+# ===========================================================================
+# Color conversion utilities (HSV ↔ RGB)
+# ===========================================================================
+
+def hsv_to_rgb(hue: int, saturation: float, value: float) -> Tuple[int, int, int]:
+    """
+    Convert HSV (Hue: 0-360, Saturation: 0-1, Value: 0-1) to RGB (0-255).
+    Mirrors the Home Assistant Voice PE color wheel.
+    """
+    # Normalize hue to 0-360 range
+    hue = hue % 360
+    
+    # Clamp saturation and value to 0-1
+    sat = max(0.0, min(1.0, saturation))
+    val = max(0.0, min(1.0, value))
+    
+    # Ensure saturation is at least 5% to avoid desaturated colors
+    if sat < 0.05:
+        sat = 1.0
+    
+    c = val * sat  # Chroma
+    h_prime = hue / 60.0
+    x = c * (1.0 - abs(h_prime % 2.0 - 1.0))
+    
+    if h_prime < 1:
+        r_prime, g_prime, b_prime = c, x, 0.0
+    elif h_prime < 2:
+        r_prime, g_prime, b_prime = x, c, 0.0
+    elif h_prime < 3:
+        r_prime, g_prime, b_prime = 0.0, c, x
+    elif h_prime < 4:
+        r_prime, g_prime, b_prime = 0.0, x, c
+    elif h_prime < 5:
+        r_prime, g_prime, b_prime = x, 0.0, c
+    else:
+        r_prime, g_prime, b_prime = c, 0.0, x
+    
+    m = val - c
+    r = int((r_prime + m) * 255)
+    g = int((g_prime + m) * 255)
+    b = int((b_prime + m) * 255)
+    
+    return (r, g, b)
+
+
+def rgb_to_hsv(r: int, g: int, b: int) -> Tuple[int, float, float]:
+    """
+    Convert RGB (0-255) to HSV (Hue: 0-360, Saturation: 0-1, Value: 0-1).
+    """
+    r_norm = r / 255.0
+    g_norm = g / 255.0
+    b_norm = b / 255.0
+    
+    max_c = max(r_norm, g_norm, b_norm)
+    min_c = min(r_norm, g_norm, b_norm)
+    delta = max_c - min_c
+    
+    # Value
+    value = max_c
+    
+    # Saturation
+    if max_c == 0:
+        saturation = 0.0
+    else:
+        saturation = delta / max_c
+    
+    # Hue
+    if delta == 0:
+        hue = 0
+    elif max_c == r_norm:
+        hue = (60 * ((g_norm - b_norm) / delta) + 360) % 360
+    elif max_c == g_norm:
+        hue = (60 * ((b_norm - r_norm) / delta) + 120) % 360
+    else:  # max_c == b_norm
+        hue = (60 * ((r_norm - g_norm) / delta) + 240) % 360
+    
+    return (int(hue), saturation, value)
+
 
 # ===========================================================================
 # Logging
 # ===========================================================================
+
 
 _LOGGER = logging.getLogger("satellite1")
 
@@ -159,6 +246,10 @@ class SharedState:
         self.light_red: float = 0.094
         self.light_green: float = 0.733
         self.light_blue: float = 0.949
+        # HSV color tracking for hue rotation via volume buttons
+        self.hsv_hue: int = DEFAULT_HUE
+        self.hsv_saturation: float = DEFAULT_SATURATION
+        self.hsv_value: float = DEFAULT_VALUE
 
     def update(self, **kwargs) -> None:
         with self._lock:
@@ -180,6 +271,9 @@ class SharedState:
                 "light_red":            self.light_red,
                 "light_green":          self.light_green,
                 "light_blue":           self.light_blue,
+                "hsv_hue":              self.hsv_hue,
+                "hsv_saturation":       self.hsv_saturation,
+                "hsv_value":            self.hsv_value,
             }
 
 
@@ -581,6 +675,13 @@ class ButtonHandler:
 
     All callbacks run in the GPIO event-detection thread and schedule
     coroutines onto the asyncio event loop thread-safely.
+    
+    Supports:
+    - Volume +/- for volume control
+    - Mute button for microphone toggle
+    - Action button for context-aware commands or color changing:
+      * Hold + Volume +: Increase hue by 10°
+      * Hold + Volume -: Decrease hue by 10°
     """
 
     def __init__(
@@ -593,6 +694,9 @@ class ButtonHandler:
         self._loop = loop
         self._queue = command_queue
         self._buttons: List = []
+        # Track action button hold state for color changing
+        self._action_button_held = False
+        self._action_button_obj = None
 
     def setup(self) -> None:
         if not _HAS_GPIO:
@@ -610,9 +714,13 @@ class ButtonHandler:
         btn_down.when_pressed = self._on_volume_down
         btn_mute.when_pressed = self._on_mute
         btn_act.when_pressed  = self._on_action
+        btn_act.when_held     = self._on_action_held
+        btn_act.when_released = self._on_action_released
+        btn_act.hold_time     = 0.1  # 100ms to detect hold
 
         # Keep references — gpiozero Buttons are released when garbage-collected
         self._buttons = [btn_up, btn_down, btn_mute, btn_act]
+        self._action_button_obj = btn_act
         _LOGGER.info(
             "Buttons configured (gpiozero BCM %d/%d/%d/%d)",
             BTN_VOLUME_UP, BTN_VOLUME_DOWN, BTN_MUTE, BTN_ACTION,
@@ -630,10 +738,65 @@ class ButtonHandler:
         )
 
     def _on_volume_up(self) -> None:
-        self._send("volume_up")
+        if self._action_button_held:
+            self._on_color_hue_increase()
+        else:
+            self._send("volume_up")
 
     def _on_volume_down(self) -> None:
-        self._send("volume_down")
+        if self._action_button_held:
+            self._on_color_hue_decrease()
+        else:
+            self._send("volume_down")
+    
+    def _on_action_held(self) -> None:
+        """Action button held – enter color change mode."""
+        self._action_button_held = True
+        _LOGGER.info("Color change mode active (hold action + use volume buttons)")
+    
+    def _on_action_released(self) -> None:
+        """Action button released – exit color change mode."""
+        self._action_button_held = False
+    
+    def _on_color_hue_increase(self) -> None:
+        """Increase hue by 10° (volume up while action held)."""
+        snap = self._state.snapshot
+        new_hue = (snap["hsv_hue"] + HUE_INCREMENT) % 360
+        self._send_color_command(new_hue, snap["hsv_saturation"], snap["hsv_value"])
+    
+    def _on_color_hue_decrease(self) -> None:
+        """Decrease hue by 10° (volume down while action held)."""
+        snap = self._state.snapshot
+        new_hue = (snap["hsv_hue"] - HUE_INCREMENT) % 360
+        self._send_color_command(new_hue, snap["hsv_saturation"], snap["hsv_value"])
+    
+    def _send_color_command(self, hue: int, saturation: float, value: float) -> None:
+        """Convert HSV to RGB and send light_command to LVA."""
+        # Update local HSV state
+        self._state.update(hsv_hue=hue, hsv_saturation=saturation, hsv_value=value)
+        
+        # Convert HSV to RGB for light command
+        r, g, b = hsv_to_rgb(hue, saturation, value)
+        
+        # Normalize RGB to 0-1 range
+        light_cmd = {
+            "command": "light_command",
+            "data": {
+                "object_id": LIGHT_OBJECT_ID,
+                "state": True,
+                "brightness": self._state.snapshot["light_brightness"],
+                "red": r / 255.0,
+                "green": g / 255.0,
+                "blue": b / 255.0,
+            },
+        }
+        
+        _LOGGER.info("Color change: Hue=%d° → RGB(%d, %d, %d)", hue, r, g, b)
+        
+        # Send command to LVA via command queue
+        asyncio.run_coroutine_threadsafe(
+            self._queue.put(json.dumps(light_cmd)), self._loop
+        )
 
     def _on_mute(self) -> None:
         """Toggle mute: sends mute_mic or unmute_mic based on current state."""
@@ -786,13 +949,24 @@ class LVAClient:
 
     async def _send_loop(self, ws) -> None:
         while True:
-            command = await self._queue.get()
+            item = await self._queue.get()
             try:
-                await ws.send(json.dumps({"command": command}))
+                # Item can be either a string (command) or a pre-formatted JSON dict (light_command)
+                if isinstance(item, str):
+                    # Try to parse as JSON (for light_command) or wrap as command
+                    try:
+                        msg = json.loads(item)
+                    except json.JSONDecodeError:
+                        # Plain string command
+                        msg = {"command": item}
+                else:
+                    msg = item
+                
+                await ws.send(json.dumps(msg))
             except Exception as exc:  # pylint: disable=broad-except
-                _LOGGER.warning("Failed to send command %s: %s", command, exc)
+                _LOGGER.warning("Failed to send item %s: %s", item, exc)
                 # Put it back so it's not silently dropped
-                self._queue.put_nowait(command)
+                self._queue.put_nowait(item)
                 raise
 
     async def _handle_event(self, msg: dict) -> None:
@@ -905,12 +1079,25 @@ class LVAClient:
             # pipeline animations run.
             if data.get("object_id") != LIGHT_OBJECT_ID:
                 return
+            
+            r = float(data.get("red", 0.094))
+            g = float(data.get("green", 0.733))
+            b = float(data.get("blue", 0.949))
+            
+            # Convert RGB back to HSV and track hue for color change mode
+            hue, sat, val = rgb_to_hsv(
+                int(r * 255), int(g * 255), int(b * 255)
+            )
+            
             self._state.update(
                 light_is_on=bool(data.get("state", True)),
                 light_brightness=float(data.get("brightness", 0.66)),
-                light_red=float(data.get("red", 0.094)),
-                light_green=float(data.get("green", 0.733)),
-                light_blue=float(data.get("blue", 0.949)),
+                light_red=r,
+                light_green=g,
+                light_blue=b,
+                hsv_hue=hue,
+                hsv_saturation=sat,
+                hsv_value=val,
             )
             # Force re-render animation with new light state
             snap = self._state.snapshot

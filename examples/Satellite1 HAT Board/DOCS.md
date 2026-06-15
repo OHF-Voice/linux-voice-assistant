@@ -111,24 +111,49 @@ Sends `volume_down` to LVA. Each press decreases volume by one step.
 ### Top button — Mute / Unmute
 Toggles microphone mute. Sends `mute_mic` when unmuted, `unmute_mic` when muted. The LED ring switches to the muted indicator pattern immediately.
 
-### Bottom button — Context action (with multipress support)
+### Bottom button — Context action (with multipress and color change support)
 
-This button supports both single-press context actions and multi-press gestures:
+This button supports single-press context actions, multi-press gestures, **and color changing via the HSV hue wheel** (matching Home Assistant Voice PE):
 
-#### Single press (< 1000 ms hold time)
+#### Single press (< 100 ms hold time)
 
 Context-aware command based on current assistant state, mirroring the Home Assistant Voice PE centre button priority:
 
 | Current state | Command sent |
 |---|---|
 | Timer ringing | `stop_timer_ringing` |
-| Wake word / listening / thinking / TTS speaking / | `stop_pipeline` |
+| Wake word / listening / thinking / TTS speaking | `stop_pipeline` |
 | Music / media playing | `stop_media_player` |
 | Any other (idle) | `start_listening` |
 
+#### Hold + Volume buttons — Color wheel rotation
+
+Hold down the action button and use the volume buttons to rotate through the HSV color wheel (matching Voice PE's rotary dial):
+
+| Action | Effect |
+|---|---|
+| **Hold + Volume Up** | Rotate hue +10° (clockwise around color wheel) |
+| **Hold + Volume Down** | Rotate hue -10° (counter-clockwise around color wheel) |
+
+The color wheel provides **36 distinct color stops** (0°–360° in 10° increments):
+- **0°** – Red
+- **60°** – Yellow
+- **120°** – Green
+- **180°** – Cyan
+- **240°** – Blue
+- **300°** – Magenta
+
+Each press changes the hue by 10°, allowing smooth navigation around the full color spectrum. The LED ring updates immediately to show the new color during idle/standby (when the light is on).
+
+**Example workflow:**
+1. Press and hold the action button
+2. Press volume up repeatedly to cycle through warm colors (red → orange → yellow)
+3. Release action button to confirm and exit color mode
+4. The new color persists in Home Assistant
+
 #### Multi-press gestures
 
-Detected via press timing within a detection window (500 ms between releases):
+When the action button is released quickly (not held), it detects multiple presses:
 
 | Gesture | Timing | Command sent | Use case |
 |---|---|---|---|
@@ -142,6 +167,8 @@ Detected via press timing within a detection window (500 ms between releases):
 - Long press → toggle do-not-disturb or night mode
 
 These commands are exposed as button press events to Home Assistant, allowing you to create custom automations via `button_press_event` triggers.
+
+**Note:** The color change mode (hold + volume) activates after ~100 ms of holding, allowing quick single presses to still trigger context actions.
 
 ---
 
