@@ -629,20 +629,20 @@ class ButtonHandler:
             self._queue.put(command), self._loop
         )
 
-    def _on_volume_up(self, _channel) -> None:
+    def _on_volume_up(self) -> None:
         self._send("volume_up")
 
-    def _on_volume_down(self, _channel) -> None:
+    def _on_volume_down(self) -> None:
         self._send("volume_down")
 
-    def _on_mute(self, _channel) -> None:
+    def _on_mute(self) -> None:
         """Toggle mute: sends mute_mic or unmute_mic based on current state."""
         if self._state.muted:
             self._send("unmute_mic")
         else:
             self._send("mute_mic")
 
-    def _on_action(self, _channel) -> None:
+    def _on_action(self) -> None:
         """
         Context-sensitive bottom button — mirrors HA Voice PE priority:
           1. Timer ringing           → stop_timer_ringing
