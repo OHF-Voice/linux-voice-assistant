@@ -12,21 +12,16 @@ Hardware layout (Satellite 1 HAT on Raspberry Pi)
   Left btn   : Volume Down                  →  GPIO 27
   Top btn    : Mute / Unmute mic            →  GPIO 22
   Bottom btn : Context action               →  GPIO 23
-                Single press:
-                    idle            → start_listening
-                    listening       → stop_pipeline
-                    thinking        → stop_pipeline
-                    tts_speaking    → stop_pipeline
-                    timer_ringing   → stop_timer_ringing
-                    media_playing   → stop_media_player
-                Multi-press (detected via timing):
-                    double press (< 500ms between releases)  → button_double_press
-                    triple press (< 500ms between releases)  → button_triple_press
-                    long press (held > 1000ms)               → button_long_press
+                idle            → start_listening
+                listening       → stop_listening
+                thinking        → stop_listening
+                tts_speaking    → stop_speaking
+                timer_ringing   → stop_timer_ringing
+                media_playing   → stop_media_player
 
 Install dependencies
 ---------------------
-  pip install websockets rpi-ws281x gpiozero lgpio
+  pip install websockets rpi-ws281x RPi.GPIO
 
 Run
 ---
@@ -47,7 +42,7 @@ import sys
 import threading
 import time
 from enum import Enum
-from typing import List, Optional, Tuple
+from typing import Optional, Tuple
 
 # ---------------------------------------------------------------------------
 # Hardware dependencies (gracefully stubbed when not on real Pi hardware so
@@ -55,14 +50,14 @@ from typing import List, Optional, Tuple
 # ---------------------------------------------------------------------------
 
 try:
-    from gpiozero import Button  # type: ignore[import]
+    import RPi.GPIO as GPIO  # type: ignore[import]
     _HAS_GPIO = True
 except ImportError:
     _HAS_GPIO = False
-    logging.warning("gpiozero not found – button input disabled")
+    logging.warning("RPi.GPIO not found – button input disabled")
 
 try:
-    from rpi_ws281x import PixelStrip, Color as _NeoColor  # type: ignore[import]
+    from rpi_ws281x import PixelStrip, Color as _NeoColor, ws  # type: ignore[import]
     _HAS_NEOPIXEL = True
 except ImportError:
     _HAS_NEOPIXEL = False
@@ -82,11 +77,11 @@ DEFAULT_LVA_HOST = "localhost"
 DEFAULT_LVA_PORT = 6055
 
 # GPIO (BCM numbering)
-LED_GPIO_PIN    = 12
-BTN_VOLUME_UP   = 17   # Right button
-BTN_VOLUME_DOWN = 27   # Left button
-BTN_MUTE        = 22   # Top button
-BTN_ACTION      = 23   # Bottom button
+LED_GPIO_PIN   = 12
+BTN_VOLUME_UP  = 17   # Right button
+BTN_VOLUME_DOWN = 27  # Left button
+BTN_MUTE       = 22   # Top button
+BTN_ACTION     = 23   # Bottom button
 
 BTN_DEBOUNCE_MS = 150  # Milliseconds
 
@@ -100,6 +95,12 @@ LED_CHANNEL    = 0
 
 # Default ring color  (ESPHome default: 9.4 % R, 73.3 % G, 94.9 % B)
 DEFAULT_R, DEFAULT_G, DEFAULT_B = 24, 187, 242
+
+# HA Light entity registered with LVA via register_light. The same object_id
+# is used to route incoming light_command events back to this script.
+LIGHT_OBJECT_ID = "leds"
+LIGHT_NAME      = "LEDs"
+EFFECT_VOICE_ASSISTANT = "Voice Assistant"
 
 # Reconnect delay when WebSocket connection to LVA is lost
 RECONNECT_DELAY_S = 3.0
@@ -144,6 +145,15 @@ class SharedState:
         self.volume: float = 1.0
         self.timer_total_seconds: int = 0
         self.timer_seconds_left: int = 0
+        # Light entity state, driven by HA via light_command events.
+        # Defaults match the LEDLightEntity in LVA core so the script
+        # behaves sensibly before the first light_command arrives: off by
+        # default, so idle stays dark until the user turns the light on.
+        self.light_is_on: bool = False
+        self.light_brightness: float = 0.66
+        self.light_red: float = 0.094
+        self.light_green: float = 0.733
+        self.light_blue: float = 0.949
 
     def update(self, **kwargs) -> None:
         with self._lock:
@@ -160,6 +170,11 @@ class SharedState:
                 "volume":               self.volume,
                 "timer_total_seconds":  self.timer_total_seconds,
                 "timer_seconds_left":   self.timer_seconds_left,
+                "light_is_on":          self.light_is_on,
+                "light_brightness":     self.light_brightness,
+                "light_red":            self.light_red,
+                "light_green":          self.light_green,
+                "light_blue":           self.light_blue,
             }
 
 
@@ -195,21 +210,23 @@ class LEDRing:
     ``set_animation()`` switches cleanly to the new pattern.
     """
 
-    ANIM_OFF          = "off"
-    ANIM_TWINKLE      = "twinkle"
-    ANIM_TWINKLE_BLUE = "twinkle_blue"
-    ANIM_WAIT_CMD     = "waiting"
-    ANIM_LISTENING    = "listening"
-    ANIM_THINKING     = "thinking"
-    ANIM_REPLYING     = "replying"
-    ANIM_MUTED        = "muted"
-    ANIM_ERROR        = "error"
-    ANIM_TIMER_TICK   = "timer_tick"
-    ANIM_TIMER_RING   = "timer_ring"
+    # Animation names mirror ESPHome effect names for easy cross-reference
+    ANIM_IDLE            = "idle"             # Idle with light color when on
+    ANIM_OFF             = "off"
+    ANIM_TWINKLE         = "twinkle"          # Not-ready / no HA
+    ANIM_TWINKLE_BLUE    = "twinkle_blue"     # Init / connecting
+    ANIM_WAIT_CMD        = "waiting"          # Wake word detected (slow spin)
+    ANIM_LISTENING       = "listening"        # STT active (fast spin)
+    ANIM_THINKING        = "thinking"         # Intent processing (pulse pair)
+    ANIM_REPLYING        = "replying"         # TTS speaking (reverse spin)
+    ANIM_MUTED           = "muted"            # Muted indicators
+    ANIM_ERROR           = "error"            # Red pulse
+    ANIM_TIMER_TICK      = "timer_tick"       # Countdown arc
+    ANIM_TIMER_RING      = "timer_ring"       # Ringing pulse
 
     def __init__(self, state: SharedState) -> None:
         self._state = state
-        self._pixels: List[RGB] = [BLACK] * LED_COUNT
+        self._pixels: list[RGB] = [BLACK] * LED_COUNT
         self._strip = None
         self._animation = self.ANIM_OFF
         self._anim_lock = threading.Lock()
@@ -218,10 +235,11 @@ class LEDRing:
             target=self._loop, daemon=True, name="led-ring"
         )
 
+        # Per-animation internal counters (reset on animation change)
         self._index: int = 0
         self._brightness_step: int = 0
         self._brightness_dec: bool = True
-        self._twinkle_state: List[float] = [0.0] * LED_COUNT
+        self._twinkle_state: list[float] = [0.0] * LED_COUNT
 
         if _HAS_NEOPIXEL:
             self._strip = PixelStrip(
@@ -229,9 +247,7 @@ class LEDRing:
                 LED_DMA, LED_INVERT, LED_BRIGHTNESS, LED_CHANNEL,
             )
             self._strip.begin()
-            _LOGGER.info(
-                "LED ring initialised (%d LEDs on GPIO %d)", LED_COUNT, LED_GPIO_PIN
-            )
+            _LOGGER.info("LED ring initialised (%d LEDs on GPIO %d)", LED_COUNT, LED_GPIO_PIN)
 
     def start(self) -> None:
         self._thread.start()
@@ -271,8 +287,13 @@ class LEDRing:
         self._pixels[i % LED_COUNT] = color
 
     def _color(self) -> RGB:
-        """Return the current user-configured ring colour."""
-        return (DEFAULT_R, DEFAULT_G, DEFAULT_B)
+        """Return the current user-configured ring colour from light entity state."""
+        snap = self._state.snapshot
+        return (
+            int(max(0.0, min(1.0, snap["light_red"])) * 255),
+            int(max(0.0, min(1.0, snap["light_green"])) * 255),
+            int(max(0.0, min(1.0, snap["light_blue"])) * 255),
+        )
 
     def _pulse_step(self, steps: int = 10) -> float:
         """Advance pulse counter and return brightness 0.0–1.0."""
@@ -289,6 +310,20 @@ class LEDRing:
     # Animation implementations  (each returns sleep time in seconds)
     # All logic mirrors the ESPHome addressable_lambda effects verbatim.
     # ------------------------------------------------------------------
+
+    def _anim_idle(self) -> float:
+        """Resting state with user color when light is on, else dark."""
+        snap = self._state.snapshot
+        if snap["light_is_on"]:
+            # Show user color at configured brightness
+            color = self._color()
+            brightness = snap["light_brightness"]
+            for i in range(LED_COUNT):
+                self._set(i, _scale(color, brightness))
+            self._write()
+        else:
+            self._all_off()
+        return 0.1
 
     def _anim_off(self) -> float:
         self._all_off()
@@ -318,17 +353,17 @@ class LEDRing:
             # Replying goes anticlockwise: index decrements
             self._index = (LED_COUNT + self._index - 1) % LED_COUNT
             offsets = [(0, 1.0), (1, 192/255), (2, 128/255),
-                       (6, 1.0), (7, 192/255), (8, 128/255)]
+                       (6, 1.0),  (7, 192/255), (8, 128/255)]
         else:
             offsets = [(0, 1.0), (11, 192/255), (10, 128/255),
-                       (6, 1.0), (5,  192/255), (4,  128/255)]
+                       (6, 1.0),  (5, 192/255),  (4, 128/255)]
 
         for i in range(LED_COUNT):
             self._set(i, BLACK)
-          
+
         for offset, brightness in offsets:
             self._set((self._index + offset) % LED_COUNT, _scale(color, brightness))
-          
+
         if not reverse:
             self._index = (self._index + 1) % LED_COUNT
 
@@ -356,10 +391,10 @@ class LEDRing:
         """
         for i in range(LED_COUNT):
             self._set(i, color)
-          
+
         if muted:
             # 4 mic positions: top (0), right (3), bottom (6), left (9)
-            # Blank the immediate neighbours so the red indicators stand out          
+            # Blank the immediate neighbours so the red indicators stand out
             self._set(11, BLACK); self._set(0, RED);  self._set(1, BLACK)
             self._set(2,  BLACK); self._set(3, RED);  self._set(4, BLACK)
             self._set(5,  BLACK); self._set(6, RED);  self._set(7, BLACK)
@@ -371,7 +406,7 @@ class LEDRing:
     def _anim_error(self) -> float:
         """
         All LEDs red, pulsing. Mirrors ESPHome "Error" effect.
-        """      
+        """
         factor = self._pulse_step(10)
         for i in range(LED_COUNT):
             self._set(i, _scale(RED, factor))
@@ -382,7 +417,7 @@ class LEDRing:
         """
         All LEDs pulse with ring colour; red at all 4 mic positions if muted.
         Mirrors ESPHome "Timer Ring" effect.
-        """      
+        """
         factor = self._pulse_step(10)
         for i in range(LED_COUNT):
             self._set(i, _scale(color, factor))
@@ -403,7 +438,7 @@ class LEDRing:
         Arc of LEDs proportional to remaining time.
         Mirrors ESPHome "Timer Tick" effect exactly, including the
         brightness-dip on the sweep marker LED.
-        """      
+        """
         total = max(total_seconds, 1)
         timer_ratio = LED_COUNT * seconds_left / total
         last_led_on = max(0, math.ceil(timer_ratio) - 1)
@@ -439,45 +474,49 @@ class LEDRing:
             with self._anim_lock:
                 anim = self._animation
 
-            snap         = self._state.snapshot
+            snap = self._state.snapshot
             color        = self._color()
             muted        = snap["muted"]
             t_total      = snap["timer_total_seconds"]
             t_left       = snap["timer_seconds_left"]
+            ha_connected = snap["ha_connected"]
 
-            if anim == self.ANIM_OFF:
+            if anim == self.ANIM_IDLE:
+                sleep = self._anim_idle()
+
+            elif anim == self.ANIM_OFF:
                 sleep = self._anim_off()
-              
+
             elif anim == self.ANIM_TWINKLE:
                 sleep = self._anim_twinkle(RED)
-              
+
             elif anim == self.ANIM_TWINKLE_BLUE:
                 sleep = self._anim_twinkle(color)
-              
+
             elif anim == self.ANIM_WAIT_CMD:
                 sleep = self._anim_spin(color, interval=0.1, reverse=False)
-              
+
             elif anim == self.ANIM_LISTENING:
                 sleep = self._anim_spin(color, interval=0.05, reverse=False)
-              
+
             elif anim == self.ANIM_THINKING:
                 sleep = self._anim_thinking(color)
-              
+
             elif anim == self.ANIM_REPLYING:
                 sleep = self._anim_spin(color, interval=0.05, reverse=True)
-              
+
             elif anim == self.ANIM_MUTED:
                 sleep = self._anim_muted(color, muted=True)
-              
+
             elif anim == self.ANIM_ERROR:
                 sleep = self._anim_error()
-              
+
             elif anim == self.ANIM_TIMER_RING:
                 sleep = self._anim_timer_ring(color, muted)
-              
+
             elif anim == self.ANIM_TIMER_TICK:
                 sleep = self._anim_timer_tick(color, muted, t_left, t_total)
-              
+
             else:
                 sleep = self._anim_off()
 
@@ -486,42 +525,57 @@ class LEDRing:
 
 # ===========================================================================
 # State → animation mapping
+# Mirrors the control_leds script priority logic from ESPHome
 # ===========================================================================
 
 def state_to_animation(state: AssistState, ha_connected: bool, muted: bool) -> str:
     if not ha_connected:
-        return LEDRing.ANIM_TWINKLE
+        return LEDRing.ANIM_TWINKLE         # Red twinkle = no HA connection
+
     if state == AssistState.NOT_READY:
-        return LEDRing.ANIM_TWINKLE
+        return LEDRing.ANIM_TWINKLE         # Red twinkle
+
     if state == AssistState.TIMER_RINGING:
         return LEDRing.ANIM_TIMER_RING
+
     if state == AssistState.WAKE_WORD:
-        return LEDRing.ANIM_WAIT_CMD
+        return LEDRing.ANIM_WAIT_CMD        # Slow clockwise spin
+
     if state == AssistState.LISTENING:
-        return LEDRing.ANIM_LISTENING
+        return LEDRing.ANIM_LISTENING       # Fast clockwise spin
+
     if state == AssistState.THINKING:
-        return LEDRing.ANIM_THINKING
+        return LEDRing.ANIM_THINKING        # Pulsing pair
+
     if state == AssistState.SPEAKING:
-        return LEDRing.ANIM_REPLYING
+        return LEDRing.ANIM_REPLYING        # Anticlockwise spin
+
     if state == AssistState.ERROR:
-        return LEDRing.ANIM_ERROR
+        return LEDRing.ANIM_ERROR           # Red pulse
+
     if state == AssistState.MUTED or muted:
         return LEDRing.ANIM_MUTED
+
     if state == AssistState.TIMER_TICKING:
-        return LEDRing.ANIM_TIMER_TICK
+        return LEDRing.ANIM_TIMER_TICK      # Countdown arc
+
+    if state == AssistState.IDLE:
+        return LEDRing.ANIM_IDLE            # User color when light on, else off
+
+    # MEDIA_PLAYING, TTS_FINISHED → off
     return LEDRing.ANIM_OFF
 
 
 # ===========================================================================
-# Button handler — uses gpiozero (works on Pi 3/4/5 without RPi.GPIO)
+# Button handler
 # ===========================================================================
 
 class ButtonHandler:
     """
-    Manages the four hardware buttons using gpiozero.
+    Manages the four hardware buttons using RPi.GPIO.
 
-    gpiozero works with the lgpio backend on Pi 3/4/5 without needing
-    RPi.GPIO, which is not supported on Pi 5.
+    All callbacks run in the GPIO event-detection thread and schedule
+    coroutines onto the asyncio event loop thread-safely.
     """
 
     def __init__(
@@ -533,36 +587,37 @@ class ButtonHandler:
         self._state = state
         self._loop = loop
         self._queue = command_queue
-        self._buttons: List = []
 
     def setup(self) -> None:
         if not _HAS_GPIO:
             _LOGGER.warning("GPIO unavailable – buttons not configured")
             return
 
-        debounce = BTN_DEBOUNCE_MS / 1000.0
+        GPIO.setmode(GPIO.BCM)
+        for pin in (BTN_VOLUME_UP, BTN_VOLUME_DOWN, BTN_MUTE, BTN_ACTION):
+            GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
-        btn_up   = Button(BTN_VOLUME_UP,   pull_up=True, bounce_time=debounce)
-        btn_down = Button(BTN_VOLUME_DOWN, pull_up=True, bounce_time=debounce)
-        btn_mute = Button(BTN_MUTE,        pull_up=True, bounce_time=debounce)
-        btn_act  = Button(BTN_ACTION,      pull_up=True, bounce_time=debounce)
-
-        btn_up.when_pressed   = self._on_volume_up
-        btn_down.when_pressed = self._on_volume_down
-        btn_mute.when_pressed = self._on_mute
-        btn_act.when_pressed  = self._on_action
-
-        # Keep references — gpiozero Buttons are released when garbage-collected
-        self._buttons = [btn_up, btn_down, btn_mute, btn_act]
-        _LOGGER.info(
-            "Buttons configured (gpiozero BCM %d/%d/%d/%d)",
-            BTN_VOLUME_UP, BTN_VOLUME_DOWN, BTN_MUTE, BTN_ACTION,
+        GPIO.add_event_detect(
+            BTN_VOLUME_UP, GPIO.FALLING,
+            callback=self._on_volume_up, bouncetime=BTN_DEBOUNCE_MS,
         )
+        GPIO.add_event_detect(
+            BTN_VOLUME_DOWN, GPIO.FALLING,
+            callback=self._on_volume_down, bouncetime=BTN_DEBOUNCE_MS,
+        )
+        GPIO.add_event_detect(
+            BTN_MUTE, GPIO.FALLING,
+            callback=self._on_mute, bouncetime=BTN_DEBOUNCE_MS,
+        )
+        GPIO.add_event_detect(
+            BTN_ACTION, GPIO.FALLING,
+            callback=self._on_action, bouncetime=BTN_DEBOUNCE_MS,
+        )
+        _LOGGER.info("Buttons configured (GPIO BCM mode)")
 
     def cleanup(self) -> None:
-        for btn in self._buttons:
-            btn.close()
-        self._buttons.clear()
+        if _HAS_GPIO:
+            GPIO.cleanup()
 
     def _send(self, command: str) -> None:
         _LOGGER.info("Button → %s", command)
@@ -570,80 +625,45 @@ class ButtonHandler:
             self._queue.put(command), self._loop
         )
 
-    def _on_volume_up(self) -> None:
+    def _on_volume_up(self, _channel) -> None:
         self._send("volume_up")
 
-    def _on_volume_down(self) -> None:
+    def _on_volume_down(self, _channel) -> None:
         self._send("volume_down")
 
-    def _on_mute(self) -> None:
+    def _on_mute(self, _channel) -> None:
+        """Toggle mute: sends mute_mic or unmute_mic based on current state."""
         if self._state.muted:
             self._send("unmute_mic")
         else:
             self._send("mute_mic")
 
-    def _on_action(self) -> None:
+    def _on_action(self, _channel) -> None:
         """
-        Context-sensitive bottom button — mirrors HA Voice PE priority:
-          1. Timer ringing           → stop_timer_ringing
-          2. Pipeline active         → stop_pipeline
-          3. Media playing           → stop_media_player
-          4. Idle / anything else    → start_listening
+        Context-sensitive bottom button.
+
+        Priority order:
+          1. Timer ringing              → stop_timer_ringing
+          2. Pipeline active            → stop_pipeline
+             (wake word / listening / thinking)
+          3. TTS speaking               → stop_speaking
+          4. Media playing              → stop_media_player
+          5. Idle / anything else       → start_listening
         """
         assist = self._state.assist_state
 
         if assist == AssistState.TIMER_RINGING:
             self._send("stop_timer_ringing")
-        elif assist in (AssistState.WAKE_WORD, AssistState.LISTENING, AssistState.THINKING, AssistState.SPEAKING):
+        elif assist in (AssistState.WAKE_WORD, AssistState.LISTENING, AssistState.THINKING):
             # stop_pipeline aborts the voice pipeline at any of these phases
             self._send("stop_pipeline")
+        elif assist == AssistState.SPEAKING:
+            self._send("stop_speaking")
         elif assist == AssistState.MEDIA_PLAYING:
             self._send("stop_media_player")
         else:
             self._send("start_listening")
 
-class ButtonMultipressHandler:
-    """Handles multiple presses of the action button (double, triple, and long press) to trigger different commands.   """
-    def __init__(self):
-        self.button_pin = BTN_ACTION
-        self.last_press_time = 0
-        self.press_count = 0
-
-    def _send(self, command: str) -> None:
-        _LOGGER.info("Button → %s", command)
-        asyncio.run_coroutine_threadsafe(
-            self._queue.put(command), self._loop
-        )
-
-    def button_pressed(self):
-        current_time = time.time()
-        time_since_last_press = current_time - self.last_press_time
-
-        if time_since_last_press <= 0.5:
-            self.press_count += 1
-        else:
-            self.press_count = 1
-
-        self.last_press_time = current_time
-
-        if self.press_count == 2:
-            self.handle_double_press()
-        elif self.press_count == 3:
-            self.handle_triple_press()
-        elif time_since_last_press > 1:  # Long press considered after 1 second
-            self.handle_long_press()
-
-    def handle_double_press(self):
-        # Call LVA peripheral API for double press
-        self._send('button_double_press')
-
-    def handle_triple_press(self):
-        # Call LVA peripheral API for triple press
-        self._send('button_triple_press')
-
-    def handle_long_press(self):
-        # Call LVA peripheral API for long press
-        self._send('button_long_press')
 
 # ===========================================================================
 # WebSocket client
@@ -655,7 +675,7 @@ class LVAClient:
 
     - Receives events and updates SharedState + LEDRing.
     - Drains command_queue and sends commands.
-    """  
+    """
 
     def __init__(
         self,
@@ -690,6 +710,19 @@ class LVAClient:
         _LOGGER.info("Connecting to LVA at %s …", self._uri)
         async with websockets.connect(self._uri) as ws:
             _LOGGER.info("Connected to LVA peripheral API")
+            # Register the LED Light entity with LVA so HA can control it.
+            # LVA treats repeat registrations for the same object_id as a
+            # no-op, so it's safe to send this on every connect.
+            await ws.send(json.dumps({
+                "command": "register_light",
+                "data": {
+                    "name": LIGHT_NAME,
+                    "object_id": LIGHT_OBJECT_ID,
+                    "effects": [EFFECT_VOICE_ASSISTANT],
+                    "supports_rgb": True,
+                    "supports_brightness": True,
+                },
+            }))
             recv_task = asyncio.create_task(self._recv_loop(ws))
             send_task = asyncio.create_task(self._send_loop(ws))
             done, pending = await asyncio.wait(
@@ -700,7 +733,7 @@ class LVAClient:
                 task.cancel()
             # Re-raise the first exception so run_forever() can handle it
             for task in done:
-                if not task.cancelled() and task.exception():
+                if task.exception():
                     raise task.exception()
 
     async def _recv_loop(self, ws) -> None:
@@ -735,56 +768,75 @@ class LVAClient:
                 volume=data.get("volume", 1.0),
                 ha_connected=data.get("ha_connected", False),
             )
+            snap = self._state.snapshot
+            anim = state_to_animation(
+                snap["assist_state"], snap["ha_connected"], snap["muted"]
+            )
+            self._leds.set_animation(anim)
+            return
+
         # --- Voice pipeline events -----------------------------------------
-        elif event == "wake_word_detected":
+        if event == "wake_word_detected":
             self._state.update(assist_state=AssistState.WAKE_WORD)
+
         elif event == "listening":
             self._state.update(assist_state=AssistState.LISTENING)
+
         elif event == "thinking":
             self._state.update(assist_state=AssistState.THINKING)
+
         elif event == "tts_speaking":
             self._state.update(assist_state=AssistState.SPEAKING)
+
         elif event in ("tts_finished", "idle"):
             self._state.update(assist_state=AssistState.IDLE)
+
         elif event == "muted":
             self._state.update(assist_state=AssistState.MUTED, muted=True)
-        elif event == "pipeline_error":
-            _LOGGER.warning("LVA pipeline error: %s", data.get("reason", ""))
-            self._state.update(assist_state=AssistState.ERROR)
- 
-        elif event == "disconnected":
-            _LOGGER.warning("Home Assistant disconnected")
-            self._state.update(
-                ha_connected=False,
-                assist_state=AssistState.NOT_READY,
-            )
 
-        # --- Timer events --------------------------------------------------      
+        elif event == "error":
+            reason = data.get("reason", "")
+            _LOGGER.warning("LVA error: %s", reason)
+            if reason == "ha_disconnected":
+                self._state.update(
+                    ha_connected=False,
+                    assist_state=AssistState.NOT_READY,
+                )
+            else:
+                self._state.update(assist_state=AssistState.ERROR)
+
+        # --- Timer events --------------------------------------------------
         elif event == "timer_ticking":
             self._state.update(
                 assist_state=AssistState.TIMER_TICKING,
                 timer_total_seconds=data.get("total_seconds", 0),
                 timer_seconds_left=data.get("seconds_left", 0),
             )
+
         elif event == "timer_updated":
             self._state.update(
                 timer_total_seconds=data.get("total_seconds", 0),
                 timer_seconds_left=data.get("seconds_left", 0),
             )
+
         elif event == "timer_ringing":
             self._state.update(
                 assist_state=AssistState.TIMER_RINGING,
                 timer_total_seconds=data.get("total_seconds", 0),
                 timer_seconds_left=data.get("seconds_left", 0),
             )
-          
-        # --- Media / volume events -----------------------------------------          
+
+        # --- Media / volume events -----------------------------------------
         elif event == "media_player_playing":
             self._state.update(assist_state=AssistState.MEDIA_PLAYING)
+
         elif event == "volume_changed":
             self._state.update(volume=data.get("volume", 1.0))
+
         elif event == "volume_muted":
             self._state.update(muted=data.get("muted", False))
+
+        # --- Zeroconf / connection events ----------------------------------
         elif event == "zeroconf":
             status = data.get("status", "")
             if status == "connected":
@@ -792,6 +844,30 @@ class LVAClient:
                 _LOGGER.info("Home Assistant connected")
             elif status == "getting_started":
                 _LOGGER.info("LVA starting up, waiting for HA …")
+
+        # --- Light command events ------------------------------------------
+        elif event == "light_command":
+            # LVA broadcasts to every connected peripheral; only act on
+            # commands targeting our registered Light. The Light exposes a
+            # single "Voice Assistant" effect, so there is no effect to
+            # switch on: we apply on/off, brightness, and color and let the
+            # pipeline animations run.
+            if data.get("object_id") != LIGHT_OBJECT_ID:
+                return
+            self._state.update(
+                light_is_on=bool(data.get("state", True)),
+                light_brightness=float(data.get("brightness", 0.66)),
+                light_red=float(data.get("red", 0.094)),
+                light_green=float(data.get("green", 0.733)),
+                light_blue=float(data.get("blue", 0.949)),
+            )
+            # Force re-render animation with new light state
+            snap = self._state.snapshot
+            anim = state_to_animation(
+                snap["assist_state"], snap["ha_connected"], snap["muted"]
+            )
+            self._leds.set_animation(anim)
+            return
 
         # --- Recompute LED animation after every event ---------------------
         snap = self._state.snapshot
