@@ -1,8 +1,10 @@
-# Satellite 1 HAT Board
+# Satellite 1 HAT Board 
+
+<img src="image.png" width="400" height="200">
 
 Peripheral controller for the [Satellite1 HAT Board](https://futureproofhomes.net/products/satellite1-top-microphone-board) by FutureProofHomes, running alongside the Linux Voice Assistant (LVA) container.
 
-The controller runs as a separate Docker container on the same Raspberry Pi. It connects to LVA's peripheral WebSocket API, drives the 12-LED SK6812 ring with animations that mirror the [Home Assistant Voice PE](https://www.home-assistant.io/voice-pe/) LED behaviour, and maps the four hardware buttons to LVA commands.
+The controller runs as a separate Docker container on the same Raspberry Pi. It connects to LVA's peripheral WebSocket API, drives the 12-LED SK6812 ring with animations that mirror the [Home Assistant Voice PE](https://www.home-assistant.io/voice-pe/) LED behaviour, and maps the four hardware buttons to LVA commands with multipress support on the context action button.
 
 ---
 
@@ -35,7 +37,7 @@ The Satellite 1 HAT works on any Raspberry Pi with a 40-pin GPIO header. Tested 
 | Right button (Volume Up) | 17 | Active low, internal pull-up |
 | Left button (Volume Down) | 27 | Active low, internal pull-up |
 | Top button (Mute / Unmute) | 22 | Active low, internal pull-up |
-| Bottom button (Context action) | 23 | Active low, internal pull-up |
+| Bottom button (Context action) | 23 | Active low, internal pull-up | — **supports multipress** |
 
 ---
 
@@ -109,16 +111,37 @@ Sends `volume_down` to LVA. Each press decreases volume by one step.
 ### Top button — Mute / Unmute
 Toggles microphone mute. Sends `mute_mic` when unmuted, `unmute_mic` when muted. The LED ring switches to the muted indicator pattern immediately.
 
-### Bottom button — Context action
-Sends a command based on the current assistant state, in priority order:
+### Bottom button — Context action (with multipress support)
+
+This button supports both single-press context actions and multi-press gestures:
+
+#### Single press (< 1000 ms hold time)
+
+Context-aware command based on current assistant state, mirroring the Home Assistant Voice PE centre button priority:
 
 | Current state | Command sent |
 |---|---|
 | Timer ringing | `stop_timer_ringing` |
-| Wake word / listening / thinking | `stop_pipeline` |
-| TTS speaking | `stop_speaking` |
+| Wake word / listening / thinking / TTS speaking / | `stop_pipeline` |
 | Music / media playing | `stop_media_player` |
 | Any other (idle) | `start_listening` |
+
+#### Multi-press gestures
+
+Detected via press timing within a detection window (500 ms between releases):
+
+| Gesture | Timing | Command sent | Use case |
+|---|---|---|---|
+| **Double press** | 2 presses < 500 ms apart | `button_double_press` | Trigger custom HA automations, mode toggles, etc. |
+| **Triple press** | 3 presses < 500 ms apart | `button_triple_press` | Access menu, configuration, advanced features |
+| **Long press** | Single press held > 1000 ms | `button_long_press` | Scene activation, do-not-disturb, night mode, etc. |
+
+**Examples:**
+- Double press → start a specific routine or mode
+- Triple press → access a menu or configuration option
+- Long press → toggle do-not-disturb or night mode
+
+These commands are exposed as button press events to Home Assistant, allowing you to create custom automations via `button_press_event` triggers.
 
 ---
 
@@ -147,14 +170,16 @@ All animations mirror the Home Assistant Voice PE ESPHome firmware exactly. The 
 
 ### Step 1 — Host kernel configuration
 
+> **This must be done on the host Raspberry Pi, not inside Docker.**
+
 Edit `/boot/firmware/config.txt` (or `/boot/config.txt` on older Raspberry Pi OS):
 
 ```ini
-# Enable PWM on GPIO 12 for the LED ring
+# Enable PWM on GPIO 12 for the SK6812 LED ring
 dtoverlay=pwm,pin=12,func=4
 
 # Disable onboard audio — it shares PWM0 with GPIO 12
-# dtparam=audio=on
+# dtparam=audio=on    ← comment this out
 
 # Optional: I2S line-out if using the HAT's audio output
 # dtoverlay=hifiberry-dac
@@ -169,7 +194,15 @@ Reboot after saving:
 sudo reboot
 ```
 
-> **Why disable onboard audio?** The Raspberry Pi's 3.5 mm headphone jack uses the same PWM0 hardware peripheral as GPIO 12. They cannot run at the same time. The Satellite 1 HAT's XMOS microphone array connects over USB and is unaffected.
+> **Why disable onboard audio?** The Raspberry Pi's 3.5 mm headphone jack uses the same PWM0 hardware peripheral as GPIO 12. They cannot run simultaneously. The Satellite 1 HAT's XMOS microphone array connects over USB and is unaffected.
+
+> **Pi 5 note:** On the Raspberry Pi 5, GPIO is exposed as `/dev/gpiochip4` instead of `/dev/gpiochip0`. Update the `devices` mapping in `compose.yml`:
+> ```yaml
+> devices:
+>   - /dev/gpiochip4:/dev/gpiochip4
+>   - /dev/mem:/dev/mem
+>   - /dev/vcio:/dev/vcio
+> ```
 
 ### Step 2 — Add user to GPIO group
 
@@ -193,6 +226,8 @@ Satellite1 HAT Board/
 
 ### Step 4 — Build and start
 
+#### Option A — Run with Docker Compose (recommended)
+
 ```bash
 docker compose up -d
 ```
@@ -202,6 +237,14 @@ Check logs:
 ```bash
 docker compose logs -f
 ```
+
+
+#### Option B — Run directly with Python
+```bash
+pip install -r requirements.txt
+python Satellite1_HAT_Board.py --host localhost --port 6055
+```
+
 
 ---
 
@@ -222,6 +265,11 @@ BTN_MUTE        = 22
 BTN_ACTION      = 23
 
 BTN_DEBOUNCE_MS = 150   # Button debounce in milliseconds
+
+# Button multipress timing
+MULTIPRESS_TIMEOUT_MS = 500    # Time window between presses (ms)
+LONG_PRESS_MS         = 1000   # Duration to detect long press (ms)
+
 
 # LED ring
 LED_COUNT      = 12
@@ -285,14 +333,49 @@ If the connection is lost (LVA restarted, network drop), the controller shows a 
 
 ---
 
+## Using multipress events in Home Assistant
+
+The multipress commands (`button_double_press`, `button_triple_press`, `button_long_press`) are sent to LVA's peripheral API and exposed as button press events. You can trigger Home Assistant automations based on these events.
+
+### Example Home Assistant automation
+
+Create an automation file or use the automation UI:
+
+```yaml
+automation:
+  - alias: "Double press context button for Movie Time"
+    trigger:
+      platform: event
+      event_type: button_press_event
+      event_data:
+        press_type: double_press
+    action:
+      - service: scene.turn_on
+        target:
+          entity_id: scene.movie_time
+
+  - alias: "Long press context button for Do Not Disturb"
+    trigger:
+      platform: event
+      event_type: button_press_event
+      event_data:
+        press_type: long_press
+    action:
+      - service: input_boolean.turn_on
+        target:
+          entity_id: input_boolean.do_not_disturb
+```
+
+---
+
 ## Drivers summary
 
-| Component | Driver needed | How |
-|---|---|---|
-| LED ring (SK6812) | PWM kernel overlay | `dtoverlay=pwm,pin=12,func=4` in `config.txt` |
-| Buttons | None | `RPi.GPIO` reads `/dev/gpiomem` directly |
-| Microphone (XMOS XVF3800) | None | Enumerates as USB audio device automatically |
-| I2S line-out (optional) | HiFiBerry DAC overlay | `dtoverlay=hifiberry-dac` in `config.txt` |
+| Component | Driver needed | Where to install | How |
+|---|---|---|---|
+| LED ring (SK6812) | PWM kernel overlay | **Host Pi** | `dtoverlay=pwm,pin=12,func=4` in `config.txt`, then reboot |
+| Buttons | None | — | `gpiozero` + `lgpio` installed inside container via pip |
+| Microphone (XMOS XVF3800) | None | — | Enumerates as USB audio device automatically |
+| I2S line-out (optional) | HiFiBerry DAC overlay | **Host Pi** | `dtoverlay=hifiberry-dac` in `config.txt`, then reboot |
 
 ---
 
@@ -302,9 +385,14 @@ If the connection is lost (LVA restarted, network drop), the controller shows a 
 
 1. Confirm `dtoverlay=pwm,pin=12,func=4` is in `config.txt` and the Pi has been rebooted.
 2. Confirm onboard audio is disabled (`dtparam=audio=on` is commented out).
-3. Check the container is running as root (`user: "0:0"` in compose file) — `rpi-ws281x` requires root for DMA access.
+3. Check the container is running as root (`user: "0:0"` in compose file) — `rpi-ws281x` requires root for DMA access via `/dev/mem`.
 4. Run with `--debug` and look for `LED ring initialised` in the logs. If `rpi_ws281x not found` appears, the Python package failed to install — rebuild the image.
 5. **If you see only pipeline animations (listening, thinking, etc.) but no idle glow:** The light entity defaults to **off** in Home Assistant to match Voice PE behavior. Turn on the `light.<satellite>_leds` entity in HA to show the idle LED color.
+
+### Buttons do not respond
+
+1. Confirm `/dev/gpiochip0` (or `/dev/gpiochip4` on Pi 5) is mapped in the compose `devices` section.
+2. Run with `--debug` — each button press logs `Button → <command>`.
 
 ### Light entity not appearing in Home Assistant
 
@@ -312,12 +400,6 @@ If the connection is lost (LVA restarted, network drop), the controller shows a 
 2. Confirm LVA is connected to Home Assistant: the LVA logs should show `Home Assistant connected` and the satellite integration should be visible in HA's integrations.
 3. Restart Home Assistant or refresh the Devices page — the new light entity should appear under the satellite integration.
 4. Entity ID will be `light.<satellite>_leds` where `<satellite>` is your satellite name in HA (e.g., `light.kitchen_satellite_leds`).
-
-### Buttons do not respond
-
-1. Confirm `/dev/gpiomem` is mapped in the compose `devices` section.
-2. Check that the `gpio` group is listed under `group_add`.
-3. Run with `--debug` — each button press logs `Button → <command>`.
 
 ### Container exits immediately
 
@@ -328,4 +410,4 @@ If the connection is lost (LVA restarted, network drop), the controller shows a 
 
 1. Confirm LVA is running and `--disable-peripheral-api` was not passed.
 2. With `network_mode: host`, `localhost` resolves to the Pi itself. If LVA is in a separate Docker network (not host mode), use its container IP or service name instead.
-3. Check that port 6055 is not blocked by a firewall: `nc -zv localhost 6055`.
+3. Check that port 6055 is not blocked: `nc -zv localhost 6055`.
