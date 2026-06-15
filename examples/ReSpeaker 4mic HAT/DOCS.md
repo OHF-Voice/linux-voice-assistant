@@ -56,9 +56,29 @@ All animations mirror the Home Assistant Voice PE ESPHome firmware exactly.
 | Timer ticking | Countdown arc | Arc proportional to `seconds_left / total_seconds` |
 | Timer ringing | Pulse + optional red | Full ring pulsing; red at corners if muted |
 
+"User color" comes from the Home Assistant Light entity described below (default: HAVPE-style blue). HA brightness scales every animation in this table. Semantic colors (Waiting/Listening cyan spin, Thinking pulse, Replying anticlockwise, Muted solid + red, Timer pulse/arc, Error red pulse) are hardcoded so they remain recognisable across user customisation.
+
 ### Mic indicator positions
 
 The four mics sit at the corners of the square board. On the 12-LED ring (30° per step), the corners land at 45°, 135°, 225°, 315° → **LEDs 1, 4, 7, 10**.
+
+---
+
+## Home Assistant Light entity
+
+On connect the controller registers a Light entity with LVA, which appears in Home Assistant as `light.leds`. It defaults off, matching the Voice PE LED Ring; turn it on for a solid idle glow and set its RGB color and brightness from the device page.
+
+### Effects
+
+| Effect | Behaviour |
+|---|---|
+| `Voice Assistant` (default) | Run the pipeline animations from the table above. Waiting/Listening animations are tinted with the HA color; brightness scales every animation. |
+
+Like the Home Assistant Voice PE, this example exposes a single Voice Assistant effect: the pipeline animations always run and can't be switched off from HA. The peripheral protocol itself accepts any number of effects, so your own integration is free to declare more (a color loop, a static accent, and so on) — see the [peripheral API docs](../../docs/peripheral_api.md).
+
+### Brightness, on/off, and color
+
+Matching the HA Voice PE LED Ring, the Light defaults off, so the LEDs stay dark while idle until you turn it on; once on, idle shows the solid color, and turning it off again just removes that idle glow. The voice animations always run either way (on/off only gates the idle glow, it does not disable them), so the effect can't be switched off completely. Brightness scales linearly across every animation, and RGB color is the solid idle color and tints the Waiting/Listening animations.
 
 ---
 

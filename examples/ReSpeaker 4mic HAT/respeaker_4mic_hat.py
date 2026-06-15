@@ -75,6 +75,12 @@ except ImportError:
 DEFAULT_LVA_HOST = "localhost"
 DEFAULT_LVA_PORT = 6055
 
+# HA Light entity registered with LVA via register_light. The same object_id
+# is used to route incoming light_command events back to this script.
+LIGHT_OBJECT_ID = "leds"
+LIGHT_NAME      = "LEDs"
+EFFECT_VOICE_ASSISTANT = "Voice Assistant"
+
 BTN_DEBOUNCE_MS = 150  # Button debounce in milliseconds
 
 # APA102 LED ring
@@ -132,6 +138,15 @@ class SharedState:
         self.volume: float = 1.0
         self.timer_total_seconds: int = 0
         self.timer_seconds_left: int = 0
+        # Light entity state, driven by HA via light_command events.
+        # Defaults match the LEDLightEntity in LVA core so the script
+        # behaves sensibly before the first light_command arrives: off by
+        # default, so idle stays dark until the user turns the light on.
+        self.light_is_on: bool = False
+        self.light_brightness: float = 0.66
+        self.light_red: float = 0.094
+        self.light_green: float = 0.733
+        self.light_blue: float = 0.949
 
     def update(self, **kwargs) -> None:
         with self._lock:
@@ -148,6 +163,11 @@ class SharedState:
                 "volume":              self.volume,
                 "timer_total_seconds": self.timer_total_seconds,
                 "timer_seconds_left":  self.timer_seconds_left,
+                "light_is_on":         self.light_is_on,
+                "light_brightness":    self.light_brightness,
+                "light_red":           self.light_red,
+                "light_green":         self.light_green,
+                "light_blue":          self.light_blue,
             }
 
 
@@ -178,6 +198,7 @@ class LEDRing:
     """
 
     ANIM_OFF          = "off"
+    ANIM_IDLE         = "idle"
     ANIM_TWINKLE      = "twinkle"
     ANIM_TWINKLE_BLUE = "twinkle_blue"
     ANIM_WAIT_CMD     = "waiting"
@@ -257,7 +278,12 @@ class LEDRing:
         self._pixels[i % LED_COUNT] = color
 
     def _color(self) -> RGB:
-        return (DEFAULT_R, DEFAULT_G, DEFAULT_B)
+        """Return the current user-configured ring colour from light entity state."""
+        snap = self._state.snapshot
+        r = int(max(0.0, min(1.0, snap["light_red"])) * 255)
+        g = int(max(0.0, min(1.0, snap["light_green"])) * 255)
+        b = int(max(0.0, min(1.0, snap["light_blue"])) * 255)
+        return (r, g, b)
 
     def _pulse_step(self, steps: int = 10) -> float:
         factor = (steps - self._brightness_step) / steps
@@ -296,6 +322,24 @@ class LEDRing:
 
     def _anim_off(self) -> float:
         self._all_off()
+        return 0.1
+
+    def _anim_idle(self) -> float:
+        """Resting state with user color when light is on, else dark.
+        
+        Matches the HA Voice PE LED Ring behavior where the light defaults
+        off, so idle stays dark until the user turns the light on in HA.
+        Pipeline animations always run regardless.
+        """
+        snap = self._state.snapshot
+        if snap["light_is_on"]:
+            color = self._color()
+            brightness = snap["light_brightness"]
+            for i in range(LED_COUNT):
+                self._set(i, _scale(color, brightness))
+            self._write()
+        else:
+            self._all_off()
         return 0.1
 
     def _anim_twinkle(self, color: RGB) -> float:
@@ -425,6 +469,8 @@ class LEDRing:
 
             if anim == self.ANIM_OFF:
                 sleep = self._anim_off()
+            elif anim == self.ANIM_IDLE:
+                sleep = self._anim_idle()
             elif anim == self.ANIM_TWINKLE:
                 sleep = self._anim_twinkle(RED)
             elif anim == self.ANIM_TWINKLE_BLUE:
@@ -488,7 +534,7 @@ def state_to_animation(
     if state == AssistState.TIMER_TICKING:
         return LEDRing.ANIM_TIMER_TICK
 
-    return LEDRing.ANIM_OFF
+    return LEDRing.ANIM_IDLE
 
 
 # ===========================================================================
@@ -530,6 +576,19 @@ class LVAClient:
         _LOGGER.info("Connecting to LVA at %s …", self._uri)
         async with websockets.connect(self._uri) as ws:
             _LOGGER.info("Connected to LVA peripheral API")
+            # Register the LED Light entity with LVA so HA can control it.
+            # LVA treats repeat registrations for the same object_id as a
+            # no-op, so it's safe to send this on every connect.
+            await ws.send(json.dumps({
+                "command": "register_light",
+                "data": {
+                    "name": LIGHT_NAME,
+                    "object_id": LIGHT_OBJECT_ID,
+                    "effects": [EFFECT_VOICE_ASSISTANT],
+                    "supports_rgb": True,
+                    "supports_brightness": True,
+                },
+            }))
             recv_task = asyncio.create_task(self._recv_loop(ws))
             send_task = asyncio.create_task(self._send_loop(ws))
             done, pending = await asyncio.wait(
@@ -638,6 +697,30 @@ class LVAClient:
                 _LOGGER.info("Home Assistant connected")
             elif status == "getting_started":
                 _LOGGER.info("LVA starting up, waiting for HA …")
+
+        # --- Light command events ------------------------------------------
+        elif event == "light_command":
+            # LVA broadcasts to every connected peripheral; only act on
+            # commands targeting our registered Light. The Light exposes a
+            # single "Voice Assistant" effect, so there is no effect to
+            # switch on: we apply on/off, brightness, and color and let the
+            # pipeline animations run.
+            if data.get("object_id") != LIGHT_OBJECT_ID:
+                return
+            self._state.update(
+                light_is_on=bool(data.get("state", True)),
+                light_brightness=float(data.get("brightness", 0.66)),
+                light_red=float(data.get("red", 0.094)),
+                light_green=float(data.get("green", 0.733)),
+                light_blue=float(data.get("blue", 0.949)),
+            )
+            # Force re-render animation with new light state
+            snap = self._state.snapshot
+            anim = state_to_animation(
+                snap["assist_state"], snap["ha_connected"], snap["muted"]
+            )
+            self._leds.set_animation(anim)
+            return
 
         # Recompute LED animation after every event
         snap = self._state.snapshot
