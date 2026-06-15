@@ -205,6 +205,13 @@
 
   const STATES = ['wake_word_detected','listening','thinking','tts_speaking','muted','pipeline_error','timer_ringing','media_player_playing'];
 
+  // LED Light entity registration constants
+  const LIGHT_NAME = 'Web Console LEDs';
+  const LIGHT_OBJECT_ID = 'web_console_leds';
+  const EFFECT_VOICE_ASSISTANT = 'Voice Assistant';
+  const EFFECT_LOOP = 'Loop';
+  const EFFECT_NONE = 'None';
+
   function ts() {
     const d = new Date();
     return d.getHours().toString().padStart(2,'0') + ':' +
@@ -281,6 +288,25 @@
     ws.onopen = () => {
       setConnected(true, false);
       log('system', '→ connected');
+
+      // Register the LED Light entity with LVA so HA can control it.
+      // LVA treats repeat registrations for the same object_id as a
+      // no-op, so it's safe to send this on every connect.
+      ws.send(JSON.stringify({
+        command: 'register_light',
+        data: {
+          name: LIGHT_NAME,
+          object_id: LIGHT_OBJECT_ID,
+          effects: [EFFECT_VOICE_ASSISTANT, EFFECT_LOOP, EFFECT_NONE],
+          supports_rgb: true,
+          supports_brightness: true,
+        },
+      }));
+      log('sent', '↑ register_light', JSON.stringify({
+        name: LIGHT_NAME,
+        object_id: LIGHT_OBJECT_ID,
+        effects: [EFFECT_VOICE_ASSISTANT, EFFECT_LOOP, EFFECT_NONE],
+      }));
     };
 
     ws.onclose = () => {
