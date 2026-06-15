@@ -20,8 +20,8 @@ Hardware layout (Satellite 1 HAT on Raspberry Pi)
                     timer_ringing   → stop_timer_ringing
                     media_playing   → stop_media_player
                 Multi-press (detected via timing):
-                    double press (< 500ms between releases)  → button_double_press
-                    triple press (< 500ms between releases)  → button_triple_press
+                    double press (< 250ms between releases)  → button_double_press
+                    triple press (< 250ms between releases)  → button_triple_press
                     long press (held > 1000ms)               → button_long_press
 
 Install dependencies
@@ -88,7 +88,7 @@ BTN_VOLUME_DOWN = 27  # Left button
 BTN_MUTE       = 22   # Top button
 BTN_ACTION     = 23   # Bottom button
 
-BTN_DEBOUNCE_MS = 150  # Milliseconds
+BTN_DEBOUNCE_MS = 30  # Milliseconds
 
 # LED ring
 LED_COUNT      = 12
@@ -842,7 +842,7 @@ class ButtonMultipressHandler:
         current_time = time.time()
         time_since_last_press = current_time - self.last_press_time
 
-        if time_since_last_press <= 0.5:
+        if time_since_last_press <= 0.25:
             self.press_count += 1
         else:
             self.press_count = 1

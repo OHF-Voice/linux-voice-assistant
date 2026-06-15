@@ -126,6 +126,25 @@ Context-aware command based on current assistant state, mirroring the Home Assis
 | Music / media playing | `stop_media_player` |
 | Any other (idle) | `start_listening` |
 
+#### Multi-press gestures
+
+When the action button is released quickly (not held), it detects multiple presses:
+
+| Gesture | Timing | Command sent | Use case |
+|---|---|---|---|
+| **Double press** | 2 presses < 250 ms apart | `button_double_press` | Trigger custom HA automations, mode toggles, etc. |
+| **Triple press** | 3 presses < 250 ms apart | `button_triple_press` | Access menu, configuration, advanced features |
+| **Long press** | Single press held > 1000 ms | `button_long_press` | Scene activation, do-not-disturb, night mode, etc. |
+
+**Examples:**
+- Double press → start a specific routine or mode
+- Triple press → access a menu or configuration option
+- Long press → toggle do-not-disturb or night mode
+
+These commands are exposed as button press events to Home Assistant, allowing you to create custom automations via `button_press_event` triggers.
+
+**Note:** The color change mode (hold + volume) activates after ~100 ms of holding, allowing quick single presses to still trigger context actions.
+
 #### Hold + Volume buttons — Color wheel rotation
 
 Hold down the action button and use the volume buttons to rotate through the HSV color wheel (matching Voice PE's rotary dial):
@@ -150,25 +169,6 @@ Each press changes the hue by 10°, allowing smooth navigation around the full c
 2. Press volume up repeatedly to cycle through warm colors (red → orange → yellow)
 3. Release action button to confirm and exit color mode
 4. The new color persists in Home Assistant
-
-#### Multi-press gestures
-
-When the action button is released quickly (not held), it detects multiple presses:
-
-| Gesture | Timing | Command sent | Use case |
-|---|---|---|---|
-| **Double press** | 2 presses < 500 ms apart | `button_double_press` | Trigger custom HA automations, mode toggles, etc. |
-| **Triple press** | 3 presses < 500 ms apart | `button_triple_press` | Access menu, configuration, advanced features |
-| **Long press** | Single press held > 1000 ms | `button_long_press` | Scene activation, do-not-disturb, night mode, etc. |
-
-**Examples:**
-- Double press → start a specific routine or mode
-- Triple press → access a menu or configuration option
-- Long press → toggle do-not-disturb or night mode
-
-These commands are exposed as button press events to Home Assistant, allowing you to create custom automations via `button_press_event` triggers.
-
-**Note:** The color change mode (hold + volume) activates after ~100 ms of holding, allowing quick single presses to still trigger context actions.
 
 ---
 
