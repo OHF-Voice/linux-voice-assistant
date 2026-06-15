@@ -12,16 +12,21 @@ Hardware layout (Satellite 1 HAT on Raspberry Pi)
   Left btn   : Volume Down                  →  GPIO 27
   Top btn    : Mute / Unmute mic            →  GPIO 22
   Bottom btn : Context action               →  GPIO 23
-                idle            → start_listening
-                listening       → stop_listening
-                thinking        → stop_listening
-                tts_speaking    → stop_speaking
-                timer_ringing   → stop_timer_ringing
-                media_playing   → stop_media_player
+                Single press:
+                    idle            → start_listening
+                    listening       → stop_pipeline
+                    thinking        → stop_pipeline
+                    tts_speaking    → stop_pipeline
+                    timer_ringing   → stop_timer_ringing
+                    media_playing   → stop_media_player
+                Multi-press (detected via timing):
+                    double press (< 500ms between releases)  → button_double_press
+                    triple press (< 500ms between releases)  → button_triple_press
+                    long press (held > 1000ms)               → button_long_press
 
 Install dependencies
 ---------------------
-  pip install websockets rpi-ws281x RPi.GPIO
+  pip install websockets rpi-ws281x gpiozero lgpio
 
 Run
 ---
@@ -42,7 +47,7 @@ import sys
 import threading
 import time
 from enum import Enum
-from typing import Optional, Tuple
+from typing import List, Optional, Tuple
 
 # ---------------------------------------------------------------------------
 # Hardware dependencies (gracefully stubbed when not on real Pi hardware so
@@ -50,14 +55,14 @@ from typing import Optional, Tuple
 # ---------------------------------------------------------------------------
 
 try:
-    import RPi.GPIO as GPIO  # type: ignore[import]
+    from gpiozero import Button  # type: ignore[import]
     _HAS_GPIO = True
 except ImportError:
     _HAS_GPIO = False
-    logging.warning("RPi.GPIO not found – button input disabled")
+    logging.warning("gpiozero not found – button input disabled")
 
 try:
-    from rpi_ws281x import PixelStrip, Color as _NeoColor, ws  # type: ignore[import]
+    from rpi_ws281x import PixelStrip, Color as _NeoColor  # type: ignore[import]
     _HAS_NEOPIXEL = True
 except ImportError:
     _HAS_NEOPIXEL = False
@@ -226,7 +231,7 @@ class LEDRing:
 
     def __init__(self, state: SharedState) -> None:
         self._state = state
-        self._pixels: list[RGB] = [BLACK] * LED_COUNT
+        self._pixels: List[RGB] = [BLACK] * LED_COUNT
         self._strip = None
         self._animation = self.ANIM_OFF
         self._anim_lock = threading.Lock()
@@ -239,7 +244,7 @@ class LEDRing:
         self._index: int = 0
         self._brightness_step: int = 0
         self._brightness_dec: bool = True
-        self._twinkle_state: list[float] = [0.0] * LED_COUNT
+        self._twinkle_state: List[float] = [0.0] * LED_COUNT
 
         if _HAS_NEOPIXEL:
             self._strip = PixelStrip(
@@ -353,10 +358,10 @@ class LEDRing:
             # Replying goes anticlockwise: index decrements
             self._index = (LED_COUNT + self._index - 1) % LED_COUNT
             offsets = [(0, 1.0), (1, 192/255), (2, 128/255),
-                       (6, 1.0),  (7, 192/255), (8, 128/255)]
+                       (6, 1.0), (7, 192/255), (8, 128/255)]
         else:
             offsets = [(0, 1.0), (11, 192/255), (10, 128/255),
-                       (6, 1.0),  (5, 192/255),  (4, 128/255)]
+                       (6, 1.0), (5, 192/255),  (4, 128/255)]
 
         for i in range(LED_COUNT):
             self._set(i, BLACK)
@@ -567,12 +572,12 @@ def state_to_animation(state: AssistState, ha_connected: bool, muted: bool) -> s
 
 
 # ===========================================================================
-# Button handler
+# Button handler — uses gpiozero (works on Pi 3/4/5 without RPi.GPIO)
 # ===========================================================================
 
 class ButtonHandler:
     """
-    Manages the four hardware buttons using RPi.GPIO.
+    Manages the four hardware buttons using gpiozero.
 
     All callbacks run in the GPIO event-detection thread and schedule
     coroutines onto the asyncio event loop thread-safely.
@@ -587,37 +592,36 @@ class ButtonHandler:
         self._state = state
         self._loop = loop
         self._queue = command_queue
+        self._buttons: List = []
 
     def setup(self) -> None:
         if not _HAS_GPIO:
             _LOGGER.warning("GPIO unavailable – buttons not configured")
             return
 
-        GPIO.setmode(GPIO.BCM)
-        for pin in (BTN_VOLUME_UP, BTN_VOLUME_DOWN, BTN_MUTE, BTN_ACTION):
-            GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+        debounce = BTN_DEBOUNCE_MS / 1000.0
 
-        GPIO.add_event_detect(
-            BTN_VOLUME_UP, GPIO.FALLING,
-            callback=self._on_volume_up, bouncetime=BTN_DEBOUNCE_MS,
+        btn_up   = Button(BTN_VOLUME_UP,   pull_up=True, bounce_time=debounce)
+        btn_down = Button(BTN_VOLUME_DOWN, pull_up=True, bounce_time=debounce)
+        btn_mute = Button(BTN_MUTE,        pull_up=True, bounce_time=debounce)
+        btn_act  = Button(BTN_ACTION,      pull_up=True, bounce_time=debounce)
+
+        btn_up.when_pressed   = self._on_volume_up
+        btn_down.when_pressed = self._on_volume_down
+        btn_mute.when_pressed = self._on_mute
+        btn_act.when_pressed  = self._on_action
+
+        # Keep references — gpiozero Buttons are released when garbage-collected
+        self._buttons = [btn_up, btn_down, btn_mute, btn_act]
+        _LOGGER.info(
+            "Buttons configured (gpiozero BCM %d/%d/%d/%d)",
+            BTN_VOLUME_UP, BTN_VOLUME_DOWN, BTN_MUTE, BTN_ACTION,
         )
-        GPIO.add_event_detect(
-            BTN_VOLUME_DOWN, GPIO.FALLING,
-            callback=self._on_volume_down, bouncetime=BTN_DEBOUNCE_MS,
-        )
-        GPIO.add_event_detect(
-            BTN_MUTE, GPIO.FALLING,
-            callback=self._on_mute, bouncetime=BTN_DEBOUNCE_MS,
-        )
-        GPIO.add_event_detect(
-            BTN_ACTION, GPIO.FALLING,
-            callback=self._on_action, bouncetime=BTN_DEBOUNCE_MS,
-        )
-        _LOGGER.info("Buttons configured (GPIO BCM mode)")
 
     def cleanup(self) -> None:
-        if _HAS_GPIO:
-            GPIO.cleanup()
+        for btn in self._buttons:
+            btn.close()
+        self._buttons.clear()
 
     def _send(self, command: str) -> None:
         _LOGGER.info("Button → %s", command)
@@ -640,30 +644,66 @@ class ButtonHandler:
 
     def _on_action(self, _channel) -> None:
         """
-        Context-sensitive bottom button.
-
-        Priority order:
-          1. Timer ringing              → stop_timer_ringing
-          2. Pipeline active            → stop_pipeline
-             (wake word / listening / thinking)
-          3. TTS speaking               → stop_speaking
-          4. Media playing              → stop_media_player
-          5. Idle / anything else       → start_listening
+        Context-sensitive bottom button — mirrors HA Voice PE priority:
+          1. Timer ringing           → stop_timer_ringing
+          2. Pipeline active         → stop_pipeline
+          3. Media playing           → stop_media_player
+          4. Idle / anything else    → start_listening
         """
         assist = self._state.assist_state
 
         if assist == AssistState.TIMER_RINGING:
             self._send("stop_timer_ringing")
-        elif assist in (AssistState.WAKE_WORD, AssistState.LISTENING, AssistState.THINKING):
+        elif assist in (AssistState.WAKE_WORD, AssistState.LISTENING, AssistState.THINKING, AssistState.SPEAKING):
             # stop_pipeline aborts the voice pipeline at any of these phases
             self._send("stop_pipeline")
-        elif assist == AssistState.SPEAKING:
-            self._send("stop_speaking")
         elif assist == AssistState.MEDIA_PLAYING:
             self._send("stop_media_player")
         else:
             self._send("start_listening")
 
+class ButtonMultipressHandler:
+    """Handles multiple presses of the action button (double, triple, and long press) to trigger different commands.   """
+    def __init__(self):
+        self.button_pin = BTN_ACTION
+        self.last_press_time = 0
+        self.press_count = 0
+
+    def _send(self, command: str) -> None:
+        _LOGGER.info("Button → %s", command)
+        asyncio.run_coroutine_threadsafe(
+            self._queue.put(command), self._loop
+        )
+
+    def button_pressed(self):
+        current_time = time.time()
+        time_since_last_press = current_time - self.last_press_time
+
+        if time_since_last_press <= 0.5:
+            self.press_count += 1
+        else:
+            self.press_count = 1
+
+        self.last_press_time = current_time
+
+        if self.press_count == 2:
+            self.handle_double_press()
+        elif self.press_count == 3:
+            self.handle_triple_press()
+        elif time_since_last_press > 1:  # Long press considered after 1 second
+            self.handle_long_press()
+
+    def handle_double_press(self):
+        # Call LVA peripheral API for double press
+        self._send('button_double_press')
+
+    def handle_triple_press(self):
+        # Call LVA peripheral API for triple press
+        self._send('button_triple_press')
+
+    def handle_long_press(self):
+        # Call LVA peripheral API for long press
+        self._send('button_long_press')
 
 # ===========================================================================
 # WebSocket client
@@ -733,7 +773,7 @@ class LVAClient:
                 task.cancel()
             # Re-raise the first exception so run_forever() can handle it
             for task in done:
-                if task.exception():
+                if not task.cancelled() and task.exception():
                     raise task.exception()
 
     async def _recv_loop(self, ws) -> None:
@@ -776,7 +816,7 @@ class LVAClient:
             return
 
         # --- Voice pipeline events -----------------------------------------
-        if event == "wake_word_detected":
+        elif event == "wake_word_detected":
             self._state.update(assist_state=AssistState.WAKE_WORD)
 
         elif event == "listening":
@@ -793,6 +833,17 @@ class LVAClient:
 
         elif event == "muted":
             self._state.update(assist_state=AssistState.MUTED, muted=True)
+
+        elif event == "pipeline_error":
+            _LOGGER.warning("LVA pipeline error: %s", data.get("reason", ""))
+            self._state.update(assist_state=AssistState.ERROR)
+ 
+        elif event == "disconnected":
+            _LOGGER.warning("Home Assistant disconnected")
+            self._state.update(
+                ha_connected=False,
+                assist_state=AssistState.NOT_READY,
+            )
 
         elif event == "error":
             reason = data.get("reason", "")
