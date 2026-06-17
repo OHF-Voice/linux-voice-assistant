@@ -705,6 +705,7 @@ class VoiceSatelliteProtocol(APIServer):
             self._pipeline_active = True
             self._emit(LVAEvent.LISTENING)
             _LOGGER.debug("Continuing conversation")
+
             def _start_continued_conversation() -> None:
                 if self.state.muted:
                     _LOGGER.debug("Skipping continued conversation: muted")
@@ -721,7 +722,7 @@ class VoiceSatelliteProtocol(APIServer):
             self._emit(LVAEvent.IDLE)
 
         _LOGGER.debug("TTS response finished")
-    
+
     def duck(self) -> None:
         _LOGGER.debug("Ducking music")
         self.state.music_player.duck()
