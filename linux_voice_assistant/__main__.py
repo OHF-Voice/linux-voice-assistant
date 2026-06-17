@@ -102,6 +102,12 @@ async def main() -> None:
         help="Seconds before wake word can be activated again",
     )
     parser.add_argument(
+        "--continue-conversation-delay",
+        type=float,
+        default=0.5,
+        help="Seconds to wait after TTS finishes before opening the mic for continued conversation (default: 0.5)",
+    )    
+    parser.add_argument(
         "--wakeup-sound",
         default=str(_SOUNDS_DIR / "wake_word_triggered.flac"),
         help="Directory and file name for wake sound (when you say the wake word)",
