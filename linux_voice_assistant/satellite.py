@@ -715,7 +715,7 @@ class VoiceSatelliteProtocol(APIServer):
                 self._is_streaming_audio = True
                 _LOGGER.debug("Continued conversation started")
 
-            threading.Timer(self.state.continue_conversation_delay, _start_continued_conversation).start()            
+            threading.Timer(self.state.continue_conversation_delay, _start_continued_conversation).start()
         else:
             self.unduck()
             self._emit(LVAEvent.IDLE)
