@@ -322,6 +322,7 @@ async def main() -> None:
         preferences=preferences,
         preferences_path=preferences_path,
         refractory_seconds=args.refractory_seconds,
+        continue_conversation_delay=args.continue_conversation_delay,
         output_only=args.output_only,
         download_dir=args.download_dir,
         volume=initial_volume,
