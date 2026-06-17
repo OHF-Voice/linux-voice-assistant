@@ -77,8 +77,8 @@ DEFAULT_LVA_PORT = 6055
 
 # HA Light entity registered with LVA via register_light. The same object_id
 # is used to route incoming light_command events back to this script.
-LIGHT_OBJECT_ID = "leds"
-LIGHT_NAME      = "LEDs"
+LIGHT_OBJECT_ID = "led_ring"
+LIGHT_NAME      = "LED Ring"
 EFFECT_VOICE_ASSISTANT = "Voice Assistant"
 
 BTN_DEBOUNCE_MS = 150  # Button debounce in milliseconds
