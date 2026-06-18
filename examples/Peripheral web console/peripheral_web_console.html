@@ -305,8 +305,12 @@
       log('sent', '↑ register_light', JSON.stringify({
         name: LIGHT_NAME,
         object_id: LIGHT_OBJECT_ID,
-        effects: [EFFECT_VOICE_ASSISTANT, EFFECT_LOOP, EFFECT_NONE],
+        effects: [EFFECT_VOICE_ASSISTANT],
       }));
+      
+      // Register the Button entity with LVA so HA can receive button events.
+      ws.send(JSON.stringify({command: 'register_button'}));
+      log('sent', '↑ register_button');
     };
 
     ws.onclose = () => {

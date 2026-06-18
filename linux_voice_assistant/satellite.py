@@ -317,23 +317,18 @@ class VoiceSatelliteProtocol(APIServer):
         self.state.mic_volume_entity.update_get_value(lambda: float(self.state.mic_volume))
         self.state.mic_volume_entity.update_set_value(lambda val: self.state.persist_mic_volume(float(val)))
 
-        # Button Event Sensor
-        if self.state.button_event_sensor_entity is None:
-            self.state.button_event_sensor_entity = ButtonEventSensorEntity(
-                server=self,
-                key=len(self.state.entities),
-                name="Button Press",
-                object_id="button_press_event",
-            )
-            self.state.entities.append(self.state.button_event_sensor_entity)
-        elif self.state.button_event_sensor_entity not in self.state.entities:
-            self.state.entities.append(self.state.button_event_sensor_entity)
-
-        self.state.button_event_sensor_entity.server = self
+        # NOTE: ButtonEventSensorEntity is NOT created here unconditionally.
+        # It is only materialised when a peripheral sends the register_button
+        # command (see register_pending_button below), mirroring the same
+        # opt-in pattern used by register_light for LEDLightEntity.
 
         # Materialise the Light entities peripherals registered before
         # this satellite was constructed (or reattach existing ones).
         self.register_pending_lights()
+        # Materialise ButtonEventSensorEntity if a peripheral already registered
+        # button support before this satellite was constructed (e.g. on an HA
+        # reconnect while the peripheral container stayed connected to LVA).
+        self.register_pending_button()
 
         # ---- Instance variables ----
 
@@ -397,6 +392,37 @@ class VoiceSatelliteProtocol(APIServer):
             )
             self.state.entities.append(entity)
             self.state.led_light_entities[object_id] = entity
+
+    def register_pending_button(self) -> None:
+        """Materialise ButtonEventSensorEntity once a peripheral has registered button support.
+
+        Called from __init__ (handles HA reconnects where the peripheral container
+        stayed connected to LVA and pending_button is already True) and from
+        PeripheralAPIServer._register_button() when the command arrives at runtime.
+
+        Safe to call multiple times: idempotent — if the entity already exists
+        it is only reattached to the current satellite server instance.
+        """
+        if not self.state.pending_button:
+            return
+
+        if self.state.button_event_sensor_entity is not None:
+            # Already materialised — reattach the server in case the satellite
+            # has been reconstructed for an HA reconnect.
+            self.state.button_event_sensor_entity.server = self
+            if self.state.button_event_sensor_entity not in self.state.entities:
+                self.state.entities.append(self.state.button_event_sensor_entity)
+            return
+
+        entity = ButtonEventSensorEntity(
+            server=self,
+            key=len(self.state.entities),
+            name="Button Press",
+            object_id="button_press_event",
+        )
+        self.state.entities.append(entity)
+        self.state.button_event_sensor_entity = entity
+        _LOGGER.info("Button event sensor entity materialised")
 
     def _on_led_light_changed(self, object_id: str) -> None:
         """Forward an HA Light entity change to peripherals as light_command.

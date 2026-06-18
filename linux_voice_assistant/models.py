@@ -135,6 +135,12 @@ class ServerState:
     # events can be routed back to the right peripheral hardware.
     led_light_entities: "Dict[str, LEDLightEntity]" = field(default_factory=dict)
 
+    # True once a peripheral sends register_button. Gates creation of
+    # ButtonEventSensorEntity so the HA device page only shows the button
+    # entity when hardware that actually supports button presses is present.
+    # Survives HA reconnects so the entity is re-registered automatically.
+    pending_button: bool = False
+
     # Optional peripheral WebSocket API (LEDs, buttons, HAT boards).
     # Assigned in __main__ before the event loop starts.
     peripheral_api: "Optional[Any]" = None  # PeripheralAPIServer at runtime

@@ -141,7 +141,7 @@ When the action button is released quickly (not held), it detects multiple press
 - Triple press → access a menu or configuration option
 - Long press → toggle do-not-disturb or night mode
 
-These commands are exposed as button press events to Home Assistant, allowing you to create custom automations via `button_press_event` triggers.
+These commands are exposed as button press events to Home Assistant (via the registered button sensor), allowing you to create custom automations via `button_press_event` triggers.
 
 **Note:** The color change mode (hold + volume) activates after ~100 ms of holding, allowing quick single presses to still trigger context actions.
 

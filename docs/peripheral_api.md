@@ -164,6 +164,7 @@ For HA to see your entity, your peripheral must register before HA enumerates th
 | Command | Data | Description |
 |---------|------|-------------|
 | `register_light` | `{"name": str, "object_id": str, "effects": [str], "supports_rgb": bool, "supports_brightness": bool}` | Register a Light entity for an LED strip, ring, or single LED. HA exposes it as `light.<satellite>_<object_id>` with on/off, brightness, RGB, and a selectable effect from the declared list. Subsequent HA changes are delivered as `light_command` events. Send once after connecting; repeat registrations for the same `object_id` are idempotent (no-op). Example: `{"command": "register_light", "data": {"name": "LEDs", "object_id": "leds", "effects": ["Voice Assistant"], "supports_rgb": true, "supports_brightness": true}}` |
+| `register_button` | `{"name": Button Press, "button_press_event": str}` | Register a Button entity for a physical button on your peripheral. When the user presses the button in HA, LVA emits a `button_press` event to all connected peripherals. Send once after connecting; repeat registrations for the same `object_id` are idempotent (no-op). Example: `{"command": "register_button"}` |
 
 ### Voice pipeline
 
@@ -203,7 +204,7 @@ For HA to see your entity, your peripheral must register before HA enumerates th
 
 ### Button events (sent to Home Assistant)
 
-These commands fire event entities on the LVA device page in Home Assistant, which you can use in automations. They are intended for a dedicated **second button** on your hardware — not the action button that already handles context-sensitive commands like `start_listening`.
+These commands fire event entities on the LVA device page in Home Assistant, which you can use in automations. They are intended for any of the buttons on your hardware that are available for these multipress functions and don't handle other context-sensitive commands. **The button must be registered with `register_button` command to appear as a HA sensor and be able to send these events.**
 
 | Command | Data | Description |
 |---------|------|-------------|
@@ -212,7 +213,7 @@ These commands fire event entities on the LVA device page in Home Assistant, whi
 | `button_triple_press` | — | Fire a `triple_press` event to HA. Plays the configured triple-press sound. |
 | `button_long_press` | — | Fire a `long_press` event to HA. Plays the configured long-press sound. |
 
-> **Important:** `button_single_press` must be sent from a **different physical button** than the action button. The action button's single press is reserved for triggering the voice pipeline (`start_listening` on first press, then context-sensitive commands on subsequent presses). Using the same button for both would create ambiguous behavior.
+> **Important:** `button_single_press` must be sent from a **different physical button** than the button that trigger other commands. Like the action button's single press that's reserved for triggering the voice pipeline (`start_listening` on first press, then context-sensitive commands on subsequent presses). Using the same button for both would create ambiguous behavior.
 
 The press type is determined by your peripheral script using timing logic that matches the Home Assistant Voice PE centre button behaviour:
 

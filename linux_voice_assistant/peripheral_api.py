@@ -83,6 +83,15 @@ Commands accepted from the peripheral container
               back to the peripheral as light_command events. Send
               once after connecting; duplicate registrations for the
               same object_id are ignored.
+  register_button
+              The peripheral declares that it has physical buttons and
+              wants a Button Press event entity exposed in HA. LVA
+              creates a ButtonEventSensorEntity (visible as
+              event.<satellite>_button_press_event) that fires
+              single_press, double_press, triple_press, and long_press
+              events to Home Assistant when the corresponding
+              button_* commands are sent. Send once after connecting;
+              duplicate registrations are ignored.
 """
 
 from __future__ import annotations
@@ -150,6 +159,7 @@ class LVACommand(str, Enum):
     BUTTON_TRIPLE_PRESS = "button_triple_press"
     BUTTON_LONG_PRESS = "button_long_press"
     REGISTER_LIGHT = "register_light"
+    REGISTER_BUTTON = "register_button"
 
 
 # ---------------------------------------------------------------------------
@@ -450,6 +460,9 @@ class PeripheralAPIServer:
         elif command == LVACommand.REGISTER_LIGHT:
             self._register_light(msg.get("data") or {}, satellite)
 
+        elif command == LVACommand.REGISTER_BUTTON:
+            self._register_button(satellite)
+
     def _register_light(self, data: Dict[str, Any], satellite: Any) -> None:
         """Register a Light declared by a peripheral.
 
@@ -486,6 +499,33 @@ class PeripheralAPIServer:
         # after the integration reconnects, but LVA stays consistent.
         if satellite is not None:
             satellite.register_pending_lights()
+
+    def _register_button(self, satellite: Any) -> None:
+        """Register button press event support declared by a peripheral.
+
+        Idempotent: repeat registrations from a reconnecting peripheral
+        are a no-op — the existing entity and its accumulated event state
+        are preserved.
+
+        When the satellite is already running, the entity is materialised
+        immediately so subsequent button_* commands route correctly.
+        HA only sees the new entity after the integration is reloaded, but
+        the same startup-wait window that applies to register_light applies
+        here too (see ``--peripheral-startup-wait``).
+        """
+        state = self._state
+        if state is None:
+            return
+
+        if state.pending_button:
+            # Already registered; keep the existing entity.
+            return
+
+        state.pending_button = True
+        _LOGGER.info("Button event sensor registered by peripheral")
+
+        if satellite is not None:
+            satellite.register_pending_button()
 
     # ------------------------------------------------------------------
     # Helpers

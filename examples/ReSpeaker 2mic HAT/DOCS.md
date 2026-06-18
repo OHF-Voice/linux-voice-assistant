@@ -130,7 +130,7 @@ Multi-press commands are useful for triggering custom Home Assistant automations
 - Triple press → access a menu or configuration option
 - Long press → toggle do-not-disturb or night mode
 
-These commands are exposed as button press events to Home Assistant, allowing you to create custom automations via `button_press_event` triggers.
+These commands are exposed as button press events to Home Assistant (via the registered button sensor), allowing you to create custom automations via `button_press_event` triggers.
 
 ---
 

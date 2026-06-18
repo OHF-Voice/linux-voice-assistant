@@ -926,6 +926,10 @@ class LVAClient:
                     "supports_brightness": True,
                 },
             }))
+            # Declare that this peripheral has physical buttons so LVA
+            # creates a Button Press event entity in Home Assistant.
+            # Idempotent: safe to send on every reconnect.
+            await ws.send(json.dumps({"command": "register_button"}))            
             recv_task = asyncio.create_task(self._recv_loop(ws))
             send_task = asyncio.create_task(self._send_loop(ws))
             done, pending = await asyncio.wait(
