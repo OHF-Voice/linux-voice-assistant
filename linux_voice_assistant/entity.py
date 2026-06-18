@@ -638,11 +638,13 @@ class LEDLightEntity(ESPHomeEntity):
         supports_rgb: bool = True,
         supports_brightness: bool = True,
         on_changed: Optional[Callable[[], None]] = None,
+        icon: str = "mdi:led-strip-variant",
     ) -> None:
         ESPHomeEntity.__init__(self, server)
         self.key = key
         self.name = name
         self.object_id = object_id
+        self.icon = icon
         self._on_changed = on_changed
         self.effects_list: List[str] = list(effects) if effects else []
         self._supports_rgb = supports_rgb
@@ -717,7 +719,7 @@ class LEDLightEntity(ESPHomeEntity):
                 name=self.name,
                 supported_color_modes=[int(self._color_mode())],
                 effects=self.effects_list,
-                icon="mdi:led-strip-variant",
+                icon=self.icon, 
                 entity_category=EntityCategory.CONFIG,
             )
         elif isinstance(msg, SubscribeHomeAssistantStatesRequest):

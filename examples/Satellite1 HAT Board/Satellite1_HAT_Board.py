@@ -105,6 +105,7 @@ DEFAULT_R, DEFAULT_G, DEFAULT_B = 24, 187, 242
 # is used to route incoming light_command events back to this script.
 LIGHT_OBJECT_ID = "led_ring"
 LIGHT_NAME      = "LED Ring"
+LIGHT_ICON      = "mdi:circle-outline"
 EFFECT_VOICE_ASSISTANT = "Voice Assistant"
 
 # Reconnect delay when WebSocket connection to LVA is lost
@@ -921,6 +922,7 @@ class LVAClient:
                 "data": {
                     "name": LIGHT_NAME,
                     "object_id": LIGHT_OBJECT_ID,
+                    "icon": LIGHT_ICON,
                     "effects": [EFFECT_VOICE_ASSISTANT],
                     "supports_rgb": True,
                     "supports_brightness": True,

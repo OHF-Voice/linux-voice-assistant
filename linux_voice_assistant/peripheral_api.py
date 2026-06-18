@@ -487,6 +487,7 @@ class PeripheralAPIServer:
         spec = LightRegistration(
             name=str(data.get("name", "LEDs")),
             object_id=object_id,
+            icon=str(data.get("icon", "mdi:led-strip-variant")),
             effects=[str(e) for e in data.get("effects", []) if e],
             supports_rgb=bool(data.get("supports_rgb", True)),
             supports_brightness=bool(data.get("supports_brightness", True)),

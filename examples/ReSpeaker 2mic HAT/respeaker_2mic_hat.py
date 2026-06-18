@@ -130,6 +130,7 @@ RECONNECT_DELAY_S = 3.0
 # is used to route incoming light_command events back to this script.
 LIGHT_OBJECT_ID = "leds"
 LIGHT_NAME      = "LEDs"
+LIGHT_ICON      = "mdi:circle-outline"
 
 
 # ===========================================================================
@@ -782,6 +783,7 @@ class LVAClient:
                 "data": {
                     "name": LIGHT_NAME,
                     "object_id": LIGHT_OBJECT_ID,
+                    "icon": LIGHT_ICON,
                     "effects": [EFFECT_VOICE_ASSISTANT],
                     "supports_rgb": True,
                     "supports_brightness": True,

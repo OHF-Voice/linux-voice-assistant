@@ -385,6 +385,7 @@ class VoiceSatelliteProtocol(APIServer):
                 key=len(self.state.entities),
                 name=spec.name,
                 object_id=object_id,
+                icon=spec.icon,
                 effects=spec.effects,
                 supports_rgb=spec.supports_rgb,
                 supports_brightness=spec.supports_brightness,

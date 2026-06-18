@@ -72,6 +72,7 @@ class LightRegistration:
 
     name: str
     object_id: str
+    icon: str = "mdi:led-strip-variant"
     effects: List[str] = field(default_factory=list)
     supports_rgb: bool = True
     supports_brightness: bool = True

@@ -79,6 +79,7 @@ DEFAULT_LVA_PORT = 6055
 # is used to route incoming light_command events back to this script.
 LIGHT_OBJECT_ID = "led_ring"
 LIGHT_NAME      = "LED Ring"
+LIGHT_ICON      = "mdi:circle-outline"
 EFFECT_VOICE_ASSISTANT = "Voice Assistant"
 
 BTN_DEBOUNCE_MS = 150  # Button debounce in milliseconds
@@ -584,6 +585,7 @@ class LVAClient:
                 "data": {
                     "name": LIGHT_NAME,
                     "object_id": LIGHT_OBJECT_ID,
+                    "icon": LIGHT_ICON,
                     "effects": [EFFECT_VOICE_ASSISTANT],
                     "supports_rgb": True,
                     "supports_brightness": True,
