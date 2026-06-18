@@ -69,6 +69,8 @@ _LOGGER = logging.getLogger(__name__)
 
 PROTO_TO_MESSAGE_TYPE = {v: k for k, v in MESSAGE_TYPE_TO_PROTO.items()}
 
+_HAS_AUDIO_DATA2 = "data2" in {f.name for f in VoiceAssistantAudio.DESCRIPTOR.fields}
+
 
 class VoiceSatelliteProtocol(APIServer):
 
@@ -88,6 +90,9 @@ class VoiceSatelliteProtocol(APIServer):
             self.supported_features = (
                 VoiceAssistantFeature.VOICE_ASSISTANT | VoiceAssistantFeature.API_AUDIO | VoiceAssistantFeature.ANNOUNCE | VoiceAssistantFeature.START_CONVERSATION | VoiceAssistantFeature.TIMERS
             )
+            # Channel 1 carries echo-reference audio; advertise SPEAKER so HA knows to use it for server-side AEC.
+            if state.audio_input_channels >= 2:
+                self.supported_features |= VoiceAssistantFeature.MULTI_CHANNEL_AUDIO  # pylint: disable=no-member
 
         existing_media_players = [entity for entity in self.state.entities if isinstance(entity, MediaPlayerEntity)]
 
@@ -667,12 +672,14 @@ class VoiceSatelliteProtocol(APIServer):
             self.state.save_preferences()
             self.state.wake_words_changed = True
 
-    def handle_audio(self, audio_chunk: bytes) -> None:
-
+    # handle_audio — both channels in ONE message
+    def handle_audio(self, audio_chunk: bytes, audio_chunk_2: Optional[bytes] = None) -> None:
         if not self._is_streaming_audio or self.state.muted:
             return
-
-        self.send_messages([VoiceAssistantAudio(data=audio_chunk)])
+        if _HAS_AUDIO_DATA2 and audio_chunk_2 is not None:
+            self.send_messages([VoiceAssistantAudio(data=audio_chunk, data2=audio_chunk_2)])
+        else:
+            self.send_messages([VoiceAssistantAudio(data=audio_chunk)])
 
     def wakeup(self, wake_word: Union[MicroWakeWord, OpenWakeWord]) -> None:
         if self._timer_finished:
