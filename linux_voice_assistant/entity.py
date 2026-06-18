@@ -719,7 +719,7 @@ class LEDLightEntity(ESPHomeEntity):
                 name=self.name,
                 supported_color_modes=[int(self._color_mode())],
                 effects=self.effects_list,
-                icon=self.icon, 
+                icon=self.icon,
                 entity_category=EntityCategory.CONFIG,
             )
         elif isinstance(msg, SubscribeHomeAssistantStatesRequest):
