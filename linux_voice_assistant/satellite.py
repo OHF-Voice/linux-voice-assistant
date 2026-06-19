@@ -719,7 +719,7 @@ class VoiceSatelliteProtocol(APIServer):
             # and does not capture the tail end of the TTS audio from the speaker.
             self._pipeline_active = True
             _LOGGER.debug("Continuing conversation after %.2fs settle delay", self.state.continue_conversation_delay)
-    
+
             def _start_continued_conversation() -> None:
                 if self.state.muted:
                     _LOGGER.debug("Skipping continued conversation: muted")
@@ -729,7 +729,7 @@ class VoiceSatelliteProtocol(APIServer):
                 self.send_messages([VoiceAssistantRequest(start=True)])
                 self._is_streaming_audio = True
                 _LOGGER.debug("Continued conversation started")
-    
+
             threading.Timer(self.state.continue_conversation_delay, _start_continued_conversation).start()
         else:
             self._continue_conversation = False
