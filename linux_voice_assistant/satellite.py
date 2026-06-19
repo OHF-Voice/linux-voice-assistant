@@ -734,7 +734,7 @@ class VoiceSatelliteProtocol(APIServer):
         else:
             self._continue_conversation = False
             self.unduck()
-    
+
         _LOGGER.debug("TTS response finished")
 
     def _play_timer_finished(self) -> None:
