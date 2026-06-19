@@ -700,36 +700,6 @@ class VoiceSatelliteProtocol(APIServer):
         self.state.active_wake_words.add(self.state.stop_word.id)
         self.state.tts_player.play(self._tts_url, done_callback=self._tts_finished)
 
-    def _tts_finished(self) -> None:
-        self._pipeline_active = False
-        self.state.active_wake_words.discard(self.state.stop_word.id)
-        self.send_messages([VoiceAssistantAnnounceFinished()])
-        self._emit(LVAEvent.TTS_FINISHED)
-
-        if self._continue_conversation:
-            self.send_messages([VoiceAssistantRequest(start=True)])
-            self._is_streaming_audio = True
-            self._pipeline_active = True
-            self._emit(LVAEvent.LISTENING)
-            _LOGGER.debug("Continuing conversation")
-
-            def _start_continued_conversation() -> None:
-                if self.state.muted:
-                    _LOGGER.debug("Skipping continued conversation: muted")
-                    self._pipeline_active = False
-                    self.unduck()
-                    return
-                self.send_messages([VoiceAssistantRequest(start=True)])
-                self._is_streaming_audio = True
-                _LOGGER.debug("Continued conversation started")
-
-            threading.Timer(self.state.continue_conversation_delay, _start_continued_conversation).start()
-        else:
-            self.unduck()
-            self._emit(LVAEvent.IDLE)
-
-        _LOGGER.debug("TTS response finished")
-
     def duck(self) -> None:
         _LOGGER.debug("Ducking music")
         self.state.music_player.duck()
@@ -738,20 +708,34 @@ class VoiceSatelliteProtocol(APIServer):
         _LOGGER.debug("Unducking music")
         self.state.music_player.unduck()
 
-    def _tts_finished(self) -> None:
-        self._pipeline_active = False
-        self.state.active_wake_words.discard(self.state.stop_word.id)
-        self.send_messages([VoiceAssistantAnnounceFinished()])
+def _tts_finished(self) -> None:
+    self._pipeline_active = False
+    self.state.active_wake_words.discard(self.state.stop_word.id)
+    self.send_messages([VoiceAssistantAnnounceFinished()])
 
-        if self._continue_conversation:
+    if self._continue_conversation:
+        self._continue_conversation = False
+        # Keep pipeline active during the settle delay so the mic stays closed
+        # and does not capture the tail end of the TTS audio from the speaker.
+        self._pipeline_active = True
+        _LOGGER.debug("Continuing conversation after %.2fs settle delay", self.state.continue_conversation_delay)
+
+        def _start_continued_conversation() -> None:
+            if self.state.muted:
+                _LOGGER.debug("Skipping continued conversation: muted")
+                self._pipeline_active = False
+                self.unduck()
+                return
             self.send_messages([VoiceAssistantRequest(start=True)])
             self._is_streaming_audio = True
-            self._pipeline_active = True
-            _LOGGER.debug("Continuing conversation")
-        else:
-            self.unduck()
+            _LOGGER.debug("Continued conversation started")
 
-        _LOGGER.debug("TTS response finished")
+        threading.Timer(self.state.continue_conversation_delay, _start_continued_conversation).start()
+    else:
+        self._continue_conversation = False
+        self.unduck()
+
+    _LOGGER.debug("TTS response finished")
 
     def _play_timer_finished(self) -> None:
         if not self._timer_finished:
