@@ -935,12 +935,26 @@ class VoiceSatelliteProtocol(APIServer):
         self._emit(LVAEvent.TTS_FINISHED)
 
         if self._continue_conversation:
-            self.send_messages([VoiceAssistantRequest(start=True)])
-            self._is_streaming_audio = True
+            self._continue_conversation = False
+            # Keep pipeline active during the settle delay so the mic stays closed
+            # and does not capture the tail end of the TTS audio from the speaker.
             self._pipeline_active = True
             self._emit(LVAEvent.LISTENING)
-            _LOGGER.debug("Continuing conversation")
+            _LOGGER.debug("Continuing conversation after %.2fs settle delay", self.state.continue_conversation_delay)
+
+            def _start_continued_conversation() -> None:
+                if self.state.muted:
+                    _LOGGER.debug("Skipping continued conversation: muted")
+                    self._pipeline_active = False
+                    self.unduck()
+                    return
+                self.send_messages([VoiceAssistantRequest(start=True)])
+                self._is_streaming_audio = True
+                _LOGGER.debug("Continued conversation started")
+
+            threading.Timer(self.state.continue_conversation_delay, _start_continued_conversation).start()
         else:
+            self._continue_conversation = False
             self.unduck()
             self._emit(LVAEvent.IDLE)
 

@@ -121,6 +121,7 @@ class ServerState:
     preferences: Preferences
     preferences_path: Path
     download_dir: Path
+    continue_conversation_delay: float = 0.5  # seconds to wait after TTS before opening mic
 
     media_player_entity: "Optional[MediaPlayerEntity]" = None
     satellite: "Optional[VoiceSatelliteProtocol]" = None
