@@ -712,7 +712,7 @@ class VoiceSatelliteProtocol(APIServer):
         self._pipeline_active = False
         self.state.active_wake_words.discard(self.state.stop_word.id)
         self.send_messages([VoiceAssistantAnnounceFinished()])
-    
+
         if self._continue_conversation:
             self._continue_conversation = False
             # Keep pipeline active during the settle delay so the mic stays closed
