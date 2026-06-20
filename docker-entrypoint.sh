@@ -52,6 +52,10 @@ if [ -n "${MIC_NOISE_SUPPRESSION}" ]; then
   EXTRA_ARGS+=( "--mic-noise-suppression" "$MIC_NOISE_SUPPRESSION" )
 fi
 
+if [ -n "${AUDIO_INPUT_CHANNELS}" ]; then
+  EXTRA_ARGS+=( "--audio-input-channels" "$AUDIO_INPUT_CHANNELS" )
+fi
+
 if [ "$ENABLE_THINKING_SOUND" = "1" ]; then
   EXTRA_ARGS+=( "--enable-thinking-sound" )
 fi
@@ -70,6 +74,10 @@ fi
 
 if [ -n "${REFACTORY_SECONDS}" ]; then
   EXTRA_ARGS+=( "--refractory-seconds" "$REFACTORY_SECONDS" )
+fi
+
+if [ -n "${CONTINUE_CONVERSATION_DELAY}" ]; then
+  EXTRA_ARGS+=( "--continue-conversation-delay" "$CONTINUE_CONVERSATION_DELAY" )
 fi
 
 if [ -n "${WAKEUP_SOUND}" ]; then
