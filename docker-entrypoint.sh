@@ -76,6 +76,10 @@ if [ -n "${REFACTORY_SECONDS}" ]; then
   EXTRA_ARGS+=( "--refractory-seconds" "$REFACTORY_SECONDS" )
 fi
 
+if [ -n "${CONTINUE_CONVERSATION_DELAY}" ]; then
+  EXTRA_ARGS+=( "--continue-conversation-delay" "$CONTINUE_CONVERSATION_DELAY" )
+fi
+
 if [ -n "${WAKEUP_SOUND}" ]; then
   EXTRA_ARGS+=( "--wakeup-sound" "$WAKEUP_SOUND" )
 fi
