@@ -167,8 +167,11 @@ class JabraSpeak:
                         or (event & Telephony.button_7)
                 ):
                     print("jabra to lva: hangup detected")
-                    await write_to_lva(LVACommand.STOP_TIMER_RINGING)
-                    await write_to_lva(LVACommand.STOP_PIPELINE)
+                    if current_state == LVAEvent.MEDIA_PLAYER_PLAYING:
+                        await write_to_lva(LVACommand.STOP_MEDIA_PLAYER)
+                    else:                    
+                        await write_to_lva(LVACommand.STOP_TIMER_RINGING)
+                        await write_to_lva(LVACommand.STOP_PIPELINE)
                 # mute switch
                 elif event & Telephony.mute:
                     print("jabra to lva: mute toggle detected")
@@ -215,7 +218,7 @@ class JabraSpeak:
                         await set_mute(True)
 
 
-# fixes a bug where it can get stuck on wakework detected
+# fixes a bug where it can get stuck on wakeword detected
 async def listening_bodge():
     await asyncio.sleep(0.5)
     if current_state == LVAEvent.WAKE_WORD_DETECTED:
