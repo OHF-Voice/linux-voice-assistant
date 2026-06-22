@@ -32,7 +32,7 @@ dependencies = [
     "zeroconf<1",
     "getmac<1",
     "types-protobuf",
-    "webrtc_noise_gain",
+    "webrtc-noise-gain>=1,<2",
 ]
 dynamic = ["version"]
 
