@@ -65,14 +65,14 @@ class LEDs(IntFlag):
     ring = 1 << 3
     hold = 1 << 4
     microphone = 1 << 5
-    # marked telephony and not LED, probably why it's a dupe of ring
+    # Marked telephony and not LED, probably why it's a dupe of ring
     ringer = 1 << 6
 
 
 class Volume(IntFlag):
     vol_down = 1 << 0
     vol_up = 1 << 1
-    # does this ever trigger? might be a host -> device only thing?
+    # Does this ever trigger? might be a host -> device only thing?
     mute = 1 << 2
 
 
@@ -159,11 +159,13 @@ class JabraSpeak:
             # print(f"last event: {last_jabra_write.name}")
             if isinstance(event, Telephony):
                 if (
-                        # hangup while talking
+                        # Hangup pressed during TTS playback
                         ((event & Telephony.flash) and last_jabra_write == LEDState.partial_flash)
-                        # hangup while listening
+                        # Hangup pressed during active listening
                         or (event is None and last_jabra_write == LEDState.three_green)
-                        # hangup while flashing?? wtf is button 7????
+                        # button_7 (bit 11, undocumented in HID spec) fires when hangup is pressed
+                        # while LEDs are flashing — covers wake word detected, thinking, and timer
+                        # ringing states; acts as a catch-all hangup for active pipeline phases
                         or (event & Telephony.button_7)
                 ):
                     print("jabra to lva: hangup detected")
@@ -172,7 +174,7 @@ class JabraSpeak:
                     else:                    
                         await write_to_lva(LVACommand.STOP_TIMER_RINGING)
                         await write_to_lva(LVACommand.STOP_PIPELINE)
-                # mute switch
+                # Mute switch
                 elif event & Telephony.mute:
                     print("jabra to lva: mute toggle detected")
                     global muted
@@ -180,12 +182,15 @@ class JabraSpeak:
                         await set_mute(False)
                     else:
                         await set_mute(True)
-                # call button
+                # Call button pressed while LEDs are in default (idle) state.
+                # Guard against the device's known hardware quirk: it spuriously fires a
+                # hook_switch event immediately after unmuting, so off_mute_cooldown()
+                # gates the action on at least 1 second having elapsed since the last
+                # mute toggle before treating this as a genuine button press.
                 elif event & Telephony.hook_switch and last_jabra_write == LEDState.default:
-                    # damn thing fires the hook swicth when you unmUTE
                     if off_mute_cooldown():
                         print("jabra to lva: call button detected")
-                        # if lva is glitched and i dont update the state machine, it will absolutely crap out
+                        # If lva is glitched and i dont update the state machine, it will absolutely crap out
                         await write_to_jabra(LEDState.flashing)
 
                         await write_to_lva(LVACommand.START_LISTENING)
@@ -218,7 +223,7 @@ class JabraSpeak:
                         await set_mute(True)
 
 
-# fixes a bug where it can get stuck on wakeword detected
+# Fixes a bug where it can get stuck on wakeword detected
 async def listening_bodge():
     await asyncio.sleep(0.5)
     if current_state == LVAEvent.WAKE_WORD_DETECTED:
