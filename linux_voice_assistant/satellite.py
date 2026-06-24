@@ -732,8 +732,15 @@ class VoiceSatelliteProtocol(APIServer):
 
             threading.Timer(self.state.continue_conversation_delay, _start_continued_conversation).start()
         else:
-            self._continue_conversation = False
-            self.unduck()
+            if self.state.pipeline_ended_sound and not self._tts_played:
+                _LOGGER.debug("Playing pipeline ended sound")
+                self.state.tts_player.play(
+                    self.state.pipeline_ended_sound,
+                    done_callback=self.unduck,
+                )
+            else:
+                elf._continue_conversation = False
+                self.unduck()
 
         _LOGGER.debug("TTS response finished")
 
