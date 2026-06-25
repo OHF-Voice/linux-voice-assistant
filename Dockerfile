@@ -6,12 +6,17 @@ ENV PYTHONUNBUFFERED=1
 
 LABEL \
     org.opencontainers.image.authors="Open Home Foundation" \
-    org.opencontainers.image.description="Voice assistant for Home Assistant" \
+    org.opencontainers.image.created="" \
+    org.opencontainers.image.description="Linux-Voice-Assistant for Home Assistant" \
     org.opencontainers.image.documentation="https://github.com/OHF-Voice/linux-voice-assistant/blob/main/README.md" \
     org.opencontainers.image.licenses="Apache-2.0" \
+    org.opencontainers.image.revision="" \
     org.opencontainers.image.source="https://github.com/OHF-Voice/linux-voice-assistant" \
     org.opencontainers.image.title="Linux-Voice-Assistant" \
-    org.opencontainers.image.url="https://github.com/OHF-Voice/linux-voice-assistant"
+    org.opencontainers.image.url="https://github.com/OHF-Voice/linux-voice-assistant" \
+    org.opencontainers.image.vendor="Open Home Foundation" \
+    org.opencontainers.image.version="" \
+    org.opencontainers.image.base.name="docker.io/library/python:3.12-slim-trixie"
 
 ### Install packages:
 # - avahi-utils:        For zeroconf/mDNS discovery by Home Assistant
