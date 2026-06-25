@@ -45,6 +45,7 @@ dev = [
     "pytest",
     "isort",
     "autopep8",
+    "pytest-asyncio",
 ]
 
 [project.scripts]
@@ -131,3 +132,7 @@ max-args = 50
 
 [tool.pylint.format]
 expected-line-ending-format = "LF"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"

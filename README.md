@@ -180,9 +180,8 @@ Auto-fix formatting issues (Black + isort):
 ### Testing
 
 Run the test suite:
-
-```sh
-./script/test
+``` sh
+./script/tests
 ```
 
 ## License
