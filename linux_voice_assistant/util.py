@@ -2,7 +2,6 @@
 
 from collections.abc import Callable
 from importlib.metadata import PackageNotFoundError, version
-from pathlib import Path
 from typing import Optional
 
 # netifaces lib is from netifaces2
@@ -29,13 +28,9 @@ def get_version() -> str:
     if _version_cache is not None:
         return _version_cache
 
-    version_file = Path(__file__).parent.parent / "version.txt"
-
     try:
-        # Sicher lesen: nur Rohtext, keine Evaluierung
-        file_version = version_file.read_text(encoding="utf-8").strip()
-        _version_cache = file_version if file_version else "unknown"
-    except (FileNotFoundError, PermissionError, OSError):
+        _version_cache = version("linux_voice_assistant")
+    except PackageNotFoundError:
         _version_cache = "unknown"
 
     return _version_cache
