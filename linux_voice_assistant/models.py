@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from pyopen_wakeword import OpenWakeWord
 
     from .entity import (
+    AudioOutputSinkEntity,
         ESPHomeEntity,
         MediaPlayerEntity,
         MicSettingEntity,
@@ -61,6 +62,7 @@ class AvailableWakeWord:
 
 @dataclass
 class Preferences:
+    audio_output_sink: Optional[str] = None
     active_wake_words: List[Optional[str]] = field(default_factory=list)
     volume: Optional[float] = None
     thinking_sound: int = 0  # 0 = disabled, 1 = enabled
@@ -100,6 +102,8 @@ class ServerState:
     download_dir: Path
     continue_conversation_delay: float = 0.5  # seconds to wait after TTS before opening mic
 
+    audio_output_sink: Optional[str] = None
+    audio_output_sink_entity: "Optional[AudioOutputSinkEntity]" = None
     media_player_entity: "Optional[MediaPlayerEntity]" = None
     satellite: "Optional[VoiceSatelliteProtocol]" = None
     mute_switch_entity: "Optional[MuteSwitchEntity]" = None
@@ -128,6 +132,24 @@ class ServerState:
     mic_volume: int = 100  # 1–100, default maximum
     audio_input_channels: int = 2  # number of mic channels to stream
     timer_max_ring_seconds: float = 900.0
+
+
+
+    def persist_audio_output_sink(self, sink_name: Optional[str]) -> None:
+        """Persist the selected PulseAudio/PipeWire output sink."""
+        if sink_name == "default":
+            sink_name = None
+
+        if (
+            self.audio_output_sink == sink_name
+            and self.preferences.audio_output_sink == sink_name
+        ):
+            return
+
+        self.audio_output_sink = sink_name
+        self.preferences.audio_output_sink = sink_name
+        _LOGGER.info("Saving audio_output_sink %s to %s", sink_name, self.preferences_path)
+        self.save_preferences()
 
     def save_preferences(self) -> None:
         """Save preferences as JSON."""

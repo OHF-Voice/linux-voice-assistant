@@ -1,7 +1,7 @@
 import logging
 from abc import abstractmethod
 from collections.abc import Iterable
-from typing import Callable, List, Optional, Union
+from typing import Callable, Iterable, List, Optional, Union
 
 # pylint: disable=no-name-in-module
 from aioesphomeapi.api_pb2 import (  # type: ignore[attr-defined]
@@ -444,6 +444,57 @@ class MicSettingEntity(ESPHomeEntity):
 
 
 # -----------------------------------------------------------------------------
+
+
+
+class AudioOutputSinkEntity(ESPHomeEntity):
+    def __init__(
+        self,
+        server: APIServer,
+        key: int,
+        name: str,
+        object_id: str,
+        get_value: Callable[[], str],
+        set_value: Callable[[str], None],
+        options: List[str],
+        icon: str = "mdi:speaker-wireless",
+    ) -> None:
+        ESPHomeEntity.__init__(self, server)
+        self.key = key
+        self.name = name
+        self.object_id = object_id
+        self._get_value = get_value
+        self._set_value = set_value
+        self.options = options
+        self.icon = icon
+        self._state = self._get_value()
+
+    def sync_with_state(self) -> None:
+        self._state = self._get_value()
+
+    def update_options(self, options: List[str]) -> None:
+        self.options = options
+
+    def handle_message(self, msg: message.Message) -> Iterable[message.Message]:
+        if isinstance(msg, SelectCommandRequest) and msg.key == self.key:
+            new_val = msg.state
+            self._state = new_val
+            self._set_value(new_val)
+            yield SelectStateResponse(key=self.key, state=new_val)
+
+        if isinstance(msg, ListEntitiesRequest):
+            yield ListEntitiesSelectResponse(
+                object_id=self.object_id,
+                key=self.key,
+                name=self.name,
+                options=self.options,
+                entity_category=EntityCategory.CONFIG,
+                icon=self.icon,
+            )
+
+        elif isinstance(msg, SubscribeHomeAssistantStatesRequest):
+            self.sync_with_state()
+            yield SelectStateResponse(key=self.key, state=str(self._state))
 
 
 class WakeWord1SensitivityNumberEntity(ESPHomeEntity):
