@@ -20,7 +20,7 @@ Because it runs on a full Linux system and offers access significantly more loca
 - Supports multiple architectures (linux/amd64 and linux/aarch64)
 - Automated builds with artifact attestation for security
 - Supports announcments, start/continue conversation, and timers
-- Tested and works with Python 3.11 and Python 3.12.
+- Tested and works with Python 3.11 and Python 3.13.
 - Prebuild docker image available on [GitHub Container Registry](https://github.com/OHF-Voice/linux-voice-assistant/pkgs/container/linux-voice-assistant)
 - Prebuild [Raspberry Pi image](https://github.com/florian-asche/PiCompose)
 
@@ -88,6 +88,7 @@ usage: __main__.py [-h] [--name NAME] [--audio-input-device AUDIO_INPUT_DEVICE] 
 | `--mic-volume`             | Control microphone volume                                     | 100                               |
 | `--mic-auto-gain`          | Add WebRTC Gain to Mic                                        | 0                                 |
 | `--mic-noise-suppression`  | Add WebRTC Noise Suppression to Mic                           | 0                                 |
+| `--audio-input-channels`   | Number of microphone audio channels to stream                 | 2                                 |
 | `--wake-word-dir`          | Directory with wake word models (.tflite) and configs (.json) | `wakewords/`                      |
 | `--wake-model`             | ID of active wake word model                                  | `okay_nabu`                       |
 | `--stop-model`             | ID of stop model                                              | `stop`                            |

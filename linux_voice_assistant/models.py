@@ -100,6 +100,7 @@ class ServerState:
     preferences: Preferences
     preferences_path: Path
     download_dir: Path
+    continue_conversation_delay: float = 0.5  # seconds to wait after TTS before opening mic
 
     media_player_entity: "Optional[MediaPlayerEntity]" = None
     satellite: "Optional[VoiceSatelliteProtocol]" = None
@@ -128,6 +129,7 @@ class ServerState:
     mic_auto_gain: int = 0
     mic_noise_suppression: int = 0
     mic_volume: int = 100  # 1–100, default maximum
+    audio_input_channels: int = 2  # number of mic channels to stream
     timer_max_ring_seconds: float = 900.0
 
     def broadcast(self, msgs: "Iterable[message.Message]") -> None:
