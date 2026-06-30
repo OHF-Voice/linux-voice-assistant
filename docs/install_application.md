@@ -186,6 +186,7 @@ Environment=PREFERENCES_FILE="/home/pi/linux-voice-assistant/preferences.json"
 # Environment=STOP_MODEL="stop"
 # Environment=TIMER_MAX_RING_SECONDS="900"
 # Environment=REFACTORY_SECONDS="2"
+# Environment=CONTINUE_CONVERSATION_DELAY="0.5"
 # Environment=WAKEUP_SOUND="sounds/wake_word_triggered.flac"
 # Environment=TIMER_FINISHED_SOUND="sounds/timer_finished.flac"
 # Environment=PROCESSING_SOUND="sounds/processing.wav"
@@ -269,6 +270,7 @@ The following variables can be configured in the `.env` or in the service file:
 | `STOP_MODEL` | `stop` | Stop model to use |
 | `TIMER_MAX_RING_SECONDS` | `900` | Seconds after which the timer stops ringing |
 | `REFACTORY_SECONDS` | `2` | Refractory period in seconds after wake word |
+| `CONTINUE_CONVERSATION_DELAY` | `0.5` | Delay before mic opens for continued conversation |
 | `WAKEUP_SOUND` | `sounds/wake_word_triggered.flac` | Sound file for wake word triggered |
 | `TIMER_FINISHED_SOUND` | `sounds/timer_finished.flac` | Sound file for timer finished |
 | `PROCESSING_SOUND` | `sounds/processing.wav` | Sound file for processing state |
