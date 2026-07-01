@@ -179,12 +179,14 @@ Environment=PREFERENCES_FILE="/home/pi/linux-voice-assistant/preferences.json"
 # Environment=MIC_VOLUME="1.0"
 # Environment=MIC_AUTO_GAIN="0"
 # Environment=MIC_NOISE_SUPPRESSION="0"
+# Environment=AUDIO_INPUT_CHANNELS=2
 # Environment=ENABLE_THINKING_SOUND="1"
 # Environment=WAKE_WORD_DIR="app/wakewords"
 # Environment=WAKE-MODEL="okay_nabu"
 # Environment=STOP_MODEL="stop"
 # Environment=TIMER_MAX_RING_SECONDS="900"
 # Environment=REFACTORY_SECONDS="2"
+# Environment=CONTINUE_CONVERSATION_DELAY="0.5"
 # Environment=WAKEUP_SOUND="sounds/wake_word_triggered.flac"
 # Environment=TIMER_FINISHED_SOUND="sounds/timer_finished.flac"
 # Environment=PROCESSING_SOUND="sounds/processing.wav"
@@ -261,12 +263,14 @@ The following variables can be configured in the `.env` or in the service file:
 | `MIC_VOLUME` | Control microphone volume | 100 |
 | `MIC_AUTO_GAIN` | Add WebRTC Gain to Mic | 0 |
 | `MIC_NOISE_SUPPRESSION` | Add WebRTC Noise Suppresion to Mic | 0 |
+| `AUDIO_INPUT_CHANNELS` | Number of audio input channels | 2 |
 | `ENABLE_THINKING_SOUND` | false | Set to "1" to enable thinking sound |
 | `WAKE_WORD_DIR` | `app/wakewords` | Path to the wake word directory |
 | `WAKE_MODEL` | `okay_nabu` | Wake word model to use |
 | `STOP_MODEL` | `stop` | Stop model to use |
 | `TIMER_MAX_RING_SECONDS` | `900` | Seconds after which the timer stops ringing |
 | `REFACTORY_SECONDS` | `2` | Refractory period in seconds after wake word |
+| `CONTINUE_CONVERSATION_DELAY` | `0.5` | Delay before mic opens for continued conversation |
 | `WAKEUP_SOUND` | `sounds/wake_word_triggered.flac` | Sound file for wake word triggered |
 | `TIMER_FINISHED_SOUND` | `sounds/timer_finished.flac` | Sound file for timer finished |
 | `PROCESSING_SOUND` | `sounds/processing.wav` | Sound file for processing state |
