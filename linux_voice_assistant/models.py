@@ -100,6 +100,7 @@ class ServerState:
     preferences: Preferences
     preferences_path: Path
     download_dir: Path
+    continue_conversation_delay: float = 0.5  # seconds to wait after TTS before opening mic
 
     audio_output_sink: Optional[str] = None
     audio_output_sink_entity: "Optional[AudioOutputSinkEntity]" = None
