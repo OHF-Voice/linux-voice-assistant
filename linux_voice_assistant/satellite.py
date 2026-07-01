@@ -46,8 +46,14 @@ from google.protobuf import message
 from pymicro_wakeword import MicroWakeWord
 from pyopen_wakeword import OpenWakeWord
 
+from .audio_sinks import (
+    list_pulse_sink_label_map,
+    pulse_sink_name_to_label,
+    pulse_sink_to_mpv_device,
+)
 from .api_server import APIServer
 from .entity import (
+    AudioOutputSinkEntity,
     MediaPlayerEntity,
     MicSettingEntity,
     MuteSwitchEntity,
@@ -329,6 +335,60 @@ class VoiceSatelliteProtocol(APIServer):
         self._pipeline_active = False
         self._external_wake_words: Dict[str, VoiceAssistantExternalWakeWord] = {}
         self._disconnect_event = asyncio.Event()
+
+
+        # Audio Output Sink
+        audio_sink_label_map = list_pulse_sink_label_map(self.state.audio_output_sink)
+        current_audio_sink_label = pulse_sink_name_to_label(self.state.audio_output_sink)
+
+        if current_audio_sink_label not in audio_sink_label_map:
+            audio_sink_label_map[current_audio_sink_label] = self.state.audio_output_sink
+
+        audio_sink_options = list(audio_sink_label_map.keys())
+
+        if self.state.audio_output_sink_entity is None:
+            self.state.audio_output_sink_entity = AudioOutputSinkEntity(
+                server=self,
+                key=len(self.state.entities),
+                name="Audio Output Sink",
+                object_id="audio_output_sink",
+                get_value=lambda: pulse_sink_name_to_label(self.state.audio_output_sink),
+                set_value=self._set_audio_output_sink,
+                options=audio_sink_options,
+                icon="mdi:speaker-wireless",
+            )
+            self.state.entities.append(self.state.audio_output_sink_entity)
+        elif self.state.audio_output_sink_entity not in self.state.entities:
+            self.state.entities.append(self.state.audio_output_sink_entity)
+
+        self.state.audio_output_sink_entity.server = self
+        self.state.audio_output_sink_entity.update_options(audio_sink_options)
+        self.state.audio_output_sink_entity.sync_with_state()
+
+
+    def _set_audio_output_sink(self, sink_label: str) -> None:
+        """Set the selected PulseAudio/PipeWire output sink."""
+        audio_sink_label_map = list_pulse_sink_label_map()
+        persisted_sink = audio_sink_label_map.get(sink_label)
+
+        if persisted_sink is None and sink_label != "default":
+            persisted_sink = sink_label
+
+        mpv_device = pulse_sink_to_mpv_device(persisted_sink)
+
+        _LOGGER.info(
+            "Setting audio output sink: label=%s sink=%s mpv_device=%s",
+            sink_label,
+            persisted_sink,
+            mpv_device,
+        )
+
+        self.state.music_player.set_audio_device(mpv_device)
+        self.state.tts_player.set_audio_device(mpv_device)
+        self.state.persist_audio_output_sink(persisted_sink)
+
+        if self.state.audio_output_sink_entity is not None:
+            self.state.audio_output_sink_entity.sync_with_state()
 
     def _set_thinking_sound_enabled(self, new_state: bool) -> None:
         self.state.thinking_sound_enabled = bool(new_state)

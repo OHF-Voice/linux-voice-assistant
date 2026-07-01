@@ -18,6 +18,7 @@ from getmac import get_mac_address  # type: ignore
 from pymicro_wakeword import MicroWakeWord, MicroWakeWordFeatures
 from pyopen_wakeword import OpenWakeWord, OpenWakeWordFeatures
 
+from .audio_sinks import pulse_sink_to_mpv_device
 from .models import Preferences, ServerState
 from .mpv_player import MpvMediaPlayer
 from .satellite import VoiceSatelliteProtocol
@@ -278,6 +279,30 @@ async def main() -> None:
         with open(preferences_path, "r", encoding="utf-8") as preferences_file:
             preferences_dict = json.load(preferences_file)
             preferences = Preferences(**preferences_dict)
+
+    # Resolve audio output startup state.
+    #
+    # AUDIO_OUTPUT_DEVICE / --audio-output-device remains a hard startup override.
+    # If it is not set, use the HA-managed preference saved in preferences.json.
+    #
+    # ServerState.audio_output_sink must be initialized here so the ESPHome
+    # select entity shows the actual selected sink after restart instead of
+    # falling back to "default".
+    selected_audio_output_sink = None
+    effective_audio_output_device = args.audio_output_device
+
+    if args.audio_output_device:
+        if args.audio_output_device in ("default", "auto"):
+            effective_audio_output_device = None
+            selected_audio_output_sink = None
+        elif args.audio_output_device.startswith("pulse/"):
+            selected_audio_output_sink = args.audio_output_device.removeprefix("pulse/")
+        else:
+            selected_audio_output_sink = args.audio_output_device
+    elif preferences.audio_output_sink:
+        selected_audio_output_sink = preferences.audio_output_sink
+        effective_audio_output_device = pulse_sink_to_mpv_device(preferences.audio_output_sink)
+
     else:
         preferences = Preferences()
 
@@ -325,14 +350,15 @@ async def main() -> None:
         wake_words=wake_models,
         active_wake_words=active_wake_words,
         stop_word=stop_model,
-        music_player=MpvMediaPlayer(device=args.audio_output_device),
-        tts_player=MpvMediaPlayer(device=args.audio_output_device),
+        music_player=MpvMediaPlayer(device=effective_audio_output_device),
+        tts_player=MpvMediaPlayer(device=effective_audio_output_device),
         wakeup_sound=args.wakeup_sound,
         timer_finished_sound=args.timer_finished_sound,
         processing_sound=args.processing_sound,
         mute_sound=args.mute_sound,
         unmute_sound=args.unmute_sound,
         preferences=preferences,
+        audio_output_sink=selected_audio_output_sink,
         preferences_path=preferences_path,
         refractory_seconds=args.refractory_seconds,
         continue_conversation_delay=args.continue_conversation_delay,
