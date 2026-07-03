@@ -8,7 +8,8 @@ import shutil
 import threading
 import time
 from collections.abc import Iterable
-from typing import Dict, List, Optional, Set, Union
+from functools import partial
+from typing import Any, Dict, List, Optional, Set, Union
 from urllib.parse import urlparse, urlunparse
 from urllib.request import urlopen
 
@@ -17,6 +18,7 @@ from aioesphomeapi.api_pb2 import (  # type: ignore[attr-defined]
     AuthenticationRequest,
     DeviceInfoRequest,
     DeviceInfoResponse,
+    LightCommandRequest,
     ListEntitiesDoneResponse,
     ListEntitiesRequest,
     MediaPlayerCommandRequest,
@@ -48,6 +50,8 @@ from pyopen_wakeword import OpenWakeWord
 
 from .api_server import APIServer
 from .entity import (
+    ButtonEventSensorEntity,
+    LEDLightEntity,
     MediaPlayerEntity,
     MicSettingEntity,
     MuteSwitchEntity,
@@ -57,6 +61,7 @@ from .entity import (
     WakeWord2SensitivityNumberEntity,
 )
 from .models import AvailableWakeWord, ServerState, WakeWordType
+from .peripheral_api import LVAEvent
 from .util import call_all
 
 _LOGGER = logging.getLogger(__name__)
@@ -88,19 +93,19 @@ class VoiceSatelliteProtocol(APIServer):
             if state.audio_input_channels >= 2:
                 self.supported_features |= VoiceAssistantFeature.MULTI_CHANNEL_AUDIO  # pylint: disable=no-member
 
+        existing_mute_switches = [entity for entity in self.state.entities if isinstance(entity, MuteSwitchEntity)]
         existing_media_players = [entity for entity in self.state.entities if isinstance(entity, MediaPlayerEntity)]
 
         if existing_media_players:
             # Keep the first instance and remove any extras.
             self.state.media_player_entity = existing_media_players[0]
-            for extra in existing_media_players[1:]:
-                self.state.entities.remove(extra)
+            for extra_player in existing_media_players[1:]:
+                self.state.entities.remove(extra_player)
 
-        existing_mute_switches = [entity for entity in self.state.entities if isinstance(entity, MuteSwitchEntity)]
         if existing_mute_switches:
-            self.state.mute_switch_entity = existing_mute_switches[0]  # type: ignore
-            for extra in existing_mute_switches[1:]:  # type: ignore
-                self.state.entities.remove(extra)
+            self.state.mute_switch_entity = existing_mute_switches[0]
+            for extra_mute in existing_mute_switches[1:]:
+                self.state.entities.remove(extra_mute)
 
         if self.state.media_player_entity is None:
             self.state.media_player_entity = MediaPlayerEntity(
@@ -143,9 +148,9 @@ class VoiceSatelliteProtocol(APIServer):
 
         existing_thinking_sound_switches = [entity for entity in self.state.entities if isinstance(entity, ThinkingSoundEntity)]
         if existing_thinking_sound_switches:
-            self.state.thinking_sound_entity = existing_thinking_sound_switches[0]  # type: ignore
-            for extra in existing_thinking_sound_switches[1:]:  # type: ignore
-                self.state.entities.remove(extra)
+            self.state.thinking_sound_entity = existing_thinking_sound_switches[0]
+            for extra_thinking in existing_thinking_sound_switches[1:]:
+                self.state.entities.remove(extra_thinking)
 
         # Add/update thinking sound entity
         thinking_sound_switch = self.state.thinking_sound_entity
@@ -163,7 +168,7 @@ class VoiceSatelliteProtocol(APIServer):
         elif thinking_sound_switch not in self.state.entities:
             self.state.entities.append(thinking_sound_switch)
 
-        # Load thinking sound enabled state from preferences (default to False if not set or unknown)
+        # Load thinking sound enabled state from preferences
         if hasattr(self.state.preferences, "thinking_sound") and self.state.preferences.thinking_sound in (0, 1):
             self.state.thinking_sound_enabled = bool(self.state.preferences.thinking_sound)
         else:
@@ -317,6 +322,19 @@ class VoiceSatelliteProtocol(APIServer):
         self.state.mic_volume_entity.update_get_value(lambda: float(self.state.mic_volume))
         self.state.mic_volume_entity.update_set_value(lambda val: self.state.persist_mic_volume(float(val)))
 
+        # NOTE: ButtonEventSensorEntity is NOT created here unconditionally.
+        # It is only materialised when a peripheral sends the register_button
+        # command (see register_pending_button below), mirroring the same
+        # opt-in pattern used by register_light for LEDLightEntity.
+
+        # Materialise the Light entities peripherals registered before
+        # this satellite was constructed (or reattach existing ones).
+        self.register_pending_lights()
+        # Materialise ButtonEventSensorEntity if a peripheral already registered
+        # button support before this satellite was constructed (e.g. on an HA
+        # reconnect while the peripheral container stayed connected to LVA).
+        self.register_pending_button()
+
         # ---- Instance variables ----
 
         self._is_streaming_audio = False
@@ -329,6 +347,103 @@ class VoiceSatelliteProtocol(APIServer):
         self._pipeline_active = False
         self._external_wake_words: Dict[str, VoiceAssistantExternalWakeWord] = {}
         self._disconnect_event = asyncio.Event()
+
+    # ------------------------------------------------------------------
+    # Peripheral API helper
+    # ------------------------------------------------------------------
+
+    def _emit(
+        self,
+        event: LVAEvent,
+        data: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """
+        Emit a peripheral LED/button event.
+
+        Thread-safe: delegates to ``emit_event_sync`` which uses
+        ``run_coroutine_threadsafe`` when called from outside the event loop.
+        """
+        api = self.state.peripheral_api
+        if api is not None:
+            api.emit_event_sync(event, data)
+
+    def register_pending_lights(self) -> None:
+        """Materialise LightEntities for peripheral registered lights.
+
+        Called from __init__ so entities exist by the time HA enumerates,
+        and again from the peripheral_api dispatcher when a light arrives
+        after the satellite is already running. HA only sees a late
+        registration after its next reconnect, but LVA stays consistent.
+        """
+        for spec in self.state.pending_lights:
+            if spec.object_id in self.state.led_light_entities:
+                # Already materialised. Reattach the server in case the
+                # satellite has been reconstructed (HA reconnect).
+                self.state.led_light_entities[spec.object_id].server = self
+                if self.state.led_light_entities[spec.object_id] not in self.state.entities:
+                    self.state.entities.append(self.state.led_light_entities[spec.object_id])
+                continue
+
+            object_id = spec.object_id
+            entity = LEDLightEntity(
+                server=self,
+                key=len(self.state.entities),
+                name=spec.name,
+                object_id=object_id,
+                icon=spec.icon,
+                effects=spec.effects,
+                supports_rgb=spec.supports_rgb,
+                supports_brightness=spec.supports_brightness,
+                on_changed=partial(self._on_led_light_changed, object_id),
+            )
+            self.state.entities.append(entity)
+            self.state.led_light_entities[object_id] = entity
+
+    def register_pending_button(self) -> None:
+        """Materialise ButtonEventSensorEntity once a peripheral has registered button support.
+
+        Called from __init__ (handles HA reconnects where the peripheral container
+        stayed connected to LVA and pending_button is already True) and from
+        PeripheralAPIServer._register_button() when the command arrives at runtime.
+
+        Safe to call multiple times: idempotent — if the entity already exists
+        it is only reattached to the current satellite server instance.
+        """
+        if not self.state.pending_button:
+            return
+
+        if self.state.button_event_sensor_entity is not None:
+            # Already materialised — reattach the server in case the satellite
+            # has been reconstructed for an HA reconnect.
+            self.state.button_event_sensor_entity.server = self
+            if self.state.button_event_sensor_entity not in self.state.entities:
+                self.state.entities.append(self.state.button_event_sensor_entity)
+            return
+
+        entity = ButtonEventSensorEntity(
+            server=self,
+            key=len(self.state.entities),
+            name="Button Press",
+            object_id="button_press_event",
+        )
+        self.state.entities.append(entity)
+        self.state.button_event_sensor_entity = entity
+        _LOGGER.info("Button event sensor entity materialised")
+
+    def _on_led_light_changed(self, object_id: str) -> None:
+        """Forward an HA Light entity change to peripherals as light_command.
+
+        The event carries object_id so a peripheral that registered more
+        than one light can route it to the correct hardware.
+        """
+        entity = self.state.led_light_entities.get(object_id)
+        if entity is None:
+            return
+        self._emit(LVAEvent.LIGHT_COMMAND, entity.state_dict())
+
+    # ------------------------------------------------------------------
+    # Mute / thinking sound
+    # ------------------------------------------------------------------
 
     def _set_thinking_sound_enabled(self, new_state: bool) -> None:
         self.state.thinking_sound_enabled = bool(new_state)
@@ -370,6 +485,7 @@ class VoiceSatelliteProtocol(APIServer):
 
     def _set_muted(self, new_state: bool) -> None:
         self.state.muted = bool(new_state)
+        self._emit(LVAEvent.MUTED, {"muted": self.state.muted})
 
         if self.state.muted:
             # voice_assistant.stop behavior
@@ -377,14 +493,17 @@ class VoiceSatelliteProtocol(APIServer):
             self._is_streaming_audio = False
             self.state.tts_player.stop()
             # Stop any ongoing voice processing
-            self.state.stop_word.is_active = False  # type: ignore
+            self.state.stop_word.is_active = False  # type: ignore[attr-defined]
             self.state.tts_player.play(self.state.mute_sound)
         else:
             # voice_assistant.start_continuous behavior
             _LOGGER.debug("Unmuting voice assistant (voice_assistant.start_continuous)")
             self.state.tts_player.play(self.state.unmute_sound)
-            # Resume normal operation - wake word detection will be active again
-            pass
+            self._emit(LVAEvent.IDLE)
+
+    # ------------------------------------------------------------------
+    # Voice pipeline event handler
+    # ------------------------------------------------------------------
 
     def handle_voice_event(self, event_type: VoiceAssistantEventType, data: Dict[str, str]) -> None:
         _LOGGER.debug("Voice event: type=%s, data=%s", event_type.name, data)
@@ -394,30 +513,49 @@ class VoiceSatelliteProtocol(APIServer):
             self._tts_played = False
             self._continue_conversation = False
             self._pipeline_active = True
-        elif event_type == VoiceAssistantEventType.VOICE_ASSISTANT_INTENT_START and self.state.thinking_sound_enabled:
-            # Play short "thinking/processing" sound if configured
-            processing = getattr(self.state, "processing_sound", None)
-            if processing:
-                _LOGGER.debug("Playing processing sound: %s", processing)
-                self.state.stop_word.is_active = True  # type: ignore
-                self._processing = True
-                self.duck()
-                self.state.tts_player.play(self.state.processing_sound)
+
+        elif event_type == VoiceAssistantEventType.VOICE_ASSISTANT_INTENT_START:
+            self._emit(LVAEvent.THINKING)
+            # Play optional audible thinking sound
+            if self.state.thinking_sound_enabled:
+                processing = getattr(self.state, "processing_sound", None)
+                if processing:
+                    _LOGGER.debug("Playing processing sound: %s", processing)
+                    self.state.stop_word.is_active = True  # type: ignore[attr-defined]
+                    self._processing = True
+                    self.duck()
+                    self.state.tts_player.play(self.state.processing_sound)
+
         elif event_type in (
             VoiceAssistantEventType.VOICE_ASSISTANT_STT_VAD_END,
             VoiceAssistantEventType.VOICE_ASSISTANT_STT_END,
         ):
             self._is_streaming_audio = False
+            if event_type == VoiceAssistantEventType.VOICE_ASSISTANT_STT_END:
+                stt_text = data.get("text", "").strip()
+                if stt_text:
+                    self._emit(LVAEvent.STT_TEXT, {"text": stt_text})
+                    _LOGGER.debug("STT transcript: %s", stt_text)
+
         elif event_type == VoiceAssistantEventType.VOICE_ASSISTANT_INTENT_PROGRESS:
             if data.get("tts_start_streaming") == "1":
                 # Start streaming early
                 self.play_tts()
+
         elif event_type == VoiceAssistantEventType.VOICE_ASSISTANT_INTENT_END:
             if data.get("continue_conversation") == "1":
                 self._continue_conversation = True
+
+        elif event_type == VoiceAssistantEventType.VOICE_ASSISTANT_TTS_START:
+            tts_text = data.get("text", "").strip()
+            if tts_text:
+                self._emit(LVAEvent.TTS_TEXT, {"text": tts_text})
+                _LOGGER.debug("TTS response text: %s", tts_text)
+
         elif event_type == VoiceAssistantEventType.VOICE_ASSISTANT_TTS_END:
             self._tts_url = data.get("url")
             self.play_tts()
+
         elif event_type == VoiceAssistantEventType.VOICE_ASSISTANT_RUN_END:
             self._is_streaming_audio = False
             if not self._tts_played:
@@ -429,7 +567,12 @@ class VoiceSatelliteProtocol(APIServer):
 
             self._tts_played = False
 
-        # TODO: handle error
+        elif event_type == VoiceAssistantEventType.VOICE_ASSISTANT_ERROR:
+            self._emit(LVAEvent.PIPELINE_ERROR)
+
+    # ------------------------------------------------------------------
+    # Timer event handler
+    # ------------------------------------------------------------------
 
     def handle_timer_event(
         self,
@@ -437,15 +580,40 @@ class VoiceSatelliteProtocol(APIServer):
         msg: VoiceAssistantTimerEventResponse,
     ) -> None:
         _LOGGER.debug("Timer event: type=%s", event_type.name)
-        if event_type == VoiceAssistantTimerEventType.VOICE_ASSISTANT_TIMER_FINISHED:
+
+        # Build countdown data from the protobuf message fields.
+        # total_seconds: the original timer duration.
+        # seconds_left:  remaining seconds at the time of this event.
+        timer_data = {
+            "id": msg.timer_id,
+            "name": msg.name,
+            "total_seconds": msg.total_seconds,
+            "seconds_left": msg.seconds_left,
+        }
+
+        if event_type == VoiceAssistantTimerEventType.VOICE_ASSISTANT_TIMER_STARTED:
+            self._emit(LVAEvent.TIMER_TICKING, timer_data)
+
+        elif event_type == VoiceAssistantTimerEventType.VOICE_ASSISTANT_TIMER_UPDATED:
+            self._emit(LVAEvent.TIMER_UPDATED, timer_data)
+
+        elif event_type == VoiceAssistantTimerEventType.VOICE_ASSISTANT_TIMER_CANCELLED:
+            self._emit(LVAEvent.IDLE)
+
+        elif event_type == VoiceAssistantTimerEventType.VOICE_ASSISTANT_TIMER_FINISHED:
             if not self._timer_finished:
                 self.state.active_wake_words.add(self.state.stop_word.id)
                 self._timer_finished = True
                 self._timer_ring_start = time.monotonic()
                 self.duck()
+                self._emit(LVAEvent.TIMER_RINGING, timer_data)
                 self._play_timer_finished()
 
-    def handle_message(self, msg: message.Message) -> Iterable[message.Message]:
+    # ------------------------------------------------------------------
+    # Message routing
+    # ------------------------------------------------------------------
+
+    def handle_message(self, msg: message.Message) -> Iterable[message.Message]:  # noqa: C901  (acceptable complexity for a message router)
         if isinstance(msg, VoiceAssistantEventResponse):
             # Pipeline event
             data: Dict[str, str] = {}
@@ -453,7 +621,7 @@ class VoiceSatelliteProtocol(APIServer):
                 data[arg.name] = arg.value
 
             self.handle_voice_event(VoiceAssistantEventType(msg.event_type), data)
-        # assist_satellite.announce HERE
+
         elif isinstance(msg, VoiceAssistantAnnounceRequest):
             _LOGGER.debug("Announcing: %s", msg.text)
 
@@ -462,16 +630,18 @@ class VoiceSatelliteProtocol(APIServer):
             urls = []
             if msg.preannounce_media_id:
                 urls.append(msg.preannounce_media_id)
-
             urls.append(msg.media_id)
 
             self.state.active_wake_words.add(self.state.stop_word.id)
             self._continue_conversation = msg.start_conversation
 
             self.duck()
+            self._emit(LVAEvent.TTS_SPEAKING)
             self.state.tts_player.play(urls, done_callback=self._tts_finished)
+
         elif isinstance(msg, VoiceAssistantTimerEventResponse):
             self.handle_timer_event(VoiceAssistantTimerEventType(msg.event_type), msg)
+
         elif isinstance(msg, DeviceInfoRequest):
             _LOGGER.debug("Device info request")
 
@@ -487,15 +657,25 @@ class VoiceSatelliteProtocol(APIServer):
                 model="Linux Voice Assistant",
                 voice_assistant_feature_flags=self.supported_features,
             )
+
         elif isinstance(
             msg,
-            (ListEntitiesRequest, SubscribeHomeAssistantStatesRequest, MediaPlayerCommandRequest, SwitchCommandRequest, NumberCommandRequest, SelectCommandRequest),
+            (ListEntitiesRequest, SubscribeHomeAssistantStatesRequest, MediaPlayerCommandRequest, SwitchCommandRequest, NumberCommandRequest, SelectCommandRequest, LightCommandRequest),
         ):
             for entity in self.state.entities:
                 yield from entity.handle_message(msg)
 
+            # Emit peripheral event when background music starts playing.
+            # Announcements (TTS) are explicitly excluded — those are covered
+            # by TTS_SPEAKING.
+            if isinstance(msg, MediaPlayerCommandRequest) and msg.has_media_url:
+                is_announcement = msg.has_announcement and msg.announcement
+                if not is_announcement:
+                    self._emit(LVAEvent.MEDIA_PLAYER_PLAYING)
+
             if isinstance(msg, ListEntitiesRequest):
                 yield ListEntitiesDoneResponse()
+
         elif isinstance(msg, VoiceAssistantConfigurationRequest):
             _LOGGER.debug("✅ Received VoiceAssistantConfigurationRequest from Home Assistant")
             _LOGGER.debug("   -> Request contains %d external wake words", len(msg.external_wake_words))
@@ -612,6 +792,10 @@ class VoiceSatelliteProtocol(APIServer):
             self.state.save_preferences()
             self.state.wake_words_changed = True
 
+    # ------------------------------------------------------------------
+    # Audio streaming
+    # ------------------------------------------------------------------
+
     # handle_audio — both channels in ONE message
     def handle_audio(self, audio_chunk: bytes, audio_chunk_2: Optional[bytes] = None) -> None:
         if not self._is_streaming_audio or self.state.muted:
@@ -621,33 +805,11 @@ class VoiceSatelliteProtocol(APIServer):
         else:
             self.send_messages([VoiceAssistantAudio(data=audio_chunk)])
 
+    # ------------------------------------------------------------------
+    # Wake word / stop
+    # ------------------------------------------------------------------
+
     def wakeup(self, wake_word: Union[MicroWakeWord, OpenWakeWord]) -> None:
-        if self._timer_finished:
-            # Stop the ringing timer, then start a normal wake-up after a short
-            # delay so the transition doesn't feel abrupt.
-            self._timer_finished = False
-            self._timer_ring_start = None
-            self.state.active_wake_words.discard(self.state.stop_word.id)
-            self.unduck()
-            self.state.tts_player.stop()
-            _LOGGER.debug("Stopping timer finished sound; will wake up in 1 s")
-
-            wake_word_phrase = wake_word.wake_word  # type: ignore
-
-            def _delayed_wakeup() -> None:
-                if self.state.muted or self._pipeline_active:
-                    _LOGGER.debug("Delayed wakeup skipped (muted=%s, pipeline_active=%s)", self.state.muted, self._pipeline_active)
-                    return
-                _LOGGER.debug("Delayed wakeup: playing wakeup sound for %s", wake_word_phrase)
-                self._pipeline_active = True
-                self.duck()
-                self.state.tts_player.play(
-                    self.state.wakeup_sound,
-                    done_callback=lambda: self._on_wakeup_sound_finished(wake_word_phrase),
-                )
-
-            threading.Timer(0.1, _delayed_wakeup).start()
-            return
 
         if self.state.muted:
             # Don't respond to wake words when muted (voice_assistant.stop behavior)
@@ -657,9 +819,14 @@ class VoiceSatelliteProtocol(APIServer):
             _LOGGER.debug("Ignoring wake word - pipeline already active")
             return
 
-        wake_word_phrase = wake_word.wake_word  # type: ignore
+        wake_word_phrase = wake_word.wake_word  # type: ignore[union-attr]
         _LOGGER.debug("Detected wake word: %s", wake_word_phrase)
+
+        self._timer_finished = False
+        self._timer_ring_start = None
+        _LOGGER.debug("Stopping timer finished sound")
         self._pipeline_active = True
+        self._emit(LVAEvent.WAKE_WORD_DETECTED)
         self.duck()
         self.state.tts_player.play(
             self.state.wakeup_sound,
@@ -667,12 +834,48 @@ class VoiceSatelliteProtocol(APIServer):
         )
 
     def _on_wakeup_sound_finished(self, wake_word_phrase: str) -> None:
-        """Callback invoked when the wakeup sound finishes playing."""
-        _LOGGER.debug("Wakeup sound finished, starting audio streaming with wake word: %s", wake_word_phrase)
-        self.send_messages(
-            [VoiceAssistantRequest(start=True, wake_word_phrase=wake_word_phrase)],
+        """Callback invoked when the wakeup chime finishes; begin STT streaming."""
+        _LOGGER.debug(
+            "Wakeup sound finished, starting audio streaming for: %s",
+            wake_word_phrase,
         )
+        self.send_messages([VoiceAssistantRequest(start=True, wake_word_phrase=wake_word_phrase)])
         self._is_streaming_audio = True
+        self._emit(LVAEvent.LISTENING)
+
+    def start_listening(self) -> None:
+        """
+        Manually start the voice pipeline from a button press.
+
+        Plays ``start_listening_sound`` first, then sends
+        ``VoiceAssistantRequest`` and begins streaming audio — identical flow
+        to ``wakeup()`` but without a wake-word phrase and using the dedicated
+        button-press sound instead of the wake-word chime. Also stops ringing timer.
+        """
+        if self.state.muted:
+            return
+
+        if self._pipeline_active:
+            _LOGGER.debug("Ignoring start_listening - pipeline already active")
+            return
+
+        _LOGGER.debug("Button start_listening triggered")
+        self._timer_finished = False
+        self._timer_ring_start = None
+        _LOGGER.debug("Stopping timer finished sound")
+        self._pipeline_active = True
+        self.duck()
+        self.state.tts_player.play(
+            self.state.start_listening_sound,
+            done_callback=self._on_start_listening_sound_finished,
+        )
+
+    def _on_start_listening_sound_finished(self) -> None:
+        """Callback invoked when the start-listening chime finishes; begin STT streaming."""
+        _LOGGER.debug("Start-listening sound finished, starting audio streaming")
+        self.send_messages([VoiceAssistantRequest(start=True, wake_word_phrase="")])
+        self._is_streaming_audio = True
+        self._emit(LVAEvent.LISTENING)
 
     def stop(self) -> None:
         self.state.active_wake_words.discard(self.state.stop_word.id)
@@ -683,12 +886,17 @@ class VoiceSatelliteProtocol(APIServer):
             self._timer_ring_start = None
             self.unduck()
             self.state.tts_player.stop()
+            self._emit(LVAEvent.IDLE)
             _LOGGER.debug("Stopping timer finished sound")
         else:
             # tts_player.stop() invokes the done_callback (_tts_finished),
             # so we don't call _tts_finished() again explicitly.
             self.state.tts_player.stop()
             _LOGGER.debug("TTS response stopped manually")
+
+    # ------------------------------------------------------------------
+    # TTS
+    # ------------------------------------------------------------------
 
     def play_tts(self) -> None:
         if (not self._tts_url) or self._tts_played:
@@ -698,26 +906,21 @@ class VoiceSatelliteProtocol(APIServer):
         _LOGGER.debug("Playing TTS response: %s", self._tts_url)
 
         self.state.active_wake_words.add(self.state.stop_word.id)
+        self._emit(LVAEvent.TTS_SPEAKING)
         self.state.tts_player.play(self._tts_url, done_callback=self._tts_finished)
-
-    def duck(self) -> None:
-        _LOGGER.debug("Ducking music")
-        self.state.music_player.duck()
-
-    def unduck(self) -> None:
-        _LOGGER.debug("Unducking music")
-        self.state.music_player.unduck()
 
     def _tts_finished(self) -> None:
         self._pipeline_active = False
         self.state.active_wake_words.discard(self.state.stop_word.id)
         self.send_messages([VoiceAssistantAnnounceFinished()])
+        self._emit(LVAEvent.TTS_FINISHED)
 
         if self._continue_conversation:
             self._continue_conversation = False
             # Keep pipeline active during the settle delay so the mic stays closed
             # and does not capture the tail end of the TTS audio from the speaker.
             self._pipeline_active = True
+            self._emit(LVAEvent.LISTENING)
             _LOGGER.debug("Continuing conversation after %.2fs settle delay", self.state.continue_conversation_delay)
 
             def _start_continued_conversation() -> None:
@@ -734,8 +937,25 @@ class VoiceSatelliteProtocol(APIServer):
         else:
             self._continue_conversation = False
             self.unduck()
+            self._emit(LVAEvent.IDLE)
 
         _LOGGER.debug("TTS response finished")
+
+    # ------------------------------------------------------------------
+    # Ducking
+    # ------------------------------------------------------------------
+
+    def duck(self) -> None:
+        _LOGGER.debug("Ducking music")
+        self.state.music_player.duck()
+
+    def unduck(self) -> None:
+        _LOGGER.debug("Unducking music")
+        self.state.music_player.unduck()
+
+    # ------------------------------------------------------------------
+    # Timer finished loop
+    # ------------------------------------------------------------------
 
     def _play_timer_finished(self) -> None:
         if not self._timer_finished:
@@ -767,7 +987,11 @@ class VoiceSatelliteProtocol(APIServer):
             ),
         )
 
-    def connection_lost(self, exc):
+    # ------------------------------------------------------------------
+    # Connection lifecycle
+    # ------------------------------------------------------------------
+
+    def connection_lost(self, exc: Optional[Exception]) -> None:
         super().connection_lost(exc)
 
         self._disconnect_event.set()
@@ -781,15 +1005,15 @@ class VoiceSatelliteProtocol(APIServer):
         # Stop any ongoing audio playback and wake/stop word processing.
         try:
             self.state.music_player.stop()
-        except Exception:  # pragma: no cover - defensive safety net
+        except Exception:  # pylint: disable=broad-except
             _LOGGER.exception("Failed to stop music player during disconnect")
 
         try:
             self.state.tts_player.stop()
-        except Exception:  # pragma: no cover - defensive safety net
+        except Exception:  # pylint: disable=broad-except
             _LOGGER.exception("Failed to stop TTS player during disconnect")
 
-        self.state.stop_word.is_active = False
+        self.state.stop_word.is_active = False  # type: ignore[attr-defined]
         self.state.connected = False
         if self.state.satellite is self:
             self.state.satellite = None
@@ -806,6 +1030,9 @@ class VoiceSatelliteProtocol(APIServer):
         if self.state.mic_volume_entity is not None:
             self.state.mic_volume_entity.sync_with_state()
 
+        # Notify peripheral container that HA is no longer reachable
+        self._emit(LVAEvent.DISCONNECTED)
+
         _LOGGER.info("Disconnected from Home Assistant; waiting for reconnection")
 
     def process_packet(self, msg_type: int, packet_data: bytes) -> None:
@@ -814,6 +1041,7 @@ class VoiceSatelliteProtocol(APIServer):
         if msg_type == PROTO_TO_MESSAGE_TYPE[AuthenticationRequest]:
             self.state.connected = True
             _LOGGER.debug("Authentication successful, connected to Home Assistant")
+
             # Send states after connect
             states: List[message.Message] = []
             _LOGGER.debug("Found %d entities in state", len(self.state.entities))
@@ -821,11 +1049,19 @@ class VoiceSatelliteProtocol(APIServer):
                 entity_states = list(entity.handle_message(SubscribeHomeAssistantStatesRequest()))
                 states.extend(entity_states)
                 _LOGGER.debug("Entity %d (%s) returned %d state messages", i, type(entity).__name__, len(entity_states))
+
             _LOGGER.debug("Total state messages to send: %d", len(states))
             self.send_messages(states)
             for i, msg in enumerate(states):
                 _LOGGER.debug("Sent state message %d: %s", i, type(msg).__name__)
             _LOGGER.debug("All entity states sent after connect")
+
+            # Notify peripherals that Home Assistant is now connected
+            self._emit(LVAEvent.ZEROCONF, {"status": "connected"})
+
+    # ------------------------------------------------------------------
+    # External wake word download
+    # ------------------------------------------------------------------
 
     def _download_external_wake_word(self, external_wake_word: VoiceAssistantExternalWakeWord) -> Optional[AvailableWakeWord]:
         eww_dir = self.state.download_dir / "external_wake_words"
