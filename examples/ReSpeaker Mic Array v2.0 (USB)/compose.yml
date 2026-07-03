@@ -1,0 +1,139 @@
+---
+# ReSpeaker Mic Array v2.0 (USB) – peripheral controller
+#
+# Runs alongside the linux-voice-assistant container.
+# Connects to LVA's peripheral WebSocket API (port 6055) and drives the
+# 12-LED APA102 ring on the ReSpeaker Mic Array v2.0 via USB HID.
+#
+# This board connects over USB — no GPIO, no SPI, no HAT header required.
+# It works on any Linux host (Raspberry Pi, desktop, mini-PC, etc.)
+#
+# See hardware notes at the bottom of this file before first run.
+
+services:
+  respeaker-usb-peripheral:
+    build: .
+    image: ohf/respeaker-usb-peripheral:local
+    container_name: respeaker-usb-peripheral
+    restart: unless-stopped
+
+    # -----------------------------------------------------------------------
+    # USB device access
+    #
+    # Option A (recommended): pass only the ReSpeaker device.
+    #
+    #   Find the bus and device numbers on the host:
+    #     lsusb | grep 2886:0018
+    #     # Example output: Bus 001 Device 005: ID 2886:0018 ...
+    #   Then set the path below:
+    #     - /dev/bus/usb/001/005:/dev/bus/usb/001/005
+    #
+    #   NOTE: the device number changes on every reconnect. The udev rule
+    #   in the hardware notes section creates a stable symlink at
+    #   /dev/respeaker that you can use instead:
+    #     - /dev/respeaker:/dev/respeaker
+    #
+    # Option B (simpler but broader): pass the entire USB bus.
+    #   - /dev/bus/usb:/dev/bus/usb
+    # -----------------------------------------------------------------------
+    devices:
+      - /dev/bus/usb:/dev/bus/usb    # Option B — change to specific device after setup
+
+    # -----------------------------------------------------------------------
+    # Privileges
+    #
+    # USB vendor control transfers require elevated access.
+    # The udev rule (hardware notes step 1) makes the device accessible to
+    # the plugdev group; if that rule is in place you can remove privileged
+    # and add group_add: [plugdev] instead.
+    # -----------------------------------------------------------------------
+    privileged: true
+
+    environment:
+      - PYTHONUNBUFFERED=1
+
+    # -----------------------------------------------------------------------
+    # Network — host mode so "localhost" reaches the LVA container directly
+    # -----------------------------------------------------------------------
+    network_mode: host
+
+    command:
+      - "--host"
+      - "localhost"
+      - "--port"
+      - "6055"
+      # Uncomment for verbose logging during setup:
+      # - "--debug"
+
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "respeaker_usb_mic_array.py"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+
+# =============================================================================
+# HARDWARE NOTES
+# =============================================================================
+#
+# 1. UDEV RULE (REQUIRED for non-root USB access)
+#
+#    Create the udev rule on the HOST so the container can access the device
+#    without needing privileged mode long-term:
+#
+#        sudo tee /etc/udev/rules.d/99-respeaker.rules << 'EOF'
+#        SUBSYSTEM=="usb", ATTR{idVendor}=="2886", ATTR{idProduct}=="0018", \
+#            MODE="0666", GROUP="plugdev", SYMLINK+="respeaker"
+#        EOF
+#        sudo udevadm control --reload-rules
+#        sudo udevadm trigger
+#
+#    After this, /dev/respeaker is a stable symlink to the device.
+#    You can then replace the broad /dev/bus/usb mount with:
+#
+#        devices:
+#          - /dev/respeaker:/dev/respeaker
+#
+#    And replace privileged: true with:
+#
+#        privileged: false
+#        group_add:
+#          - plugdev
+#
+# 2. MICROPHONE — NO DRIVER NEEDED
+#
+#    The ReSpeaker Mic Array v2.0 runs a XMOS XVF3000 firmware and enumerates
+#    as a standard USB audio device. No kernel driver or seeed-voicecard
+#    install is required.
+#
+#    Verify on the host:
+#        arecord -l
+#        # Should list: SEEED ReSpeaker Mic Array v2.0
+#
+#    LVA detects it automatically, or specify it explicitly:
+#        --audio-input-device "SEEED ReSpeaker Mic Array v2.0"
+#
+#    Or in LVA's compose environment:
+#        AUDIO_INPUT_DEVICE=SEEED ReSpeaker Mic Array v2.0
+#
+# 3. LED CONTROL — USB HID VENDOR COMMAND
+#
+#    The LEDs are controlled via a USB vendor control transfer to the XMOS
+#    firmware (bmRequestType=0x40, bRequest=0, wValue=0x0001, wIndex=0x8001).
+#    This is the same protocol used by Seeed's pixel_ring library.
+#    No SPI, GPIO, or kernel overlay is required.
+#
+# 4. POWER
+#
+#    The device draws up to 900 mA at 5 V when all LEDs are on at full
+#    brightness.  Use a powered USB hub or a Pi 4/5 with a quality 5 V/3 A
+#    power supply to avoid brown-outs.
+#
+# =============================================================================

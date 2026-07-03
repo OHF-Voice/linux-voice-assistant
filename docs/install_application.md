@@ -188,10 +188,15 @@ Environment=PREFERENCES_FILE="/home/pi/linux-voice-assistant/preferences.json"
 # Environment=REFACTORY_SECONDS="2"
 # Environment=CONTINUE_CONVERSATION_DELAY="0.5"
 # Environment=WAKEUP_SOUND="sounds/wake_word_triggered.flac"
+# Environment=START_LISTENING_SOUND="sounds/start_listening_button.flac"
 # Environment=TIMER_FINISHED_SOUND="sounds/timer_finished.flac"
 # Environment=PROCESSING_SOUND="sounds/processing.wav"
 # Environment=MUTE_SOUND="sounds/mute_switch_on.flac"
 # Environment=UNMUTE_SOUND="sounds/mute_switch_off.flac"
+# Environment=PERIPHERAL_HOST="0.0.0.0"
+# Environment=PERIPHERAL_PORT="6055"
+# Environment=PERIPHERAL_VOLUME_STEP="%(default)s"
+# Environment=DISABLE_PERIPHERAL_API="1"
 # Environment=ENABLE_OUTPUT_ONLY="1"
 ExecStart=/home/pi/linux-voice-assistant/docker-entrypoint.sh
 # ExecStart=/home/pi/linux-voice-assistant/docker-entrypoint.sh --additional-parameter-if-you-want
@@ -272,10 +277,15 @@ The following variables can be configured in the `.env` or in the service file:
 | `REFACTORY_SECONDS` | `2` | Refractory period in seconds after wake word |
 | `CONTINUE_CONVERSATION_DELAY` | `0.5` | Delay before mic opens for continued conversation |
 | `WAKEUP_SOUND` | `sounds/wake_word_triggered.flac` | Sound file for wake word triggered |
+| `START_LISTENING_SOUND` | `sounds/start_listening_button.flac` | Sound file for pressing button to talk |
 | `TIMER_FINISHED_SOUND` | `sounds/timer_finished.flac` | Sound file for timer finished |
 | `PROCESSING_SOUND` | `sounds/processing.wav` | Sound file for processing state |
 | `MUTE_SOUND` | `sounds/mute_switch_on.flac` | Sound file for mute on |
 | `UNMUTE_SOUND` | `sounds/mute_switch_off.flac` | Sound file for Configure Audio Devices
+| `PERIPHERAL_HOST` | 0.0.0.0 | Host for the peripheral WebSocket API |
+| `PERIPHERAL_PORT` | 6055 | Port for the peripheral WebSocket API |
+| `PERIPHERAL_VOLUME_STEP` | %(default)s | Volume change per button press |
+| `DISABLE_PERIPHERAL_API` | false | Disable the peripheral WebSocket API |
 | `ENABLE_OUTPUT_ONLY` | (optional) | Set to "1" to enable output-only mode |
 
 

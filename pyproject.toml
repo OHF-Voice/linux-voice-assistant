@@ -34,6 +34,7 @@ dependencies = [
     "sounddevice>=0.4,<1",
     "getmac<1",
     "types-protobuf",
+    "websockets==12",
     "webrtc-noise-gain>=1,<2",
 ]
 dynamic = ["version"]
