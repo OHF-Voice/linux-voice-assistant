@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/OHF-Voice/linux-voice-assistant/actions/workflows/docker-build-release.yml/badge.svg)](https://github.com/OHF-Voice/linux-voice-assistant/actions/workflows/docker-build-release.yml) [![GitHub Package Version](https://img.shields.io/github/v/tag/OHF-Voice/linux-voice-assistant?label=version)](https://github.com/OHF-Voice/linux-voice-assistant/pkgs/container/linux-voice-assistant) [![GitHub License](https://img.shields.io/github/license/OHF-Voice/linux-voice-assistant)](https://github.com/OHF-Voice/linux-voice-assistant/blob/main/LICENSE.md) [![GitHub last commit](https://img.shields.io/github/last-commit/OHF-Voice/linux-voice-assistant)](https://github.com/OHF-Voice/linux-voice-assistant/commits) [![GitHub Container Registry](https://img.shields.io/badge/Container%20Registry-GHCR-blue)](https://github.com/OHF-Voice/linux-voice-assistant/pkgs/container/linux-voice-assistant)
 
-An experimental Linux-Voice-Assistant software for [Home Assistant](https://www.home-assistant.io/) remote voice control and interaction.
+An experimental voice satellite software for [Home Assistant](https://www.home-assistant.io/) remote voice control and interaction.
 
 This project enables you to build a Linux-based voice assistant designed to use [Assist](https://www.home-assistant.io/voice_control/) for Home Assistant. It allows you to create your own smart speaker that runs on any x64 or ARM64 hardware capable of handling local audio processing (using PulseAudio).
 
@@ -20,19 +20,20 @@ Because it runs on a full Linux system and offers access significantly more loca
 - Supports multiple architectures (linux/amd64 and linux/aarch64)
 - Automated builds with artifact attestation for security
 - Supports announcments, start/continue conversation, and timers
-- Tested and works with Python 3.11 and Python 3.12.
+- Tested and works with Python 3.11 and Python 3.13.
 - Prebuild docker image available on [GitHub Container Registry](https://github.com/OHF-Voice/linux-voice-assistant/pkgs/container/linux-voice-assistant)
 - Prebuild [Raspberry Pi image](https://github.com/florian-asche/PiCompose)
+- Supports [Websocket API](./docs/peripheral_api.md) for peripherals (e.g. buttons, LEDs, etc.) to integrate with the voice assistant
 
 ## Requirements
 
-- Microphone: Device must support 16kHz mono audio
-- CPU: 1Ghz
-- Memory: min. 512MB
-- Storage: The OS and software is around 4GB
-- OS: linux/amd64 or linux/aarch64
+- **Microphone:** Device must support 16kHz mono audio
+- **CPU:** 1Ghz
+- **Memory:** min. 512MB
+- **Storage:** The OS and software is around 4GB
+- **OS:** linux/amd64 or linux/aarch64
 
-A more extensive list for possible compatible hardware can be found in the [PiCompose documentation](https://github.com/florian-asche/PiCompose) but basically any microphone that works with [PipeWire (multimedia framework for Linux)](https://pipewire.org/) can in theory be used for voice input with the prebuild image from there, you should however preferably use a far-field microphone-array solution if want better result. However if you're using your own USB microphone, **the microphone device must support 16kHz mono audio** for optimal voice recognition performance.
+A more extensive list for possible compatible hardware can be found in the [PiCompose documentation](https://github.com/florian-asche/PiCompose) but basically any microphone that works with [PipeWire (multimedia framework for Linux)](https://pipewire.org/) can in theory be used for voice input with the prebuild image from there, you should however preferably use a far-field microphone-array solution if want better result.
 
 Two solutions recommended for setups today is:
 
@@ -47,9 +48,26 @@ Alternatively if on a lower budget then suggest could use other microphone-array
 
 ### Installation
 
+**Assist Satellite app for Home Assistant OS**
+
+For HA OS, we provide a finished [Assist Satellite](https://github.com/OHF-Voice/apps/tree/main/assist_satellite) app (formerly add-on), which uses the Linux Voice Assistant runtime to turn your HA host into a voice satellite. 
+
+> [!NOTE]
+> For now you first have to add the [OHF-Voice apps](https://github.com/OHF-Voice/apps) repo manually to the App Store repositroy inside Home Assistant before you can install it.
+
+Later you will be able to install it directly from the official add-on repository (but it is not yet published publicly there):
+
+[![Add repository to your Home Assistant instance.](https://my.home-assistant.io/badges/supervisor_addon.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https://github.com/home-assistant/addons)
+
+Once installed, the satellite is automatically discovered by Home Assistant via the ESPHome integration.
+
+**Raspberry Pi prebuilt image**
+
 For Raspberry Pi users, we provide a prebuild image that can be flashed to a SD card. See [PiCompose](https://github.com/florian-asche/PiCompose).
 
-For all other users, we have different installation methods available (Docker, systemd), each with its own dedicated instructions. See [Linux-Voice-Assistant - Installation](docs/install.md).
+**Docker / bare metal**
+
+For all other users, we have different installation methods available (Docker, systemd), each with its own dedicated instructions. See [Linux-Voice-Assistant - Installation](docs/install.md). 
 
 ### Parameter overview
 
@@ -62,33 +80,40 @@ usage: __main__.py [-h] [--name NAME] [--audio-input-device AUDIO_INPUT_DEVICE] 
 ```
 
 
-| Parameter                  | Description                                                   | Default                           |
-| ---------------------------- | --------------------------------------------------------------- | ----------------------------------- |
-| `--name`                   | Name of the voice assistant device (required)                 | Autogenerated (`lva-MAC-ADDRESS`) |
-| `--audio-input-device`     | Soundcard name for input device                               | Autodetected                      |
-| `--audio-input-block-size` | Audio input block size in samples                             | 1024                              |
-| `--audio-output-device`    | mpv name for output device                                    | Autodetected                      |
-| `--mic-volume`             | Control microphone volume                                     | 1.0                               |
-| `--mic-auto-gain`          | Add WebRTC Gain to Mic                                        | 0                                 |
-| `--mic-noise-suppression`  | Add WebRTC Noise Suppression to Mic                           | 0                                 |
-| `--wake-word-dir`          | Directory with wake word models (.tflite) and configs (.json) | `wakewords/`                      |
-| `--wake-model`             | ID of active wake word model                                  | `okay_nabu`                       |
-| `--stop-model`             | ID of stop model                                              | `stop`                            |
-| `--download-dir`           | Directory to download custom wake word models, etc.           | `local/`                          |
-| `--refractory-seconds`     | Seconds before wake word can be activated again               | 2.0                               |
-| `--timer-max-ring-seconds` | Seconds after which the timer stops ringing                   | 900.0                             |
-| `--wakeup-sound`           | Sound file played when wake word is detected                  | `sounds/wake_word_triggered.flac` |
-| `--timer-finished-sound`   | Sound file played when timer finishes                         | `sounds/timer_finished.flac`      |
-| `--processing-sound`       | Sound played while assistant is processing                    | `sounds/processing.wav`           |
-| `--mute-sound`             | Sound played when muting the assistant                        | `sounds/mute_switch_on.flac`      |
-| `--unmute-sound`           | Sound played when unmuting the assistant                      | `sounds/mute_switch_off.flac`     |
-| `--preferences-file`       | Path to preferences JSON file                                 | `preferences.json`                |
-| `--host`                   | IP-Address for ESPHome server, use 0.0.0.0 for all            | Autodetected                      |
-| `--network-interface`      | Network interface for ESPHome server                          | Autodetected                      |
-| `--port`                   | Port for ESPHome server                                       | 6053                              |
-| `--enable-thinking-sound`  | Enable thinking sound on startup                              | False                             |
-| `--debug`                  | Print DEBUG messages to console                               | False                             |
-| `--output-only`            | Enable output only mode                                       | False                             |
+| Parameter                       | Description                                                   | Default                              |
+| ------------------------------- | ------------------------------------------------------------- | ------------------------------------ |
+| `--name`                        | Name of the voice assistant device (required)                 | Autogenerated (`lva-MAC-ADDRESS`)    |
+| `--audio-input-device`          | Soundcard name for input device                               | Autodetected                         |
+| `--audio-input-block-size`      | Audio input block size in samples                             | 1024                                 |
+| `--audio-output-device`         | mpv name for output device                                    | Autodetected                         |
+| `--mic-volume`                  | Control microphone volume                                     | 100                                  |
+| `--mic-auto-gain`               | Add WebRTC Gain to Mic                                        | 0                                    |
+| `--mic-noise-suppression`       | Add WebRTC Noise Suppression to Mic                           | 0                                    |
+| `--audio-input-channels`        | Number of microphone audio channels to stream                 | 2                                    |
+| `--wake-word-dir`               | Directory with wake word models (.tflite) and configs (.json) | `wakewords/`                         |
+| `--wake-model`                  | ID of active wake word model                                  | `okay_nabu`                          |
+| `--stop-model`                  | ID of stop model                                              | `stop`                               |
+| `--download-dir`                | Directory to download custom wake word models, etc.           | `local/`                             |
+| `--refractory-seconds`          | Seconds before wake word can be activated again               | 2.0                                  |
+| `--continue-conversation-delay` | Delay before mic opens for continued conversation             | 0.5                                  |
+| `--timer-max-ring-seconds`      | Seconds after which the timer stops ringing                   | 900.0                                |
+| `--wakeup-sound`                | Sound file played when wake word is detected                  | `sounds/wake_word_triggered.flac`    |
+| `--start-listening-sound`       | Sound file played when button is pressed to start listening   | `sounds/start_listening_button.flac` |
+| `--timer-finished-sound`        | Sound file played when timer finishes                         | `sounds/timer_finished.flac`         |
+| `--processing-sound`            | Sound played while assistant is processing                    | `sounds/processing.wav`              |
+| `--mute-sound`                  | Sound played when muting the assistant                        | `sounds/mute_switch_on.flac`         |
+| `--unmute-sound`                | Sound played when unmuting the assistant                      | `sounds/mute_switch_off.flac`        |
+| `--preferences-file`            | Path to preferences JSON file                                 | `preferences.json`                   |
+| `--host`                        | IP-Address for ESPHome server, use 0.0.0.0 for all            | Autodetected                         |
+| `--network-interface`           | Network interface for ESPHome server                          | Autodetected                         |
+| `--port`                        | Port for ESPHome server                                       | 6053                                 |
+| `--enable-thinking-sound`       | Enable thinking sound on startup                              | False                                |
+| `--peripheral-host`             | Bind address for the peripheral WebSocket API                 | 0.0.0.0                              |
+| `--peripheral-port`             | Port for the peripheral WebSocket API                         | 6055                                 |
+| `--peripheral-volume-step`      | Volume change per button press, 0.0–1.0                       | %(default)s                          |
+| `--disable-peripheral-api`      | Disable the peripheral WebSocket API entirely                 | False                                |
+| `--debug`                       | Print DEBUG messages to console                               | False                                |
+| `--output-only`                 | Enable output only mode                                       | False                                |
 
 💡 **Note:** There is a detailed explanation on the gain, noise suppression, and wake word sensitivity flags in the [audio options](docs/audio_options.md) file.
 

@@ -20,6 +20,7 @@ from pyopen_wakeword import OpenWakeWord, OpenWakeWordFeatures
 
 from .models import Preferences, ServerState
 from .mpv_player import MpvMediaPlayer
+from .peripheral_api import LVAEvent, PeripheralAPIServer
 from .satellite import VoiceSatelliteProtocol
 from .util import (
     get_default_interface,
@@ -60,7 +61,6 @@ async def main() -> None:
         "--audio-input-block-size",
         type=int,
         default=1024,
-        # todo
     )
     parser.add_argument(
         "--audio-output-device",
@@ -71,8 +71,16 @@ async def main() -> None:
         action="store_true",
         help="List audio output devices and exit",
     )
+    parser.add_argument("--mic-volume", type=int, default=100, choices=list(range(1, 101)), help="Microphone volume level (1 to 100)")
     parser.add_argument("--mic-auto-gain", type=int, default=0, choices=list(range(32)))
     parser.add_argument("--mic-noise-suppression", type=int, default=0, choices=(0, 1, 2, 3, 4))
+    parser.add_argument(
+        "--audio-input-channels",
+        type=int,
+        default=1,
+        choices=(1, 2),
+        help="Number of mic channels to capture and stream (1=mono, 2=dual-channel voice)",
+    )
     parser.add_argument(
         "--wake-word-dir",
         default=[_WAKEWORDS_DIR],
@@ -101,9 +109,20 @@ async def main() -> None:
         help="Seconds before wake word can be activated again",
     )
     parser.add_argument(
+        "--continue-conversation-delay",
+        type=float,
+        default=0.5,
+        help="Seconds to wait after TTS finishes before opening the mic for continued conversation (default: 0.5)",
+    )
+    parser.add_argument(
         "--wakeup-sound",
         default=str(_SOUNDS_DIR / "wake_word_triggered.flac"),
         help="Directory and file name for wake sound (when you say the wake word)",
+    )
+    parser.add_argument(
+        "--start-listening-sound",
+        default=str(_SOUNDS_DIR / "start_listening_button.flac"),
+        help="Directory and file name and sound for start listening button (when you press button to talk)",
     )
     parser.add_argument(
         "--timer-finished-sound",
@@ -126,30 +145,79 @@ async def main() -> None:
         help="Sound to play when unmuting the assistant",
     )
     parser.add_argument(
+        "--button-double-press-sound",
+        default=str(_SOUNDS_DIR / "button_double_press.flac"),
+        help="Sound to play for button double press",
+    )
+    parser.add_argument(
+        "--button-triple-press-sound",
+        default=str(_SOUNDS_DIR / "button_triple_press.flac"),
+        help="Sound to play for button triple press",
+    )
+    parser.add_argument(
+        "--button-long-press-sound",
+        default=str(_SOUNDS_DIR / "button_long_press.flac"),
+        help="Sound to play for button long press",
+    )
+    parser.add_argument(
         "--preferences-file",
         default=_REPO_DIR / "preferences.json",
-        help="Directory and file name for the file where the preferences are stored in JSON format",
+        help="Directory and file name for the preferences JSON file",
     )
     parser.add_argument(
         "--host",
-        help="Optional host IP address to bind to (default: Autodetected by network interface)",  # 0.0.0.0 is IPv4, None is all interfaces
+        help="Optional host IP address to bind to (default: auto-detected by network interface)",
     )
     parser.add_argument(
         "--network-interface",
-        help="Network interface the application will be listening on (default: will be automatically detected by gateway)",
+        help="Network interface the application listens on (default: auto-detected by gateway)",
     )
     # Note that default port is also set in docker-entrypoint.sh
     parser.add_argument(
         "--port",
         type=int,
         default=6053,
-        help="Port the application is listenening on (default: 6053)",
+        help="Port the application is listening on (default: 6053)",
     )
     parser.add_argument(
         "--enable-thinking-sound",
         action="store_true",
-        help="Enable thinking finish sound, when the assistant is done thinking and needed more time to process",
+        help="Enable thinking sound on startup",
     )
+    # ------------------------------------------------------------------
+    # Peripheral API (LEDs, buttons, HAT boards)
+    # ------------------------------------------------------------------
+    parser.add_argument(
+        "--peripheral-host",
+        default="0.0.0.0",
+        help="Bind address for the peripheral WebSocket API (default: 0.0.0.0)",
+    )
+    parser.add_argument(
+        "--peripheral-port",
+        type=int,
+        default=6055,
+        help="Port for the peripheral WebSocket API (default: 6055)",
+    )
+    parser.add_argument(
+        "--peripheral-volume-step",
+        type=float,
+        default=PeripheralAPIServer.DEFAULT_VOLUME_STEP,
+        metavar="STEP",
+        help="Volume change per button press, 0.0–1.0 (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--disable-peripheral-api",
+        action="store_true",
+        help="Disable the peripheral WebSocket API entirely",
+    )
+    parser.add_argument(
+        "--peripheral-startup-wait",
+        type=float,
+        default=2.0,
+        metavar="SECONDS",
+        help="Seconds to wait for peripherals to connect and register their entities before HA enumerates the ESPHome API (default: %(default)s; set 0 to skip).",
+    )
+    # ------------------------------------------------------------------
     parser.add_argument(
         "--timer-max-ring-seconds",
         type=float,
@@ -282,6 +350,8 @@ async def main() -> None:
             _LOGGER.exception("Extras for webrtc are not installed")
             sys.exit(1)
 
+    if args.mic_volume > 0.0:
+        preferences.mic_volume = args.mic_volume
     if args.mic_auto_gain > 0:
         preferences.mic_auto_gain = args.mic_auto_gain
 
@@ -312,19 +382,25 @@ async def main() -> None:
         music_player=MpvMediaPlayer(device=args.audio_output_device),
         tts_player=MpvMediaPlayer(device=args.audio_output_device),
         wakeup_sound=args.wakeup_sound,
+        start_listening_sound=args.start_listening_sound,
         timer_finished_sound=args.timer_finished_sound,
         processing_sound=args.processing_sound,
         mute_sound=args.mute_sound,
         unmute_sound=args.unmute_sound,
+        button_double_press_sound=args.button_double_press_sound,
+        button_triple_press_sound=args.button_triple_press_sound,
+        button_long_press_sound=args.button_long_press_sound,
         preferences=preferences,
         preferences_path=preferences_path,
         refractory_seconds=args.refractory_seconds,
+        continue_conversation_delay=args.continue_conversation_delay,
         output_only=args.output_only,
         download_dir=args.download_dir,
         volume=initial_volume,
         mic_volume=preferences.mic_volume,
         mic_auto_gain=preferences.mic_auto_gain,
         mic_noise_suppression=preferences.mic_noise_suppression,
+        audio_input_channels=args.audio_input_channels,
         timer_max_ring_seconds=args.timer_max_ring_seconds,
     )
 
@@ -344,6 +420,22 @@ async def main() -> None:
     state.music_player.set_volume(initial_volume_percent)
     state.tts_player.set_volume(initial_volume_percent)
 
+    # ------------------------------------------------------------------
+    # Peripheral API (optional – LEDs, buttons, HAT boards)
+    # ------------------------------------------------------------------
+    peripheral_api: Optional[PeripheralAPIServer] = None
+    if not args.disable_peripheral_api:
+        peripheral_api = PeripheralAPIServer(
+            host=args.peripheral_host,
+            port=args.peripheral_port,
+            volume_step=args.peripheral_volume_step,
+        )
+        peripheral_api.set_state(state)
+        state.peripheral_api = peripheral_api
+
+    # ------------------------------------------------------------------
+    # ESPHome TCP server (with retry on EADDRINUSE)
+    # ------------------------------------------------------------------
     loop = asyncio.get_running_loop()
     max_attempts = 15
     attempt = 1
@@ -367,20 +459,40 @@ async def main() -> None:
 
     while attempt <= max_attempts:
         try:
-            server = await loop.create_server(lambda: VoiceSatelliteProtocol(state), host=host_ip_address, port=args.port)
-            break  # connect successful, exit the loop
+            server = await loop.create_server(
+                lambda: VoiceSatelliteProtocol(state),
+                host=host_ip_address,
+                port=args.port,
+            )
+            break  # connection successful, exit the loop
         except OSError as err:
             message = err.strerror or str(err)
             if err.errno == errno.EADDRINUSE:
                 message = "address already in use"
             if attempt < max_attempts:
-                _LOGGER.warning("Attempt %d/%d failed to bind on address (%s, %s): %s. Retrying in 1 second...", attempt, max_attempts, host_ip_address, args.port, message)
+                _LOGGER.warning(
+                    "Attempt %d/%d failed to bind on address (%s, %s): %s. Retrying in 1 second...",
+                    attempt,
+                    max_attempts,
+                    host_ip_address,
+                    args.port,
+                    message,
+                )
                 await asyncio.sleep(1)
                 attempt += 1
             else:
-                _LOGGER.exception("All %d attempts failed to bind on address (%s, %s): %s", max_attempts, host_ip_address, args.port, message)
+                _LOGGER.exception(
+                    "All %d attempts failed to bind on address (%s, %s): %s",
+                    max_attempts,
+                    host_ip_address,
+                    args.port,
+                    message,
+                )
                 sys.exit(1)
 
+    # ------------------------------------------------------------------
+    # Audio processing thread
+    # ------------------------------------------------------------------
     process_audio_thread = threading.Thread(
         target=process_audio,
         args=(state, mic, args.audio_input_block_size),
@@ -389,18 +501,46 @@ async def main() -> None:
     process_audio_thread.start()
 
     # Auto discovery (zeroconf, mDNS)
-    discovery = HomeAssistantZeroconf(port=args.port, name=state.name, mac_address=state.mac_address, host_ip_address=host_ip_address)
+    discovery = HomeAssistantZeroconf(
+        port=args.port,
+        name=state.name,
+        mac_address=state.mac_address,
+        host_ip_address=host_ip_address,
+    )
     await discovery.register_server()
 
+    # ------------------------------------------------------------------
+    # Start peripheral API and signal "getting started" to peripherals
+    # ------------------------------------------------------------------
+    if peripheral_api is not None:
+        await peripheral_api.start()
+        await peripheral_api.emit_event(LVAEvent.ZEROCONF, {"status": "getting_started"})
+
+        # Give peripherals a window to connect and register their Light
+        # entities before HA enumerates over the ESPHome native API. The
+        # ESPHome server is bound but not yet serving (serve_forever runs
+        # below), so any HA connection sits queued in the kernel for the
+        # duration of this wait. Peripherals that register later still
+        # work, but the new entities only show up in HA after the
+        # integration reconnects.
+        if args.peripheral_startup_wait > 0:
+            _LOGGER.info(
+                "Waiting %.1fs for peripherals to register entities…",
+                args.peripheral_startup_wait,
+            )
+            await asyncio.sleep(args.peripheral_startup_wait)
+
     try:
-        async with server:  # type: ignore
+        async with server:  # type: ignore[union-attr]
             _LOGGER.info("Server started (host=%s, port=%s)", host_ip_address, args.port)
-            await server.serve_forever()  # type: ignore
+            await server.serve_forever()  # type: ignore[union-attr]
     except KeyboardInterrupt:
         pass
     finally:
         state.audio_queue.put_nowait(None)
         process_audio_thread.join()
+        if peripheral_api is not None:
+            await peripheral_api.stop()
 
     _LOGGER.debug("Server stopped")
 
@@ -410,6 +550,7 @@ async def main() -> None:
 
 def process_audio(state: ServerState, mic, block_size: int):
     """Process audio chunks from the microphone."""
+    n_channels = state.audio_input_channels
 
     wake_words: List[Union[MicroWakeWord, OpenWakeWord]] = []
     micro_features: Optional[MicroWakeWordFeatures] = None
@@ -424,12 +565,23 @@ def process_audio(state: ServerState, mic, block_size: int):
 
     try:
         _LOGGER.debug("Opening audio input device: %s", mic.name)
-        with mic.recorder(samplerate=16000, channels=1, blocksize=block_size) as mic_in:
+        with mic.recorder(samplerate=16000, channels=n_channels, blocksize=block_size) as mic_in:
             while True:
-                audio_chunk_array = mic_in.record(block_size).reshape(-1)
-                # little-endian 16-bit signed
+                # Shape: (block_size, n_channels) for stereo, (block_size, 1) for mono.
+                raw = mic_in.record(block_size)  # float32, range [-1, 1]
                 mic_vol_scalar = max(0.1, min(1.0, state.mic_volume / 100.0))
-                audio_chunk = (np.clip(audio_chunk_array * mic_vol_scalar, -1.0, 1.0) * 32767.0).astype("<i2").tobytes()
+
+                # Build per-channel byte arrays.  Channel 0 is the primary
+                # microphone; channel 1 (when present) is the reference/speaker
+                # feed used for server-side AEC.
+                channel_chunks: list[bytes] = []
+                for ch in range(n_channels):
+                    col = raw[:, ch] if n_channels > 1 else raw.reshape(-1)
+                    chunk = (np.clip(col * mic_vol_scalar, -1.0, 1.0) * 32767.0).astype("<i2").tobytes()
+                    channel_chunks.append(chunk)
+
+                # Primary channel drives WebRTC and wake-word detection.
+                audio_chunk = channel_chunks[0]
                 agc = state.preferences.mic_auto_gain or 0
                 ns = state.preferences.mic_noise_suppression or 0
 
@@ -529,7 +681,9 @@ def process_audio(state: ServerState, mic, block_size: int):
                         oww_features = OpenWakeWordFeatures.from_builtin()
 
                 try:
-                    state.satellite.handle_audio(audio_chunk)
+                    # Both channels travel in one message: data=ch0 (enhanced), data2=ch1 (raw reference)
+                    audio_chunk_2 = channel_chunks[1] if n_channels >= 2 else None
+                    state.satellite.handle_audio(audio_chunk, audio_chunk_2)
 
                     assert micro_features is not None
                     micro_inputs.clear()
@@ -596,9 +750,9 @@ def process_audio(state: ServerState, mic, block_size: int):
                     if stopped and (state.stop_word.id in state.active_wake_words) and not state.muted:
                         _LOGGER.debug("Stop word detected")
                         state.satellite.stop()
-                except Exception:
+                except Exception:  # pylint: disable=broad-except
                     _LOGGER.exception("Unexpected error handling audio")
-    except Exception:
+    except Exception:  # pylint: disable=broad-except
         _LOGGER.exception("Unexpected error processing audio")
         sys.exit(1)
 

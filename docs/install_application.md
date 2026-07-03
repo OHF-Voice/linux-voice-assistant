@@ -179,17 +179,24 @@ Environment=PREFERENCES_FILE="/home/pi/linux-voice-assistant/preferences.json"
 # Environment=MIC_VOLUME="1.0"
 # Environment=MIC_AUTO_GAIN="0"
 # Environment=MIC_NOISE_SUPPRESSION="0"
+# Environment=AUDIO_INPUT_CHANNELS=2
 # Environment=ENABLE_THINKING_SOUND="1"
 # Environment=WAKE_WORD_DIR="app/wakewords"
 # Environment=WAKE-MODEL="okay_nabu"
 # Environment=STOP_MODEL="stop"
 # Environment=TIMER_MAX_RING_SECONDS="900"
 # Environment=REFACTORY_SECONDS="2"
+# Environment=CONTINUE_CONVERSATION_DELAY="0.5"
 # Environment=WAKEUP_SOUND="sounds/wake_word_triggered.flac"
+# Environment=START_LISTENING_SOUND="sounds/start_listening_button.flac"
 # Environment=TIMER_FINISHED_SOUND="sounds/timer_finished.flac"
 # Environment=PROCESSING_SOUND="sounds/processing.wav"
 # Environment=MUTE_SOUND="sounds/mute_switch_on.flac"
 # Environment=UNMUTE_SOUND="sounds/mute_switch_off.flac"
+# Environment=PERIPHERAL_HOST="0.0.0.0"
+# Environment=PERIPHERAL_PORT="6055"
+# Environment=PERIPHERAL_VOLUME_STEP="%(default)s"
+# Environment=DISABLE_PERIPHERAL_API="1"
 # Environment=ENABLE_OUTPUT_ONLY="1"
 ExecStart=/home/pi/linux-voice-assistant/docker-entrypoint.sh
 # ExecStart=/home/pi/linux-voice-assistant/docker-entrypoint.sh --additional-parameter-if-you-want
@@ -258,20 +265,27 @@ The following variables can be configured in the `.env` or in the service file:
 | `PORT` | `6053` | API server port |
 | `AUDIO_INPUT_DEVICE` | Autodetected | Audio input device name |
 | `AUDIO_OUTPUT_DEVICE` | Autodetected | Audio output device name |
-| `MIC_VOLUME` | Control microphone volume | 1.0 |
+| `MIC_VOLUME` | Control microphone volume | 100 |
 | `MIC_AUTO_GAIN` | Add WebRTC Gain to Mic | 0 |
 | `MIC_NOISE_SUPPRESSION` | Add WebRTC Noise Suppresion to Mic | 0 |
+| `AUDIO_INPUT_CHANNELS` | Number of audio input channels | 2 |
 | `ENABLE_THINKING_SOUND` | false | Set to "1" to enable thinking sound |
 | `WAKE_WORD_DIR` | `app/wakewords` | Path to the wake word directory |
 | `WAKE_MODEL` | `okay_nabu` | Wake word model to use |
 | `STOP_MODEL` | `stop` | Stop model to use |
 | `TIMER_MAX_RING_SECONDS` | `900` | Seconds after which the timer stops ringing |
 | `REFACTORY_SECONDS` | `2` | Refractory period in seconds after wake word |
+| `CONTINUE_CONVERSATION_DELAY` | `0.5` | Delay before mic opens for continued conversation |
 | `WAKEUP_SOUND` | `sounds/wake_word_triggered.flac` | Sound file for wake word triggered |
+| `START_LISTENING_SOUND` | `sounds/start_listening_button.flac` | Sound file for pressing button to talk |
 | `TIMER_FINISHED_SOUND` | `sounds/timer_finished.flac` | Sound file for timer finished |
 | `PROCESSING_SOUND` | `sounds/processing.wav` | Sound file for processing state |
 | `MUTE_SOUND` | `sounds/mute_switch_on.flac` | Sound file for mute on |
 | `UNMUTE_SOUND` | `sounds/mute_switch_off.flac` | Sound file for Configure Audio Devices
+| `PERIPHERAL_HOST` | 0.0.0.0 | Host for the peripheral WebSocket API |
+| `PERIPHERAL_PORT` | 6055 | Port for the peripheral WebSocket API |
+| `PERIPHERAL_VOLUME_STEP` | %(default)s | Volume change per button press |
+| `DISABLE_PERIPHERAL_API` | false | Disable the peripheral WebSocket API |
 | `ENABLE_OUTPUT_ONLY` | (optional) | Set to "1" to enable output-only mode |
 
 
@@ -287,15 +301,25 @@ If you want to use your own sounds, you can add them to the `sounds/custom` aka 
 #### Available Wake Word Models:
 
 The following wake word models are available:
+
+**microWakeWord:**
 - `okay_nabu` - Default wake word
 - `alexa` - Alexa wake word
 - `hey_jarvis` - Jarvis wake word
 - `hey_mycroft` - Mycroft wake word
+- `hey_morgan` - Morgan wake word
 - `hey_luna` - Luna wake word
 - `hey_home_assistant` - Home Assistant wake word
 - `stop` - Stop wake word
 - `okay_computer` - Okay Computer wake word
 - `choo_choo_homie` - Choo Choo Homie wake word
+
+**openWakeWord:**
+- `ok_nabu` - Default wake word
+- `alexa` - Alexa wake word
+- `hey_jarvis` - Jarvis wake word
+- `hey_mycroft` - Mycroft wake word
+- `hey_rhasspy` - Rhasspy wake word
 
 
 ### Custom Wake Word:

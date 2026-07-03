@@ -1,0 +1,17 @@
+[Container]
+# container stuff
+ContainerName=jabra
+Image=ghcr.io/machineonamission/lva-jabra-speak-410:main
+# auto update
+AutoUpdate=registry
+Pull=newer
+
+# usb communication
+AddDevice=/dev/bus/usb
+
+# pipewire (see LVA docs)
+Volume=/run/pipewire:/run/pipewire:ro
+SecurityLabelDisable=true
+GroupAdd=audio
+Environment=XDG_RUNTIME_DIR=/run/pipewire
+Environment=PULSE_SERVER=unix:/run/pipewire/pulse/native
