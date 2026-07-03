@@ -49,13 +49,21 @@ The Jabra Speak 410 has an internal telephony state machine that maps LED patter
 
 ## Button behaviour
 
-| Button | Action |
+### Call button
+Context action — starts listening when idle; dismissed by hang-up gesture during active pipeline.
+
+### Hang-up / flash button
+| Current state | Command sent |
 |---|---|
-| **Call button** | Context action — starts listening when idle; dismissed by hang-up gesture during active pipeline |
-| **Hang-up / flash button** | Stops timer ringing, stops speaking, stops listening |
-| **Mute button** | Toggles microphone mute |
-| **Volume Up** | Controlled by `VOLUME_CONTROL` setting (see configuration) |
-| **Volume Down** | Controlled by `VOLUME_CONTROL` setting (see configuration) |
+| Timer ringing | `stop_timer_ringing` |
+| Wake word / listening / thinking / TTS speaking | `stop_pipeline` |
+| Music / media playing | `stop_media_player` |
+
+### Volume Up/Down buttons
+Controlled by `VOLUME_CONTROL` setting (see configuration). The controller can either adjust the PipeWire sink volume directly, or send `volume_up` / `volume_down` commands to LVA.
+
+### Mute button
+Togges microphone mute. Sends `mute_mic` when unmuted, `unmute_mic` when muted.
 
 > **Mute button caveat:** The Jabra Speak 410 does not expose the mute button state over HID when not in an active call. The controller detects mute by reading the raw audio stream from PipeWire — all-zero audio indicates hardware mute has engaged. This requires PipeWire to be exposed to the container (see installation).
 
