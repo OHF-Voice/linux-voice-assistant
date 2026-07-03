@@ -861,8 +861,8 @@ class VoiceSatelliteProtocol(APIServer):
 
         _LOGGER.debug("Button start_listening triggered")
         self._timer_finished = False
-        self._timer_ring_start = None 
-        _LOGGER.debug("Stopping timer finished sound")    
+        self._timer_ring_start = None
+        _LOGGER.debug("Stopping timer finished sound")
         self._pipeline_active = True
         self.duck()
         self.state.tts_player.play(
