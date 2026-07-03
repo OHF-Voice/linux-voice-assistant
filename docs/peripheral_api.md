@@ -122,7 +122,7 @@ These are all the events LVA emits. Your peripheral script receives them and rea
 |-------|------|-------------|
 | `pipeline_error` | `{"reason": str}` | The voice pipeline failed — for example STT failure or an intent error. Show a brief red error animation (3 flashes, then off). NOT emitted when HA disconnects; see `disconnected` below. |
 | `disconnected` | — | The TCP connection to Home Assistant was lost. Show a "no connection" animation and keep it until you see `zeroconf` with `status: connected`. Note: if LVA itself is not running, your client will see a WebSocket connection failure instead — treat that the same way. |
-| `muted` | — | The microphone has been muted. Show a muted indicator on your LEDs (e.g. red at mic positions). |
+| `muted` | `{"muted": bool}` | The microphone mute state changed. `true` = muted (show a muted indicator on your LEDs, e.g. red at mic positions), `false` = unmuted. Emitted on every transition in both directions, so peripherals can track mute state without inferring it from `idle`. |
 | `zeroconf` | `{"status": "getting_started" \| "connected"}` | Reports LVA's connection lifecycle. `getting_started` is emitted at startup before HA connects; `connected` is emitted once the HA TCP handshake completes. Use `connected` to clear a "no connection" animation. |
 
 ### Timer events
@@ -177,8 +177,8 @@ For HA to see your entity, your peripheral must register before HA enumerates th
 
 | Command | Data | Description |
 |---------|------|-------------|
-| `mute_mic` | — | Mute the microphone. Stops any active pipeline, plays the mute sound, and emits `muted` to all clients. No-op if already muted. |
-| `unmute_mic` | — | Unmute the microphone. Plays the unmute sound and emits `idle`. No-op if already unmuted. |
+| `mute_mic` | — | Mute the microphone. Stops any active pipeline, plays the mute sound, and emits `muted` with `{"muted": true}` to all clients. No-op if already muted. |
+| `unmute_mic` | — | Unmute the microphone. Plays the unmute sound and emits `muted` with `{"muted": false}` followed by `idle`. No-op if already unmuted. |
 
 ### Volume
 
@@ -296,9 +296,13 @@ async def _recv(ws, queue):
         if event in ("snapshot", "idle", "tts_finished", "wake_word_detected",
                      "listening", "thinking", "tts_speaking", "muted",
                      "timer_ticking", "timer_ringing", "media_player_playing"):
-            assist_state = event if event != "snapshot" else ("muted" if data.get("muted") else "idle")
-            if event == "snapshot":
-                muted = data.get("muted", False)
+            if event in ("snapshot", "muted"):
+                # Both carry the mute state; "muted" defaults to true when
+                # sent without data.
+                muted = data.get("muted", event == "muted")
+                assist_state = "muted" if muted else "idle"
+            else:
+                assist_state = event
 
 
 async def _send(ws, queue):

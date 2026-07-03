@@ -870,7 +870,14 @@ class LVAClient:
                 self._state.update(assist_state=AssistState.IDLE)
 
         elif event == "muted":
-            self._state.update(assist_state=AssistState.MUTED, muted=True)
+            # Carries the mic mute state in both directions. Default True so a
+            # bare "muted" event (no data) still reads as muted.
+            muted = data.get("muted", True)
+            self._state.update(muted=muted)
+            if muted:
+                self._state.update(assist_state=AssistState.MUTED)
+            elif self._state.assist_state == AssistState.MUTED:
+                self._state.update(assist_state=AssistState.IDLE)
 
         elif event == "pipeline_error":
             _LOGGER.warning("LVA pipeline error: %s", data.get("reason", ""))

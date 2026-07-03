@@ -36,7 +36,7 @@ Feedback events emitted by LVA
               see a WebSocket connection failure on its end — that is also
               a "disconnected" condition to handle with the same animation.
   idle
-  muted
+  muted                 data: {"muted": true/false}
   timer_ticking   data: {"id": str, "name": str, "total_seconds": int, "seconds_left": int}
   timer_updated   data: {"id": str, "name": str, "total_seconds": int, "seconds_left": int}
   timer_ringing   data: {"id": str, "name": str, "total_seconds": int, "seconds_left": int}
