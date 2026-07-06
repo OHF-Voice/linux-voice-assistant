@@ -106,10 +106,7 @@ def list_output_devices() -> None:
         dev = devices[i]
         if dev["max_output_channels"] > 0:
             default_marker = " (default)" if i == default_output else ""
-            print(
-                f"  [{i}] {dev['name']}{default_marker}\n"
-                f"      Channels: {dev['max_output_channels']}, Sample rate: {dev['default_samplerate']} Hz"
-            )
+            print(f"  [{i}] {dev['name']}{default_marker}\n" f"      Channels: {dev['max_output_channels']}, Sample rate: {dev['default_samplerate']} Hz")
 
     print()
     print("Note: Use --audio-output-device with an MPV device name.")
