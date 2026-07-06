@@ -908,20 +908,6 @@ class VoiceSatelliteProtocol(APIServer):
         self._emit(LVAEvent.TTS_SPEAKING)
         self.state.tts_player.play(self._tts_url, done_callback=self._tts_finished)
 
-    def duck(self) -> None:
-        _LOGGER.debug("Ducking music")
-        self.state.music_player.duck()
-        # Also duck SendSpin streaming audio
-        if self.state.sendspin_bridge:
-            self.state.sendspin_bridge.duck()
-
-    def unduck(self) -> None:
-        _LOGGER.debug("Unducking music")
-        self.state.music_player.unduck()
-        # Also unduck SendSpin streaming audio
-        if self.state.sendspin_bridge:
-            self.state.sendspin_bridge.unduck()
-
     def _tts_finished(self) -> None:
         self._pipeline_active = False
         self.state.active_wake_words.discard(self.state.stop_word.id)
@@ -961,10 +947,16 @@ class VoiceSatelliteProtocol(APIServer):
     def duck(self) -> None:
         _LOGGER.debug("Ducking music")
         self.state.music_player.duck()
+        # Also duck SendSpin streaming audio
+        if self.state.sendspin_bridge:
+            self.state.sendspin_bridge.duck()        
 
     def unduck(self) -> None:
         _LOGGER.debug("Unducking music")
         self.state.music_player.unduck()
+        # Also unduck SendSpin streaming audio
+        if self.state.sendspin_bridge:
+            self.state.sendspin_bridge.unduck()         
 
     # ------------------------------------------------------------------
     # Timer finished loop
