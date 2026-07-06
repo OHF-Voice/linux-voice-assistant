@@ -956,7 +956,7 @@ class VoiceSatelliteProtocol(APIServer):
         self.state.music_player.unduck()
         # Also unduck SendSpin streaming audio
         if self.state.sendspin_bridge:
-            self.state.sendspin_bridge.unduck()     
+            self.state.sendspin_bridge.unduck()
 
     # ------------------------------------------------------------------
     # Timer finished loop
