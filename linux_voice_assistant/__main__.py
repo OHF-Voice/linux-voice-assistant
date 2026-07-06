@@ -538,10 +538,7 @@ async def main() -> None:
         await vsp.state.sendspin_bridge.start(server_url=args.sendspin_url)
 
     loop = asyncio.get_running_loop()
-    server = await loop.create_server(
-        lambda: vsp, host=args.host, port=args.port
-        lambda: VoiceSatelliteProtocol(state), host=host_ip_address, port=args.port
-    )
+    server = await loop.create_server(lambda: vsp, host=host_ip_address, port=args.port)
 
     # Auto discovery (zeroconf, mDNS)
     discovery = HomeAssistantZeroconf(
