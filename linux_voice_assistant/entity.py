@@ -89,7 +89,7 @@ class MediaPlayerEntity(ESPHomeEntity):
         self.announce_player = announce_player
         self.sendspin_bridge: Optional["SendspinBridge"] = None
         self._on_volume_changed = on_volume_changed
-        self.apply_volume_from_state(initial_volume)         
+        self.apply_volume_from_state(initial_volume)  
         self._log = logging.getLogger(f"{self.__class__.__name__}[{self.key}]")
 
     def set_sendspin_bridge(self, bridge: "SendspinBridge") -> None:
