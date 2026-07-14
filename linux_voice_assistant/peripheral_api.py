@@ -83,6 +83,17 @@ Commands accepted from the peripheral container
               back to the peripheral as light_command events. Send
               once after connecting; duplicate registrations for the
               same object_id are ignored.
+  register_presence
+              The peripheral declares that it has a presence/occupancy
+              sensor (e.g. an mmWave radar) and wants it exposed in HA. LVA
+              creates a BinarySensorEntity (visible as
+              binary_sensor.<satellite>_presence, device_class occupancy).
+              Send once after connecting; duplicate registrations are
+              ignored.
+  set_presence      data: {"detected": bool}
+              Push the current presence state. LVA updates the presence
+              BinarySensorEntity and forwards it to Home Assistant. Ignored
+              until register_presence has been sent.
   register_button
               The peripheral declares that it has physical buttons and
               wants a Button Press event entity exposed in HA. LVA
@@ -160,6 +171,8 @@ class LVACommand(str, Enum):
     BUTTON_LONG_PRESS = "button_long_press"
     REGISTER_LIGHT = "register_light"
     REGISTER_BUTTON = "register_button"
+    REGISTER_PRESENCE = "register_presence"
+    SET_PRESENCE = "set_presence"
 
 
 # ---------------------------------------------------------------------------
@@ -463,6 +476,23 @@ class PeripheralAPIServer:
         elif command == LVACommand.REGISTER_BUTTON:
             self._register_button(satellite)
 
+        elif command == LVACommand.REGISTER_PRESENCE:
+            self._register_presence(satellite)
+
+        elif command == LVACommand.SET_PRESENCE:
+            data = msg.get("data") or {}
+            detected = data.get("detected")
+            if not isinstance(detected, bool):
+                _LOGGER.warning(
+                    "Peripheral: invalid 'detected' in set_presence command: %s",
+                    detected,
+                )
+                return
+            if state.presence_sensor_entity is not None:
+                state.presence_sensor_entity.update_state(detected)
+                if satellite is not None:
+                    satellite.send_messages([state.presence_sensor_entity._get_state_message()])  # pylint: disable=protected-access
+
     def _register_light(self, data: Dict[str, Any], satellite: Any) -> None:
         """Register a Light declared by a peripheral.
 
@@ -527,6 +557,28 @@ class PeripheralAPIServer:
 
         if satellite is not None:
             satellite.register_pending_button()
+
+    def _register_presence(self, satellite: Any) -> None:
+        """Register a presence binary sensor declared by a peripheral.
+
+        Idempotent, mirroring _register_button: a reconnecting peripheral's
+        repeat registration is a no-op and the existing entity (and its last
+        state) is preserved. When the satellite is already running the entity
+        is materialised immediately so subsequent set_presence commands route
+        correctly; HA sees it after the integration reloads.
+        """
+        state = self._state
+        if state is None:
+            return
+
+        if state.pending_presence:
+            return
+
+        state.pending_presence = True
+        _LOGGER.info("Presence binary sensor registered by peripheral")
+
+        if satellite is not None:
+            satellite.register_pending_presence()
 
     # ------------------------------------------------------------------
     # Helpers

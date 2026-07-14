@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from pyopen_wakeword import OpenWakeWord
 
     from .entity import (
+        BinarySensorEntity,
         ButtonEventSensorEntity,
         ESPHomeEntity,
         LEDLightEntity,
@@ -128,6 +129,7 @@ class ServerState:
     mute_switch_entity: "Optional[MuteSwitchEntity]" = None
     thinking_sound_entity: "Optional[ThinkingSoundEntity]" = None
     button_event_sensor_entity: "Optional[ButtonEventSensorEntity]" = None
+    presence_sensor_entity: "Optional[BinarySensorEntity]" = None
 
     # Lights declared by peripherals via register_light. Survives HA
     # reconnects so the satellite can rebuild its entities whenever it
@@ -142,6 +144,11 @@ class ServerState:
     # entity when hardware that actually supports button presses is present.
     # Survives HA reconnects so the entity is re-registered automatically.
     pending_button: bool = False
+
+    # True once a peripheral sends register_presence. Gates creation of the
+    # presence BinarySensorEntity so the HA device page only shows it when a
+    # presence sensor is actually present. Survives HA reconnects.
+    pending_presence: bool = False
 
     # Optional peripheral WebSocket API (LEDs, buttons, HAT boards).
     # Assigned in __main__ before the event loop starts.

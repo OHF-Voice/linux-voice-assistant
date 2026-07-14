@@ -1,0 +1,16 @@
+services:
+  mmwave-presence:
+    build: .
+    container_name: mmwave-presence
+    restart: unless-stopped
+    # Reach LVA's peripheral API on the host (default ws://127.0.0.1:6055).
+    network_mode: host
+    # Pass the LD2410 UART through to the container.
+    devices:
+      - "/dev/ttyAMA0:/dev/ttyAMA0"
+    environment:
+      LVA_PERIPHERAL_URL: "ws://127.0.0.1:6055"
+      MMWAVE_PORT: "/dev/ttyAMA0"
+      MMWAVE_BAUD: "115200"
+      MMWAVE_PRESENCE_MAX_CM: "600"
+      MMWAVE_ABSENT_TIMEOUT: "5"

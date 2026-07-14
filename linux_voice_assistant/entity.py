@@ -5,9 +5,11 @@ from typing import Callable, List, Optional, Union
 
 # pylint: disable=no-name-in-module
 from aioesphomeapi.api_pb2 import (  # type: ignore[attr-defined]
+    BinarySensorStateResponse,
     EventResponse,
     LightCommandRequest,
     LightStateResponse,
+    ListEntitiesBinarySensorResponse,
     ListEntitiesEventResponse,
     ListEntitiesLightResponse,
     ListEntitiesMediaPlayerResponse,
@@ -784,6 +786,53 @@ class ButtonEventSensorEntity(ESPHomeEntity):
         )
 
 
+class BinarySensorEntity(ESPHomeEntity):
+    """A binary sensor (e.g. mmWave presence) exposed to Home Assistant.
+
+    A peripheral that owns a presence/occupancy sensor registers this via
+    the peripheral API and then pushes ``True``/``False`` as the sensor
+    detects or clears; the state is mirrored to HA as a binary_sensor.
+    """
+
+    def __init__(
+        self,
+        server: APIServer,
+        key: int,
+        name: str,
+        object_id: str,
+        device_class: str = "occupancy",
+    ) -> None:
+        ESPHomeEntity.__init__(self, server)
+
+        self.key = key
+        self.name = name
+        self.object_id = object_id
+        self.device_class = device_class
+        self._state = False
+        self._log = logging.getLogger(f"{self.__class__.__name__}[{self.key}]")
+
+    def update_state(self, detected: bool) -> None:
+        """Update the detected/cleared state."""
+        self._state = bool(detected)
+        self._log.debug("Binary sensor state updated: %s", self._state)
+
+    def handle_message(self, msg: message.Message) -> Iterable[message.Message]:
+        if isinstance(msg, ListEntitiesRequest):
+            yield ListEntitiesBinarySensorResponse(
+                object_id=self.object_id,
+                key=self.key,
+                name=self.name,
+                device_class=self.device_class,
+            )
+        elif isinstance(msg, SubscribeHomeAssistantStatesRequest):
+            # Unlike an event sensor, False is a valid initial state, so it
+            # is always safe to report the current value on subscribe.
+            yield self._get_state_message()
+
+    def _get_state_message(self) -> BinarySensorStateResponse:
+        return BinarySensorStateResponse(key=self.key, state=self._state)
+
+
 # Backward compatibility export aliases
 __all__ = [
     "ESPHomeEntity",
@@ -792,6 +841,7 @@ __all__ = [
     "ThinkingSoundEntity",
     "LEDLightEntity",
     "ButtonEventSensorEntity",
+    "BinarySensorEntity",
     "WakeWord1SensitivityNumberEntity",
     "WakeWord2SensitivityNumberEntity",
     "StopWordSensitivityNumberEntity",

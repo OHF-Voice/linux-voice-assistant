@@ -165,6 +165,7 @@ For HA to see your entity, your peripheral must register before HA enumerates th
 |---------|------|-------------|
 | `register_light` | `{"name": str, "object_id": str, "effects": [str], "supports_rgb": bool, "supports_brightness": bool}` | Register a Light entity for an LED strip, ring, or single LED. HA exposes it as `light.<satellite>_<object_id>` with on/off, brightness, RGB, and a selectable effect from the declared list. Subsequent HA changes are delivered as `light_command` events. Send once after connecting; repeat registrations for the same `object_id` are idempotent (no-op). Example: `{"command": "register_light", "data": {"name": "LEDs", "object_id": "leds", "effects": ["Voice Assistant"], "supports_rgb": true, "supports_brightness": true}}` |
 | `register_button` | `{"name": Button Press, "button_press_event": str}` | Register a Button entity for a physical button on your peripheral. When the user presses the button in HA, LVA emits a `button_press` event to all connected peripherals. Send once after connecting; repeat registrations for the same `object_id` are idempotent (no-op). Example: `{"command": "register_button"}` |
+| `register_presence` | — | Register a presence/occupancy binary sensor (e.g. an mmWave radar). HA exposes it as `binary_sensor.<satellite>_presence` with `device_class` `occupancy`. Push its state with `set_presence`. Send once after connecting; repeat registrations are idempotent (no-op). Example: `{"command": "register_presence"}` |
 
 ### Voice pipeline
 
@@ -225,6 +226,14 @@ Long press    : button held for ≥1 s
 ```
 
 Your script is responsible for detecting these patterns and sending the appropriate command. See the board-specific examples below for reference implementations.
+
+### Sensor updates (sent to Home Assistant)
+
+Push readings from your peripheral's sensors to Home Assistant. The sensor must be registered first (see [Entity registration](#entity-registration)).
+
+| Command | Data | Description |
+|---------|------|-------------|
+| `set_presence` | `{"detected": bool}` | Update the presence binary sensor registered with `register_presence`. `true` = occupied, `false` = clear. Ignored until `register_presence` has been sent. Example: `{"command": "set_presence", "data": {"detected": true}}` |
 
 ---
 
@@ -327,6 +336,7 @@ The repository ships with ready-to-use peripheral controllers for popular hardwa
 - [ReSpeaker 4-Mic Array HAT](https://github.com/OHF-Voice/linux-voice-assistant/blob/main/examples/ReSpeaker%204mic%20HAT/DOCS.md) — 12 APA102 LEDs + external GPIO buttons; four-microphone circular array
 - [ReSpeaker Mic Array v2.0 (USB)](https://github.com/OHF-Voice/linux-voice-assistant/blob/main/examples/ReSpeaker%20Mic%20Array%20v2.0%20(USB)/DOCS.md) — 12 APA102 LEDs driven over USB HID; plug-and-play, no GPIO required
 - [Jabra Speak 410](https://github.com/OHF-Voice/linux-voice-assistant/blob/main/examples/Jabra%20Speak%20410/DOCS.md) — USB speakerphone with hardware button integration
+- [mmWave Presence (LD2410)](https://github.com/OHF-Voice/linux-voice-assistant/blob/main/examples/mmWave%20presence%20(LD2410)/DOCS.md) — LD2410 24 GHz radar on the Pi UART; exposes a presence `binary_sensor` to Home Assistant
 
 ---
 

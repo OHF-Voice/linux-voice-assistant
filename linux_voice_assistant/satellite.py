@@ -50,6 +50,7 @@ from pyopen_wakeword import OpenWakeWord
 
 from .api_server import APIServer
 from .entity import (
+    BinarySensorEntity,
     ButtonEventSensorEntity,
     LEDLightEntity,
     MediaPlayerEntity,
@@ -334,6 +335,9 @@ class VoiceSatelliteProtocol(APIServer):
         # button support before this satellite was constructed (e.g. on an HA
         # reconnect while the peripheral container stayed connected to LVA).
         self.register_pending_button()
+        # Materialise the presence BinarySensorEntity if a peripheral already
+        # registered a presence sensor before this satellite was constructed.
+        self.register_pending_presence()
 
         # ---- Instance variables ----
 
@@ -429,6 +433,36 @@ class VoiceSatelliteProtocol(APIServer):
         self.state.entities.append(entity)
         self.state.button_event_sensor_entity = entity
         _LOGGER.info("Button event sensor entity materialised")
+
+    def register_pending_presence(self) -> None:
+        """Materialise the presence BinarySensorEntity once registered.
+
+        Mirrors register_pending_button: called from __init__ (handles HA
+        reconnects where the peripheral stayed connected) and from
+        PeripheralAPIServer._register_presence() when the command arrives at
+        runtime. Idempotent — an existing entity is only reattached.
+        """
+        if not self.state.pending_presence:
+            return
+
+        if self.state.presence_sensor_entity is not None:
+            # Already materialised — reattach the server in case the satellite
+            # has been reconstructed for an HA reconnect.
+            self.state.presence_sensor_entity.server = self
+            if self.state.presence_sensor_entity not in self.state.entities:
+                self.state.entities.append(self.state.presence_sensor_entity)
+            return
+
+        entity = BinarySensorEntity(
+            server=self,
+            key=len(self.state.entities),
+            name="Presence",
+            object_id="presence",
+            device_class="occupancy",
+        )
+        self.state.entities.append(entity)
+        self.state.presence_sensor_entity = entity
+        _LOGGER.info("Presence binary sensor entity materialised")
 
     def _on_led_light_changed(self, object_id: str) -> None:
         """Forward an HA Light entity change to peripherals as light_command.
