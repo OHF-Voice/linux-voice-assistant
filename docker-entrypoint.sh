@@ -40,6 +40,10 @@ if [ -n "${AUDIO_OUTPUT_DEVICE}" ]; then
   EXTRA_ARGS+=( "--audio-output-device" "$AUDIO_OUTPUT_DEVICE" )
 fi
 
+if [ -n "${MUSIC_OUTPUT_DEVICE}" ]; then
+  EXTRA_ARGS+=( "--music-output-device" "$MUSIC_OUTPUT_DEVICE" )
+fi
+
 if [ -n "${MIC_VOLUME}" ]; then
   EXTRA_ARGS+=( "--mic-volume" "$MIC_VOLUME" )
 fi
