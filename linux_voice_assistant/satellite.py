@@ -1035,7 +1035,7 @@ class VoiceSatelliteProtocol(APIServer):
             except Exception:  # pragma: no cover - defensive safety net
                 _LOGGER.exception("Failed to stop TTS player during disconnect")
 
-            self.state.stop_word.is_active = False
+            self.state.stop_word.is_active = False  # type: ignore[attr-defined]
             self.state.connected = False
 
         if self.state.satellite is self:
