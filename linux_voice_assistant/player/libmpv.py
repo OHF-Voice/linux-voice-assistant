@@ -32,6 +32,9 @@ class LibMpvPlayer(AudioPlayer):
             audio_display=False,
             log_handler=self._on_mpv_log,
             loglevel="error",
+            cache="yes",
+            demuxer_max_bytes="32MiB",
+            cache_secs="20",
         )
 
         if device:
@@ -51,11 +54,6 @@ class LibMpvPlayer(AudioPlayer):
         # penalty entirely, so back-to-back short sounds (wakeup → TTS, mute →
         # unmute) never lose their first samples regardless of system load.
         self._mpv["audio-stream-silence"] = True
-
-        # Limit cache size to prevent excessive memory usage during network streaming.
-        # 65536 KiB = 64 MiB. Adjust as needed.
-        self._mpv["cache"] = True
-        self._mpv["cache-size"] = 65536
 
         # Callback Handling
         self._done_callback: Optional[Callable[[], None]] = None
