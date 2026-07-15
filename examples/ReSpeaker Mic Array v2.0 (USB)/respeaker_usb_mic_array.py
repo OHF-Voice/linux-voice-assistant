@@ -193,11 +193,14 @@ class USBLEDRing:
     This is the same protocol used by Seeed's pixel_ring library.
     """
 
-    # USB control transfer parameters (from XMOS firmware)
-    _CTRL_TIMEOUT   = 100   # ms
+    # USB control transfer parameters matching the pixel_ring reference implementation.
+    # _CTRL_TYPE_OUT = 0x40: bmRequestType = CTRL_OUT | CTRL_TYPE_VENDOR | CTRL_RECIPIENT_DEVICE.
+    # Recipient is "device" (bits 4:0 = 0x00), so no interface needs to be claimed
+    # and the kernel audio driver must NOT be detached.
+    _CTRL_TIMEOUT   = 8000  # ms
     _CTRL_REQUEST   = 0
     _CTRL_VALUE     = 0x0001
-    _CTRL_INDEX     = 0x8001
+    _CTRL_INDEX     = 0x1C
     _CTRL_TYPE_OUT  = 0x40  # vendor, device, host-to-device
 
     def __init__(self) -> None:
