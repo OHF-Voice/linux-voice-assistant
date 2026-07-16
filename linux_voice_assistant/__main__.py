@@ -18,7 +18,7 @@ from getmac import get_mac_address  # type: ignore
 from pymicro_wakeword import MicroWakeWord, MicroWakeWordFeatures
 from pyopen_wakeword import OpenWakeWord, OpenWakeWordFeatures
 
-from .models import Preferences, ServerState
+from .models import Preferences, ServerState, WakeWordType
 from .mpv_player import MpvMediaPlayer
 from .peripheral_api import LVAEvent, PeripheralAPIServer
 from .satellite import VoiceSatelliteProtocol
@@ -322,6 +322,25 @@ async def main() -> None:
 
     # Load available wake words
     wake_word_dirs = [Path(ww_dir) for ww_dir in args.wake_word_dir]
+
+    # If the operator explicitly pointed --wake-word-dir (or the WAKE_WORD_DIR
+    # env var) at the openWakeWord subdirectory, prefer resolving --wake-model
+    # to an openWakeWord model of the same name instead of a same-named
+    # microWakeWord one. Checked before the automatic dirs below are appended,
+    # since those always include the openWakeWord path and would otherwise
+    # make every configuration look like an openWakeWord preference.
+    preferred_wake_word_type = WakeWordType.OPEN_WAKE_WORD if any("openwakeword" in str(ww_dir).lower() for ww_dir in wake_word_dirs) else None
+
+    # openWakeWord models ship in their own subdirectory under the default
+    # wakewords dir. find_available_wake_words() only globs the top level of
+    # each directory it's given, so this must be added explicitly or the OWW
+    # models never get discovered (and never show up in the HA dropdown).
+    # Appended after the user-specified dirs so OWW entries are inserted
+    # (and therefore displayed) after the microWakeWord ones.
+    oww_dir = _WAKEWORDS_DIR / "openWakeWord"
+    if oww_dir not in wake_word_dirs:
+        wake_word_dirs.append(oww_dir)
+
     wake_word_dirs.append(args.download_dir / "external_wake_words")
     available_wake_words = find_available_wake_words(wake_word_dirs, args.stop_model)
 
@@ -359,7 +378,12 @@ async def main() -> None:
         preferences.mic_noise_suppression = args.mic_noise_suppression
 
     # Load wake/stop models
-    wake_models, active_wake_words, fallback_used = load_wake_models(available_wake_words, [word for word in preferences.active_wake_words if word is not None], args.wake_model)
+    wake_models, active_wake_words, fallback_used = load_wake_models(
+        available_wake_words,
+        [word for word in preferences.active_wake_words if word is not None],
+        args.wake_model,
+        preferred_type=preferred_wake_word_type,
+    )
 
     # TODO: allow openWakeWord for "stop"
     stop_model = load_stop_model(wake_word_dirs, args.stop_model)
