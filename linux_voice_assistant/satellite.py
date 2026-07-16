@@ -25,7 +25,6 @@ from aioesphomeapi.api_pb2 import (  # type: ignore[attr-defined]
     NumberCommandRequest,
     SelectCommandRequest,
     SubscribeHomeAssistantStatesRequest,
-    SubscribeStatesRequest,
     SwitchCommandRequest,
     VoiceAssistantAnnounceFinished,
     VoiceAssistantAnnounceRequest,
@@ -658,12 +657,7 @@ class VoiceSatelliteProtocol(APIServer):
                 model="Linux Voice Assistant",
                 voice_assistant_feature_flags=self.supported_features,
             )
-        elif isinstance(msg, SubscribeStatesRequest):
-            # Standard ESPHome state subscription. Replay current entity state to
-            # the subscribing client. (Entities answer SubscribeHomeAssistantStatesRequest;
-            # initial state was previously only sent as a side effect of auth.)
-            for entity in self.state.entities:
-                yield from entity.handle_message(SubscribeHomeAssistantStatesRequest())
+
         elif isinstance(
             msg,
             (ListEntitiesRequest, SubscribeHomeAssistantStatesRequest, MediaPlayerCommandRequest, SwitchCommandRequest, NumberCommandRequest, SelectCommandRequest, LightCommandRequest),
@@ -993,13 +987,6 @@ class VoiceSatelliteProtocol(APIServer):
             ),
         )
 
-    def connection_made(self, transport) -> None:
-        super().connection_made(transport)
-        # Track every live connection so asynchronous entity-state changes can be
-        # broadcast to all of them (see ServerState.broadcast).
-        if self not in self.state.connections:
-            self.state.connections.append(self)
-
     # ------------------------------------------------------------------
     # Connection lifecycle
     # ------------------------------------------------------------------
@@ -1015,29 +1002,19 @@ class VoiceSatelliteProtocol(APIServer):
         self._timer_finished = False
         self._pipeline_active = False
 
-        # Deregister this connection.
-        if self in self.state.connections:
-            self.state.connections.remove(self)
+        # Stop any ongoing audio playback and wake/stop word processing.
+        try:
+            self.state.music_player.stop()
+        except Exception:  # pylint: disable=broad-except
+            _LOGGER.exception("Failed to stop music player during disconnect")
 
-        # Only tear down shared playback/state when the LAST client disconnects.
-        # Otherwise a secondary client (a diagnostic tool, a second dashboard, or
-        # Home Assistant's own overlapping reconnect) dropping would stop audio
-        # that belongs to a client still connected.
-        if not self.state.connections:
-            # Stop any ongoing audio playback and wake/stop word processing.
-            try:
-                self.state.music_player.stop()
-            except Exception:  # pragma: no cover - defensive safety net
-                _LOGGER.exception("Failed to stop music player during disconnect")
+        try:
+            self.state.tts_player.stop()
+        except Exception:  # pylint: disable=broad-except
+            _LOGGER.exception("Failed to stop TTS player during disconnect")
 
-            try:
-                self.state.tts_player.stop()
-            except Exception:  # pragma: no cover - defensive safety net
-                _LOGGER.exception("Failed to stop TTS player during disconnect")
-
-            self.state.stop_word.is_active = False
-            self.state.connected = False
-
+        self.state.stop_word.is_active = False  # type: ignore[attr-defined]
+        self.state.connected = False
         if self.state.satellite is self:
             self.state.satellite = None
 
