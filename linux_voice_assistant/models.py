@@ -2,6 +2,7 @@
 
 import json
 import logging
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass, field
 from enum import Enum
 from pathlib import Path
@@ -9,6 +10,7 @@ from queue import Queue
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Union
 
 if TYPE_CHECKING:
+    from google.protobuf import message
     from pymicro_wakeword import MicroWakeWord
     from pyopen_wakeword import OpenWakeWord
 
@@ -125,6 +127,7 @@ class ServerState:
 
     media_player_entity: "Optional[MediaPlayerEntity]" = None
     satellite: "Optional[VoiceSatelliteProtocol]" = None
+    connections: "List[VoiceSatelliteProtocol]" = field(default_factory=list)
     mute_switch_entity: "Optional[MuteSwitchEntity]" = None
     thinking_sound_entity: "Optional[ThinkingSoundEntity]" = None
     button_event_sensor_entity: "Optional[ButtonEventSensorEntity]" = None
@@ -171,6 +174,21 @@ class ServerState:
     mic_volume: int = 100  # 1–100, default maximum
     audio_input_channels: int = 2  # number of mic channels to stream
     timer_max_ring_seconds: float = 900.0
+
+    def broadcast(self, msgs: "Iterable[message.Message]") -> None:
+        """Send messages to every connected API client.
+
+        Entity state changes that happen asynchronously (not in response to a
+        request) must reach *all* subscribed clients, not just whichever
+        connection happens to be referenced by an entity's ``server``. Without
+        this fan-out a second API client leaves Home Assistant stuck on a stale
+        state (e.g. ``playing`` after playback has finished).
+        """
+        messages = list(msgs)
+        if not messages:
+            return
+        for connection in list(self.connections):
+            connection.send_messages(messages)
 
     def save_preferences(self) -> None:
         """Save preferences as JSON."""

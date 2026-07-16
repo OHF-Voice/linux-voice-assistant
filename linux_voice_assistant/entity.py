@@ -89,6 +89,19 @@ class MediaPlayerEntity(ESPHomeEntity):
         self.apply_volume_from_state(initial_volume)
         self._log = logging.getLogger(f"{self.__class__.__name__}[{self.key}]")
 
+    def _broadcast_state(self, msgs: Iterable[message.Message]) -> None:
+        """Push an asynchronous state change to all connected clients.
+
+        Playback-completion callbacks fire outside any request, so the update
+        must reach every subscribed client rather than the single connection in
+        ``self.server`` (which may belong to another client, or be closed).
+        """
+        state = getattr(self.server, "state", None)
+        if state is not None:
+            state.broadcast(msgs)
+        else:  # pragma: no cover - no ServerState (e.g. a bare APIServer)
+            self.server.send_messages(msgs)
+
     def play(
         self,
         url: Union[str, List[str]],
@@ -109,7 +122,7 @@ class MediaPlayerEntity(ESPHomeEntity):
                 self.announce_player.play(
                     url,
                     done_callback=lambda: call_all(
-                        self.server.send_messages([self._update_state(MediaPlayerState.IDLE)]),
+                        lambda: self._broadcast_state([self._update_state(MediaPlayerState.IDLE)]),
                         done_callback,
                     ),
                 )
@@ -119,7 +132,7 @@ class MediaPlayerEntity(ESPHomeEntity):
             self.music_player.play(
                 url,
                 done_callback=lambda: call_all(
-                    self.server.send_messages([self._update_state(MediaPlayerState.IDLE)]),
+                    lambda: self._broadcast_state([self._update_state(MediaPlayerState.IDLE)]),
                     done_callback,
                 ),
             )
