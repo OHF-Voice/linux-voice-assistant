@@ -1,54 +1,17 @@
 """Unit tests for shared models."""
 
 import json
+from unittest.mock import patch
+
 import pytest
-from dataclasses import asdict
-from pathlib import Path
-from queue import Queue
-from unittest.mock import MagicMock, patch
 
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
+from tests.unit.conftest import make_state as make_server_state
 
 
 def make_preferences(**kwargs):
     from linux_voice_assistant.models import Preferences
+
     return Preferences(**kwargs)
-
-
-def make_server_state(tmp_path, **kwargs):
-    """Build a minimal ServerState with all required fields mocked out."""
-    from linux_voice_assistant.models import Preferences, ServerState
-
-    defaults = dict(
-        name="lva-test",
-        friendly_name="LVA Test",
-        mac_address="aa:bb:cc:dd:ee:ff",
-        ip_address="192.168.1.100",
-        network_interface="eth0",
-        version="1.0.0",
-        esphome_version="42.0.0",
-        audio_queue=Queue(),
-        entities=[],
-        available_wake_words={},
-        wake_words={},
-        active_wake_words=set(),
-        stop_word=MagicMock(),
-        music_player=MagicMock(),
-        tts_player=MagicMock(),
-        wakeup_sound="/sounds/wake.flac",
-        processing_sound="/sounds/processing.wav",
-        timer_finished_sound="/sounds/timer.flac",
-        mute_sound="/sounds/mute.flac",
-        unmute_sound="/sounds/unmute.flac",
-        preferences=Preferences(),
-        preferences_path=tmp_path / "preferences.json",
-        download_dir=tmp_path / "downloads",
-    )
-    defaults.update(kwargs)
-    return ServerState(**defaults)
 
 
 # ---------------------------------------------------------------------------
@@ -59,14 +22,17 @@ def make_server_state(tmp_path, **kwargs):
 class TestWakeWordType:
     def test_micro_value(self):
         from linux_voice_assistant.models import WakeWordType
+
         assert WakeWordType.MICRO_WAKE_WORD == "micro"
 
     def test_open_wake_word_value(self):
         from linux_voice_assistant.models import WakeWordType
+
         assert WakeWordType.OPEN_WAKE_WORD == "openWakeWord"
 
     def test_is_string_enum(self):
         from linux_voice_assistant.models import WakeWordType
+
         assert isinstance(WakeWordType.MICRO_WAKE_WORD, str)
 
 
@@ -146,6 +112,7 @@ class TestSavePreferences:
 
     def test_saved_values_match_preferences(self, tmp_path):
         from linux_voice_assistant.models import Preferences
+
         prefs = Preferences(volume=0.75, mic_auto_gain=3, mic_noise_suppression=1)
         state = make_server_state(tmp_path, preferences=prefs)
         state.save_preferences()
@@ -197,6 +164,7 @@ class TestPersistVolume:
 
     def test_skips_save_when_volume_unchanged(self, tmp_path):
         from linux_voice_assistant.models import Preferences
+
         prefs = Preferences(volume=0.5)
         state = make_server_state(tmp_path, preferences=prefs, volume=0.5)
 
@@ -206,6 +174,7 @@ class TestPersistVolume:
 
     def test_saves_when_volume_changed(self, tmp_path):
         from linux_voice_assistant.models import Preferences
+
         prefs = Preferences(volume=0.5)
         state = make_server_state(tmp_path, preferences=prefs, volume=0.5)
 

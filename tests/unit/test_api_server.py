@@ -1,20 +1,18 @@
 """Unit tests for APIServer packet parsing and message handling."""
 
-import pytest
-from unittest.mock import MagicMock, patch, call
-import asyncio
+from unittest.mock import MagicMock, patch
 
-from aioesphomeapi.api_pb2 import (
+from aioesphomeapi._frame_helper.packets import make_plain_text_packets
+from aioesphomeapi.api_pb2 import (  # type: ignore[attr-defined]
+    AuthenticationRequest,
+    AuthenticationResponse,
+    DisconnectRequest,
+    DisconnectResponse,
     HelloRequest,
     HelloResponse,
     PingRequest,
     PingResponse,
-    DisconnectRequest,
-    DisconnectResponse,
-    AuthenticationRequest,
-    AuthenticationResponse,
 )
-from aioesphomeapi._frame_helper.packets import make_plain_text_packets
 from aioesphomeapi.core import MESSAGE_TYPE_TO_PROTO
 
 PROTO_TO_MESSAGE_TYPE = {v: k for k, v in MESSAGE_TYPE_TO_PROTO.items()}
@@ -119,7 +117,7 @@ def get_sent_messages(server):
                 bitpos += 7
 
             # payload
-            payload = raw[pos:pos + length]
+            payload = raw[pos : pos + length]
             pos += length
 
             msg_cls = MESSAGE_TYPE_TO_PROTO[msg_type]
@@ -140,6 +138,7 @@ class TestConnection:
         class _Concrete(APIServer):
             def __init__(self):
                 super().__init__("test")
+
             def handle_message(self, msg):
                 return []
 
@@ -265,7 +264,7 @@ class TestBufferManagement:
         server = make_server()
         full = make_packet(PingRequest())
         # Send only half the packet
-        server.data_received(full[:len(full) // 2])
+        server.data_received(full[: len(full) // 2])
         assert server._buffer is not None
 
     def test_split_packet_reassembled_correctly(self):

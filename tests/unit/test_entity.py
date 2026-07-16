@@ -1,7 +1,24 @@
 """Unit tests for ESPHome entity classes."""
 
-import pytest
-from unittest.mock import MagicMock, call
+from unittest.mock import MagicMock
+
+from aioesphomeapi.api_pb2 import (  # type: ignore[attr-defined]
+    ListEntitiesMediaPlayerResponse,
+    ListEntitiesNumberResponse,
+    ListEntitiesRequest,
+    ListEntitiesSelectResponse,
+    ListEntitiesSwitchResponse,
+    MediaPlayerCommandRequest,
+    MediaPlayerStateResponse,
+    NumberCommandRequest,
+    NumberStateResponse,
+    SelectCommandRequest,
+    SelectStateResponse,
+    SubscribeHomeAssistantStatesRequest,
+    SwitchCommandRequest,
+    SwitchStateResponse,
+)
+from aioesphomeapi.model import MediaPlayerCommand, MediaPlayerState
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -17,6 +34,7 @@ def make_server():
 
 def make_media_player(server=None, key=1, initial_volume=1.0):
     from linux_voice_assistant.entity import MediaPlayerEntity
+
     server = server or make_server()
     return MediaPlayerEntity(
         server=server,
@@ -31,6 +49,7 @@ def make_media_player(server=None, key=1, initial_volume=1.0):
 
 def make_mute_switch(server=None, key=2, initial_muted=False):
     from linux_voice_assistant.entity import MuteSwitchEntity
+
     server = server or make_server()
     get_muted = MagicMock(return_value=initial_muted)
     set_muted = MagicMock()
@@ -49,6 +68,7 @@ def make_mute_switch(server=None, key=2, initial_muted=False):
 
 def make_mic_setting(server=None, key=3, options=None, value=0.0):
     from linux_voice_assistant.entity import MicSettingEntity
+
     server = server or make_server()
     get_value = MagicMock(return_value=value)
     set_value = MagicMock()
@@ -66,29 +86,6 @@ def make_mic_setting(server=None, key=3, options=None, value=0.0):
     entity._get_value_mock = get_value
     entity._set_value_mock = set_value
     return entity
-
-
-# ---------------------------------------------------------------------------
-# Import proto message types once
-# ---------------------------------------------------------------------------
-
-from aioesphomeapi.api_pb2 import (
-    ListEntitiesRequest,
-    ListEntitiesMediaPlayerResponse,
-    ListEntitiesSelectResponse,
-    ListEntitiesNumberResponse,
-    ListEntitiesSwitchResponse,
-    MediaPlayerCommandRequest,
-    MediaPlayerStateResponse,
-    NumberCommandRequest,
-    NumberStateResponse,
-    SelectCommandRequest,
-    SelectStateResponse,
-    SubscribeHomeAssistantStatesRequest,
-    SwitchCommandRequest,
-    SwitchStateResponse,
-)
-from aioesphomeapi.model import MediaPlayerCommand, MediaPlayerState
 
 
 # ---------------------------------------------------------------------------

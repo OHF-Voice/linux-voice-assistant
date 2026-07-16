@@ -1,8 +1,6 @@
 """Unit tests for MpvMediaPlayer."""
 
-import pytest
-from unittest.mock import MagicMock, patch, call
-
+from unittest.mock import MagicMock, patch
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -18,6 +16,7 @@ def make_player(device=None):
 
     with patch("linux_voice_assistant.mpv_player.LibMpvPlayer", return_value=mock_lib_player):
         from linux_voice_assistant.mpv_player import MpvMediaPlayer
+
         player = MpvMediaPlayer(device=device)
         player._mock = mock_lib_player
         return player
@@ -33,6 +32,7 @@ class TestInit:
         with patch("linux_voice_assistant.mpv_player.LibMpvPlayer") as mock_cls:
             mock_cls.return_value = MagicMock()
             from linux_voice_assistant.mpv_player import MpvMediaPlayer
+
             MpvMediaPlayer(device="hw:1,0")
             mock_cls.assert_called_once_with(device="hw:1,0")
 
@@ -40,6 +40,7 @@ class TestInit:
         with patch("linux_voice_assistant.mpv_player.LibMpvPlayer") as mock_cls:
             mock_cls.return_value = MagicMock()
             from linux_voice_assistant.mpv_player import MpvMediaPlayer
+
             MpvMediaPlayer(device=None)
             mock_cls.assert_called_once_with(device=None)
 
@@ -98,6 +99,7 @@ class TestPlay:
 
     def test_play_while_active_stops_previous(self):
         from linux_voice_assistant.player.state import PlayerState
+
         player = make_player()
         player._done_callback = MagicMock()  # simulate active playback
         player._mock.state.return_value = PlayerState.PLAYING
@@ -107,6 +109,7 @@ class TestPlay:
 
     def test_play_while_idle_does_not_stop(self):
         from linux_voice_assistant.player.state import PlayerState
+
         player = make_player()
         player._mock.state.return_value = PlayerState.IDLE
         player._done_callback = None
@@ -198,24 +201,28 @@ class TestPauseResumeStop:
 class TestIsPlaying:
     def test_true_when_playing(self):
         from linux_voice_assistant.player.state import PlayerState
+
         player = make_player()
         player._mock.state.return_value = PlayerState.PLAYING
         assert player.is_playing is True
 
     def test_true_when_paused(self):
         from linux_voice_assistant.player.state import PlayerState
+
         player = make_player()
         player._mock.state.return_value = PlayerState.PAUSED
         assert player.is_playing is True
 
     def test_true_when_loading(self):
         from linux_voice_assistant.player.state import PlayerState
+
         player = make_player()
         player._mock.state.return_value = PlayerState.LOADING
         assert player.is_playing is True
 
     def test_false_when_idle(self):
         from linux_voice_assistant.player.state import PlayerState
+
         player = make_player()
         player._mock.state.return_value = PlayerState.IDLE
         assert player.is_playing is False

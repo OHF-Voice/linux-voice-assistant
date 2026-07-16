@@ -1,78 +1,10 @@
 """Unit tests for VoiceSatelliteProtocol logic."""
 
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import MagicMock, patch, call
-from queue import Queue
-from pathlib import Path
 
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
-def make_state(tmp_path=None):
-    """Build a minimal ServerState with all fields mocked."""
-    from linux_voice_assistant.models import Preferences, ServerState, WakeWordType, AvailableWakeWord
-
-    if tmp_path is None:
-        import tempfile
-        tmp_path = Path(tempfile.mkdtemp())
-
-    stop_word = MagicMock()
-    stop_word.id = "stop"
-    stop_word.is_active = False
-
-    prefs = Preferences()
-
-    state = ServerState(
-        name="lva-test",
-        friendly_name="LVA Test",
-        mac_address="aa:bb:cc:dd:ee:ff",
-        ip_address="192.168.1.1",
-        network_interface="eth0",
-        version="1.0.0",
-        esphome_version="42.0.0",
-        audio_queue=Queue(),
-        entities=[],
-        available_wake_words={},
-        wake_words={},
-        active_wake_words=set(),
-        stop_word=stop_word,
-        music_player=MagicMock(),
-        tts_player=MagicMock(),
-        wakeup_sound="/sounds/wake.flac",
-        processing_sound="/sounds/processing.wav",
-        timer_finished_sound="/sounds/timer.flac",
-        mute_sound="/sounds/mute.flac",
-        unmute_sound="/sounds/unmute.flac",
-        preferences=prefs,
-        preferences_path=tmp_path / "preferences.json",
-        download_dir=tmp_path / "downloads",
-        volume=1.0,
-        mic_volume=100,
-        mic_auto_gain=0,
-        mic_noise_suppression=0,
-    )
-    return state
-
-
-def make_satellite(tmp_path=None):
-    """Build a VoiceSatelliteProtocol with all heavy dependencies mocked."""
-    state = make_state(tmp_path)
-
-    # Mock the sensitivity entity classes so __init__ doesn't blow up
-    with patch("linux_voice_assistant.satellite.WakeWord1SensitivityNumberEntity", MagicMock()), \
-         patch("linux_voice_assistant.satellite.WakeWord2SensitivityNumberEntity", MagicMock()), \
-         patch("linux_voice_assistant.satellite.StopWordSensitivityNumberEntity", MagicMock()):
-        from linux_voice_assistant.satellite import VoiceSatelliteProtocol
-        satellite = VoiceSatelliteProtocol(state)
-
-    # Attach mock transport so send_messages works
-    satellite._writelines = MagicMock()
-    satellite._loop = None
-    return satellite
-
+from tests.unit.conftest import make_satellite, make_state
 
 # ---------------------------------------------------------------------------
 # Initialization
@@ -90,36 +22,42 @@ class TestInit:
 
     def test_media_player_entity_created(self, tmp_path):
         from linux_voice_assistant.entity import MediaPlayerEntity
+
         sat = make_satellite(tmp_path)
         assert sat.state.media_player_entity is not None
         assert isinstance(sat.state.media_player_entity, MediaPlayerEntity)
 
     def test_mute_switch_entity_created(self, tmp_path):
         from linux_voice_assistant.entity import MuteSwitchEntity
+
         sat = make_satellite(tmp_path)
         assert sat.state.mute_switch_entity is not None
         assert isinstance(sat.state.mute_switch_entity, MuteSwitchEntity)
 
     def test_thinking_sound_entity_created(self, tmp_path):
         from linux_voice_assistant.entity import ThinkingSoundEntity
+
         sat = make_satellite(tmp_path)
         assert sat.state.thinking_sound_entity is not None
         assert isinstance(sat.state.thinking_sound_entity, ThinkingSoundEntity)
 
     def test_mic_gain_entity_created(self, tmp_path):
         from linux_voice_assistant.entity import MicSettingEntity
+
         sat = make_satellite(tmp_path)
         assert sat.state.mic_gain_entity is not None
         assert isinstance(sat.state.mic_gain_entity, MicSettingEntity)
 
     def test_mic_noise_entity_created(self, tmp_path):
         from linux_voice_assistant.entity import MicSettingEntity
+
         sat = make_satellite(tmp_path)
         assert sat.state.mic_noise_suppression_entity is not None
         assert isinstance(sat.state.mic_noise_suppression_entity, MicSettingEntity)
 
     def test_mic_volume_entity_created(self, tmp_path):
         from linux_voice_assistant.entity import MicSettingEntity
+
         sat = make_satellite(tmp_path)
         assert sat.state.mic_volume_entity is not None
         assert isinstance(sat.state.mic_volume_entity, MicSettingEntity)
@@ -137,27 +75,33 @@ class TestInit:
         assert sat.state.muted is False
 
     def test_thinking_sound_loaded_from_preferences(self, tmp_path):
-        from linux_voice_assistant.models import Preferences
         state = make_state(tmp_path)
         state.preferences.thinking_sound = 1
 
-        with patch("linux_voice_assistant.satellite.WakeWord1SensitivityNumberEntity", MagicMock()), \
-             patch("linux_voice_assistant.satellite.WakeWord2SensitivityNumberEntity", MagicMock()), \
-             patch("linux_voice_assistant.satellite.StopWordSensitivityNumberEntity", MagicMock()):
+        with (
+            patch("linux_voice_assistant.satellite.WakeWord1SensitivityNumberEntity", MagicMock()),
+            patch("linux_voice_assistant.satellite.WakeWord2SensitivityNumberEntity", MagicMock()),
+            patch("linux_voice_assistant.satellite.StopWordSensitivityNumberEntity", MagicMock()),
+        ):
             from linux_voice_assistant.satellite import VoiceSatelliteProtocol
+
             sat = VoiceSatelliteProtocol(state)
 
         assert sat.state.thinking_sound_enabled is True
 
     def test_output_only_sets_limited_features(self, tmp_path):
         from aioesphomeapi.model import VoiceAssistantFeature
+
         state = make_state(tmp_path)
         state.output_only = True
 
-        with patch("linux_voice_assistant.satellite.WakeWord1SensitivityNumberEntity", MagicMock()), \
-             patch("linux_voice_assistant.satellite.WakeWord2SensitivityNumberEntity", MagicMock()), \
-             patch("linux_voice_assistant.satellite.StopWordSensitivityNumberEntity", MagicMock()):
+        with (
+            patch("linux_voice_assistant.satellite.WakeWord1SensitivityNumberEntity", MagicMock()),
+            patch("linux_voice_assistant.satellite.WakeWord2SensitivityNumberEntity", MagicMock()),
+            patch("linux_voice_assistant.satellite.StopWordSensitivityNumberEntity", MagicMock()),
+        ):
             from linux_voice_assistant.satellite import VoiceSatelliteProtocol
+
             sat = VoiceSatelliteProtocol(state)
 
         assert sat.supported_features & VoiceAssistantFeature.VOICE_ASSISTANT == 0

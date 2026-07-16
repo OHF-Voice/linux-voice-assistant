@@ -1,8 +1,8 @@
 """Unit tests for WebRTCProcessor."""
 
-import pytest
 from unittest.mock import MagicMock, patch
 
+import pytest
 
 # ---------------------------------------------------------------------------
 # Helpers / fixtures
@@ -121,8 +121,8 @@ class TestProcessBuffering:
 
     def test_multiple_process_calls_accumulate_buffer(self, processor):
         """Remainder from first call is used in second call."""
-        processor.process(make_audio(200))   # 200 buffered, no flush
-        processor.process(make_audio(200))   # 400 total, 1 flush, 80 remain
+        processor.process(make_audio(200))  # 200 buffered, no flush
+        processor.process(make_audio(200))  # 400 total, 1 flush, 80 remain
         assert processor._mock_apm.Process10ms.call_count == 1
         assert len(processor._buffer) == 80
 

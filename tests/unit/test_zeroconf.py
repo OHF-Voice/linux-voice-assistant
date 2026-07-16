@@ -1,8 +1,8 @@
 """Unit tests for HomeAssistantZeroconf."""
 
-import pytest
-from unittest.mock import MagicMock, patch, AsyncMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -22,6 +22,7 @@ def make_zeroconf(**kwargs):
         mock_zc = MagicMock()
         mock_zc_cls.return_value = mock_zc
         from linux_voice_assistant.zeroconf import HomeAssistantZeroconf
+
         instance = HomeAssistantZeroconf(**defaults)
         instance._mock_zc = mock_zc
         instance._mock_zc_cls = mock_zc_cls
@@ -53,6 +54,7 @@ class TestInit:
     def test_name_defaults_to_mac_when_not_provided(self):
         with patch("linux_voice_assistant.zeroconf.AsyncZeroconf"):
             from linux_voice_assistant.zeroconf import HomeAssistantZeroconf
+
             zc = HomeAssistantZeroconf(
                 port=6053,
                 mac_address="aa:bb:cc:dd:ee:ff",
@@ -65,6 +67,7 @@ class TestInit:
         with patch("linux_voice_assistant.zeroconf.AsyncZeroconf") as mock_cls:
             mock_cls.return_value = MagicMock()
             from linux_voice_assistant.zeroconf import HomeAssistantZeroconf
+
             HomeAssistantZeroconf(
                 port=6053,
                 mac_address="aa:bb:cc:dd:ee:ff",
@@ -161,6 +164,7 @@ class TestRegisterServer:
     @pytest.mark.asyncio
     async def test_service_address_matches_host_ip(self):
         import socket
+
         zc = make_zeroconf(host_ip_address="10.0.0.5")
         zc._mock_zc.async_register_service = AsyncMock()
 

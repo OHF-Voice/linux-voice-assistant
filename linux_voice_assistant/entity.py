@@ -122,7 +122,7 @@ class MediaPlayerEntity(ESPHomeEntity):
                 self.announce_player.play(
                     url,
                     done_callback=lambda: call_all(
-                        self._broadcast_state([self._update_state(MediaPlayerState.IDLE)]),
+                        lambda: self._broadcast_state([self._update_state(MediaPlayerState.IDLE)]),
                         done_callback,
                     ),
                 )
@@ -132,7 +132,7 @@ class MediaPlayerEntity(ESPHomeEntity):
             self.music_player.play(
                 url,
                 done_callback=lambda: call_all(
-                    self._broadcast_state([self._update_state(MediaPlayerState.IDLE)]),
+                    lambda: self._broadcast_state([self._update_state(MediaPlayerState.IDLE)]),
                     done_callback,
                 ),
             )
