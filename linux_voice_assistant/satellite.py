@@ -1027,12 +1027,12 @@ class VoiceSatelliteProtocol(APIServer):
             # Stop any ongoing audio playback and wake/stop word processing.
             try:
                 self.state.music_player.stop()
-            except Exception:  # pragma: no cover - defensive safety net
+            except Exception:  # pylint: disable=broad-except
                 _LOGGER.exception("Failed to stop music player during disconnect")
 
             try:
                 self.state.tts_player.stop()
-            except Exception:  # pragma: no cover - defensive safety net
+            except Exception:  # pylint: disable=broad-except
                 _LOGGER.exception("Failed to stop TTS player during disconnect")
 
             self.state.stop_word.is_active = False  # type: ignore[attr-defined]
