@@ -49,6 +49,8 @@ jobs:
         env:
           SUFFIX: pr${{ ENV.PR_NUMBER }}
         run: |
+          sudo apt update
+          sudo apt install git
           echo "version=$(script/version)" >> $GITHUB_OUTPUT
 
       - name: Build and push Docker image

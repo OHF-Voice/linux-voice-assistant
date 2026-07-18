@@ -10,7 +10,7 @@ def get_git_describe() -> str:
         return subprocess.check_output(
             ["git", "describe", "--tags", "--long", "--always"], text=True
         )
-    except subprocess.CalledProcessError:
+    except (subprocess.CalledProcessError, FileNotFoundError):
         return "0.0.0"
 
 
