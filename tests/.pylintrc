@@ -1,0 +1,27 @@
+# Less Restrictions for tests
+[MESSAGES CONTROL]
+disable=
+    protected-access,
+    redefined-outer-name,
+    no-name-in-module,
+    wrong-import-order,
+    wrong-import-position,
+    attribute-defined-outside-init,
+    no-self-argument,
+    arguments-renamed,
+    reimported,
+    unspecified-encoding,
+    use-implicit-booleaness-not-comparison,
+    unused-variable,
+    consider-using-from-import,
+    superfluous-parens,
+    use-dict-literal,
+    missing-function-docstring,
+    missing-class-docstring,
+    import-outside-toplevel,
+    line-too-long,
+    unused-import,
+    too-many-return-statements,
+    missing-module-docstring,
+    too-few-public-methods,
+    too-many-instance-attributes
