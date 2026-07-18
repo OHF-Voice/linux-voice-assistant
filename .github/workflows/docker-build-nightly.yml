@@ -43,7 +43,7 @@ jobs:
       - name: Derive version information
         id: version
         run: |
-          echo "version=$(git describe --tags | sed 's/^v//')-nightly" >> $GITHUB_OUTPUT
+          echo "version=$(script/version --suffix nightly)" >> $GITHUB_OUTPUT
 
       - name: Create version files
         run: |

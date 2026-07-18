@@ -51,7 +51,7 @@ jobs:
       - name: Derive version information
         id: version
         run: |
-          echo "version=$(git describe --tag | sed 's/^v//')" >> $GITHUB_OUTPUT
+          echo "version=$(script/version)" >> $GITHUB_OUTPUT
 
       - name: Create version files
         run: |
