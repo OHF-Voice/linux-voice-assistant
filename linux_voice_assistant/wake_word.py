@@ -76,8 +76,43 @@ def find_available_wake_words(wake_word_dirs: List[Path], stop_model_id: str) ->
     return available_wake_words
 
 
+def _find_matching_wake_word_id(
+    available_wake_words: Dict[str, AvailableWakeWord],
+    requested_id: str,
+    wake_word_type: Optional[WakeWordType] = None,
+) -> Optional[str]:
+    """
+    Finds a wake word id matching requested_id, optionally restricted to a single type.
+
+    Tries, in order:
+        1. An exact id match.
+        2. An id that starts with "{requested_id}_", which covers openWakeWord's
+           versioned filenames (e.g. "hey_jarvis" -> "hey_jarvis_v0.1").
+
+    Args:
+        available_wake_words: Dictionary with all available wake words
+        requested_id: ID (or base name) to look for
+        wake_word_type: If given, only consider wake words of this type
+
+    Returns:
+        The matching id, or None if no match was found
+    """
+    prefix = f"{requested_id}_"
+    for candidate_id, wake_word in available_wake_words.items():
+        if wake_word_type is not None and wake_word.type != wake_word_type:
+            continue
+
+        if candidate_id == requested_id or candidate_id.startswith(prefix):
+            return candidate_id
+
+    return None
+
+
 def load_wake_models(
-    available_wake_words: Dict[str, AvailableWakeWord], active_wake_word_ids: Optional[List[str]], default_wake_word_id: str
+    available_wake_words: Dict[str, AvailableWakeWord],
+    active_wake_word_ids: Optional[List[str]],
+    default_wake_word_id: str,
+    preferred_type: Optional[WakeWordType] = None,
 ) -> tuple[Dict[str, Union[MicroWakeWord, OpenWakeWord]], Set[str], bool]:
     """
     Loads the specified wake word models.
@@ -88,6 +123,12 @@ def load_wake_models(
         available_wake_words: Dictionary with all available wake words
         active_wake_word_ids: List of IDs of wake words to load (may be None)
         default_wake_word_id: ID of the default model which is loaded if no others are specified
+        preferred_type: If given, prefer resolving default_wake_word_id (and the
+            "okay_nabu" fallback) to a wake word of this type before falling back
+            to a type-agnostic match. Lets the operator's --wake-word-dir choice
+            (e.g. pointing at the openWakeWord subdirectory) decide which model
+            variant gets activated when the requested id exists for more than
+            one wake word engine.
 
     Returns:
         Tuple with (Dictionary of loaded models, Set of active wake word IDs)
@@ -120,14 +161,40 @@ def load_wake_models(
         # No models loaded, fall back to default model
         _LOGGER.debug("No wake models loaded, falling back to default model")
         wake_word_id = default_wake_word_id
+        wake_word = None
 
-        # Check if default wake word exists
-        wake_word = available_wake_words.get(wake_word_id)
+        # If the operator's --wake-word-dir choice implies a preferred engine
+        # (e.g. pointing at the openWakeWord subdirectory), try to resolve the
+        # requested id to a model of that type first, even if a same-named
+        # model of a different type also exists.
+        if preferred_type is not None:
+            matched_id = _find_matching_wake_word_id(available_wake_words, default_wake_word_id, preferred_type)
+            if matched_id is not None:
+                wake_word_id = matched_id
+                wake_word = available_wake_words[wake_word_id]
+                _LOGGER.debug("Resolved default wake word '%s' to '%s' (preferred type %s)", default_wake_word_id, wake_word_id, preferred_type)
+
+        if wake_word is None:
+            # Fall back to a type-agnostic match (covers exact ids and
+            # versioned openWakeWord filenames like "hey_jarvis_v0.1")
+            matched_id = _find_matching_wake_word_id(available_wake_words, default_wake_word_id)
+            if matched_id is not None:
+                wake_word_id = matched_id
+                wake_word = available_wake_words[wake_word_id]
+
         if wake_word is None:
             _LOGGER.error("❌ Default wake word '%s' not found!", wake_word_id)
 
-            # Try fallback to 'okay_nabu'
+            # Try fallback to 'okay_nabu', respecting the same type preference
             wake_word_id = "okay_nabu"
+            matched_id = None
+            if preferred_type is not None:
+                matched_id = _find_matching_wake_word_id(available_wake_words, wake_word_id, preferred_type)
+            if matched_id is None:
+                matched_id = _find_matching_wake_word_id(available_wake_words, wake_word_id)
+            if matched_id is not None:
+                wake_word_id = matched_id
+
             wake_word = available_wake_words.get(wake_word_id)
 
             if wake_word is None:
