@@ -14,14 +14,14 @@ _esphome_version_cache: Optional[str] = None
 
 def get_version() -> str:
     """
-    Read the version from version.txt file.
+    Read the version from dist-info metadata.
 
     This function reads the content safely without risk of code injection,
     as it only reads raw text and performs no evaluation.
 
     Returns:
-        str:    The version from version.txt or 'unknown' if the file
-                does not exist or cannot be read.
+        str:    The version from dist-info metadata or 'unknown' if no version
+                metadata can be found.
     """
     global _version_cache
 
