@@ -50,6 +50,16 @@ jobs:
           images: ${{ env.REGISTRY_LOWER }}/${{ env.REPOSITORY_LOWER }}-pr
           tags: |
             type=raw,value=${{ env.PR_NUMBER }}
+          labels: |
+            org.opencontainers.image.authors="Open Home Foundation"
+            org.opencontainers.image.base.name="docker.io/library/python:3.13-slim-trixie"
+            org.opencontainers.image.description="Linux-Voice-Assistant for Home Assistant"
+            org.opencontainers.image.documentation="https://github.com/OHF-Voice/linux-voice-assistant/blob/main/README.md"
+            org.opencontainers.image.licenses="Apache-2.0"
+            org.opencontainers.image.source="https://github.com/OHF-Voice/linux-voice-assistant"
+            org.opencontainers.image.title="Linux-Voice-Assistant"
+            org.opencontainers.image.url="https://github.com/OHF-Voice/linux-voice-assistant"
+            org.opencontainers.image.vendor="Open Home Foundation"
 
       - name: Create version files
         run: |
