@@ -43,6 +43,8 @@ if match := re.match(r"(.+)-(\d+)-g([0-9a-f]+)$", version):
     tag, distance, hash = match.groups()
     version = f"{tag}.post{distance}+g{hash}"
 
+print(f"Discovered version: {version}")
+
 env["SETUPTOOLS_SCM_PRETEND_VERSION"] = version
 
 # Upgrade dependencies
