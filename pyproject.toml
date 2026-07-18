@@ -32,6 +32,7 @@ dependencies = [
     "zeroconf<1",
     "getmac<1",
     "types-protobuf",
+    "websockets==12",
     "webrtc-noise-gain>=1,<2",
 ]
 dynamic = ["version"]
@@ -45,6 +46,7 @@ dev = [
     "pytest",
     "isort",
     "autopep8",
+    "pytest-asyncio",
 ]
 
 [project.scripts]
@@ -131,3 +133,7 @@ max-args = 50
 
 [tool.pylint.format]
 expected-line-ending-format = "LF"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
