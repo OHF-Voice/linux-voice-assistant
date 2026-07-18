@@ -1,3 +1,39 @@
+<a id="v1.1.12"></a>
+# [v1.1.12](https://github.com/OHF-Voice/linux-voice-assistant/releases/tag/v1.1.12) - 2026-06-22
+
+<!-- Release notes generated using configuration in .github/release.yml at main -->
+
+## What's Changed
+### Exciting New Features 🎉
+* Enable dual audio input channel by [@omaramin-2000](https://github.com/omaramin-2000) in [#334](https://github.com/OHF-Voice/linux-voice-assistant/pull/334)
+* Add delay to continue conversation before listening by [@omaramin-2000](https://github.com/omaramin-2000) in [#342](https://github.com/OHF-Voice/linux-voice-assistant/pull/342)
+### Other Changes
+* Revise Assist Satellite installation instructions by [@Hedda](https://github.com/Hedda) in [#338](https://github.com/OHF-Voice/linux-voice-assistant/pull/338)
+
+
+**Full Changelog**: https://github.com/OHF-Voice/linux-voice-assistant/compare/v1.1.11...v1.1.12
+
+[Changes][v1.1.12]
+
+
+<a id="v1.1.11"></a>
+# [v1.1.11](https://github.com/OHF-Voice/linux-voice-assistant/releases/tag/v1.1.11) - 2026-06-11
+
+<!-- Release notes generated using configuration in .github/release.yml at main -->
+
+## What's Changed
+### Other Changes
+* docs(readme): restructure requirements and hardware section by [@florian-asche](https://github.com/florian-asche) in [#321](https://github.com/OHF-Voice/linux-voice-assistant/pull/321)
+* App for HAOS by [@omaramin-2000](https://github.com/omaramin-2000) in [#325](https://github.com/OHF-Voice/linux-voice-assistant/pull/325)
+* Add volume arg to parser by [@aryanhasgithub](https://github.com/aryanhasgithub) in [#335](https://github.com/OHF-Voice/linux-voice-assistant/pull/335)
+* Enhance wake word documentation by [@omaramin-2000](https://github.com/omaramin-2000) in [#336](https://github.com/OHF-Voice/linux-voice-assistant/pull/336)
+
+
+**Full Changelog**: https://github.com/OHF-Voice/linux-voice-assistant/compare/v1.1.10...v1.1.11
+
+[Changes][v1.1.11]
+
+
 <a id="v1.1.10"></a>
 # [v1.1.10](https://github.com/OHF-Voice/linux-voice-assistant/releases/tag/v1.1.10) - 2026-04-23
 
@@ -263,6 +299,8 @@ Initial release
 [Changes][v1.0.0]
 
 
+[v1.1.12]: https://github.com/OHF-Voice/linux-voice-assistant/compare/v1.1.11...v1.1.12
+[v1.1.11]: https://github.com/OHF-Voice/linux-voice-assistant/compare/v1.1.10...v1.1.11
 [v1.1.10]: https://github.com/OHF-Voice/linux-voice-assistant/compare/v1.1.9...v1.1.10
 [v1.1.9]: https://github.com/OHF-Voice/linux-voice-assistant/compare/v1.1.8...v1.1.9
 [v1.1.8]: https://github.com/OHF-Voice/linux-voice-assistant/compare/v1.1.7...v1.1.8

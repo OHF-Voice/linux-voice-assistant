@@ -52,6 +52,10 @@ if [ -n "${MIC_NOISE_SUPPRESSION}" ]; then
   EXTRA_ARGS+=( "--mic-noise-suppression" "$MIC_NOISE_SUPPRESSION" )
 fi
 
+if [ -n "${AUDIO_INPUT_CHANNELS}" ]; then
+  EXTRA_ARGS+=( "--audio-input-channels" "$AUDIO_INPUT_CHANNELS" )
+fi
+
 if [ "$ENABLE_THINKING_SOUND" = "1" ]; then
   EXTRA_ARGS+=( "--enable-thinking-sound" )
 fi
@@ -76,8 +80,16 @@ if [ -n "${REFACTORY_SECONDS}" ]; then
   EXTRA_ARGS+=( "--refractory-seconds" "$REFACTORY_SECONDS" )
 fi
 
+if [ -n "${CONTINUE_CONVERSATION_DELAY}" ]; then
+  EXTRA_ARGS+=( "--continue-conversation-delay" "$CONTINUE_CONVERSATION_DELAY" )
+fi
+
 if [ -n "${WAKEUP_SOUND}" ]; then
   EXTRA_ARGS+=( "--wakeup-sound" "$WAKEUP_SOUND" )
+fi
+
+if [ -n "${START_LISTENING_SOUND}" ]; then
+  EXTRA_ARGS+=( "--start-listening-sound" "$START_LISTENING_SOUND" )
 fi
 
 if [ -n "${TIMER_FINISHED_SOUND}" ]; then
@@ -98,6 +110,22 @@ fi
 
 if [ -n "${TIMER_MAX_RING_SECONDS}" ]; then
   EXTRA_ARGS+=( "--timer-max-ring-seconds" "$TIMER_MAX_RING_SECONDS" )
+fi
+
+if [ -n "${PERIPHERAL_HOST}" ]; then
+  EXTRA_ARGS+=( "--peripheral-host" "$PERIPHERAL_HOST" )
+fi
+
+if [ -n "${PERIPHERAL_PORT}" ]; then
+  EXTRA_ARGS+=( "--peripheral-port" "$PERIPHERAL_PORT" )
+fi
+
+if [ -n "${PERIPHERAL_VOLUME_STEP}" ]; then
+  EXTRA_ARGS+=( "--peripheral-volume-step" "$PERIPHERAL_VOLUME_STEP" )
+fi
+
+if [ -n "${DISABLE_PERIPHERAL_API}" ]; then
+  EXTRA_ARGS+=( "--disable-peripheral-api" "$DISABLE_PERIPHERAL_API" )
 fi
 
 if [ "$ENABLE_OUTPUT_ONLY" = "1" ]; then

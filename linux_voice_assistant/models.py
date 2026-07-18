@@ -2,18 +2,22 @@
 
 import json
 import logging
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass, field
 from enum import Enum
 from pathlib import Path
 from queue import Queue
-from typing import TYPE_CHECKING, Dict, List, Optional, Set, Union
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Union
 
 if TYPE_CHECKING:
+    from google.protobuf import message
     from pymicro_wakeword import MicroWakeWord
     from pyopen_wakeword import OpenWakeWord
 
     from .entity import (
+        ButtonEventSensorEntity,
         ESPHomeEntity,
+        LEDLightEntity,
         MediaPlayerEntity,
         MicSettingEntity,
         MuteSwitchEntity,
@@ -60,6 +64,23 @@ class AvailableWakeWord:
 
 
 @dataclass
+class LightRegistration:
+    """Capabilities a peripheral declares for one of its Light entities.
+
+    The peripheral sends this with the register_light command after
+    connecting. LVA materialises a matching LEDLightEntity so HA can
+    control it.
+    """
+
+    name: str
+    object_id: str
+    icon: str = "mdi:led-strip-variant"
+    effects: List[str] = field(default_factory=list)
+    supports_rgb: bool = True
+    supports_brightness: bool = True
+
+
+@dataclass
 class Preferences:
     active_wake_words: List[Optional[str]] = field(default_factory=list)
     volume: Optional[float] = None
@@ -91,18 +112,44 @@ class ServerState:
     music_player: "MpvMediaPlayer"
     tts_player: "MpvMediaPlayer"
     wakeup_sound: str
+    start_listening_sound: str
     processing_sound: str
     timer_finished_sound: str
     mute_sound: str
     unmute_sound: str
+    button_double_press_sound: str
+    button_triple_press_sound: str
+    button_long_press_sound: str
     preferences: Preferences
     preferences_path: Path
     download_dir: Path
+    continue_conversation_delay: float = 0.5  # seconds to wait after TTS before opening mic
 
     media_player_entity: "Optional[MediaPlayerEntity]" = None
     satellite: "Optional[VoiceSatelliteProtocol]" = None
+    connections: "List[VoiceSatelliteProtocol]" = field(default_factory=list)
     mute_switch_entity: "Optional[MuteSwitchEntity]" = None
     thinking_sound_entity: "Optional[ThinkingSoundEntity]" = None
+    button_event_sensor_entity: "Optional[ButtonEventSensorEntity]" = None
+
+    # Lights declared by peripherals via register_light. Survives HA
+    # reconnects so the satellite can rebuild its entities whenever it
+    # is constructed again.
+    pending_lights: "List[LightRegistration]" = field(default_factory=list)
+    # Materialised LightEntities keyed by object_id, so light_command
+    # events can be routed back to the right peripheral hardware.
+    led_light_entities: "Dict[str, LEDLightEntity]" = field(default_factory=dict)
+
+    # True once a peripheral sends register_button. Gates creation of
+    # ButtonEventSensorEntity so the HA device page only shows the button
+    # entity when hardware that actually supports button presses is present.
+    # Survives HA reconnects so the entity is re-registered automatically.
+    pending_button: bool = False
+
+    # Optional peripheral WebSocket API (LEDs, buttons, HAT boards).
+    # Assigned in __main__ before the event loop starts.
+    peripheral_api: "Optional[Any]" = None  # PeripheralAPIServer at runtime
+
     sensitivity_1_number_entity: "Optional[WakeWord1SensitivityNumberEntity]" = None
     sensitivity_2_number_entity: "Optional[WakeWord2SensitivityNumberEntity]" = None
     stop_sensitivity_number_entity: "Optional[StopWordSensitivityNumberEntity]" = None
@@ -125,8 +172,24 @@ class ServerState:
     mic_auto_gain: int = 0
     mic_noise_suppression: int = 0
     mic_volume: int = 100  # 1–100, default maximum
+    audio_input_channels: int = 2  # number of mic channels to stream
     timer_max_ring_seconds: float = 900.0
     listen_during_wake_sound: bool = False
+
+    def broadcast(self, msgs: "Iterable[message.Message]") -> None:
+        """Send messages to every connected API client.
+
+        Entity state changes that happen asynchronously (not in response to a
+        request) must reach *all* subscribed clients, not just whichever
+        connection happens to be referenced by an entity's ``server``. Without
+        this fan-out a second API client leaves Home Assistant stuck on a stale
+        state (e.g. ``playing`` after playback has finished).
+        """
+        messages = list(msgs)
+        if not messages:
+            return
+        for connection in list(self.connections):
+            connection.send_messages(messages)
 
     def save_preferences(self) -> None:
         """Save preferences as JSON."""
@@ -159,6 +222,13 @@ class ServerState:
         _LOGGER.info("Saving volume %s to %s", clamped_volume, self.preferences_path)
         self.save_preferences()
         _LOGGER.info("Volume saved successfully")
+
+        # Notify peripheral container (thread-safe; may be called from mpv callbacks)
+        api = self.peripheral_api
+        if api is not None:
+            from .peripheral_api import LVAEvent  # local import avoids circular dep
+
+            api.emit_event_sync(LVAEvent.VOLUME_CHANGED, {"volume": round(clamped_volume, 3)})
 
     def persist_mic_gain(self, gain: float) -> None:
         """Persist the microphone auto gain value."""
