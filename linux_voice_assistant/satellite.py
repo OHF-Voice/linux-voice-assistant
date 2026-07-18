@@ -834,10 +834,25 @@ class VoiceSatelliteProtocol(APIServer):
         self._pipeline_active = True
         self._emit(LVAEvent.WAKE_WORD_DETECTED)
         self.duck()
-        self.state.tts_player.play(
-            self.state.wakeup_sound,
-            done_callback=lambda: self._on_wakeup_sound_finished(wake_word_phrase),
+        if self.state.listen_during_wake_sound:
+            _LOGGER.debug("Starting audio streaming immediately (listen_during_wake_sound enabled)")
+            self.state.tts_player.play(self.state.wakeup_sound)
+            self._start_audio_streaming(wake_word_phrase)
+        else:
+            self.state.tts_player.play(
+                self.state.wakeup_sound,
+                done_callback=lambda: self._on_wakeup_sound_finished(wake_word_phrase),
+            )
+
+    def _start_audio_streaming(self, wake_word_phrase: str) -> None:
+        """Start streaming audio during wake sound detection."""
+        _LOGGER.debug(
+            "Starting audio streaming for: %s",
+            wake_word_phrase,
         )
+        self.send_messages([VoiceAssistantRequest(start=True, wake_word_phrase=wake_word_phrase)])
+        self._is_streaming_audio = True
+        self._emit(LVAEvent.LISTENING)
 
     def _on_wakeup_sound_finished(self, wake_word_phrase: str) -> None:
         """Callback invoked when the wakeup chime finishes; begin STT streaming."""
