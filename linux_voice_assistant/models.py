@@ -174,6 +174,7 @@ class ServerState:
     mic_volume: int = 100  # 1–100, default maximum
     audio_input_channels: int = 2  # number of mic channels to stream
     timer_max_ring_seconds: float = 900.0
+    listen_during_wake_sound: bool = False
 
     def broadcast(self, msgs: "Iterable[message.Message]") -> None:
         """Send messages to every connected API client.
