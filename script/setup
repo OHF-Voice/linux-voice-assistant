@@ -3,7 +3,6 @@ import argparse
 import subprocess
 import venv
 import os
-import re
 from pathlib import Path
 
 _DIR = Path(__file__).parent
@@ -28,24 +27,10 @@ if args.cxxflags:
 if args.makeflags:
     env["MAKEFLAGS"] = args.makeflags
 
-# Derive version information from Git
-
-try:
-    version = subprocess.check_output(
-        ["git", "describe", "--tags", "--long", "--always"], text=True
-    ).strip()
-    version = version.removeprefix("v")
-except (subprocess.CalledProcessError, FileNotFoundError):
-    version = "0.0.0"
-
-# Create PEP440 compatible version from Git describe
-if match := re.match(r"(.+)-(\d+)-g([0-9a-f]+)$", version):
-    tag, distance, hash = match.groups()
-    version = f"{tag}.post{distance}+g{hash}"
-
-print(f"Discovered version: {version}")
-
-env["SETUPTOOLS_SCM_PRETEND_VERSION"] = version
+env["SETUPTOOLS_SCM_PRETEND_VERSION"] = subprocess.check_output(
+    [_PROGRAM_DIR / "script" / "version"],
+    text=True,
+).strip()
 
 # Upgrade dependencies
 pip = [context.env_exe, "-m", "pip"]

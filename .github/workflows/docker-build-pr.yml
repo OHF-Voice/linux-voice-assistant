@@ -46,14 +46,10 @@ jobs:
 
       - name: Derive version info
         id: version
+        env:
+          SUFFIX: pr${{ ENV.PR_NUMBER }}
         run: |
-          echo "version=$(git describe --tags | sed 's/^v//')-pr${{ env.PR_NUMBER }}" >> $GITHUB_OUTPUT
-
-      - name: Create version files
-        run: |
-          echo "${{ env.PR_NUMBER }}" > version.txt
-          echo "${{ github.sha }}" > version_githash.txt
-          ls -ltr
+          echo "version=$(script/version)" >> $GITHUB_OUTPUT
 
       - name: Build and push Docker image
         id: push
