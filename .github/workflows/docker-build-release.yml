@@ -51,6 +51,8 @@ jobs:
       - name: Derive version information
         id: version
         run: |
+          sudo apt update
+          sudo apt install git
           echo "version=$(script/version)" >> $GITHUB_OUTPUT
 
       - name: Create version files
