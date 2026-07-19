@@ -6,5 +6,6 @@
   "python.linting.enabled": true,
   "python.linting.flake8Enabled": true,
   "python.linting.mypyEnabled": true,
-  "python.formatting.provider": "none"
+  "python.formatting.provider": "none",
+  "chat.promptFiles": true
 }
