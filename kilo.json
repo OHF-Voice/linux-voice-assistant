@@ -1,0 +1,11 @@
+{
+  "$schema": "https://app.kilo.ai/config.json",
+  "model": "kilo/codegemma-2b:free",
+  "permission": {
+    "bash": "allow",
+    "read": {
+      "*": "allow"
+    }
+  },
+  "instructions": ["AGENTS.md"]
+}
