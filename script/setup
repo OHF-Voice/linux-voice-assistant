@@ -39,18 +39,19 @@ if not python_311_exe:
 print(f"Using Python: {python_311_exe}")
 subprocess.run([python_311_exe, "--version"])
 
-# Check system dependencies (required for runtime)
+# Check system dependencies (warning only, CI installs them separately)
 missing = []
-if not ctypes.util.find_library("mpv"):
-    missing.append("libmpv-dev")
-if not ctypes.util.find_library("asound"):
-    missing.append("libasound2-dev")
+try:
+    if not ctypes.util.find_library("mpv"):
+        missing.append("libmpv-dev")
+    if not ctypes.util.find_library("asound"):
+        missing.append("libasound2-dev")
+except Exception:
+    pass  # Ignore errors in environments without ctypes
 
 if missing:
-    print(f"\nERROR: Missing system libraries (required for audio playback): {', '.join(missing)}")
-    print("Install with: sudo apt install libmpv-dev libasound2-dev")
-    print("Also recommended: sudo apt install pulseaudio pipewire alsa-utils")
-    sys.exit(1)
+    print(f"\nWARNING: Missing system libraries (required for audio): {', '.join(missing)}")
+    print("For Docker/local dev: sudo apt install libmpv-dev pulseaudio pipewire alsa-utils")
 
 # Create virtual environment
 if _VENV_DIR.exists():
