@@ -281,7 +281,14 @@ class PeripheralAPIServer:
         # Replay the current event state so the client immediately shows the
         # right animation — e.g. a timer ticking animation when reconnecting
         # mid-timer, or the muted indicator when reconnecting while muted.
-        if self._current_state is not None:
+        should_replay_state = self._current_state is not None
+        if (
+            self._current_state == LVAEvent.DISCONNECTED
+            and state.connected
+        ):
+            should_replay_state = False
+
+        if should_replay_state:
             state_payload: Dict[str, Any] = {"event": self._current_state.value}
             if self._current_state_data:
                 state_payload["data"] = self._current_state_data
