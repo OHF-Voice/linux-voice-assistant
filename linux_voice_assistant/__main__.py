@@ -249,9 +249,12 @@ async def main() -> None:
     if args.colored_debug:
         args.debug = True
         _setup_logging(args)
-    if args.debug:
-        logging.basicConfig(level=logging.DEBUG if args.debug else logging.INFO)
-        _LOGGER.debug(args)
+    elif args.debug:
+        logging.basicConfig(level=logging.DEBUG)
+    else:
+        logging.basicConfig(level=logging.INFO)
+
+    _LOGGER.debug(args)
     if args.list_input_devices:
         print("Audio Input devices:")
         print("=" * 13)
@@ -613,7 +616,6 @@ def _setup_logging(args: argparse.Namespace) -> None:
         level=logging.DEBUG if args.debug else logging.INFO,
         handlers=[handler],
     )
-    _LOGGER.debug(args)
 
 
 # -----------------------------------------------------------------------------
