@@ -282,10 +282,7 @@ class PeripheralAPIServer:
         # right animation — e.g. a timer ticking animation when reconnecting
         # mid-timer, or the muted indicator when reconnecting while muted.
         should_replay_state = self._current_state is not None
-        if (
-            self._current_state == LVAEvent.DISCONNECTED
-            and state.connected
-        ):
+        if self._current_state == LVAEvent.DISCONNECTED and state.connected:
             should_replay_state = False
 
         if should_replay_state:
