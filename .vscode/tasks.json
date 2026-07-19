@@ -42,9 +42,10 @@
       "problemMatcher": []
     },
     {
-      "label": "Run Application",
+      "label": "Run Application (Docker)",
       "type": "shell",
-      "command": "./docker-entrypoint.sh",
+      "command": "docker-compose",
+      "args": ["-f", "docker-compose.dev.yml", "up"],
       "group": "none",
       "presentation": {
         "echo": true,
@@ -54,10 +55,7 @@
       },
       "problemMatcher": [],
       "options": {
-        "envFile": "${workspaceFolder}/.env",
-        "env": {
-          "SKIP_PULSE_AUDIO_WAIT": "1"
-        }
+        "envFile": "${workspaceFolder}/.env"
       }
     }
   ]
