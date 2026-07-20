@@ -1,0 +1,13 @@
+{
+  "python.defaultInterpreterPath": "./.venv/bin/python",
+  "python.testing.pytestEnabled": true,
+  "python.testing.pytestArgs": ["tests"],
+  "python.testing.pytestAutoInclude": false,
+  "python.linting.enabled": true,
+  "python.linting.flake8Enabled": true,
+  "python.linting.mypyEnabled": true,
+  "python.formatting.provider": "none",
+  "python.terminal.activateEnvironment": true,
+  "python.terminal.executeInShell": true,
+  "python.pythonPath": "./.venv/bin/python"
+}

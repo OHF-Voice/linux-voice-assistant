@@ -145,26 +145,28 @@ fi
 
 
 ### Wait for PulseAudio
-# Wait for PulseAudio to be available before starting the application
-CP_MAX_RETRIES=30
-CP_RETRY_DELAY=1
-### while maybe besser?
-echo "Checking PulseAudio service status..."
-for i in $(seq 1 $CP_MAX_RETRIES); do
-  # Check if PulseAudio is running
-  if pactl info >/dev/null 2>&1; then
-    echo "✅ PulseAudio is running"
-    break
-  fi
+# Skip wait if SKIP_PULSE_AUDIO_WAIT is set (for local development)
+if [ "$SKIP_PULSE_AUDIO_WAIT" != "1" ]; then
+  CP_MAX_RETRIES=30
+  CP_RETRY_DELAY=1
+  ### while maybe besser?
+  echo "Checking PulseAudio service status..."
+  for i in $(seq 1 $CP_MAX_RETRIES); do
+    # Check if PulseAudio is running
+    if pactl info >/dev/null 2>&1; then
+      echo "✅ PulseAudio is running"
+      break
+    fi
 
-  if [ $i -eq $CP_MAX_RETRIES ]; then
-      echo "❌ PulseAudio did not start after $CP_MAX_RETRIES seconds"
-      exit 2
-  fi
+    if [ $i -eq $CP_MAX_RETRIES ]; then
+        echo "❌ PulseAudio did not start after $CP_MAX_RETRIES seconds"
+        exit 2
+    fi
 
-  echo "⏳ PulseAudio not running yet, retrying in $CP_RETRY_DELAY s..."
-  sleep $CP_RETRY_DELAY
-done
+    echo "⏳ PulseAudio not running yet, retrying in $CP_RETRY_DELAY s..."
+    sleep $CP_RETRY_DELAY
+  done
+fi
 
 
 ### Start application
