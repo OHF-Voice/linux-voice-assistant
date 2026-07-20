@@ -59,7 +59,7 @@ jobs:
           tags: "${{ env.REGISTRY_LOWER }}/${{ env.REPOSITORY_LOWER }}-pr:${{ env.PR_NUMBER }}"
           labels: "${{ env.PR_NUMBER }}"
       - name: Generate artifact attestation
-        uses: actions/attest-build-provenance@v1.4.4
+        uses: actions/attest-build-provenance@v4
         with:
           subject-name: ${{ env.REGISTRY_LOWER }}/${{ env.REPOSITORY_LOWER }}-pr
           subject-digest: ${{ steps.push.outputs.digest }}
