@@ -131,6 +131,36 @@ The documentation for the build process can be found in the [GitHub Actions Work
 
 ## Development
 
+### System Requirements
+
+**System packages (Linux):**
+- libmpv-dev (`sudo apt install libmpv-dev`)
+- PulseAudio/PipeWire (`sudo apt install pulseaudio pipewire`)
+- ALSA utils (`sudo apt install alsa-utils`)
+
+**Python:**
+- Python 3.11+ must be installed on your system (`python3 --version` should show 3.11+)
+- On Ubuntu/Debian: `sudo apt install python3.11 python3.11-venv python3.11-dev`
+
+### VS Code Setup
+
+VS Code development uses a local Python virtual environment (`.venv/`):
+
+1. Open workspace in VS Code
+2. Accept Workspace Trust (bottom-left status bar)
+3. Install recommended extensions when prompted:
+   - `ms-python.python` - Python language support
+   - `ms-python.vscode-pylance` - Python language server
+   - `kilo.kilocode` - Kilo AI assistant
+4. **Terminal** → **New Terminal** (or `` Ctrl+` ``) - Opens integrated terminal (uses .venv when available)
+5. Run `./script/setup --dev` to create `.venv` and install dev dependencies
+6. VS Code automatically detects `.venv/bin/python` as the Python interpreter
+
+**Available VS Code Tasks:**
+- `Ctrl+Shift+B` - Run Setup or Linter
+- `Ctrl+Shift+T` - Run Tests
+- `Ctrl+Shift+P` → "Tasks: Run Task" - Show all tasks (Setup, Linter, Tests, Run App)
+
 ### Code Quality Checks
 
 The project uses the following tools to ensure code quality:
