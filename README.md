@@ -17,7 +17,7 @@ Because it runs on a full Linux system and offers access significantly more loca
 - Works with [Home Assistant](https://www.home-assistant.io/integrations/esphome/) using the [ESPHome](https://esphome.io/) protocol/API (via [aioesphomeapi](https://github.com/esphome/aioesphomeapi))
 - Feature local on-device wake word detection using integrated [OpenWakeWord](https://github.com/dscripka/openWakeWord) or [MicroWakeWord](https://github.com/kahrendt/microWakeWord)
 - Supports multiple wake words and languages
-- Supports multiple architectures (linux/amd64 and linux/aarch64)
+- Supports multiple architectures (linux/amd64 and linux/aarch64; also linux/armv7l / armhf via bare-metal install)
 - Automated builds with artifact attestation for security
 - Supports announcments, start/continue conversation, and timers
 - Tested and works with Python 3.11 and Python 3.13.
@@ -31,7 +31,7 @@ Because it runs on a full Linux system and offers access significantly more loca
 - **CPU:** 1Ghz
 - **Memory:** min. 512MB
 - **Storage:** The OS and software is around 4GB
-- **OS:** linux/amd64 or linux/aarch64
+- **OS:** linux/amd64 or linux/aarch64 (also 32-bit ARM linux/armv7l / armhf via bare-metal install — see [install docs](docs/install_application.md#32-bit-arm-armv7l--armhf))
 
 A more extensive list for possible compatible hardware can be found in the [PiCompose documentation](https://github.com/florian-asche/PiCompose) but basically any microphone that works with [PipeWire (multimedia framework for Linux)](https://pipewire.org/) can in theory be used for voice input with the prebuild image from there, you should however preferably use a far-field microphone-array solution if want better result.
 
