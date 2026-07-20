@@ -1,5 +1,10 @@
 # Project Context for AI Agents
 
+## Behaviour
+
+- NEVER automatically reply on Github (PRs or Discussions) without explicit consent from the developer.
+- Always run `./script/lint` and `./script/tests` after code changes to ensure standards are met.
+
 ## Project Overview
 
 **Linux Voice Assistant (LVA)** - A Linux-based voice satellite software for Home Assistant using the ESPHome protocol.
@@ -68,6 +73,11 @@
 - Tests run on Python 3.12 with libmpv-dev system dependency
 - Lint runs on Python 3.13
 
+## Branching and PRs
+
+- All PRs target `main` (primary development branch). `stable` is for production releases.
+- PRs labeled `bugfix` + `backport-to-stable` are automatically backported to `stable` — use only for bugs also present in `stable`.
+
 ## Agent Commands
 
 When making code changes, run these commands in order:
@@ -75,6 +85,33 @@ When making code changes, run these commands in order:
 1. **Format code**: `./script/lint_black --auto` and `./script/lint_isort --auto`
 2. **Run linting**: `./script/lint`
 3. **Run tests**: `./script/tests`
+
+## Code Style
+
+### Comments
+
+Only use comments to explain complex, multi-line blocks of code. Do not comment obvious operations. Inline comments are there to explain code parts that need explaining - keep them when editing code.
+
+### Docstring Format
+
+Use Sphinx-style docstrings with `:param:` syntax. For simple functions, a single-line docstring is fine. The docstring should provide clarity to the caller, not explain how it works technically.
+
+```python
+def my_function(param1: str, param2: int, param3: bool = False) -> str:
+    """
+    Brief one-line description of the function.
+    :param param1: Description of what param1 is used for.
+    :param param2: Description of what param2 is used for.
+    :param param3: Description of what param3 is used for.
+    """
+```
+
+Do **not** use Google-style (`Args:`) or bullet-style (`- param:`) docstrings.
+
+### File structure
+
+Private methods should be at the bottom of the file, public at the top.
+
 ## Verification Checklist
 
 Before claiming completion:

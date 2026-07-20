@@ -4,7 +4,7 @@
   "permission": {
     "bash": "allow",
     "read": {
-      "*": "allow"
+      "*": "ask"
     }
   },
   "instructions": ["AGENTS.md"]
