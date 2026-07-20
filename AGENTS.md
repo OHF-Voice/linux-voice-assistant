@@ -75,3 +75,18 @@ When making code changes, run these commands in order:
 1. **Format code**: `./script/lint_black --auto` and `./script/lint_isort --auto`
 2. **Run linting**: `./script/lint`
 3. **Run tests**: `./script/tests`
+## Verification Checklist
+
+Before claiming completion:
+- [ ] Ran `./script/lint` - all checks passed
+- [ ] Ran `./script/tests` - all tests passed
+- [ ] For audio-related changes: Note that hardware testing (microphone/speaker) was NOT performed
+- [ ] Did NOT claim hardware behavior is verified unless actually exercised
+- [ ] Changes are focused on one feature or fix per change
+
+## Areas Requiring Extra Care
+
+- `linux_voice_assistant/wake_word.py` - Wake word model loading is hardware-dependent
+- `linux_voice_assistant/mpv_player.py` - Audio output requires `libmpv-dev`
+- `linux_voice_assistant/webrtc.py` - Noise suppression/gain algorithms
+- `linux_voice_assistant/satellite.py` - ESPHome API protocol handling
