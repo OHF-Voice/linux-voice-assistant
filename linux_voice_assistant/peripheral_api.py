@@ -282,18 +282,19 @@ class PeripheralAPIServer:
         # right animation — e.g. a timer ticking animation when reconnecting
         # mid-timer, or the muted indicator when reconnecting while muted.
         current_state = self._current_state
-        should_replay_state = current_state is not None
-        if current_state == LVAEvent.DISCONNECTED and state.connected:
-            should_replay_state = False
+        if current_state is None:
+            return
 
-        if should_replay_state and current_state is not None:
-            state_payload: Dict[str, Any] = {"event": current_state.value}
-            if self._current_state_data:
-                state_payload["data"] = self._current_state_data
-            try:
-                await websocket.send(json.dumps(state_payload))
-            except Exception:  # pylint: disable=broad-except
-                pass
+        if current_state == LVAEvent.DISCONNECTED and state.connected:
+            return
+
+        state_payload: Dict[str, Any] = {"event": current_state.value}
+        if self._current_state_data:
+            state_payload["data"] = self._current_state_data
+        try:
+            await websocket.send(json.dumps(state_payload))
+        except Exception:  # pylint: disable=broad-except
+            pass
 
     # ------------------------------------------------------------------
     # Command dispatch
