@@ -1,0 +1,14 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run Linux Voice Assistant",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/linux_voice_assistant/__main__.py",
+      "console": "integratedTerminal",
+      "justMyCode": true,
+      "envFile": "${workspaceFolder}/.env"
+    }
+  ]
+}
