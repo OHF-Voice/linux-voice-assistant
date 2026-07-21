@@ -99,6 +99,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Dict, Optional, Set
 
@@ -180,6 +181,8 @@ class PeripheralAPIServer:
     """
 
     DEFAULT_VOLUME_STEP: float = 0.05
+    LATE_ENTITY_RECONNECT_DEBOUNCE_S: float = 1.5
+    LATE_ENTITY_RECONNECT_COOLDOWN_S: float = 60.0
 
     def __init__(
         self,
@@ -208,6 +211,10 @@ class PeripheralAPIServer:
         self._current_state: Optional[LVAEvent] = None
         self._current_state_data: Optional[Dict[str, Any]] = None
 
+        # Safeguarded HA reconnect trigger for late entity registrations.
+        self._pending_entity_reconnect_task: Optional[asyncio.Task] = None
+        self._last_ha_reconnect_at: float = 0.0
+
     # ------------------------------------------------------------------
     # Lifecycle
     # ------------------------------------------------------------------
@@ -230,6 +237,10 @@ class PeripheralAPIServer:
 
     async def stop(self) -> None:
         """Gracefully shut down the server and all client connections."""
+        if self._pending_entity_reconnect_task is not None:
+            self._pending_entity_reconnect_task.cancel()
+            self._pending_entity_reconnect_task = None
+
         if self._server is not None:
             self._server.close()
             await self._server.wait_closed()
@@ -507,6 +518,8 @@ class PeripheralAPIServer:
         if satellite is not None:
             satellite.register_pending_lights()
 
+        self._schedule_ha_reconnect_for_late_entity("light", object_id)
+
     def _register_button(self, satellite: Any) -> None:
         """Register button press event support declared by a peripheral.
 
@@ -534,9 +547,65 @@ class PeripheralAPIServer:
         if satellite is not None:
             satellite.register_pending_button()
 
+        self._schedule_ha_reconnect_for_late_entity("button", "button_press_event")
+
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+
+    def _schedule_ha_reconnect_for_late_entity(self, entity_kind: str, entity_id: str) -> None:
+        """Reconnect HA once for late peripheral entity registrations."""
+        state = self._state
+        if state is None or not state.connected or state.satellite is None:
+            return
+
+        if self._loop is None:
+            return
+
+        if self._pending_entity_reconnect_task is not None and not self._pending_entity_reconnect_task.done():
+            _LOGGER.debug(
+                "Coalescing late %s registration for '%s' into pending HA reconnect",
+                entity_kind,
+                entity_id,
+            )
+            return
+
+        async def _trigger() -> None:
+            try:
+                await asyncio.sleep(self.LATE_ENTITY_RECONNECT_DEBOUNCE_S)
+
+                state_now = self._state
+                if state_now is None or not state_now.connected:
+                    return
+
+                satellite_now = state_now.satellite
+                if satellite_now is None:
+                    return
+
+                now = time.monotonic()
+                if now - self._last_ha_reconnect_at < self.LATE_ENTITY_RECONNECT_COOLDOWN_S:
+                    _LOGGER.info(
+                        "Skipping HA reconnect after late %s '%s': cooldown active",
+                        entity_kind,
+                        entity_id,
+                    )
+                    return
+
+                transport = getattr(satellite_now, "_transport", None)
+                if transport is None:
+                    return
+
+                self._last_ha_reconnect_at = now
+                _LOGGER.info(
+                    "Late %s '%s' registered after HA handshake; forcing one HA reconnect",
+                    entity_kind,
+                    entity_id,
+                )
+                transport.close()
+            except asyncio.CancelledError:
+                return
+
+        self._pending_entity_reconnect_task = self._loop.create_task(_trigger())
 
     async def _push_mute_switch(self, satellite: Any, *, muted: bool) -> None:
         """Reflect a peripheral-triggered mute change to Home Assistant."""
