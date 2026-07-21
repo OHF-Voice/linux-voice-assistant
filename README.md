@@ -113,6 +113,7 @@ usage: __main__.py [-h] [--name NAME] [--audio-input-device AUDIO_INPUT_DEVICE] 
 | `--peripheral-volume-step`      | Volume change per button press, 0.0–1.0                       | %(default)s                          |
 | `--disable-peripheral-api`      | Disable the peripheral WebSocket API entirely                 | False                                |
 | `--debug`                       | Print DEBUG messages to console                               | False                                |
+| `--colored-debug`               | Print colored DEBUG messages to console                       | False                                |
 | `--output-only`                 | Enable output only mode                                       | False                                |
 
 💡 **Note:** There is a detailed explanation on the gain, noise suppression, and wake word sensitivity flags in the [audio options](docs/audio_options.md) file.
