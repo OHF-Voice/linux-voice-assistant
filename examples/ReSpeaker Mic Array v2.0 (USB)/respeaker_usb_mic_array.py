@@ -164,9 +164,9 @@ class SharedState:
 # ===========================================================================
 # USB LED driver
 #
-# The ReSpeaker Mic Array v2.0 accepts LED data via a USB vendor control
-# transfer.  Each LED is set as an APA102 frame: 0xFF start, then per-LED
-# bytes in the order [start_frame | brightness, B, G, R].
+# The ReSpeaker Mic Array v2.0 LED firmware exposes a vendor-command USB
+# interface. The copied pixel_ring reference uses command 0x06 for custom LED
+# frames and command 0x20 for brightness, both addressed to wIndex 0x1C.
 # ===========================================================================
 
 RGB = Tuple[int, int, int]
@@ -186,20 +186,17 @@ def _scale(color: RGB, factor: float) -> RGB:
 
 class USBLEDRing:
     """
-    Controls the 12 APA102 LEDs on the ReSpeaker Mic Array v2.0 over USB.
+    Controls the 12 LEDs on the ReSpeaker Mic Array v2.0 over USB.
 
-    Uses a USB vendor control transfer (bmRequestType=0x40, bRequest=0,
-    wValue=0x0001, wIndex=0x8001) to push raw LED data to the XMOS firmware.
-    This is the same protocol used by Seeed's pixel_ring library.
+    Uses the same vendor-command protocol as Seeed's pixel_ring library.
+    That protocol talks to the device recipient directly and does not require
+    detaching the kernel audio driver.
     """
 
-    # USB control transfer parameters matching the pixel_ring reference implementation.
-    # _CTRL_TYPE_OUT = 0x40: bmRequestType = CTRL_OUT | CTRL_TYPE_VENDOR | CTRL_RECIPIENT_DEVICE.
-    # Recipient is "device" (bits 4:0 = 0x00), so no interface needs to be claimed
-    # and the kernel audio driver must NOT be detached.
+    _CMD_SHOW = 0x06
+    _CMD_BRIGHTNESS = 0x20
     _CTRL_TIMEOUT   = 8000  # ms
     _CTRL_REQUEST   = 0
-    _CTRL_VALUE     = 0x0001
     _CTRL_INDEX     = 0x1C
     _CTRL_TYPE_OUT  = 0x40  # vendor, device, host-to-device
 
@@ -207,6 +204,7 @@ class USBLEDRing:
         self._pixels: list[RGB] = [BLACK] * LED_COUNT
         self._dev = None
         self._dev_lock = threading.Lock()
+        self._last_brightness: Optional[int] = None
 
         if _HAS_USB:
             self._find_device()
@@ -220,12 +218,8 @@ class USBLEDRing:
                 USB_VENDOR_ID, USB_PRODUCT_ID,
             )
             return
-        try:
-            if dev.is_kernel_driver_active(0):
-                dev.detach_kernel_driver(0)
-        except Exception:  # pylint: disable=broad-except
-            pass
         self._dev = dev
+        self._last_brightness = None
         _LOGGER.info(
             "ReSpeaker Mic Array v2.0 found (USB %04x:%04x, bus %d, addr %d)",
             USB_VENDOR_ID, USB_PRODUCT_ID, dev.bus, dev.address,
@@ -237,24 +231,32 @@ class USBLEDRing:
     def set_all(self, color: RGB) -> None:
         self._pixels = [color] * LED_COUNT
 
+    def _write(self, command: int, data: list[int]) -> None:
+        self._dev.ctrl_transfer(
+            self._CTRL_TYPE_OUT,
+            self._CTRL_REQUEST,
+            command,
+            self._CTRL_INDEX,
+            data,
+            self._CTRL_TIMEOUT,
+        )
+
     def show(self, brightness: float = 1.0) -> None:
         """
         Push the current pixel buffer to the device.
 
-        Frame layout (matches pixel_ring / APA102 USB protocol):
-          [0xFF, 0xFF, 0xFF, 0xFF]            ← start frame
-          [0xE0|bright5, B, G, R] × LED_COUNT ← one word per LED
-          [0xFF, ...]                          ← end frame (⌈n/2⌉ bytes)
+        The USB firmware expects command 0x06 with 4 bytes per LED in RGB0
+        order, plus command 0x20 for device brightness. Sending raw APA102
+        frames here causes the firmware to misinterpret the payload.
         """
         bright5 = max(0, min(31, int(brightness * LED_BRIGHTNESS)))
 
-        frame = [0xFF, 0xFF, 0xFF, 0xFF]  # start frame
+        frame: list[int] = []
         for r, g, b in self._pixels:
             br = max(0, min(255, int(r * brightness)))
             bg = max(0, min(255, int(g * brightness)))
             bb = max(0, min(255, int(b * brightness)))
-            frame += [0xE0 | bright5, bb, bg, br]
-        frame += [0xFF] * math.ceil(LED_COUNT / 2)  # end frame
+            frame += [br, bg, bb, 0]
 
         with self._dev_lock:
             if self._dev is None:
@@ -262,17 +264,14 @@ class USBLEDRing:
                 _LOGGER.debug("LEDs [simulated]: %s", pixels)
                 return
             try:
-                self._dev.ctrl_transfer(
-                    self._CTRL_TYPE_OUT,
-                    self._CTRL_REQUEST,
-                    self._CTRL_VALUE,
-                    self._CTRL_INDEX,
-                    frame,
-                    self._CTRL_TIMEOUT,
-                )
+                if self._last_brightness != bright5:
+                    self._write(self._CMD_BRIGHTNESS, [bright5])
+                    self._last_brightness = bright5
+                self._write(self._CMD_SHOW, frame)
             except usb.core.USBError as exc:
                 _LOGGER.warning("USB write error: %s – attempting reconnect", exc)
                 self._dev = None
+                self._last_brightness = None
                 # Attempt to re-find the device on next show() call
                 threading.Thread(
                     target=self._reconnect, daemon=True
@@ -709,11 +708,19 @@ class LVAClient:
         _LOGGER.debug("Event: %s  data=%s", event, data)
 
         if event == "snapshot":
+            muted = data.get("muted", False)
+            ha_connected = data.get("ha_connected", False)
             self._state.update(
-                muted=data.get("muted", False),
+                muted=muted,
                 volume=data.get("volume", 1.0),
-                ha_connected=data.get("ha_connected", False),
+                ha_connected=ha_connected,
             )
+            if muted:
+                self._state.update(assist_state=AssistState.MUTED)
+            elif ha_connected:
+                self._state.update(assist_state=AssistState.IDLE)
+            else:
+                self._state.update(assist_state=AssistState.NOT_READY)
 
         elif event == "wake_word_detected":
             self._state.update(assist_state=AssistState.WAKE_WORD)
@@ -731,7 +738,12 @@ class LVAClient:
             self._state.update(assist_state=AssistState.IDLE)
 
         elif event == "muted":
-            self._state.update(assist_state=AssistState.MUTED, muted=True)
+            muted = data.get("muted", True)
+            self._state.update(muted=muted)
+            if muted:
+                self._state.update(assist_state=AssistState.MUTED)
+            elif self._state.assist_state == AssistState.MUTED:
+                self._state.update(assist_state=AssistState.IDLE)
 
         elif event == "pipeline_error":
             _LOGGER.warning("LVA pipeline error: %s", data.get("reason", ""))
@@ -777,6 +789,12 @@ class LVAClient:
             status = data.get("status", "")
             if status == "connected":
                 self._state.update(ha_connected=True)
+                if self._state.assist_state == AssistState.NOT_READY:
+                    self._state.update(
+                        assist_state=(
+                            AssistState.MUTED if self._state.muted else AssistState.IDLE
+                        ),
+                    )
                 _LOGGER.info("Home Assistant connected")
             elif status == "getting_started":
                 _LOGGER.info("LVA starting up, waiting for HA …")
