@@ -66,6 +66,11 @@ if args.cxxflags:
 if args.makeflags:
     env["MAKEFLAGS"] = args.makeflags
 
+env["SETUPTOOLS_SCM_PRETEND_VERSION"] = subprocess.check_output(
+    [_PROGRAM_DIR / "script" / "version"],
+    text=True,
+).strip()
+
 # Upgrade dependencies
 pip = [str(_VENV_DIR / "bin" / "python"), "-m", "pip"]
 subprocess.check_call(pip + ["install", "--upgrade", "pip"])

@@ -24,6 +24,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
           allow-unsafe-pr-checkout: true
 
       - name: Set variables
@@ -44,11 +45,14 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
-      - name: Create version files
+      - name: Derive version info
+        id: version
+        env:
+          SUFFIX: pr${{ ENV.PR_NUMBER }}
         run: |
-          echo "${{ env.PR_NUMBER }}" > version.txt
-          echo "${{ github.sha }}" > version_githash.txt
-          ls -ltr
+          sudo apt update
+          sudo apt install git
+          echo "version=$(script/version)" >> $GITHUB_OUTPUT
 
       - name: Build and push Docker image
         id: push
@@ -59,6 +63,9 @@ jobs:
           push: true
           tags: "${{ env.REGISTRY_LOWER }}/${{ env.REPOSITORY_LOWER }}-pr:${{ env.PR_NUMBER }}"
           labels: "${{ env.PR_NUMBER }}"
+          build-args: |
+            VERSION=${{ steps.version.output.version }}
+
       - name: Generate artifact attestation
         uses: actions/attest-build-provenance@v4
         with:
