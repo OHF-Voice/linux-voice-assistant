@@ -25,5 +25,5 @@ Tick exactly one box. CI derives the label from the ticked box.
 ## Checklist
 
 - [ ] The code change is tested and works locally.
-- [ ] `./script/lint` passes.
-- [ ] `./script/tests` passes, and tests have been added/updated under `tests/` where applicable.
+- [ ] `prek run lint --all-files` lint passes passes.
+- [ ] `prek run tests --all-files` passes, and tests have been added/updated under `tests/` where applicable.

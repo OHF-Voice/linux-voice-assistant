@@ -11,51 +11,6 @@ on:
     types: [opened, synchronize, reopened]
 
 jobs:
-  lint_black:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v7
-    - name: Set up Python 3.13
-      uses: actions/setup-python@v5
-      with:
-        python-version: "3.13"
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        script/setup --dev
-    - name: Run black
-      run: ./script/lint_black
-
-  lint_flake8:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v7
-    - name: Set up Python 3.13
-      uses: actions/setup-python@v5
-      with:
-        python-version: "3.13"
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        script/setup --dev
-    - name: Run flake8
-      run: ./script/lint_flake8
-
-  lint_isort:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v7
-    - name: Set up Python 3.13
-      uses: actions/setup-python@v5
-      with:
-        python-version: "3.13"
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        script/setup --dev
-    - name: Run isort
-      run: ./script/lint_isort
-
   lint_mypy:
     runs-on: ubuntu-latest
     steps:
@@ -72,7 +27,7 @@ jobs:
       run: |
         ./script/lint_mypy
 
-  lint_pylint:
+  lint_ruff:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v7
@@ -84,6 +39,6 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         script/setup --dev
-    - name: Run pylint
-      run: ./script/lint_pylint
+    - name: Run ruff
+      run: ./script/lint_ruff
 

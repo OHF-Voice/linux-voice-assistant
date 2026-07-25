@@ -2,6 +2,6 @@
   "recommendations": [
     "ms-python.python",
     "ms-python.vscode-pylance",
-    "kilo.kilocode"
+    "charliermarsh.ruff",
   ]
 }

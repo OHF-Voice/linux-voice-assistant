@@ -680,7 +680,6 @@ def process_audio(state: ServerState, mic, block_size: int):
 
                     has_oww = False
                     for idx, wake_word in enumerate(wake_words):
-
                         # Load default threshold from model json
                         wake_word_id = wake_word.id if hasattr(wake_word, "id") else next(iter(state.wake_words.keys()))
                         available_word = state.available_wake_words.get(wake_word_id)

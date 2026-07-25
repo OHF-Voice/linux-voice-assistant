@@ -56,7 +56,7 @@ class AvailableWakeWord:
             from pyopen_wakeword import OpenWakeWord
 
             oww_model = OpenWakeWord.from_model(model_path=self.wake_word_path)
-            setattr(oww_model, "wake_word", self.wake_word)
+            oww_model.wake_word = self.wake_word  # type: ignore[attr-defined]
 
             return oww_model
 

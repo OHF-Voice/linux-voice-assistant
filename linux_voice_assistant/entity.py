@@ -417,12 +417,11 @@ class MicSettingEntity(ESPHomeEntity):
                 self._state = new_val
                 self._set_value(new_val)
                 yield SelectStateResponse(key=self.key, state=new_val)
-        else:
-            if isinstance(msg, NumberCommandRequest) and (msg.key == self.key):
-                new_val = msg.state
-                self._state = new_val
-                self._set_value(new_val)
-                yield NumberStateResponse(key=self.key, state=new_val)
+        elif isinstance(msg, NumberCommandRequest) and (msg.key == self.key):
+            new_val = msg.state
+            self._state = new_val
+            self._set_value(new_val)
+            yield NumberStateResponse(key=self.key, state=new_val)
 
         # --- 2. DISCOVERY (TELL HA WHAT TYPE TO SHOW) ---
         if isinstance(msg, ListEntitiesRequest):

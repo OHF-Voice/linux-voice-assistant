@@ -11,12 +11,12 @@ from unittest.mock import MagicMock, patch
 class TestGetVersion:
     def setup_method(self):
         """Reset the version cache before each test."""
-        import linux_voice_assistant.util as util
+        from linux_voice_assistant import util
 
         util._version_cache = None
 
     def test_returns_unknown_when_file_missing(self):
-        import linux_voice_assistant.util as util
+        from linux_voice_assistant import util
 
         util._version_cache = None
 
@@ -25,7 +25,7 @@ class TestGetVersion:
         assert result == "unknown"
 
     def test_returns_version_string_from_file(self):
-        import linux_voice_assistant.util as util
+        from linux_voice_assistant import util
 
         util._version_cache = None
 
@@ -34,7 +34,7 @@ class TestGetVersion:
         assert result == "1.2.3"
 
     def test_strips_whitespace_from_version(self):
-        import linux_voice_assistant.util as util
+        from linux_voice_assistant import util
 
         util._version_cache = None
 
@@ -43,7 +43,7 @@ class TestGetVersion:
         assert result == "2.0.0"
 
     def test_returns_unknown_for_empty_file(self):
-        import linux_voice_assistant.util as util
+        from linux_voice_assistant import util
 
         util._version_cache = None
 
@@ -52,7 +52,7 @@ class TestGetVersion:
         assert result == "unknown"
 
     def test_caches_result_after_first_call(self):
-        import linux_voice_assistant.util as util
+        from linux_voice_assistant import util
 
         util._version_cache = None
 
@@ -62,7 +62,7 @@ class TestGetVersion:
             mock_read.assert_called_once()
 
     def test_returns_cached_value_on_second_call(self):
-        import linux_voice_assistant.util as util
+        from linux_voice_assistant import util
 
         util._version_cache = None
 
@@ -73,7 +73,7 @@ class TestGetVersion:
         assert first == second == "4.0.0"
 
     def test_returns_unknown_on_permission_error(self):
-        import linux_voice_assistant.util as util
+        from linux_voice_assistant import util
 
         util._version_cache = None
 
@@ -89,12 +89,12 @@ class TestGetVersion:
 
 class TestGetEsphomeVersion:
     def setup_method(self):
-        import linux_voice_assistant.util as util
+        from linux_voice_assistant import util
 
         util._esphome_version_cache = None
 
     def test_returns_version_when_package_installed(self):
-        import linux_voice_assistant.util as util
+        from linux_voice_assistant import util
 
         with patch("linux_voice_assistant.util.version", return_value="42.7.0"):
             result = util.get_esphome_version()
@@ -103,14 +103,14 @@ class TestGetEsphomeVersion:
     def test_returns_unknown_when_package_not_installed(self):
         from importlib.metadata import PackageNotFoundError
 
-        import linux_voice_assistant.util as util
+        from linux_voice_assistant import util
 
         with patch("linux_voice_assistant.util.version", side_effect=PackageNotFoundError):
             result = util.get_esphome_version()
         assert result == "unknown"
 
     def test_caches_result_after_first_call(self):
-        import linux_voice_assistant.util as util
+        from linux_voice_assistant import util
 
         with patch("linux_voice_assistant.util.version", return_value="1.0.0") as mock_ver:
             util.get_esphome_version()
@@ -118,7 +118,7 @@ class TestGetEsphomeVersion:
             mock_ver.assert_called_once()
 
     def test_returns_cached_value_on_second_call(self):
-        import linux_voice_assistant.util as util
+        from linux_voice_assistant import util
 
         with patch("linux_voice_assistant.util.version", return_value="5.0.0"):
             first = util.get_esphome_version()
@@ -183,7 +183,7 @@ class TestCallAll:
 
 class TestGetDefaultInterface:
     def test_returns_interface_name_from_gateway(self):
-        import linux_voice_assistant.util as util
+        from linux_voice_assistant import util
 
         with patch("linux_voice_assistant.util.netifaces") as mock_netifaces:
             # Set AF_INET before building the dict so the key matches
@@ -193,7 +193,7 @@ class TestGetDefaultInterface:
         assert result == "eth0"
 
     def test_returns_none_when_no_gateway(self):
-        import linux_voice_assistant.util as util
+        from linux_voice_assistant import util
 
         with patch("linux_voice_assistant.util.netifaces") as mock_netifaces:
             mock_netifaces.default_gateway.return_value = {}
@@ -201,7 +201,7 @@ class TestGetDefaultInterface:
         assert result is None
 
     def test_returns_none_when_no_ipv4_gateway(self):
-        import linux_voice_assistant.util as util
+        from linux_voice_assistant import util
 
         with patch("linux_voice_assistant.util.netifaces") as mock_netifaces:
             mock_netifaces.AF_INET = 2
@@ -213,7 +213,7 @@ class TestGetDefaultInterface:
 
 class TestGetDefaultIpv4:
     def test_returns_ip_for_interface(self):
-        import linux_voice_assistant.util as util
+        from linux_voice_assistant import util
 
         with patch("linux_voice_assistant.util.netifaces") as mock_netifaces:
             mock_netifaces.AF_INET = 2
@@ -222,19 +222,19 @@ class TestGetDefaultIpv4:
         assert result == "192.168.1.50"
 
     def test_returns_none_for_empty_interface(self):
-        import linux_voice_assistant.util as util
+        from linux_voice_assistant import util
 
         result = util.get_default_ipv4("")
         assert result is None
 
     def test_returns_none_for_none_interface(self):
-        import linux_voice_assistant.util as util
+        from linux_voice_assistant import util
 
         result = util.get_default_ipv4(None)
         assert result is None
 
     def test_returns_none_when_no_ipv4_address(self):
-        import linux_voice_assistant.util as util
+        from linux_voice_assistant import util
 
         with patch("linux_voice_assistant.util.netifaces") as mock_netifaces:
             mock_netifaces.AF_INET = 2
