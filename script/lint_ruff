@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import subprocess
+import sys
 import venv
 from pathlib import Path
 
@@ -17,5 +18,11 @@ if _VENV_DIR.exists():
 else:
     python_exe = "python3"
 
-subprocess.check_call([python_exe, "-m", "ruff", "check", "--fix"] + _LINT_DIRS)
-subprocess.check_call([python_exe, "-m", "ruff", "format"] + _LINT_DIRS)
+no_auto = "--no-auto" in sys.argv
+
+if no_auto:
+    subprocess.check_call([python_exe, "-m", "ruff", "check"] + _LINT_DIRS)
+    subprocess.check_call([python_exe, "-m", "ruff", "format", "--check", "--diff"] + _LINT_DIRS)
+else:
+    subprocess.check_call([python_exe, "-m", "ruff", "check", "--fix"] + _LINT_DIRS)
+    subprocess.check_call([python_exe, "-m", "ruff", "format"] + _LINT_DIRS)

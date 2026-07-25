@@ -40,5 +40,5 @@ jobs:
         python -m pip install --upgrade pip
         script/setup --dev
     - name: Run ruff
-      run: ./script/lint_ruff
+      run: ./script/lint_ruff --no-auto
 
