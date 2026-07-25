@@ -23,6 +23,9 @@ if TYPE_CHECKING:
         MuteSwitchEntity,
         StopWordSensitivityNumberEntity,
         ThinkingSoundEntity,
+        TimerNameTextSensorEntity,
+        TimerSecondsLeftSensorEntity,
+        TimerTotalSecondsSensorEntity,
         WakeWord1SensitivityNumberEntity,
         WakeWord2SensitivityNumberEntity,
     )
@@ -131,6 +134,14 @@ class ServerState:
     mute_switch_entity: "Optional[MuteSwitchEntity]" = None
     thinking_sound_entity: "Optional[ThinkingSoundEntity]" = None
     button_event_sensor_entity: "Optional[ButtonEventSensorEntity]" = None
+
+    # Expose the currently-tracked HA timer (if any) to Home Assistant.
+    # Materialised unconditionally in VoiceSatelliteProtocol.__init__, since
+    # (unlike the button sensor) every satellite supports the Assist timer
+    # feature regardless of attached peripherals.
+    timer_seconds_left_entity: "Optional[TimerSecondsLeftSensorEntity]" = None
+    timer_total_seconds_entity: "Optional[TimerTotalSecondsSensorEntity]" = None
+    timer_name_entity: "Optional[TimerNameTextSensorEntity]" = None
 
     # Lights declared by peripherals via register_light. Survives HA
     # reconnects so the satellite can rebuild its entities whenever it
