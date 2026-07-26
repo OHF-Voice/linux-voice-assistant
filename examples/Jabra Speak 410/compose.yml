@@ -1,0 +1,144 @@
+---
+# Jabra Speak 410 – peripheral controller
+#
+# Runs alongside the linux-voice-assistant container.
+# Controls the Jabra Speak 410's LED ring and buttons via USB HID,
+# and optionally integrates with PipeWire for volume control and mute detection.
+#
+# Credit: https://github.com/machineonamission/lva-jabra-speak-410
+#
+# See hardware notes at the bottom of this file before first run.
+
+services:
+  jabra-peripheral:
+    image: ghcr.io/machineonamission/lva-jabra-speak-410:main
+    container_name: jabra-peripheral
+    restart: unless-stopped
+
+    # -----------------------------------------------------------------------
+    # USB device access — required for HID LED and button control
+    # -----------------------------------------------------------------------
+    devices:
+      - /dev/bus/usb:/dev/bus/usb
+
+    # -----------------------------------------------------------------------
+    # PipeWire socket — required for mute detection and optional volume control
+    #
+    # The mute detect bodge reads from the microphone stream via pw-record to
+    # detect when the hardware mute engages (all-zero audio = hardware muted).
+    # Without this, mute/unmute from the Jabra button will not work.
+    #
+    # Replace /run/user/1000 with your actual XDG_RUNTIME_DIR if different.
+    # For the correct path run: echo $XDG_RUNTIME_DIR
+    # -----------------------------------------------------------------------
+    volumes:
+      - /run/user/1000/pipewire-0:/run/user/1000/pipewire-0:ro
+      - /run/user/1000/pulse:/run/user/1000/pulse:ro
+
+    group_add:
+      - audio
+
+    # -----------------------------------------------------------------------
+    # Environment variables
+    # -----------------------------------------------------------------------
+    environment:
+      - PYTHONUNBUFFERED=1
+
+      # LVA peripheral API WebSocket URL.
+      # If LVA runs on the same host with network_mode: host this default works.
+      - LVA_WS_URL=ws://localhost:6055
+
+      # PipeWire runtime directory — must match the volume mount path above.
+      - XDG_RUNTIME_DIR=/run/user/1000
+      - PULSE_SERVER=unix:/run/user/1000/pulse/native
+
+      # PipeWire sink for volume control.
+      # Leave as @DEFAULT_SINK@ or set to a specific sink name.
+      # Find sink names with: wpctl status
+      - PW_SINK=@DEFAULT_SINK@
+
+      # Volume control mode. Options:
+      #   pipewire  – adjust PipeWire volume directly on button press
+      #               (recommended with LVA pipewire volume control PR #272)
+      #   lva       – send volume_up / volume_down commands to LVA
+      #               (WARNING: may double-trigger if system also handles HID)
+      #   (unset)   – ignore volume button presses entirely
+      # - VOLUME_CONTROL=pipewire
+
+    # -----------------------------------------------------------------------
+    # Network — host mode so "localhost" reaches the LVA container directly
+    # -----------------------------------------------------------------------
+    network_mode: host
+
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "main.py"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+
+# =============================================================================
+# HARDWARE NOTES
+# =============================================================================
+#
+# 1. USB ACCESS — udev rule (recommended)
+#
+#    Add a udev rule on the HOST so the container can access the Jabra device
+#    without needing additional privileges:
+#
+#        sudo tee /etc/udev/rules.d/99-jabra.rules << 'EOF'
+#        SUBSYSTEM=="usb", ATTR{idVendor}=="0b0e", MODE="0666", GROUP="plugdev"
+#        EOF
+#        sudo udevadm control --reload-rules
+#        sudo udevadm trigger
+#
+#    Verify the device is visible:
+#        lsusb | grep 0b0e
+#
+# 2. PIPEWIRE — required for mute detection
+#
+#    The Jabra Speak 410 does not expose its mute button state over HID when
+#    not in an active call. As a workaround, the controller reads raw audio
+#    from PipeWire and detects hardware mute by observing all-zero audio chunks
+#    (digitally muted audio is impossible in real conditions).
+#
+#    Expose the PipeWire socket from the host to the container as shown in the
+#    volumes section above. See the LVA audio server documentation for the
+#    full procedure:
+#    https://github.com/OHF-Voice/linux-voice-assistant/blob/main/docs/install_audioserver.md
+#
+#    If pw-record is not available inside the container, install wireplumber:
+#        apt-get install wireplumber
+#    (already included in the pre-built image)
+#
+# 3. VOLUME CONTROL
+#
+#    The hidapi library takes full control of the USB HID interface, which
+#    means external tools like alsa_volume_from_usb_hid will stop working
+#    while this container is running.
+#
+#    Set VOLUME_CONTROL=pipewire to handle volume buttons via wpctl.
+#    Set VOLUME_CONTROL=lva to send volume commands to LVA instead.
+#    Leave unset to ignore volume buttons entirely.
+#
+#    Avoid VOLUME_CONTROL=lva if your system is also processing HID volume
+#    events at the OS level — this will result in double volume changes.
+#
+# 4. MICROPHONE INPUT
+#
+#    The Jabra Speak 410 enumerates as a standard USB audio device.
+#    No driver install is required. Pass it to LVA via:
+#
+#        --audio-input-device "Jabra SPEAK 410"
+#
+#    Or in LVA's compose environment:
+#        AUDIO_INPUT_DEVICE=Jabra SPEAK 410
+#
+# =============================================================================

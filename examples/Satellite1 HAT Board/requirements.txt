@@ -1,0 +1,4 @@
+websockets>=12.0
+rpi-ws281x>=5.0.0
+gpiozero>=2.0
+lgpio>=0.2

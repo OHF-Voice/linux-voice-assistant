@@ -1,0 +1,4 @@
+websockets>=12.0
+spidev>=3.6
+gpiozero>=2.0
+lgpio>=0.2

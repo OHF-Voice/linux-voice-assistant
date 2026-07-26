@@ -54,11 +54,31 @@ sudo mkdir -p /etc/pipewire/pipewire.conf.d
 sudo vi /etc/pipewire/pipewire.conf.d/linux-voice-assistant.conf
 ```
 
+💡 **Note:** On constrained hardware like a Raspberry Pi 3B, audio
+processing can be interrupted by other system activity, causing
+audible glitches or dropped wake-word detections. Loading the
+`libpipewire-module-rt` module raises PipeWire's scheduling priority
+(`rt.prio`) above normal processes, which reduces these interruptions.
+The `flags = [ ifexists nofail ]` ensures this configuration is
+silently skipped rather than causing a startup failure on systems
+where realtime scheduling isn't available (e.g. some containers or
+restricted kernels).
+
 Add the following content:
 ```
 context.properties = {
     default.clock.rate = 16000
 }
+
+context.modules = [
+    {   name = libpipewire-module-rt
+        args = {
+            nice.level    = -11
+            rt.prio       = 88
+        }
+        flags = [ ifexists nofail ]
+    }
+]
 ```
 
 #### Applying the Changes
