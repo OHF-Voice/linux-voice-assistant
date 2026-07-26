@@ -962,7 +962,7 @@ class VoiceSatelliteProtocol(APIServer):
                 done_callback=self.unduck,
             )
         else:
-            elf._continue_conversation = False
+            self._continue_conversation = False
             self.unduck()
             self._emit(LVAEvent.IDLE)
 
