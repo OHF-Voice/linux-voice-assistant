@@ -148,6 +148,7 @@ async def main() -> None:
         "--pipeline-ended-sound",
         default="",
         help="Sound to play when the voice pipeline ends without a response (e.g. no speech detected)",
+    )
         "--button-double-press-sound",
         default=str(_SOUNDS_DIR / "button_double_press.flac"),
         help="Sound to play for button double press",
