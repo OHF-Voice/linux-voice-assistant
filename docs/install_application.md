@@ -314,6 +314,8 @@ If you want to use your own sounds, you can add them to the `sounds/custom` aka 
 
 ### Wake Word:
 
+💡 **Note:** The active wake word(s) can also be changed at runtime from the Home Assistant device page, without editing `.env` or restarting LVA — see [Wake Word](dashboard.md#wake-word) in the dashboard documentation.
+
 #### Available Wake Word Models:
 
 The following wake word models are available:
