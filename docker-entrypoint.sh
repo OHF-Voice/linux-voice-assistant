@@ -128,7 +128,7 @@ if [ -n "${PERIPHERAL_VOLUME_STEP}" ]; then
   EXTRA_ARGS+=( "--peripheral-volume-step" "$PERIPHERAL_VOLUME_STEP" )
 fi
 
-if [ -n "${DISABLE_PERIPHERAL_API}" ]; then
+if [ -n "$DISABLE_PERIPHERAL_API" = "1" ]; then
   EXTRA_ARGS+=( "--disable-peripheral-api" "$DISABLE_PERIPHERAL_API" )
 fi
 
