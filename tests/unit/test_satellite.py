@@ -3,6 +3,7 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
+from aioesphomeapi.model import VoiceAssistantTimerEventType
 
 from tests.unit.conftest import make_satellite, make_state
 
@@ -367,3 +368,139 @@ class TestConnectionLost:
         sat = make_satellite(tmp_path)
         sat.connection_lost(None)
         sat.state.tts_player.stop.assert_called()
+
+
+# ---------------------------------------------------------------------------
+# Timer sensor entities (issue #130 - expose timer values to Home Assistant)
+# ---------------------------------------------------------------------------
+
+
+class TestTimerEntitiesCreated:
+    def test_timer_seconds_left_entity_created(self, tmp_path):
+        from linux_voice_assistant.entity import TimerSecondsLeftSensorEntity
+
+        sat = make_satellite(tmp_path)
+        assert sat.state.timer_seconds_left_entity is not None
+        assert isinstance(sat.state.timer_seconds_left_entity, TimerSecondsLeftSensorEntity)
+
+    def test_timer_total_seconds_entity_created(self, tmp_path):
+        from linux_voice_assistant.entity import TimerTotalSecondsSensorEntity
+
+        sat = make_satellite(tmp_path)
+        assert sat.state.timer_total_seconds_entity is not None
+        assert isinstance(sat.state.timer_total_seconds_entity, TimerTotalSecondsSensorEntity)
+
+    def test_timer_name_entity_created(self, tmp_path):
+        from linux_voice_assistant.entity import TimerNameTextSensorEntity
+
+        sat = make_satellite(tmp_path)
+        assert sat.state.timer_name_entity is not None
+        assert isinstance(sat.state.timer_name_entity, TimerNameTextSensorEntity)
+
+    def test_timer_entities_registered_in_entities_list(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        assert sat.state.timer_seconds_left_entity in sat.state.entities
+        assert sat.state.timer_total_seconds_entity in sat.state.entities
+        assert sat.state.timer_name_entity in sat.state.entities
+
+    def test_timer_entities_survive_reinit_without_duplication(self, tmp_path):
+        """Re-running __init__ (e.g. an HA reconnect) must reuse the same
+        entities rather than creating duplicates in state.entities."""
+        sat = make_satellite(tmp_path)
+        first = sat.state.timer_seconds_left_entity
+        count_before = len(sat.state.entities)
+
+        from linux_voice_assistant.satellite import VoiceSatelliteProtocol
+
+        VoiceSatelliteProtocol.__init__(sat, sat.state)
+
+        assert sat.state.timer_seconds_left_entity is first
+        assert len(sat.state.entities) == count_before
+
+
+class TestHandleTimerEvent:
+    """Verify handle_timer_event() keeps the three HA sensors in sync."""
+
+    @staticmethod
+    def _make_timer_msg(event_type, timer_id="t1", name="Pasta", total_seconds=600, seconds_left=598):
+        from aioesphomeapi.api_pb2 import VoiceAssistantTimerEventResponse
+
+        return VoiceAssistantTimerEventResponse(
+            event_type=event_type,
+            timer_id=timer_id,
+            name=name,
+            total_seconds=total_seconds,
+            seconds_left=seconds_left,
+        )
+
+    def test_timer_started_updates_sensor_values(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        msg = self._make_timer_msg(
+            VoiceAssistantTimerEventType.VOICE_ASSISTANT_TIMER_STARTED,
+            name="Pasta",
+            total_seconds=600,
+            seconds_left=598,
+        )
+
+        sat.handle_timer_event(VoiceAssistantTimerEventType.VOICE_ASSISTANT_TIMER_STARTED, msg)
+
+        assert sat.state.timer_name_entity.timer_name == "Pasta"
+        assert sat.state.timer_total_seconds_entity.total_seconds == 600
+        assert sat.state.timer_seconds_left_entity.seconds_left == 598
+
+    def test_timer_started_pushes_state_messages(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        sat.send_messages = MagicMock()
+        msg = self._make_timer_msg(VoiceAssistantTimerEventType.VOICE_ASSISTANT_TIMER_STARTED)
+
+        sat.handle_timer_event(VoiceAssistantTimerEventType.VOICE_ASSISTANT_TIMER_STARTED, msg)
+
+        sat.send_messages.assert_called_once()
+        (sent_messages,), _ = sat.send_messages.call_args
+        assert len(sent_messages) == 3
+
+    def test_timer_updated_refreshes_seconds_left(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        started = self._make_timer_msg(VoiceAssistantTimerEventType.VOICE_ASSISTANT_TIMER_STARTED, seconds_left=598)
+        sat.handle_timer_event(VoiceAssistantTimerEventType.VOICE_ASSISTANT_TIMER_STARTED, started)
+
+        updated = self._make_timer_msg(VoiceAssistantTimerEventType.VOICE_ASSISTANT_TIMER_UPDATED, seconds_left=550)
+        sat.handle_timer_event(VoiceAssistantTimerEventType.VOICE_ASSISTANT_TIMER_UPDATED, updated)
+
+        assert sat.state.timer_seconds_left_entity.seconds_left == 550
+
+    def test_timer_cancelled_resets_sensors(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        started = self._make_timer_msg(VoiceAssistantTimerEventType.VOICE_ASSISTANT_TIMER_STARTED)
+        sat.handle_timer_event(VoiceAssistantTimerEventType.VOICE_ASSISTANT_TIMER_STARTED, started)
+
+        cancelled = self._make_timer_msg(VoiceAssistantTimerEventType.VOICE_ASSISTANT_TIMER_CANCELLED)
+        sat.handle_timer_event(VoiceAssistantTimerEventType.VOICE_ASSISTANT_TIMER_CANCELLED, cancelled)
+
+        assert sat.state.timer_name_entity.timer_name == ""
+        assert sat.state.timer_total_seconds_entity.total_seconds == 0
+        assert sat.state.timer_seconds_left_entity.seconds_left == 0
+
+    def test_timer_finished_resets_sensors(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        started = self._make_timer_msg(VoiceAssistantTimerEventType.VOICE_ASSISTANT_TIMER_STARTED)
+        sat.handle_timer_event(VoiceAssistantTimerEventType.VOICE_ASSISTANT_TIMER_STARTED, started)
+
+        finished = self._make_timer_msg(VoiceAssistantTimerEventType.VOICE_ASSISTANT_TIMER_FINISHED)
+        sat.handle_timer_event(VoiceAssistantTimerEventType.VOICE_ASSISTANT_TIMER_FINISHED, finished)
+
+        assert sat.state.timer_seconds_left_entity.seconds_left == 0
+
+    def test_handles_missing_timer_entities_gracefully(self, tmp_path):
+        """If a timer entity is somehow absent (e.g. very old preferences
+        state), handle_timer_event must not raise."""
+        sat = make_satellite(tmp_path)
+        sat.state.timer_seconds_left_entity = None
+        sat.state.timer_total_seconds_entity = None
+        sat.state.timer_name_entity = None
+        sat.send_messages = MagicMock()
+
+        msg = self._make_timer_msg(VoiceAssistantTimerEventType.VOICE_ASSISTANT_TIMER_STARTED)
+        sat.handle_timer_event(VoiceAssistantTimerEventType.VOICE_ASSISTANT_TIMER_STARTED, msg)
+
+        sat.send_messages.assert_not_called()

@@ -14,16 +14,20 @@ from aioesphomeapi.api_pb2 import (  # type: ignore[attr-defined]
     ListEntitiesNumberResponse,
     ListEntitiesRequest,
     ListEntitiesSelectResponse,
+    ListEntitiesSensorResponse,
     ListEntitiesSwitchResponse,
+    ListEntitiesTextSensorResponse,
     MediaPlayerCommandRequest,
     MediaPlayerStateResponse,
     NumberCommandRequest,
     NumberStateResponse,
     SelectCommandRequest,
     SelectStateResponse,
+    SensorStateResponse,
     SubscribeHomeAssistantStatesRequest,
     SwitchCommandRequest,
     SwitchStateResponse,
+    TextSensorStateResponse,
 )
 from aioesphomeapi.model import (
     ColorMode,
@@ -32,6 +36,7 @@ from aioesphomeapi.model import (
     MediaPlayerEntityFeature,
     MediaPlayerState,
     NumberMode,
+    SensorStateClass,
 )
 from google.protobuf import message
 
@@ -797,6 +802,140 @@ class ButtonEventSensorEntity(ESPHomeEntity):
         )
 
 
+class TimerSecondsLeftSensorEntity(ESPHomeEntity):
+    """Exposes the remaining seconds of the active HA timer to Home Assistant.
+
+    Populated from VoiceAssistantTimerEventResponse messages (see
+    Satellite.handle_timer_event); this entity does not track timers itself,
+    it only mirrors whatever the Assist pipeline last reported.
+    """
+
+    def __init__(
+        self,
+        server: APIServer,
+        key: int,
+        name: str,
+        object_id: str,
+    ) -> None:
+        ESPHomeEntity.__init__(self, server)
+
+        self.key = key
+        self.name = name
+        self.object_id = object_id
+        self.seconds_left: float = 0.0
+        self._log = logging.getLogger(f"{self.__class__.__name__}[{self.key}]")
+
+    def update_state(self, seconds_left: float) -> None:
+        """Update the tracked seconds-left value."""
+        self.seconds_left = seconds_left
+        self._log.debug("Timer seconds left updated: %s", seconds_left)
+
+    def handle_message(self, msg: message.Message) -> Iterable[message.Message]:
+        if isinstance(msg, ListEntitiesRequest):
+            yield ListEntitiesSensorResponse(
+                object_id=self.object_id,
+                key=self.key,
+                name=self.name,
+                icon="mdi:timer-outline",
+                unit_of_measurement="s",
+                device_class="duration",
+                state_class=SensorStateClass.MEASUREMENT,
+            )
+        elif isinstance(msg, SubscribeHomeAssistantStatesRequest):
+            yield self._get_state_message()
+
+    def _get_state_message(self) -> SensorStateResponse:
+        return SensorStateResponse(key=self.key, state=self.seconds_left)
+
+
+# -----------------------------------------------------------------------------
+
+
+class TimerTotalSecondsSensorEntity(ESPHomeEntity):
+    """Exposes the original duration (in seconds) of the active HA timer."""
+
+    def __init__(
+        self,
+        server: APIServer,
+        key: int,
+        name: str,
+        object_id: str,
+    ) -> None:
+        ESPHomeEntity.__init__(self, server)
+
+        self.key = key
+        self.name = name
+        self.object_id = object_id
+        self.total_seconds: float = 0.0
+        self._log = logging.getLogger(f"{self.__class__.__name__}[{self.key}]")
+
+    def update_state(self, total_seconds: float) -> None:
+        """Update the tracked total-seconds value."""
+        self.total_seconds = total_seconds
+        self._log.debug("Timer total seconds updated: %s", total_seconds)
+
+    def handle_message(self, msg: message.Message) -> Iterable[message.Message]:
+        if isinstance(msg, ListEntitiesRequest):
+            yield ListEntitiesSensorResponse(
+                object_id=self.object_id,
+                key=self.key,
+                name=self.name,
+                icon="mdi:timer-outline",
+                unit_of_measurement="s",
+                device_class="duration",
+                state_class=SensorStateClass.MEASUREMENT,
+            )
+        elif isinstance(msg, SubscribeHomeAssistantStatesRequest):
+            yield self._get_state_message()
+
+    def _get_state_message(self) -> SensorStateResponse:
+        return SensorStateResponse(key=self.key, state=self.total_seconds)
+
+
+# -----------------------------------------------------------------------------
+
+
+class TimerNameTextSensorEntity(ESPHomeEntity):
+    """Exposes the name of the active HA timer, if one was given."""
+
+    def __init__(
+        self,
+        server: APIServer,
+        key: int,
+        name: str,
+        object_id: str,
+    ) -> None:
+        ESPHomeEntity.__init__(self, server)
+
+        self.key = key
+        self.name = name
+        self.object_id = object_id
+        self.timer_name: str = ""
+        self._log = logging.getLogger(f"{self.__class__.__name__}[{self.key}]")
+
+    def update_state(self, timer_name: str) -> None:
+        """Update the tracked timer name."""
+        self.timer_name = timer_name
+        self._log.debug("Timer name updated: %s", timer_name)
+
+    def handle_message(self, msg: message.Message) -> Iterable[message.Message]:
+        if isinstance(msg, ListEntitiesRequest):
+            yield ListEntitiesTextSensorResponse(
+                object_id=self.object_id,
+                key=self.key,
+                name=self.name,
+                icon="mdi:timer-outline",
+            )
+        elif isinstance(msg, SubscribeHomeAssistantStatesRequest):
+            yield self._get_state_message()
+
+    def _get_state_message(self) -> TextSensorStateResponse:
+        return TextSensorStateResponse(key=self.key, state=self.timer_name)
+
+
+# -----------------------------------------------------------------------------
+
+
 # Backward compatibility export aliases
 __all__ = [
     "ESPHomeEntity",
@@ -805,6 +944,9 @@ __all__ = [
     "ThinkingSoundEntity",
     "LEDLightEntity",
     "ButtonEventSensorEntity",
+    "TimerSecondsLeftSensorEntity",
+    "TimerTotalSecondsSensorEntity",
+    "TimerNameTextSensorEntity",
     "WakeWord1SensitivityNumberEntity",
     "WakeWord2SensitivityNumberEntity",
     "StopWordSensitivityNumberEntity",

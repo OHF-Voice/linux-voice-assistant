@@ -9,7 +9,7 @@ import threading
 import time
 from collections.abc import Iterable
 from functools import partial
-from typing import Any, Dict, List, Optional, Set, Union
+from typing import Any, Dict, List, Optional, Set, Type, TypeVar, Union
 from urllib.parse import urlparse, urlunparse
 from urllib.request import urlopen
 
@@ -52,12 +52,16 @@ from pyopen_wakeword import OpenWakeWord
 from .api_server import APIServer
 from .entity import (
     ButtonEventSensorEntity,
+    ESPHomeEntity,
     LEDLightEntity,
     MediaPlayerEntity,
     MicSettingEntity,
     MuteSwitchEntity,
     StopWordSensitivityNumberEntity,
     ThinkingSoundEntity,
+    TimerNameTextSensorEntity,
+    TimerSecondsLeftSensorEntity,
+    TimerTotalSecondsSensorEntity,
     WakeWord1SensitivityNumberEntity,
     WakeWord2SensitivityNumberEntity,
 )
@@ -66,6 +70,8 @@ from .peripheral_api import LVAEvent
 from .util import call_all
 
 _LOGGER = logging.getLogger(__name__)
+
+_EntityT = TypeVar("_EntityT", bound=ESPHomeEntity)
 
 PROTO_TO_MESSAGE_TYPE = {v: k for k, v in MESSAGE_TYPE_TO_PROTO.items()}
 
@@ -146,6 +152,59 @@ class VoiceSatelliteProtocol(APIServer):
         mute_switch.update_get_muted(lambda: self.state.muted)
         mute_switch.update_set_muted(self._set_muted)
         mute_switch.sync_with_state()
+
+        # Add/update timer sensor entities (seconds left, total seconds, name).
+        # Every satellite supports the Assist timer feature regardless of
+        # attached peripherals, so unlike the button sensor these are
+        # materialised unconditionally rather than gated behind a
+        # "pending_*" flag.
+        existing_seconds_left = self._dedupe_singleton_entity(TimerSecondsLeftSensorEntity)
+        if existing_seconds_left is not None:
+            self.state.timer_seconds_left_entity = existing_seconds_left
+
+        existing_total_seconds = self._dedupe_singleton_entity(TimerTotalSecondsSensorEntity)
+        if existing_total_seconds is not None:
+            self.state.timer_total_seconds_entity = existing_total_seconds
+
+        existing_timer_name = self._dedupe_singleton_entity(TimerNameTextSensorEntity)
+        if existing_timer_name is not None:
+            self.state.timer_name_entity = existing_timer_name
+
+        if self.state.timer_seconds_left_entity is None:
+            self.state.timer_seconds_left_entity = TimerSecondsLeftSensorEntity(
+                server=self,
+                key=len(self.state.entities),
+                name="Timer Seconds Left",
+                object_id="timer_seconds_left",
+            )
+            self.state.entities.append(self.state.timer_seconds_left_entity)
+        elif self.state.timer_seconds_left_entity not in self.state.entities:
+            self.state.entities.append(self.state.timer_seconds_left_entity)
+        self.state.timer_seconds_left_entity.server = self
+
+        if self.state.timer_total_seconds_entity is None:
+            self.state.timer_total_seconds_entity = TimerTotalSecondsSensorEntity(
+                server=self,
+                key=len(self.state.entities),
+                name="Timer Total Seconds",
+                object_id="timer_total_seconds",
+            )
+            self.state.entities.append(self.state.timer_total_seconds_entity)
+        elif self.state.timer_total_seconds_entity not in self.state.entities:
+            self.state.entities.append(self.state.timer_total_seconds_entity)
+        self.state.timer_total_seconds_entity.server = self
+
+        if self.state.timer_name_entity is None:
+            self.state.timer_name_entity = TimerNameTextSensorEntity(
+                server=self,
+                key=len(self.state.entities),
+                name="Timer Name",
+                object_id="timer_name",
+            )
+            self.state.entities.append(self.state.timer_name_entity)
+        elif self.state.timer_name_entity not in self.state.entities:
+            self.state.entities.append(self.state.timer_name_entity)
+        self.state.timer_name_entity.server = self
 
         existing_thinking_sound_switches = [entity for entity in self.state.entities if isinstance(entity, ThinkingSoundEntity)]
         if existing_thinking_sound_switches:
@@ -575,6 +634,24 @@ class VoiceSatelliteProtocol(APIServer):
     # Timer event handler
     # ------------------------------------------------------------------
 
+    def _dedupe_singleton_entity(self, entity_cls: Type[_EntityT]) -> Optional[_EntityT]:
+        """Ensure at most one entity of ``entity_cls`` exists in self.state.entities.
+
+        Used for entities like the timer sensors that should exist exactly
+        once per satellite regardless of how many times __init__ runs (e.g.
+        on an HA reconnect). Returns the surviving instance, or None if one
+        hasn't been created yet. Any duplicates found are removed from
+        self.state.entities as a side effect.
+        """
+        matches = [entity for entity in self.state.entities if isinstance(entity, entity_cls)]
+        if not matches:
+            return None
+
+        for extra in matches[1:]:
+            self.state.entities.remove(extra)
+
+        return matches[0]
+
     def handle_timer_event(
         self,
         event_type: VoiceAssistantTimerEventType,
@@ -594,12 +671,15 @@ class VoiceSatelliteProtocol(APIServer):
 
         if event_type == VoiceAssistantTimerEventType.VOICE_ASSISTANT_TIMER_STARTED:
             self._emit(LVAEvent.TIMER_TICKING, timer_data)
+            self._update_timer_sensors(msg.name, msg.total_seconds, msg.seconds_left)
 
         elif event_type == VoiceAssistantTimerEventType.VOICE_ASSISTANT_TIMER_UPDATED:
             self._emit(LVAEvent.TIMER_UPDATED, timer_data)
+            self._update_timer_sensors(msg.name, msg.total_seconds, msg.seconds_left)
 
         elif event_type == VoiceAssistantTimerEventType.VOICE_ASSISTANT_TIMER_CANCELLED:
             self._emit(LVAEvent.IDLE)
+            self._update_timer_sensors("", 0, 0)
 
         elif event_type == VoiceAssistantTimerEventType.VOICE_ASSISTANT_TIMER_FINISHED:
             if not self._timer_finished:
@@ -609,6 +689,32 @@ class VoiceSatelliteProtocol(APIServer):
                 self.duck()
                 self._emit(LVAEvent.TIMER_RINGING, timer_data)
                 self._play_timer_finished()
+            self._update_timer_sensors("", 0, 0)
+
+    def _update_timer_sensors(self, name: str, total_seconds: float, seconds_left: float) -> None:
+        """Push the latest timer values to Home Assistant via their sensor entities.
+
+        Called for every timer event (started/updated/cancelled/finished) so the
+        three HA-visible sensors (name, total seconds, seconds left) stay in
+        sync with whatever Assist last reported. Cancelled/finished timers reset
+        the sensors to empty/zero rather than leaving a stale countdown visible.
+        """
+        state_messages = []
+
+        if self.state.timer_name_entity is not None:
+            self.state.timer_name_entity.update_state(name)
+            state_messages.append(self.state.timer_name_entity._get_state_message())  # pylint: disable=protected-access
+
+        if self.state.timer_total_seconds_entity is not None:
+            self.state.timer_total_seconds_entity.update_state(total_seconds)
+            state_messages.append(self.state.timer_total_seconds_entity._get_state_message())  # pylint: disable=protected-access
+
+        if self.state.timer_seconds_left_entity is not None:
+            self.state.timer_seconds_left_entity.update_state(seconds_left)
+            state_messages.append(self.state.timer_seconds_left_entity._get_state_message())  # pylint: disable=protected-access
+
+        if state_messages:
+            self.send_messages(state_messages)
 
     # ------------------------------------------------------------------
     # Message routing
