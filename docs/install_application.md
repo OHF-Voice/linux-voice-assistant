@@ -328,7 +328,6 @@ The following wake word models are available:
 - `hey_morgan` - Morgan wake word
 - `hey_luna` - Luna wake word
 - `hey_home_assistant` - Home Assistant wake word
-- `stop` - Stop wake word
 - `okay_computer` - Okay Computer wake word
 - `choo_choo_homie` - Choo Choo Homie wake word
 
@@ -339,6 +338,9 @@ The following wake word models are available:
 - `hey_mycroft` - Mycroft wake word
 - `hey_rhasspy` - Rhasspy wake word
 
+### Stop Word:
+
+The `stop` wake word is used to stop the current process (response, announcement, or timer). It is available in the `wakewords` directory (using the microWakeWord engine) and can be referenced in the `.env` file with `STOP_MODEL=stop`.
 
 ### Custom Wake Word:
 
