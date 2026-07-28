@@ -28,7 +28,8 @@
 - `linux_voice_assistant/webrtc.py` - WebRTC noise gain/NS processing
 - `linux_voice_assistant/mpv_player.py` - MPV-based media player
 - `linux_voice_assistant/entity.py` - Entity definitions (MediaPlayer, MuteSwitch, etc.)
-- `linux_voice_assistant/api_server.py` - Peripheral WebSocket API server
+- `linux_voice_assistant/api_server.py` - ESPHome API server 
+- `linux_voice_assistant/peripheral_api.py` - Peripheral WebSocket API server
 - `linux_voice_assistant/models.py` - Preferences and ServerState dataclasses
 
 ## Development Commands
