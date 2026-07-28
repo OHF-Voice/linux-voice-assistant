@@ -14,8 +14,8 @@ The device page exposes one or two wake word selects (**Wake Word 1**, **Wake Wo
 
 💡 **Note:** Models suffixed with **(OWW)** in the dropdown are [openWakeWord](https://github.com/dscripka/openWakeWord) models; everything else is a [microWakeWord](https://github.com/kahrendt/microWakeWord) model. Both engines can be mixed and matched, but keep in mind:
 
-- **microWakeWord** models are lighter-weight and are the default engine bundled with LVA.
-- **openWakeWord (OWW)** models are typically pulled in when you point `--wake-word-dir` (or the `WAKE_WORD_DIR` environment variable) at the `openWakeWord` subdirectory, or when downloading a custom wake word from Home Assistant that targets that engine.
+- **microWakeWord** models are lighter-weight and use engine that can run on lower-end devices and are located in the `wakewords` directory.
+- **openWakeWord** models use higher engine with more accuracy and are located in the `wakewords/openWakeWord` directory.
 
 See the [Wake Word section](install_application.md#wake-word) of the installation guide for the full list of bundled models and how to add custom ones.
 
