@@ -1,3 +1,68 @@
+<a id="v1.1.14"></a>
+# [v1.1.14](https://github.com/OHF-Voice/linux-voice-assistant/releases/tag/v1.1.14) - 2026-07-28
+
+<!-- Release notes generated using configuration in .github/release.yml at main -->
+
+## What's Changed
+### Exciting New Features 🎉
+* Colored Debug Logging and move Voice Event to Info level in logger by [@aryanhasgithub](https://github.com/aryanhasgithub) in [#271](https://github.com/OHF-Voice/linux-voice-assistant/pull/271)
+### Other Changes
+* build(dev): enhance local development environment and setup workflow by [@florian-asche](https://github.com/florian-asche) in [#358](https://github.com/OHF-Voice/linux-voice-assistant/pull/358)
+* docs(github): establish repository governance and automation workflows by [@florian-asche](https://github.com/florian-asche) in [#359](https://github.com/OHF-Voice/linux-voice-assistant/pull/359)
+* Bump docker/build-push-action from 5.3.0 to 7.3.0 by [@dependabot](https://github.com/dependabot)[bot] in [#364](https://github.com/OHF-Voice/linux-voice-assistant/pull/364)
+* Bump actions/attest-build-provenance from 1 to 4 by [@dependabot](https://github.com/dependabot)[bot] in [#363](https://github.com/OHF-Voice/linux-voice-assistant/pull/363)
+* Bump docker/metadata-action from 5.5.1 to 6.2.0 by [@dependabot](https://github.com/dependabot)[bot] in [#362](https://github.com/OHF-Voice/linux-voice-assistant/pull/362)
+* Bump docker/setup-qemu-action from 3 to 4 by [@dependabot](https://github.com/dependabot)[bot] in [#361](https://github.com/OHF-Voice/linux-voice-assistant/pull/361)
+* Bump docker/login-action from 3.1.0 to 4.4.0 by [@dependabot](https://github.com/dependabot)[bot] in [#360](https://github.com/OHF-Voice/linux-voice-assistant/pull/360)
+* chore(ci): update github actions and docker dependencies by [@florian-asche](https://github.com/florian-asche) in [#368](https://github.com/OHF-Voice/linux-voice-assistant/pull/368)
+* fix Respeaker USB Mic Array v2 LEDs by [@litinoveweedle](https://github.com/litinoveweedle) in [#357](https://github.com/OHF-Voice/linux-voice-assistant/pull/357)
+* Update install.md - Fixed log path by [@maximilianovermeyer](https://github.com/maximilianovermeyer) in [#372](https://github.com/OHF-Voice/linux-voice-assistant/pull/372)
+* Bump docker/setup-buildx-action from 3 to 4 by [@dependabot](https://github.com/dependabot)[bot] in [#371](https://github.com/OHF-Voice/linux-voice-assistant/pull/371)
+* fix race condition between LVA registration to the HA and peripheral … by [@litinoveweedle](https://github.com/litinoveweedle) in [#373](https://github.com/OHF-Voice/linux-voice-assistant/pull/373)
+* Bump actions/checkout from 4 to 7 by [@dependabot](https://github.com/dependabot)[bot] in [#370](https://github.com/OHF-Voice/linux-voice-assistant/pull/370)
+* feat(ai): integrate Kilo agent framework and coding instructions by [@florian-asche](https://github.com/florian-asche) in [#366](https://github.com/OHF-Voice/linux-voice-assistant/pull/366)
+* Bump docker/login-action from 4.4.0 to 4.5.0 by [@dependabot](https://github.com/dependabot)[bot] in [#375](https://github.com/OHF-Voice/linux-voice-assistant/pull/375)
+* docs: add realtime scheduling tuning for constrained hardware Closes [#164](https://github.com/OHF-Voice/linux-voice-assistant/issues/164) by [@SpiliosDimakopoulos](https://github.com/SpiliosDimakopoulos) in [#376](https://github.com/OHF-Voice/linux-voice-assistant/pull/376)
+* Bump docker/login-action from 4.5.0 to 4.5.1 by [@dependabot](https://github.com/dependabot)[bot] in [#377](https://github.com/OHF-Voice/linux-voice-assistant/pull/377)
+
+## New Contributors
+* [@dependabot](https://github.com/dependabot)[bot] made their first contribution in [#364](https://github.com/OHF-Voice/linux-voice-assistant/pull/364)
+* [@litinoveweedle](https://github.com/litinoveweedle) made their first contribution in [#357](https://github.com/OHF-Voice/linux-voice-assistant/pull/357)
+* [@maximilianovermeyer](https://github.com/maximilianovermeyer) made their first contribution in [#372](https://github.com/OHF-Voice/linux-voice-assistant/pull/372)
+* [@SpiliosDimakopoulos](https://github.com/SpiliosDimakopoulos) made their first contribution in [#376](https://github.com/OHF-Voice/linux-voice-assistant/pull/376)
+
+**Full Changelog**: https://github.com/OHF-Voice/linux-voice-assistant/compare/v1.1.13...v1.1.14
+
+[Changes][v1.1.14]
+
+
+<a id="v1.1.13"></a>
+# [v1.1.13](https://github.com/OHF-Voice/linux-voice-assistant/releases/tag/v1.1.13) - 2026-07-18
+
+<!-- Release notes generated using configuration in .github/release.yml at main -->
+
+## What's Changed
+### Exciting New Features 🎉
+* (Temporary workaround) Switch between MWW/OWW models from the UI by [@omaramin-2000](https://github.com/omaramin-2000) in [#348](https://github.com/OHF-Voice/linux-voice-assistant/pull/348)
+* Leds and buttons events by [@omaramin-2000](https://github.com/omaramin-2000) in [#266](https://github.com/OHF-Voice/linux-voice-assistant/pull/266)
+* Add Tests For LVA by [@aryanhasgithub](https://github.com/aryanhasgithub) in [#312](https://github.com/OHF-Voice/linux-voice-assistant/pull/312)
+* feat: add --listen-during-wake-sound argument by [@wangwillian0](https://github.com/wangwillian0) in [#273](https://github.com/OHF-Voice/linux-voice-assistant/pull/273)
+### Other Changes
+* perf(player): limit cache to 32 MiB by [@florian-asche](https://github.com/florian-asche) in [#309](https://github.com/OHF-Voice/linux-voice-assistant/pull/309)
+* Allow using python versions above 3.11 by [@omaramin-2000](https://github.com/omaramin-2000) in [#345](https://github.com/OHF-Voice/linux-voice-assistant/pull/345)
+* Modify USB control transfer settings in respeaker_usb_mic_array.py by [@omaramin-2000](https://github.com/omaramin-2000) in [#349](https://github.com/OHF-Voice/linux-voice-assistant/pull/349)
+* Broadcast entity state to all API clients; don't desync on a second connection by [@JSRossie](https://github.com/JSRossie) in [#329](https://github.com/OHF-Voice/linux-voice-assistant/pull/329)
+* Fix lint_mypy by [@omaramin-2000](https://github.com/omaramin-2000) in [#352](https://github.com/OHF-Voice/linux-voice-assistant/pull/352)
+
+## New Contributors
+* [@JSRossie](https://github.com/JSRossie) made their first contribution in [#329](https://github.com/OHF-Voice/linux-voice-assistant/pull/329)
+* [@wangwillian0](https://github.com/wangwillian0) made their first contribution in [#273](https://github.com/OHF-Voice/linux-voice-assistant/pull/273)
+
+**Full Changelog**: https://github.com/OHF-Voice/linux-voice-assistant/compare/v1.1.12...v1.1.13
+
+[Changes][v1.1.13]
+
+
 <a id="v1.1.12"></a>
 # [v1.1.12](https://github.com/OHF-Voice/linux-voice-assistant/releases/tag/v1.1.12) - 2026-06-22
 
@@ -299,6 +364,8 @@ Initial release
 [Changes][v1.0.0]
 
 
+[v1.1.14]: https://github.com/OHF-Voice/linux-voice-assistant/compare/v1.1.13...v1.1.14
+[v1.1.13]: https://github.com/OHF-Voice/linux-voice-assistant/compare/v1.1.12...v1.1.13
 [v1.1.12]: https://github.com/OHF-Voice/linux-voice-assistant/compare/v1.1.11...v1.1.12
 [v1.1.11]: https://github.com/OHF-Voice/linux-voice-assistant/compare/v1.1.10...v1.1.11
 [v1.1.10]: https://github.com/OHF-Voice/linux-voice-assistant/compare/v1.1.9...v1.1.10
