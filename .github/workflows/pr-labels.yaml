@@ -1,0 +1,87 @@
+name: PR Labels
+
+on:
+  pull_request_target:
+    types:
+      - opened
+      - edited
+      - synchronize
+      - labeled
+      - unlabeled
+      - reopened
+      - ready_for_review
+    branches:
+      - main
+
+permissions:
+  pull-requests: write
+
+jobs:
+  apply_label:
+    name: Apply
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.user.type != 'Bot'
+    steps:
+      - name: 🏷 Apply label from PR description checkbox
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          script: |
+            const known = [
+              'breaking-change', 'bugfix', 'refactor',
+              'new-feature', 'enhancement', 'maintenance',
+              'ci', 'dependencies', 'documentation',
+            ];
+
+            const { owner, repo } = context.repo;
+            const issue_number = context.payload.pull_request.number;
+            const current = (context.payload.pull_request.labels || [])
+              .map(l => l.name);
+
+            const alreadyLabelled = current.filter(n => known.includes(n));
+            if (alreadyLabelled.length === 1) {
+              core.info(
+                `Skipping: PR already labelled '${alreadyLabelled[0]}'.`
+              );
+              return;
+            }
+
+            const body = context.payload.pull_request.body || '';
+            const re = /^\s*-\s*\[x\][^`\n]*`([^`]+)`/gim;
+            const ticked = [];
+            for (const m of body.matchAll(re)) {
+              const name = m[1];
+              if (known.includes(name) && !ticked.includes(name)) {
+                ticked.push(name);
+              }
+            }
+
+            if (ticked.length === 0) {
+              core.setFailed(
+                'No "Types of changes" checkbox is ticked in the PR ' +
+                'description. Edit the description and tick exactly ' +
+                'one box so this PR can be release-noted.'
+              );
+              return;
+            }
+            if (ticked.length > 1) {
+              core.setFailed(
+                `Multiple "Types of changes" checkboxes are ticked ` +
+                `(${ticked.join(', ')}). Tick exactly one.`
+              );
+              return;
+            }
+
+            const desired = ticked[0];
+
+            for (const name of current) {
+              if (known.includes(name) && name !== desired) {
+                await github.rest.issues.removeLabel({
+                  owner, repo, issue_number, name,
+                }).catch(() => {});
+              }
+            }
+            if (!current.includes(desired)) {
+              await github.rest.issues.addLabels({
+                owner, repo, issue_number, labels: [desired],
+              });
+            }

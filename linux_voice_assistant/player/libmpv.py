@@ -32,6 +32,9 @@ class LibMpvPlayer(AudioPlayer):
             audio_display=False,
             log_handler=self._on_mpv_log,
             loglevel="error",
+            cache="yes",
+            demuxer_max_bytes="32MiB",
+            cache_secs="20",
         )
 
         if device:

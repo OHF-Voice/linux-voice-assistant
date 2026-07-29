@@ -76,9 +76,8 @@ For all other users, we have different installation methods available (Docker, s
 ```sh
 usage: __main__.py [-h] [--name NAME] [--audio-input-device AUDIO_INPUT_DEVICE] [--list-input-devices] [--audio-input-block-size AUDIO_INPUT_BLOCK_SIZE] [--audio-output-device AUDIO_OUTPUT_DEVICE] [--list-output-devices] [--wake-word-dir WAKE_WORD_DIR]  [--mic-auto-gain] [--mic-noise-suppression]
                    [--wake-model WAKE_MODEL] [--stop-model STOP_MODEL] [--download-dir DOWNLOAD_DIR] [--refractory-seconds REFRACTORY_SECONDS] [--wakeup-sound WAKEUP_SOUND] [--timer-finished-sound TIMER_FINISHED_SOUND] [--processing-sound PROCESSING_SOUND]
-                   [--mute-sound MUTE_SOUND] [--unmute-sound UNMUTE_SOUND] [--preferences-file PREFERENCES_FILE] [--host HOST] [--network-interface NETWORK_INTERFACE] [--port PORT] [--enable-thinking-sound] [--debug]
+                   [--mute-sound MUTE_SOUND] [--unmute-sound UNMUTE_SOUND] [--preferences-file PREFERENCES_FILE] [--host HOST] [--network-interface NETWORK_INTERFACE] [--port PORT] [--enable-thinking-sound] [--listen-during-wake-sound] [--debug]
 ```
-
 
 | Parameter                       | Description                                                   | Default                              |
 | ------------------------------- | ------------------------------------------------------------- | ------------------------------------ |
@@ -108,11 +107,13 @@ usage: __main__.py [-h] [--name NAME] [--audio-input-device AUDIO_INPUT_DEVICE] 
 | `--network-interface`           | Network interface for ESPHome server                          | Autodetected                         |
 | `--port`                        | Port for ESPHome server                                       | 6053                                 |
 | `--enable-thinking-sound`       | Enable thinking sound on startup                              | False                                |
+| `--listen-during-wake-sound`    | Start listening while the wake sound is still playing         | False                                |
 | `--peripheral-host`             | Bind address for the peripheral WebSocket API                 | 0.0.0.0                              |
 | `--peripheral-port`             | Port for the peripheral WebSocket API                         | 6055                                 |
 | `--peripheral-volume-step`      | Volume change per button press, 0.0–1.0                       | %(default)s                          |
 | `--disable-peripheral-api`      | Disable the peripheral WebSocket API entirely                 | False                                |
 | `--debug`                       | Print DEBUG messages to console                               | False                                |
+| `--colored-debug`               | Print colored DEBUG messages to console                       | False                                |
 | `--output-only`                 | Enable output only mode                                       | False                                |
 
 💡 **Note:** There is a detailed explanation on the gain, noise suppression, and wake word sensitivity flags in the [audio options](docs/audio_options.md) file.
@@ -130,6 +131,36 @@ The Docker images are built using GitHub Actions, which provides:
 The documentation for the build process can be found in the [GitHub Actions Workflows](.github/workflow.md) file.
 
 ## Development
+
+### System Requirements
+
+**System packages (Linux):**
+- libmpv-dev (`sudo apt install libmpv-dev`)
+- PulseAudio/PipeWire (`sudo apt install pulseaudio pipewire`)
+- ALSA utils (`sudo apt install alsa-utils`)
+
+**Python:**
+- Python 3.11+ must be installed on your system (`python3 --version` should show 3.11+)
+- On Ubuntu/Debian: `sudo apt install python3.11 python3.11-venv python3.11-dev`
+
+### VS Code Setup
+
+VS Code development uses a local Python virtual environment (`.venv/`):
+
+1. Open workspace in VS Code
+2. Accept Workspace Trust (bottom-left status bar)
+3. Install recommended extensions when prompted:
+   - `ms-python.python` - Python language support
+   - `ms-python.vscode-pylance` - Python language server
+   - `kilo.kilocode` - Kilo AI assistant
+4. **Terminal** → **New Terminal** (or `` Ctrl+` ``) - Opens integrated terminal (uses .venv when available)
+5. Run `./script/setup --dev` to create `.venv` and install dev dependencies
+6. VS Code automatically detects `.venv/bin/python` as the Python interpreter
+
+**Available VS Code Tasks:**
+- `Ctrl+Shift+B` - Run Setup or Linter
+- `Ctrl+Shift+T` - Run Tests
+- `Ctrl+Shift+P` → "Tasks: Run Task" - Show all tasks (Setup, Linter, Tests, Run App)
 
 ### Code Quality Checks
 
@@ -187,9 +218,8 @@ Auto-fix formatting issues (Black + isort):
 ### Testing
 
 Run the test suite:
-
-```sh
-./script/test
+``` sh
+./script/tests
 ```
 
 ## License

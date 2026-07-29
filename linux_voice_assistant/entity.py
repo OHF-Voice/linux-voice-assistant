@@ -121,6 +121,18 @@ class MediaPlayerEntity(ESPHomeEntity):
         """Resume SendSpin playback if it was paused."""
         if self.sendspin_bridge:
             self.sendspin_bridge.resume()
+    def _broadcast_state(self, msgs: Iterable[message.Message]) -> None:
+        """Push an asynchronous state change to all connected clients.
+
+        Playback-completion callbacks fire outside any request, so the update
+        must reach every subscribed client rather than the single connection in
+        ``self.server`` (which may belong to another client, or be closed).
+        """
+        state = getattr(self.server, "state", None)
+        if state is not None:
+            state.broadcast(msgs)
+        else:  # pragma: no cover - no ServerState (e.g. a bare APIServer)
+            self.server.send_messages(msgs)
 
     def play(
         self,
@@ -166,7 +178,7 @@ class MediaPlayerEntity(ESPHomeEntity):
                 self.announce_player.play(
                     url,
                     done_callback=lambda: call_all(
-                        lambda: self._safe_send_state(MediaPlayerState.IDLE),
+                        lambda: self._broadcast_state([self._update_state(MediaPlayerState.IDLE)]),
                         self.server.send_messages([self._update_state(MediaPlayerState.IDLE)]),
                         done_callback,
                     ),
@@ -182,7 +194,7 @@ class MediaPlayerEntity(ESPHomeEntity):
             self.music_player.play(
                 url,
                 done_callback=lambda: call_all(
-                    self.server.send_messages([self._update_state(MediaPlayerState.IDLE)]),
+                    lambda: self._broadcast_state([self._update_state(MediaPlayerState.IDLE)]),
                     done_callback,
                 ),
             )
