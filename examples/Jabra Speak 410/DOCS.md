@@ -153,7 +153,30 @@ export XDG_RUNTIME_DIR=/run/user/1000
 export PULSE_SERVER=unix:/run/user/1000/pulse/native
 python main.py
 ```
+To make it persistent across reboots
+```
+mkdir -p ~/.config/systemd/user/
+nano ~/.config/systemd/user/jabra-lva.service
+```
+```
+[Unit]
+Description=Jabra Speak 410 LVA Controller
+After=network.target pipewire.service
 
+[Service]
+Type=simple
+WorkingDirectory=/home/$USER/linux-voice-assistant/examples/Jabra Speak 410
+ExecStart=/home/$USER/linux-voice-assistant/venv/bin/python main.py
+Restart=always
+RestartSec=5
+Environment="VOLUME_CONTROL=pipewire"
+Environment="LVA_WS_URL=ws://localhost:6055"
+Environment="XDG_RUNTIME_DIR=/run/user/1000"
+Environment="PULSE_SERVER=unix:/run/user/1000/pulse/native"
+
+[Install]
+WantedBy=default.target
+```
 ---
 
 ## Configuration
