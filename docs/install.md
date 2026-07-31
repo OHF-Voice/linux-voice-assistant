@@ -77,7 +77,7 @@ The easyiest way to get started is to use the prebuilt image. This image comes w
 
 - Download ready-to-use image from [PiCompose](https://github.com/florian-asche/PiCompose)
 - Change configuration in /compose/ directory if you need to.
-- You may need to reboot the board like 3 times for everything to be installed. Especially for the 2MicHat drivers. And give docker-compose some time to download the images. You can watch the logs in /var/logs/picompose.log
+- You may need to reboot the board like 3 times for everything to be installed. Especially for the 2MicHat drivers. And give docker-compose some time to download the images. You can watch the logs in /var/log/picompose.log
 - More information within the PiCompose project.
 
 ### Option B) Install on your own:
