@@ -116,7 +116,7 @@ usage: __main__.py [-h] [--name NAME] [--audio-input-device AUDIO_INPUT_DEVICE] 
 | `--colored-debug`               | Print colored DEBUG messages to console                       | False                                |
 | `--output-only`                 | Enable output only mode                                       | False                                |
 
-💡 **Note:** There are detailed explanations on the controlled entities from device page in the [dashboard](docs/dashboard.md) file, and the gain, noise suppression, and wake word sensitivity flags in the [audio options](docs/audio_options.md) file.
+💡 **Note:** There are detailed explanations on the controlled entities from device page in the [configuration](docs/configuration.md) file.
 
 ## Build Information
 
