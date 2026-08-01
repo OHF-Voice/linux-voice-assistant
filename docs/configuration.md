@@ -111,7 +111,7 @@ LVA exposes three numeric controls in the Home Assistant device page for fine-gr
 |--------|-------------|---------|
 | **Wake Word 1 Sensitivity** ![WW 1 Sensitivity](./images/wake_word_sensitivity.png) | Probability cutoff for the primary wake word | From model manifest |
 | **Wake Word 2 Sensitivity** ![WW 2 Sensitivity](./images/wake_word_sensitivity_2.png) | Probability cutoff for the secondary wake word (if active) | From model manifest |
-| **Stop Word Sensitivity** ![alt text](image-2.png) | Probability cutoff for the stop word | From model manifest |
+| **Stop Word Sensitivity** ![alt text](./images/stop_word_sensitivity.png) | Probability cutoff for the stop word | From model manifest |
  
 Values range from `0.0` to `1.0`:
  
