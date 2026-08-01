@@ -44,7 +44,7 @@ Both share a single volume control — there is no separate volume for the pipel
 
 ## Microphone Settings
 
-## Volume
+### Volume
 
 Controls the microphone volume to adjust the area distance from which the microphone can pick up your voice. The volume slider is persisted to `preferences.json` so it's restored on the next startup.
 
@@ -60,8 +60,6 @@ When you change gain, LVA(using the [webrtc](https://github.com/OHF-Voice/webrtc
 - Environments where you move around relative to the mic
 - Keeping wake word detection consistent regardless of speaking volume
 
-![Mic Gain](./images/mic_gain.png)
-
 #### Noise Suppression
 
 When you change noise suppression, LVA(using the [webrtc](https://github.com/OHF-Voice/webrtc-noise-gain) library) filters out constant background noise from the audio signal. It works by learning what "silence" sounds like in your environment and subtracting that from the audio. Useful in the following ways:
@@ -69,8 +67,6 @@ When you change noise suppression, LVA(using the [webrtc](https://github.com/OHF
 - Noisy environments
 - Improving STT accuracy by sending cleaner audio to Home Assistant
 - Reducing false wake word triggers from background noise
-
-![Mic Noise Suppresion](./images/mic_nosie_suppression.png)
 
 ### Using Gain and Noise Suppression with LVA
 
@@ -96,7 +92,10 @@ You can add/edit these variables in the .env file to set gain and noise suppress
 
 ### Home Assistant Entity
 
-LVA exposes two slider entities to change these gain and noise suppression from which you can edit the gain and noise suppression at runtime.
+LVA exposes two entities to change these gain and noise suppression from which you can edit them at runtime.
+
+![Mic Gain](./images/mic_gain.png)
+![Mic Noise Suppresion](./images/mic_nosie_suppression.png)
 
 💡 **Note:**  Setting the flag and ENV values to 0 turns them off and are not used.
 
