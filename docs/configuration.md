@@ -94,8 +94,8 @@ You can add/edit these variables in the .env file to set gain and noise suppress
 
 LVA exposes two entities to change these gain and noise suppression from which you can edit them at runtime.
 
-![Mic Gain](./images/mic_gain.png)
-![Mic Noise Suppresion](./images/mic_nosie_suppression.png)
+- ![Mic Gain](./images/mic_gain.png)
+- ![Mic Noise Suppresion](./images/mic_nosie_suppression.png)
 
 💡 **Note:**  Setting the flag and ENV values to 0 turns them off and are not used.
 
