@@ -80,3 +80,8 @@ if args.dev:
         pip + ["install", "-e", f"{_PROGRAM_DIR}[dev]"],
         env={**dict(os.environ), **env}
     )
+
+    # Install git hooks (lint on commit, tests on push) via prek
+    prek = str(_VENV_DIR / "bin" / "prek")
+    subprocess.check_call([prek, "install"], cwd=str(_PROGRAM_DIR))
+    subprocess.check_call([prek, "install", "--hook-type", "pre-push"], cwd=str(_PROGRAM_DIR))

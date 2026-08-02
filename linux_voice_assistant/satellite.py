@@ -73,7 +73,6 @@ _HAS_AUDIO_DATA2 = "data2" in {f.name for f in VoiceAssistantAudio.DESCRIPTOR.fi
 
 
 class VoiceSatelliteProtocol(APIServer):
-
     def __init__(self, state: ServerState) -> None:
         super().__init__(state.name)
 

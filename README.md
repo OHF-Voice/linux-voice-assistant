@@ -183,11 +183,11 @@ source .venv/bin/activate
 ```
 
 ### Linting Commands
-
+The `prek` commands have to be run inside the dev virtual environment.
 #### Run all linting checks
 
 ```sh
-./script/lint...
+prek run lint --all-files
 ```
 
 #### Individual linting commands (with auto-fix support)
@@ -195,32 +195,23 @@ source .venv/bin/activate
 
 | Script                 | Description                              | Auto-fix Available?   |
 | ------------------------ | ------------------------------------------ | ----------------------- |
-| `./script/lint_black`  | Checks Python code formatting with Black | Yes, use`--auto` flag |
-| `./script/lint_flake8` | Runs style and syntax checks with flake8 | No                    |
-| `./script/lint_isort`  | Checks import sorting with isort         | Yes, use`--auto` flag |
+| `./script/lint_ruff`   | Checks Python code formatting with Ruff | Yes, use`--auto` flag |
 | `./script/lint_mypy`   | Runs static type analysis with mypy      | No                    |
-| `./script/lint_pylint` | Runs code quality checks with pylint     | Yes, use`--auto` flag |
 
 #### Examples
 
 Run a specific lint check:
 
 ```sh
-./script/lint_black
-```
-
-Auto-fix formatting issues (Black + isort):
-
-```sh
-./script/lint_black --auto
-./script/lint_isort --auto
+./script/lint_ruff
 ```
 
 ### Testing
+The `prek` commands have to be run inside the dev virtual environment.
 
 Run the test suite:
 ``` sh
-./script/tests
+prek run tests --all-files
 ```
 
 ## License

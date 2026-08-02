@@ -6,7 +6,7 @@ The process is straight-forward.
 
 - Fork the LVA repository.
 - Write the code for your feature or fix.
-- Ensure tests pass and linting succeeds (`./script/lint` and `./script/tests`).
+- Ensure tests pass and linting succeeds (`prek run lint --all-files` and `prek run tests --all-files`).
 - Create a Pull Request against the `main` branch.
 
 ## Feature suggestions
