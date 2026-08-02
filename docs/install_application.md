@@ -176,6 +176,7 @@ Environment=PREFERENCES_FILE="/home/pi/linux-voice-assistant/preferences.json"
 # Environment=PORT="6053"
 # Environment=AUDIO_INPUT_DEVICE="default"
 # Environment=AUDIO_OUTPUT_DEVICE="default"
+# Environment=MUSIC_OUTPUT_DEVICE="default"
 # Environment=MIC_VOLUME="1.0"
 # Environment=MIC_AUTO_GAIN="0"
 # Environment=MIC_NOISE_SUPPRESSION="0"
@@ -269,10 +270,11 @@ The following variables can be configured in the `.env` or in the service file:
 | `PORT` | `6053` | API server port |
 | `AUDIO_INPUT_DEVICE` | Autodetected | Audio input device name |
 | `AUDIO_OUTPUT_DEVICE` | Autodetected | Audio output device name |
-| `MIC_VOLUME` | Control microphone volume | 100 |
-| `MIC_AUTO_GAIN` | Add WebRTC Gain to Mic | 0 |
-| `MIC_NOISE_SUPPRESSION` | Add WebRTC Noise Suppresion to Mic | 0 |
-| `AUDIO_INPUT_CHANNELS` | Number of audio input channels | 2 |
+| `MUSIC_OUTPUT_DEVICE` | `AUDIO_OUTPUT_DEVICE` | Music/media output device name (defaults to the voice output device) |
+| `MIC_VOLUME` | 100 | Control microphone volume |
+| `MIC_AUTO_GAIN` | 0 | Add WebRTC Gain to Mic |
+| `MIC_NOISE_SUPPRESSION` | 0 | Add WebRTC Noise Suppression to Mic |
+| `AUDIO_INPUT_CHANNELS` | 2 | Number of audio input channels |
 | `ENABLE_THINKING_SOUND` | false | Set to "1" to enable thinking sound |
 | `WAKE_WORD_DIR` | `app/wakewords` | Path to the wake word directory |
 | `WAKE_MODEL` | `okay_nabu` | Wake word model to use |
@@ -286,7 +288,7 @@ The following variables can be configured in the `.env` or in the service file:
 | `PROCESSING_SOUND` | `sounds/processing.wav` | Sound file for processing state |
 | `LISTEN_DURING_WAKE_SOUND` | false | Set to "1" to start listening immediately after wake word detection, without waiting for the wake sound to finish |
 | `MUTE_SOUND` | `sounds/mute_switch_on.flac` | Sound file for mute on |
-| `UNMUTE_SOUND` | `sounds/mute_switch_off.flac` | Sound file for Configure Audio Devices
+| `UNMUTE_SOUND` | `sounds/mute_switch_off.flac` | Sound file for mute off |
 | `PERIPHERAL_HOST` | 0.0.0.0 | Host for the peripheral WebSocket API |
 | `PERIPHERAL_PORT` | 6055 | Port for the peripheral WebSocket API |
 | `PERIPHERAL_VOLUME_STEP` | %(default)s | Volume change per button press |
