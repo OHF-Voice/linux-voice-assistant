@@ -67,6 +67,10 @@ async def main() -> None:
         help="Name for the audio output device (see --list-output-devices)",
     )
     parser.add_argument(
+        "--music-output-device",
+        help="mpv name for the music/media output device (defaults to --audio-output-device)",
+    )
+    parser.add_argument(
         "--list-output-devices",
         action="store_true",
         help="List audio output devices and exit",
@@ -419,7 +423,7 @@ async def main() -> None:
         wake_words=wake_models,
         active_wake_words=active_wake_words,
         stop_word=stop_model,
-        music_player=MpvMediaPlayer(device=args.audio_output_device),
+        music_player=MpvMediaPlayer(device=args.music_output_device or args.audio_output_device),
         tts_player=MpvMediaPlayer(device=args.audio_output_device),
         wakeup_sound=args.wakeup_sound,
         start_listening_sound=args.start_listening_sound,

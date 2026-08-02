@@ -1,3 +1,29 @@
+<a id="v1.1.15"></a>
+# [v1.1.15](https://github.com/OHF-Voice/linux-voice-assistant/releases/tag/v1.1.15) - 2026-08-02
+
+<!-- Release notes generated using configuration in .github/release.yml at main -->
+
+## What's Changed
+### Hotfix
+* Fix variable handling in docker entrypoint script
+
+### Exciting New Features 🎉
+* Add --music-output-device to route music separately from voice by [@matthewdva](https://github.com/matthewdva) in [#350](https://github.com/OHF-Voice/linux-voice-assistant/pull/350)
+
+### Other Changes
+* Update Jabra Speak DOCS.md  by [@mrbubble62](https://github.com/mrbubble62) in [#387](https://github.com/OHF-Voice/linux-voice-assistant/pull/387)
+* Bump docker/login-action from 4.5.1 to 4.6.0 by [@dependabot](https://github.com/dependabot)[bot] in [#386](https://github.com/OHF-Voice/linux-voice-assistant/pull/386)
+* Documentation Improvements by [@omaramin-2000](https://github.com/omaramin-2000) in [#385](https://github.com/OHF-Voice/linux-voice-assistant/pull/385)
+
+## New Contributors
+* [@mrbubble62](https://github.com/mrbubble62) made their first contribution in [#387](https://github.com/OHF-Voice/linux-voice-assistant/pull/387)
+* [@matthewdva](https://github.com/matthewdva) made their first contribution in [#350](https://github.com/OHF-Voice/linux-voice-assistant/pull/350)
+
+**Full Changelog**: https://github.com/OHF-Voice/linux-voice-assistant/compare/v1.1.14...v1.1.15
+
+[Changes][v1.1.15]
+
+
 <a id="v1.1.14"></a>
 # [v1.1.14](https://github.com/OHF-Voice/linux-voice-assistant/releases/tag/v1.1.14) - 2026-07-28
 
@@ -364,6 +390,7 @@ Initial release
 [Changes][v1.0.0]
 
 
+[v1.1.15]: https://github.com/OHF-Voice/linux-voice-assistant/compare/v1.1.14...v1.1.15
 [v1.1.14]: https://github.com/OHF-Voice/linux-voice-assistant/compare/v1.1.13...v1.1.14
 [v1.1.13]: https://github.com/OHF-Voice/linux-voice-assistant/compare/v1.1.12...v1.1.13
 [v1.1.12]: https://github.com/OHF-Voice/linux-voice-assistant/compare/v1.1.11...v1.1.12
