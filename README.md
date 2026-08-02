@@ -19,7 +19,7 @@ Because it runs on a full Linux system and offers access significantly more loca
 - Supports multiple wake words and languages
 - Supports multiple architectures (linux/amd64 and linux/aarch64)
 - Automated builds with artifact attestation for security
-- Supports announcments, start/continue conversation, and timers
+- Supports [announcments](https://www.home-assistant.io/actions/assist_satellite.announce/), [start](https://www.home-assistant.io/actions/assist_satellite.start_conversation/)/continue conversation, and timers
 - Tested and works with Python 3.11 and Python 3.13.
 - Prebuild docker image available on [GitHub Container Registry](https://github.com/OHF-Voice/linux-voice-assistant/pkgs/container/linux-voice-assistant)
 - Prebuild [Raspberry Pi image](https://github.com/florian-asche/PiCompose)
@@ -74,7 +74,7 @@ For all other users, we have different installation methods available (Docker, s
 💡 **Note:** There is an [environment variable](docs/install_application.md#environment-variables-reference) for each parameter if you use docker or systemd based setup.
 
 ```sh
-usage: __main__.py [-h] [--name NAME] [--audio-input-device AUDIO_INPUT_DEVICE] [--list-input-devices] [--audio-input-block-size AUDIO_INPUT_BLOCK_SIZE] [--audio-output-device AUDIO_OUTPUT_DEVICE] [--list-output-devices] [--wake-word-dir WAKE_WORD_DIR]  [--mic-auto-gain] [--mic-noise-suppression]
+usage: __main__.py [-h] [--name NAME] [--audio-input-device AUDIO_INPUT_DEVICE] [--list-input-devices] [--audio-input-block-size AUDIO_INPUT_BLOCK_SIZE] [--audio-output-device AUDIO_OUTPUT_DEVICE] [--music-output-device MUSIC_OUTPUT_DEVICE] [--list-output-devices] [--wake-word-dir WAKE_WORD_DIR]  [--mic-auto-gain] [--mic-noise-suppression]
                    [--wake-model WAKE_MODEL] [--stop-model STOP_MODEL] [--download-dir DOWNLOAD_DIR] [--refractory-seconds REFRACTORY_SECONDS] [--wakeup-sound WAKEUP_SOUND] [--timer-finished-sound TIMER_FINISHED_SOUND] [--processing-sound PROCESSING_SOUND]
                    [--mute-sound MUTE_SOUND] [--unmute-sound UNMUTE_SOUND] [--preferences-file PREFERENCES_FILE] [--host HOST] [--network-interface NETWORK_INTERFACE] [--port PORT] [--enable-thinking-sound] [--listen-during-wake-sound] [--debug]
 ```
@@ -85,6 +85,7 @@ usage: __main__.py [-h] [--name NAME] [--audio-input-device AUDIO_INPUT_DEVICE] 
 | `--audio-input-device`          | Soundcard name for input device                               | Autodetected                         |
 | `--audio-input-block-size`      | Audio input block size in samples                             | 1024                                 |
 | `--audio-output-device`         | mpv name for output device                                    | Autodetected                         |
+| `--music-output-device`         | mpv name for the music/media output device                    | `--audio-output-device`              |
 | `--mic-volume`                  | Control microphone volume                                     | 100                                  |
 | `--mic-auto-gain`               | Add WebRTC Gain to Mic                                        | 0                                    |
 | `--mic-noise-suppression`       | Add WebRTC Noise Suppression to Mic                           | 0                                    |
@@ -116,7 +117,7 @@ usage: __main__.py [-h] [--name NAME] [--audio-input-device AUDIO_INPUT_DEVICE] 
 | `--colored-debug`               | Print colored DEBUG messages to console                       | False                                |
 | `--output-only`                 | Enable output only mode                                       | False                                |
 
-💡 **Note:** There is a detailed explanation on the gain, noise suppression, and wake word sensitivity flags in the [audio options](docs/audio_options.md) file.
+💡 **Note:** There are detailed explanations on the controlled entities from device page in the [configuration](docs/configuration.md) file.
 
 ## Build Information
 
