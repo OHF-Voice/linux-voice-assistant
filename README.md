@@ -19,7 +19,7 @@ Because it runs on a full Linux system and offers access significantly more loca
 - Supports multiple wake words and languages
 - Supports multiple architectures (linux/amd64 and linux/aarch64)
 - Automated builds with artifact attestation for security
-- Supports announcments, start/continue conversation, and timers
+- Supports [announcments](https://www.home-assistant.io/actions/assist_satellite.announce/), [start](https://www.home-assistant.io/actions/assist_satellite.start_conversation/)/continue conversation, and timers
 - Tested and works with Python 3.11 and Python 3.13.
 - Prebuild docker image available on [GitHub Container Registry](https://github.com/OHF-Voice/linux-voice-assistant/pkgs/container/linux-voice-assistant)
 - Prebuild [Raspberry Pi image](https://github.com/florian-asche/PiCompose)
@@ -117,7 +117,7 @@ usage: __main__.py [-h] [--name NAME] [--audio-input-device AUDIO_INPUT_DEVICE] 
 | `--colored-debug`               | Print colored DEBUG messages to console                       | False                                |
 | `--output-only`                 | Enable output only mode                                       | False                                |
 
-💡 **Note:** There is a detailed explanation on the gain, noise suppression, and wake word sensitivity flags in the [audio options](docs/audio_options.md) file.
+💡 **Note:** There are detailed explanations on the controlled entities from device page in the [configuration](docs/configuration.md) file.
 
 ## Build Information
 
