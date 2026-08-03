@@ -117,6 +117,7 @@ class ServerState:
     timer_finished_sound: str
     mute_sound: str
     unmute_sound: str
+    pipeline_ended_sound: str
     button_double_press_sound: str
     button_triple_press_sound: str
     button_long_press_sound: str
