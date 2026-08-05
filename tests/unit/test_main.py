@@ -233,3 +233,31 @@ class TestPreferencesFromArgs:
         if enable_thinking_sound:
             prefs.thinking_sound = 1
         assert prefs.thinking_sound == 1
+
+
+# ---------------------------------------------------------------------------
+# Stop word sensitivity restored from preferences
+# ---------------------------------------------------------------------------
+
+
+class TestInitialStopWordThreshold:
+    def test_saved_sensitivity_is_restored(self):
+        from linux_voice_assistant.__main__ import _initial_stop_word_threshold
+
+        assert _initial_stop_word_threshold(0.9) == pytest.approx(0.9)
+
+    def test_falls_back_to_server_state_default_when_never_set(self):
+        from linux_voice_assistant.__main__ import _initial_stop_word_threshold
+        from linux_voice_assistant.models import ServerState
+
+        assert _initial_stop_word_threshold(None) == pytest.approx(ServerState.stop_word_threshold)
+
+    def test_clamped_to_one_when_above(self):
+        from linux_voice_assistant.__main__ import _initial_stop_word_threshold
+
+        assert _initial_stop_word_threshold(1.5) == pytest.approx(1.0)
+
+    def test_clamped_to_zero_when_below(self):
+        from linux_voice_assistant.__main__ import _initial_stop_word_threshold
+
+        assert _initial_stop_word_threshold(-0.5) == pytest.approx(0.0)

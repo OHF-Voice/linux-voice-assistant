@@ -379,6 +379,10 @@ async def main() -> None:
     initial_volume = max(0.0, min(1.0, float(initial_volume)))
     preferences.volume = initial_volume
 
+    # Load stop word sensitivity from preferences on startup, and ensure it's between 0.0 and 1.0
+    initial_stop_word_threshold = _initial_stop_word_threshold(preferences.stop_word_sensitivity)
+    preferences.stop_word_sensitivity = initial_stop_word_threshold
+
     if args.enable_thinking_sound:
         preferences.thinking_sound = 1
 
@@ -441,6 +445,7 @@ async def main() -> None:
         output_only=args.output_only,
         download_dir=args.download_dir,
         volume=initial_volume,
+        stop_word_threshold=initial_stop_word_threshold,
         mic_volume=preferences.mic_volume,
         mic_auto_gain=preferences.mic_auto_gain,
         mic_noise_suppression=preferences.mic_noise_suppression,
@@ -588,6 +593,18 @@ async def main() -> None:
             await peripheral_api.stop()
 
     _LOGGER.debug("Server stopped")
+
+
+# -----------------------------------------------------------------------------
+def _initial_stop_word_threshold(saved_sensitivity: Optional[float]) -> float:
+    """
+    Resolve the stop word probability cutoff to start from, clamped to 0.0-1.0.
+    :param saved_sensitivity: Value persisted in preferences, or None if it has never been set.
+    """
+    if saved_sensitivity is None:
+        return ServerState.stop_word_threshold
+
+    return max(0.0, min(1.0, float(saved_sensitivity)))
 
 
 # -----------------------------------------------------------------------------
