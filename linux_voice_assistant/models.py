@@ -15,12 +15,14 @@ if TYPE_CHECKING:
     from pyopen_wakeword import OpenWakeWord
 
     from .entity import (
+        BinarySensorEntity,
         ButtonEventSensorEntity,
         ESPHomeEntity,
         LEDLightEntity,
         MediaPlayerEntity,
         MicSettingEntity,
         MuteSwitchEntity,
+        SensorEntity,
         StopWordSensitivityNumberEntity,
         ThinkingSoundEntity,
         WakeWord1SensitivityNumberEntity,
@@ -78,6 +80,41 @@ class LightRegistration:
     effects: List[str] = field(default_factory=list)
     supports_rgb: bool = True
     supports_brightness: bool = True
+
+
+@dataclass
+class SensorRegistration:
+    """Capabilities a peripheral declares for one of its Sensor entities.
+
+    The peripheral sends this with the register_sensor command after
+    connecting. LVA materialises a matching SensorEntity so HA can
+    display it. Generic: any peripheral can register temperature,
+    humidity, illuminance, and so on.
+    """
+
+    name: str
+    object_id: str
+    device_class: str = ""
+    unit_of_measurement: str = ""
+    accuracy_decimals: int = 1
+    state_class: str = "measurement"
+    icon: str = ""
+
+
+@dataclass
+class BinarySensorRegistration:
+    """Capabilities a peripheral declares for one of its Binary Sensor entities.
+
+    The peripheral sends this with the register_binary_sensor command after
+    connecting. LVA materialises a matching BinarySensorEntity so HA can
+    display it. Generic: any peripheral can register presence, motion,
+    occupancy, and so on.
+    """
+
+    name: str
+    object_id: str
+    device_class: str = ""
+    icon: str = ""
 
 
 @dataclass
@@ -139,6 +176,21 @@ class ServerState:
     # Materialised LightEntities keyed by object_id, so light_command
     # events can be routed back to the right peripheral hardware.
     led_light_entities: "Dict[str, LEDLightEntity]" = field(default_factory=dict)
+
+    # Sensors declared by peripherals via register_sensor. Survives HA
+    # reconnects so the satellite can rebuild its entities whenever it is
+    # constructed again.
+    pending_sensors: "List[SensorRegistration]" = field(default_factory=list)
+    # Materialised SensorEntities keyed by object_id, so update_sensor
+    # readings can be routed to the right entity.
+    sensor_entities: "Dict[str, SensorEntity]" = field(default_factory=dict)
+
+    # Binary sensors declared by peripherals via register_binary_sensor.
+    # Survives HA reconnects, mirroring pending_sensors.
+    pending_binary_sensors: "List[BinarySensorRegistration]" = field(default_factory=list)
+    # Materialised BinarySensorEntities keyed by object_id, so
+    # update_binary_sensor readings can be routed to the right entity.
+    binary_sensor_entities: "Dict[str, BinarySensorEntity]" = field(default_factory=dict)
 
     # True once a peripheral sends register_button. Gates creation of
     # ButtonEventSensorEntity so the HA device page only shows the button

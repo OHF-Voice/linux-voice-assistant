@@ -92,6 +92,30 @@ Commands accepted from the peripheral container
               events to Home Assistant when the corresponding
               button_* commands are sent. Send once after connecting;
               duplicate registrations are ignored.
+  register_sensor   data: {"name": str, "object_id": str,
+                           "device_class": str, "unit_of_measurement": str,
+                           "accuracy_decimals": int, "state_class": str,
+                           "icon": str}
+              The peripheral declares a numeric Sensor it wants exposed
+              in HA. LVA creates a matching ESPHome Sensor entity
+              (visible as sensor.<satellite>_<object_id>). Generic: any
+              peripheral can register temperature, humidity, illuminance,
+              etc. Send once after connecting; duplicate registrations
+              for the same object_id are ignored.
+  update_sensor     data: {"object_id": str, "state": float}
+              Push a new reading for a previously registered Sensor. LVA
+              forwards it to Home Assistant.
+  register_binary_sensor  data: {"name": str, "object_id": str,
+                           "device_class": str, "icon": str}
+              The peripheral declares an on/off Binary Sensor it wants
+              exposed in HA. LVA creates a matching ESPHome Binary Sensor
+              entity (visible as binary_sensor.<satellite>_<object_id>).
+              Generic: any peripheral can register presence, motion,
+              occupancy, etc. Send once after connecting; duplicate
+              registrations for the same object_id are ignored.
+  update_binary_sensor  data: {"object_id": str, "state": bool}
+              Push a new reading for a previously registered Binary Sensor.
+              LVA forwards it to Home Assistant.
 """
 
 from __future__ import annotations
@@ -161,6 +185,21 @@ class LVACommand(str, Enum):
     BUTTON_LONG_PRESS = "button_long_press"
     REGISTER_LIGHT = "register_light"
     REGISTER_BUTTON = "register_button"
+    REGISTER_SENSOR = "register_sensor"
+    UPDATE_SENSOR = "update_sensor"
+    REGISTER_BINARY_SENSOR = "register_binary_sensor"
+    UPDATE_BINARY_SENSOR = "update_binary_sensor"
+
+
+def _coerce_bool(value: Any) -> bool:
+    """Coerce a JSON-decoded value to a bool.
+
+    Accepts real booleans, numbers (1/0), and common truthy strings so a
+    peripheral can send whatever its language marshals naturally.
+    """
+    if isinstance(value, str):
+        return value.strip().lower() in ("1", "true", "on", "yes")
+    return bool(value)
 
 
 # ---------------------------------------------------------------------------
@@ -480,6 +519,18 @@ class PeripheralAPIServer:
         elif command == LVACommand.REGISTER_BUTTON:
             self._register_button(satellite)
 
+        elif command == LVACommand.REGISTER_SENSOR:
+            self._register_sensor(msg.get("data") or {}, satellite)
+
+        elif command == LVACommand.UPDATE_SENSOR:
+            self._update_sensor(msg.get("data") or {}, satellite)
+
+        elif command == LVACommand.REGISTER_BINARY_SENSOR:
+            self._register_binary_sensor(msg.get("data") or {}, satellite)
+
+        elif command == LVACommand.UPDATE_BINARY_SENSOR:
+            self._update_binary_sensor(msg.get("data") or {}, satellite)
+
     def _register_light(self, data: Dict[str, Any], satellite: Any) -> None:
         """Register a Light declared by a peripheral.
 
@@ -548,6 +599,149 @@ class PeripheralAPIServer:
             satellite.register_pending_button()
 
         self._schedule_ha_reconnect_for_late_entity("button", "button_press_event")
+
+    def _register_sensor(self, data: Dict[str, Any], satellite: Any) -> None:
+        """Register a Sensor declared by a peripheral.
+
+        Idempotent on object_id: repeat registrations (e.g. after a
+        peripheral reconnect) keep the existing entity and its state.
+        Generic — any peripheral can declare temperature, humidity,
+        illuminance, etc., mirroring register_light.
+        """
+        from .models import SensorRegistration  # local import to avoid a cycle
+
+        object_id = str(data.get("object_id", "")).strip()
+        if not object_id:
+            _LOGGER.warning("register_sensor without object_id; ignoring")
+            return
+
+        state = self._state
+        if state is None:
+            return
+
+        if any(spec.object_id == object_id for spec in state.pending_sensors):
+            # Same sensor already on file; nothing to do.
+            return
+
+        spec = SensorRegistration(
+            name=str(data.get("name", "Sensor")),
+            object_id=object_id,
+            device_class=str(data.get("device_class", "")),
+            unit_of_measurement=str(data.get("unit_of_measurement", "")),
+            accuracy_decimals=int(data.get("accuracy_decimals", 1)),
+            state_class=str(data.get("state_class", "measurement")),
+            icon=str(data.get("icon", "")),
+        )
+        state.pending_sensors.append(spec)
+        _LOGGER.info(
+            "Sensor registered: %s (device_class=%s)", object_id, spec.device_class
+        )
+
+        # If the satellite is already running, materialise the entity now so
+        # future readings route correctly. HA only sees it after the
+        # integration reconnects, but LVA stays consistent.
+        if satellite is not None:
+            satellite.register_pending_sensors()
+
+        self._schedule_ha_reconnect_for_late_entity("sensor", object_id)
+
+    def _update_sensor(self, data: Dict[str, Any], satellite: Any) -> None:
+        """Apply a new reading to a peripheral-registered Sensor and push it to HA."""
+        object_id = str(data.get("object_id", "")).strip()
+        if not object_id:
+            _LOGGER.warning("update_sensor without object_id; ignoring")
+            return
+
+        state = self._state
+        if state is None:
+            return
+
+        entity = state.sensor_entities.get(object_id)
+        if entity is None:
+            _LOGGER.warning("update_sensor for unknown sensor '%s'; ignoring", object_id)
+            return
+
+        if "state" not in data:
+            return
+
+        try:
+            value = float(data["state"])
+        except (TypeError, ValueError):
+            _LOGGER.warning("update_sensor '%s' with non-numeric state; ignoring", object_id)
+            return
+
+        entity.update_state(value)
+        if satellite is not None:
+            # pylint: disable=protected-access
+            satellite.send_messages([entity._get_state_message()])
+
+    def _register_binary_sensor(self, data: Dict[str, Any], satellite: Any) -> None:
+        """Register a Binary Sensor declared by a peripheral.
+
+        Idempotent on object_id: repeat registrations (e.g. after a
+        peripheral reconnect) keep the existing entity and its state.
+        Generic — any peripheral can declare presence, motion, occupancy,
+        etc., mirroring register_sensor.
+        """
+        from .models import BinarySensorRegistration  # local import to avoid a cycle
+
+        object_id = str(data.get("object_id", "")).strip()
+        if not object_id:
+            _LOGGER.warning("register_binary_sensor without object_id; ignoring")
+            return
+
+        state = self._state
+        if state is None:
+            return
+
+        if any(spec.object_id == object_id for spec in state.pending_binary_sensors):
+            # Same binary sensor already on file; nothing to do.
+            return
+
+        spec = BinarySensorRegistration(
+            name=str(data.get("name", "Binary Sensor")),
+            object_id=object_id,
+            device_class=str(data.get("device_class", "")),
+            icon=str(data.get("icon", "")),
+        )
+        state.pending_binary_sensors.append(spec)
+        _LOGGER.info(
+            "Binary sensor registered: %s (device_class=%s)", object_id, spec.device_class
+        )
+
+        # If the satellite is already running, materialise the entity now so
+        # future readings route correctly. HA only sees it after the
+        # integration reconnects, but LVA stays consistent.
+        if satellite is not None:
+            satellite.register_pending_binary_sensors()
+
+        self._schedule_ha_reconnect_for_late_entity("binary_sensor", object_id)
+
+    def _update_binary_sensor(self, data: Dict[str, Any], satellite: Any) -> None:
+        """Apply a new reading to a peripheral-registered Binary Sensor and push it to HA."""
+        object_id = str(data.get("object_id", "")).strip()
+        if not object_id:
+            _LOGGER.warning("update_binary_sensor without object_id; ignoring")
+            return
+
+        state = self._state
+        if state is None:
+            return
+
+        entity = state.binary_sensor_entities.get(object_id)
+        if entity is None:
+            _LOGGER.warning(
+                "update_binary_sensor for unknown binary sensor '%s'; ignoring", object_id
+            )
+            return
+
+        if "state" not in data:
+            return
+
+        entity.update_state(_coerce_bool(data["state"]))
+        if satellite is not None:
+            # pylint: disable=protected-access
+            satellite.send_messages([entity._get_state_message()])
 
     # ------------------------------------------------------------------
     # Helpers

@@ -3,10 +3,13 @@
 from unittest.mock import MagicMock
 
 from aioesphomeapi.api_pb2 import (  # type: ignore[attr-defined]
+    BinarySensorStateResponse,
+    ListEntitiesBinarySensorResponse,
     ListEntitiesMediaPlayerResponse,
     ListEntitiesNumberResponse,
     ListEntitiesRequest,
     ListEntitiesSelectResponse,
+    ListEntitiesSensorResponse,
     ListEntitiesSwitchResponse,
     MediaPlayerCommandRequest,
     MediaPlayerStateResponse,
@@ -14,6 +17,7 @@ from aioesphomeapi.api_pb2 import (  # type: ignore[attr-defined]
     NumberStateResponse,
     SelectCommandRequest,
     SelectStateResponse,
+    SensorStateResponse,
     SubscribeHomeAssistantStatesRequest,
     SwitchCommandRequest,
     SwitchStateResponse,
@@ -64,6 +68,37 @@ def make_mute_switch(server=None, key=2, initial_muted=False):
     entity._get_muted = get_muted
     entity._set_muted = set_muted
     return entity
+
+
+def make_sensor(server=None, key=10, **kwargs):
+    from linux_voice_assistant.entity import SensorEntity
+
+    server = server or make_server()
+    params = dict(
+        name="Temperature",
+        object_id="temperature",
+        device_class="temperature",
+        unit_of_measurement="°C",
+        accuracy_decimals=1,
+        state_class="measurement",
+        icon="mdi:thermometer",
+    )
+    params.update(kwargs)
+    return SensorEntity(server=server, key=key, **params)
+
+
+def make_binary_sensor(server=None, key=11, **kwargs):
+    from linux_voice_assistant.entity import BinarySensorEntity
+
+    server = server or make_server()
+    params = dict(
+        name="Presence",
+        object_id="presence",
+        device_class="occupancy",
+        icon="mdi:motion-sensor",
+    )
+    params.update(kwargs)
+    return BinarySensorEntity(server=server, key=key, **params)
 
 
 def make_mic_setting(server=None, key=3, options=None, value=0.0):
@@ -422,3 +457,155 @@ class TestMicSettingEntitySelect:
         msgs = list(entity.handle_message(SubscribeHomeAssistantStatesRequest()))
         select_msg = next(m for m in msgs if isinstance(m, SelectStateResponse))
         assert isinstance(select_msg.state, str)
+
+
+# ---------------------------------------------------------------------------
+# SensorEntity
+# ---------------------------------------------------------------------------
+
+
+class TestSensorEntityListEntities:
+    def test_list_entities_request_yields_response(self):
+        entity = make_sensor(key=10)
+        msgs = list(entity.handle_message(ListEntitiesRequest()))
+        assert len(msgs) == 1
+        assert isinstance(msgs[0], ListEntitiesSensorResponse)
+
+    def test_list_entities_response_has_correct_key(self):
+        entity = make_sensor(key=10)
+        msgs = list(entity.handle_message(ListEntitiesRequest()))
+        assert msgs[0].key == 10
+
+    def test_list_entities_response_has_correct_object_id(self):
+        entity = make_sensor()
+        msgs = list(entity.handle_message(ListEntitiesRequest()))
+        assert msgs[0].object_id == "temperature"
+
+    def test_list_entities_response_has_device_class(self):
+        entity = make_sensor(device_class="humidity")
+        msgs = list(entity.handle_message(ListEntitiesRequest()))
+        assert msgs[0].device_class == "humidity"
+
+    def test_list_entities_response_has_unit(self):
+        entity = make_sensor(unit_of_measurement="%")
+        msgs = list(entity.handle_message(ListEntitiesRequest()))
+        assert msgs[0].unit_of_measurement == "%"
+
+    def test_list_entities_response_has_accuracy(self):
+        entity = make_sensor(accuracy_decimals=2)
+        msgs = list(entity.handle_message(ListEntitiesRequest()))
+        assert msgs[0].accuracy_decimals == 2
+
+
+class TestSensorEntityStateClass:
+    def test_measurement_maps_to_one(self):
+        entity = make_sensor(state_class="measurement")
+        assert entity.state_class == 1
+
+    def test_total_increasing_maps_to_two(self):
+        entity = make_sensor(state_class="total_increasing")
+        assert entity.state_class == 2
+
+    def test_total_maps_to_three(self):
+        entity = make_sensor(state_class="total")
+        assert entity.state_class == 3
+
+    def test_unknown_defaults_to_measurement(self):
+        entity = make_sensor(state_class="bogus")
+        assert entity.state_class == 1
+
+
+class TestSensorEntityState:
+    def test_missing_state_before_first_reading(self):
+        entity = make_sensor()
+        msgs = list(entity.handle_message(SubscribeHomeAssistantStatesRequest()))
+        assert msgs[0].missing_state is True
+
+    def test_subscribe_states_yields_sensor_state_response(self):
+        entity = make_sensor()
+        msgs = list(entity.handle_message(SubscribeHomeAssistantStatesRequest()))
+        assert isinstance(msgs[0], SensorStateResponse)
+
+    def test_update_state_stores_value(self):
+        entity = make_sensor()
+        entity.update_state(21.4)
+        assert abs(entity._state - 21.4) < 0.001
+
+    def test_state_reported_after_update(self):
+        entity = make_sensor()
+        entity.update_state(21.4)
+        msgs = list(entity.handle_message(SubscribeHomeAssistantStatesRequest()))
+        assert msgs[0].missing_state is False
+        assert abs(msgs[0].state - 21.4) < 0.001
+
+    def test_get_state_message_has_correct_key(self):
+        entity = make_sensor(key=12)
+        entity.update_state(1.0)
+        assert entity._get_state_message().key == 12
+
+
+# ---------------------------------------------------------------------------
+# BinarySensorEntity
+# ---------------------------------------------------------------------------
+
+
+class TestBinarySensorEntityListEntities:
+    def test_list_entities_request_yields_response(self):
+        entity = make_binary_sensor(key=11)
+        msgs = list(entity.handle_message(ListEntitiesRequest()))
+        assert len(msgs) == 1
+        assert isinstance(msgs[0], ListEntitiesBinarySensorResponse)
+
+    def test_list_entities_response_has_correct_key(self):
+        entity = make_binary_sensor(key=11)
+        msgs = list(entity.handle_message(ListEntitiesRequest()))
+        assert msgs[0].key == 11
+
+    def test_list_entities_response_has_correct_object_id(self):
+        entity = make_binary_sensor()
+        msgs = list(entity.handle_message(ListEntitiesRequest()))
+        assert msgs[0].object_id == "presence"
+
+    def test_list_entities_response_has_device_class(self):
+        entity = make_binary_sensor(device_class="motion")
+        msgs = list(entity.handle_message(ListEntitiesRequest()))
+        assert msgs[0].device_class == "motion"
+
+    def test_list_entities_response_has_icon(self):
+        entity = make_binary_sensor(icon="mdi:run")
+        msgs = list(entity.handle_message(ListEntitiesRequest()))
+        assert msgs[0].icon == "mdi:run"
+
+
+class TestBinarySensorEntityState:
+    def test_missing_state_before_first_reading(self):
+        entity = make_binary_sensor()
+        msgs = list(entity.handle_message(SubscribeHomeAssistantStatesRequest()))
+        assert msgs[0].missing_state is True
+
+    def test_subscribe_states_yields_binary_sensor_state_response(self):
+        entity = make_binary_sensor()
+        msgs = list(entity.handle_message(SubscribeHomeAssistantStatesRequest()))
+        assert isinstance(msgs[0], BinarySensorStateResponse)
+
+    def test_update_state_stores_value(self):
+        entity = make_binary_sensor()
+        entity.update_state(True)
+        assert entity._state is True
+
+    def test_state_reported_after_update(self):
+        entity = make_binary_sensor()
+        entity.update_state(True)
+        msgs = list(entity.handle_message(SubscribeHomeAssistantStatesRequest()))
+        assert msgs[0].missing_state is False
+        assert msgs[0].state is True
+
+    def test_update_state_coerces_to_bool(self):
+        entity = make_binary_sensor()
+        entity.update_state(0)
+        assert entity._state is False
+
+    def test_get_state_message_has_correct_key(self):
+        entity = make_binary_sensor(key=13)
+        entity.update_state(True)
+        assert entity._get_state_message().key == 13

@@ -14,6 +14,22 @@ def make_preferences(**kwargs):
     return Preferences(**kwargs)
 
 
+def make_sensor_registration(**kwargs):
+    from linux_voice_assistant.models import SensorRegistration
+
+    params = dict(name="Temperature", object_id="temperature")
+    params.update(kwargs)
+    return SensorRegistration(**params)
+
+
+def make_binary_sensor_registration(**kwargs):
+    from linux_voice_assistant.models import BinarySensorRegistration
+
+    params = dict(name="Presence", object_id="presence")
+    params.update(kwargs)
+    return BinarySensorRegistration(**params)
+
+
 # ---------------------------------------------------------------------------
 # WakeWordType
 # ---------------------------------------------------------------------------
@@ -271,3 +287,119 @@ class TestPersistMicNoise:
         with patch.object(state, "save_preferences") as mock_save:
             state.persist_mic_noise(4.0)
             mock_save.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# SensorRegistration
+# ---------------------------------------------------------------------------
+
+
+class TestSensorRegistration:
+    def test_required_fields_stored(self):
+        reg = make_sensor_registration(name="Humidity", object_id="humidity")
+        assert reg.name == "Humidity"
+        assert reg.object_id == "humidity"
+
+    def test_default_device_class_is_empty(self):
+        reg = make_sensor_registration()
+        assert reg.device_class == ""
+
+    def test_default_unit_is_empty(self):
+        reg = make_sensor_registration()
+        assert reg.unit_of_measurement == ""
+
+    def test_default_accuracy_is_one(self):
+        reg = make_sensor_registration()
+        assert reg.accuracy_decimals == 1
+
+    def test_default_state_class_is_measurement(self):
+        reg = make_sensor_registration()
+        assert reg.state_class == "measurement"
+
+    def test_default_icon_is_empty(self):
+        reg = make_sensor_registration()
+        assert reg.icon == ""
+
+    def test_custom_values_stored(self):
+        reg = make_sensor_registration(
+            device_class="humidity",
+            unit_of_measurement="%",
+            accuracy_decimals=0,
+            icon="mdi:water-percent",
+        )
+        assert reg.device_class == "humidity"
+        assert reg.unit_of_measurement == "%"
+        assert reg.accuracy_decimals == 0
+        assert reg.icon == "mdi:water-percent"
+
+
+# ---------------------------------------------------------------------------
+# ServerState sensor fields
+# ---------------------------------------------------------------------------
+
+
+class TestServerStateSensors:
+    def test_pending_sensors_defaults_empty(self, tmp_path):
+        state = make_server_state(tmp_path)
+        assert state.pending_sensors == []
+
+    def test_sensor_entities_defaults_empty(self, tmp_path):
+        state = make_server_state(tmp_path)
+        assert state.sensor_entities == {}
+
+    def test_pending_sensors_independent_per_instance(self, tmp_path):
+        """Mutable default must not be shared between instances."""
+        state1 = make_server_state(tmp_path)
+        state2 = make_server_state(tmp_path)
+        state1.pending_sensors.append(make_sensor_registration())
+        assert state2.pending_sensors == []
+
+
+# ---------------------------------------------------------------------------
+# BinarySensorRegistration
+# ---------------------------------------------------------------------------
+
+
+class TestBinarySensorRegistration:
+    def test_required_fields_stored(self):
+        reg = make_binary_sensor_registration(name="Motion", object_id="motion")
+        assert reg.name == "Motion"
+        assert reg.object_id == "motion"
+
+    def test_default_device_class_is_empty(self):
+        reg = make_binary_sensor_registration()
+        assert reg.device_class == ""
+
+    def test_default_icon_is_empty(self):
+        reg = make_binary_sensor_registration()
+        assert reg.icon == ""
+
+    def test_custom_values_stored(self):
+        reg = make_binary_sensor_registration(
+            device_class="occupancy",
+            icon="mdi:motion-sensor",
+        )
+        assert reg.device_class == "occupancy"
+        assert reg.icon == "mdi:motion-sensor"
+
+
+# ---------------------------------------------------------------------------
+# ServerState binary sensor fields
+# ---------------------------------------------------------------------------
+
+
+class TestServerStateBinarySensors:
+    def test_pending_binary_sensors_defaults_empty(self, tmp_path):
+        state = make_server_state(tmp_path)
+        assert state.pending_binary_sensors == []
+
+    def test_binary_sensor_entities_defaults_empty(self, tmp_path):
+        state = make_server_state(tmp_path)
+        assert state.binary_sensor_entities == {}
+
+    def test_pending_binary_sensors_independent_per_instance(self, tmp_path):
+        """Mutable default must not be shared between instances."""
+        state1 = make_server_state(tmp_path)
+        state2 = make_server_state(tmp_path)
+        state1.pending_binary_sensors.append(make_binary_sensor_registration())
+        assert state2.pending_binary_sensors == []

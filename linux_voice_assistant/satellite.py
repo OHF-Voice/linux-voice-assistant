@@ -51,11 +51,13 @@ from pyopen_wakeword import OpenWakeWord
 
 from .api_server import APIServer
 from .entity import (
+    BinarySensorEntity,
     ButtonEventSensorEntity,
     LEDLightEntity,
     MediaPlayerEntity,
     MicSettingEntity,
     MuteSwitchEntity,
+    SensorEntity,
     StopWordSensitivityNumberEntity,
     ThinkingSoundEntity,
     WakeWord1SensitivityNumberEntity,
@@ -335,6 +337,12 @@ class VoiceSatelliteProtocol(APIServer):
         # button support before this satellite was constructed (e.g. on an HA
         # reconnect while the peripheral container stayed connected to LVA).
         self.register_pending_button()
+        # Materialise the Sensor entities peripherals registered before this
+        # satellite was constructed (or reattach existing ones).
+        self.register_pending_sensors()
+        # Materialise the Binary Sensor entities peripherals registered before
+        # this satellite was constructed (or reattach existing ones).
+        self.register_pending_binary_sensors()
 
         # ---- Instance variables ----
 
@@ -430,6 +438,69 @@ class VoiceSatelliteProtocol(APIServer):
         self.state.entities.append(entity)
         self.state.button_event_sensor_entity = entity
         _LOGGER.info("Button event sensor entity materialised")
+
+    def register_pending_sensors(self) -> None:
+        """Materialise SensorEntities for peripheral registered sensors.
+
+        Mirrors register_pending_lights: called from __init__ so entities
+        exist by the time HA enumerates, and again from the peripheral_api
+        dispatcher when a sensor arrives after the satellite is already
+        running. HA only sees a late registration after its next reconnect,
+        but LVA stays consistent.
+        """
+        for spec in self.state.pending_sensors:
+            if spec.object_id in self.state.sensor_entities:
+                # Already materialised. Reattach the server in case the
+                # satellite has been reconstructed (HA reconnect).
+                self.state.sensor_entities[spec.object_id].server = self
+                if self.state.sensor_entities[spec.object_id] not in self.state.entities:
+                    self.state.entities.append(self.state.sensor_entities[spec.object_id])
+                continue
+
+            object_id = spec.object_id
+            entity = SensorEntity(
+                server=self,
+                key=len(self.state.entities),
+                name=spec.name,
+                object_id=object_id,
+                device_class=spec.device_class,
+                unit_of_measurement=spec.unit_of_measurement,
+                accuracy_decimals=spec.accuracy_decimals,
+                state_class=spec.state_class,
+                icon=spec.icon,
+            )
+            self.state.entities.append(entity)
+            self.state.sensor_entities[object_id] = entity
+
+    def register_pending_binary_sensors(self) -> None:
+        """Materialise BinarySensorEntities for peripheral registered binary sensors.
+
+        Mirrors register_pending_lights: called from __init__ so entities
+        exist by the time HA enumerates, and again from the peripheral_api
+        dispatcher when a binary sensor arrives after the satellite is already
+        running. HA only sees a late registration after its next reconnect,
+        but LVA stays consistent.
+        """
+        for spec in self.state.pending_binary_sensors:
+            if spec.object_id in self.state.binary_sensor_entities:
+                # Already materialised. Reattach the server in case the
+                # satellite has been reconstructed (HA reconnect).
+                self.state.binary_sensor_entities[spec.object_id].server = self
+                if self.state.binary_sensor_entities[spec.object_id] not in self.state.entities:
+                    self.state.entities.append(self.state.binary_sensor_entities[spec.object_id])
+                continue
+
+            object_id = spec.object_id
+            entity = BinarySensorEntity(
+                server=self,
+                key=len(self.state.entities),
+                name=spec.name,
+                object_id=object_id,
+                device_class=spec.device_class,
+                icon=spec.icon,
+            )
+            self.state.entities.append(entity)
+            self.state.binary_sensor_entities[object_id] = entity
 
     def _on_led_light_changed(self, object_id: str) -> None:
         """Forward an HA Light entity change to peripherals as light_command.

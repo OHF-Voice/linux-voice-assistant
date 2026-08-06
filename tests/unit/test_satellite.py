@@ -367,3 +367,129 @@ class TestConnectionLost:
         sat = make_satellite(tmp_path)
         sat.connection_lost(None)
         sat.state.tts_player.stop.assert_called()
+
+
+# ---------------------------------------------------------------------------
+# register_pending_sensors()
+# ---------------------------------------------------------------------------
+
+
+class TestRegisterPendingSensors:
+    def _add_pending(self, sat, object_id="temperature", name="Temperature"):
+        from linux_voice_assistant.models import SensorRegistration
+
+        sat.state.pending_sensors.append(
+            SensorRegistration(
+                name=name,
+                object_id=object_id,
+                device_class="temperature",
+                unit_of_measurement="°C",
+            )
+        )
+
+    def test_materialises_sensor_entity(self, tmp_path):
+        from linux_voice_assistant.entity import SensorEntity
+
+        sat = make_satellite(tmp_path)
+        self._add_pending(sat)
+        sat.register_pending_sensors()
+        assert isinstance(sat.state.sensor_entities.get("temperature"), SensorEntity)
+
+    def test_entity_added_to_entities_list(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        self._add_pending(sat)
+        sat.register_pending_sensors()
+        assert sat.state.sensor_entities["temperature"] in sat.state.entities
+
+    def test_entity_carries_registration_fields(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        self._add_pending(sat)
+        sat.register_pending_sensors()
+        entity = sat.state.sensor_entities["temperature"]
+        assert entity.device_class == "temperature"
+        assert entity.unit_of_measurement == "°C"
+
+    def test_idempotent_keeps_same_entity(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        self._add_pending(sat)
+        sat.register_pending_sensors()
+        first = sat.state.sensor_entities["temperature"]
+        sat.register_pending_sensors()
+        assert sat.state.sensor_entities["temperature"] is first
+
+    def test_idempotent_no_duplicate_in_entities(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        self._add_pending(sat)
+        sat.register_pending_sensors()
+        entity = sat.state.sensor_entities["temperature"]
+        sat.register_pending_sensors()
+        assert sat.state.entities.count(entity) == 1
+
+    def test_no_pending_creates_nothing(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        sat.state.pending_sensors.clear()
+        sat.state.sensor_entities.clear()
+        sat.register_pending_sensors()
+        assert sat.state.sensor_entities == {}
+
+
+# ---------------------------------------------------------------------------
+# register_pending_binary_sensors()
+# ---------------------------------------------------------------------------
+
+
+class TestRegisterPendingBinarySensors:
+    def _add_pending(self, sat, object_id="presence", name="Presence"):
+        from linux_voice_assistant.models import BinarySensorRegistration
+
+        sat.state.pending_binary_sensors.append(
+            BinarySensorRegistration(
+                name=name,
+                object_id=object_id,
+                device_class="occupancy",
+            )
+        )
+
+    def test_materialises_binary_sensor_entity(self, tmp_path):
+        from linux_voice_assistant.entity import BinarySensorEntity
+
+        sat = make_satellite(tmp_path)
+        self._add_pending(sat)
+        sat.register_pending_binary_sensors()
+        assert isinstance(sat.state.binary_sensor_entities.get("presence"), BinarySensorEntity)
+
+    def test_entity_added_to_entities_list(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        self._add_pending(sat)
+        sat.register_pending_binary_sensors()
+        assert sat.state.binary_sensor_entities["presence"] in sat.state.entities
+
+    def test_entity_carries_registration_fields(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        self._add_pending(sat)
+        sat.register_pending_binary_sensors()
+        entity = sat.state.binary_sensor_entities["presence"]
+        assert entity.device_class == "occupancy"
+
+    def test_idempotent_keeps_same_entity(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        self._add_pending(sat)
+        sat.register_pending_binary_sensors()
+        first = sat.state.binary_sensor_entities["presence"]
+        sat.register_pending_binary_sensors()
+        assert sat.state.binary_sensor_entities["presence"] is first
+
+    def test_idempotent_no_duplicate_in_entities(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        self._add_pending(sat)
+        sat.register_pending_binary_sensors()
+        entity = sat.state.binary_sensor_entities["presence"]
+        sat.register_pending_binary_sensors()
+        assert sat.state.entities.count(entity) == 1
+
+    def test_no_pending_creates_nothing(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        sat.state.pending_binary_sensors.clear()
+        sat.state.binary_sensor_entities.clear()
+        sat.register_pending_binary_sensors()
+        assert sat.state.binary_sensor_entities == {}

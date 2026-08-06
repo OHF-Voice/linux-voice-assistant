@@ -5,15 +5,18 @@ from typing import Callable, List, Optional, Union
 
 # pylint: disable=no-name-in-module
 from aioesphomeapi.api_pb2 import (  # type: ignore[attr-defined]
+    BinarySensorStateResponse,
     EventResponse,
     LightCommandRequest,
     LightStateResponse,
+    ListEntitiesBinarySensorResponse,
     ListEntitiesEventResponse,
     ListEntitiesLightResponse,
     ListEntitiesMediaPlayerResponse,
     ListEntitiesNumberResponse,
     ListEntitiesRequest,
     ListEntitiesSelectResponse,
+    ListEntitiesSensorResponse,
     ListEntitiesSwitchResponse,
     MediaPlayerCommandRequest,
     MediaPlayerStateResponse,
@@ -21,6 +24,7 @@ from aioesphomeapi.api_pb2 import (  # type: ignore[attr-defined]
     NumberStateResponse,
     SelectCommandRequest,
     SelectStateResponse,
+    SensorStateResponse,
     SubscribeHomeAssistantStatesRequest,
     SwitchCommandRequest,
     SwitchStateResponse,
@@ -32,6 +36,7 @@ from aioesphomeapi.model import (
     MediaPlayerEntityFeature,
     MediaPlayerState,
     NumberMode,
+    SensorStateClass,
 )
 from google.protobuf import message
 
@@ -797,6 +802,134 @@ class ButtonEventSensorEntity(ESPHomeEntity):
         )
 
 
+_SENSOR_STATE_CLASSES = {
+    "measurement": SensorStateClass.MEASUREMENT,
+    "total": SensorStateClass.TOTAL,
+    "total_increasing": SensorStateClass.TOTAL_INCREASING,
+}
+
+
+class SensorEntity(ESPHomeEntity):
+    """Numeric Sensor entity for peripherals.
+
+    The peripheral declares a sensor via the register_sensor command
+    (device_class, unit, and so on) and pushes readings with
+    update_sensor. Generic: any peripheral can register temperature,
+    humidity, illuminance, etc., mirroring how register_light works.
+    """
+
+    def __init__(
+        self,
+        server: APIServer,
+        key: int,
+        name: str,
+        object_id: str,
+        device_class: str = "",
+        unit_of_measurement: str = "",
+        accuracy_decimals: int = 1,
+        state_class: str = "measurement",
+        icon: str = "",
+    ) -> None:
+        ESPHomeEntity.__init__(self, server)
+
+        self.key = key
+        self.name = name
+        self.object_id = object_id
+        self.device_class = device_class
+        self.unit_of_measurement = unit_of_measurement
+        self.accuracy_decimals = accuracy_decimals
+        self.state_class = int(
+            _SENSOR_STATE_CLASSES.get(state_class, SensorStateClass.MEASUREMENT)
+        )
+        self.icon = icon
+        self._state: Optional[float] = None
+        self._log = logging.getLogger(f"{self.__class__.__name__}[{self.key}]")
+
+    def update_state(self, value: float) -> None:
+        """Update the sensor with a new reading."""
+        self._state = float(value)
+        self._log.debug("Sensor state updated: %s", self._state)
+
+    def handle_message(self, msg: message.Message) -> Iterable[message.Message]:
+        if isinstance(msg, ListEntitiesRequest):
+            yield ListEntitiesSensorResponse(
+                object_id=self.object_id,
+                key=self.key,
+                name=self.name,
+                icon=self.icon,
+                unit_of_measurement=self.unit_of_measurement,
+                accuracy_decimals=self.accuracy_decimals,
+                device_class=self.device_class,
+                state_class=self.state_class,
+            )
+        elif isinstance(msg, SubscribeHomeAssistantStatesRequest):
+            # Report immediately; missing_state=True until the first reading
+            # keeps HA showing "unknown" rather than a spurious 0.
+            yield self._get_state_message()
+
+    def _get_state_message(self) -> SensorStateResponse:
+        return SensorStateResponse(
+            key=self.key,
+            state=self._state if self._state is not None else 0.0,
+            missing_state=self._state is None,
+        )
+
+
+class BinarySensorEntity(ESPHomeEntity):
+    """On/off Sensor entity for peripherals (presence, motion, etc.).
+
+    The peripheral declares a binary sensor via the register_binary_sensor
+    command and pushes readings with update_binary_sensor. Generic: any
+    peripheral can register presence, motion, occupancy, and so on,
+    mirroring how register_light works.
+    """
+
+    def __init__(
+        self,
+        server: APIServer,
+        key: int,
+        name: str,
+        object_id: str,
+        device_class: str = "",
+        icon: str = "",
+    ) -> None:
+        ESPHomeEntity.__init__(self, server)
+
+        self.key = key
+        self.name = name
+        self.object_id = object_id
+        self.device_class = device_class
+        self.icon = icon
+        self._state: Optional[bool] = None
+        self._log = logging.getLogger(f"{self.__class__.__name__}[{self.key}]")
+
+    def update_state(self, state: bool) -> None:
+        """Update the binary sensor with a new reading."""
+        self._state = bool(state)
+        self._log.debug("Binary sensor state updated: %s", self._state)
+
+    def handle_message(self, msg: message.Message) -> Iterable[message.Message]:
+        if isinstance(msg, ListEntitiesRequest):
+            yield ListEntitiesBinarySensorResponse(
+                object_id=self.object_id,
+                key=self.key,
+                name=self.name,
+                device_class=self.device_class,
+                icon=self.icon,
+            )
+        elif isinstance(msg, SubscribeHomeAssistantStatesRequest):
+            # Report immediately; missing_state=True until the first reading
+            # keeps HA showing "unknown" rather than a spurious "off".
+            yield self._get_state_message()
+
+    def _get_state_message(self) -> BinarySensorStateResponse:
+        return BinarySensorStateResponse(
+            key=self.key,
+            state=bool(self._state) if self._state is not None else False,
+            missing_state=self._state is None,
+        )
+
+
 # Backward compatibility export aliases
 __all__ = [
     "ESPHomeEntity",
@@ -805,6 +938,8 @@ __all__ = [
     "ThinkingSoundEntity",
     "LEDLightEntity",
     "ButtonEventSensorEntity",
+    "SensorEntity",
+    "BinarySensorEntity",
     "WakeWord1SensitivityNumberEntity",
     "WakeWord2SensitivityNumberEntity",
     "StopWordSensitivityNumberEntity",
