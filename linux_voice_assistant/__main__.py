@@ -409,6 +409,16 @@ async def main() -> None:
     stop_model = load_stop_model(wake_word_dirs, args.stop_model)
     assert stop_model is not None
 
+    # Load stop word sensitivity from preferences on startup, falling back to
+    # the model's own probability_cutoff rather than a fixed default.
+    initial_stop_sensitivity = (
+        preferences.stop_word_sensitivity
+        if preferences.stop_word_sensitivity is not None
+        else stop_model.probability_cutoff
+    )
+    initial_stop_sensitivity = max(0.0, min(1.0, float(initial_stop_sensitivity)))
+    preferences.stop_word_sensitivity = initial_stop_sensitivity
+
     state = ServerState(
         name=device_name,
         friendly_name=friendly_name,
@@ -423,6 +433,7 @@ async def main() -> None:
         wake_words=wake_models,
         active_wake_words=active_wake_words,
         stop_word=stop_model,
+        stop_word_threshold=initial_stop_sensitivity,
         music_player=MpvMediaPlayer(device=args.music_output_device or args.audio_output_device),
         tts_player=MpvMediaPlayer(device=args.audio_output_device),
         wakeup_sound=args.wakeup_sound,
