@@ -633,9 +633,7 @@ class PeripheralAPIServer:
             icon=str(data.get("icon", "")),
         )
         state.pending_sensors.append(spec)
-        _LOGGER.info(
-            "Sensor registered: %s (device_class=%s)", object_id, spec.device_class
-        )
+        _LOGGER.info("Sensor registered: %s (device_class=%s)", object_id, spec.device_class)
 
         # If the satellite is already running, materialise the entity now so
         # future readings route correctly. HA only sees it after the
@@ -705,9 +703,7 @@ class PeripheralAPIServer:
             icon=str(data.get("icon", "")),
         )
         state.pending_binary_sensors.append(spec)
-        _LOGGER.info(
-            "Binary sensor registered: %s (device_class=%s)", object_id, spec.device_class
-        )
+        _LOGGER.info("Binary sensor registered: %s (device_class=%s)", object_id, spec.device_class)
 
         # If the satellite is already running, materialise the entity now so
         # future readings route correctly. HA only sees it after the
@@ -730,9 +726,7 @@ class PeripheralAPIServer:
 
         entity = state.binary_sensor_entities.get(object_id)
         if entity is None:
-            _LOGGER.warning(
-                "update_binary_sensor for unknown binary sensor '%s'; ignoring", object_id
-            )
+            _LOGGER.warning("update_binary_sensor for unknown binary sensor '%s'; ignoring", object_id)
             return
 
         if "state" not in data:

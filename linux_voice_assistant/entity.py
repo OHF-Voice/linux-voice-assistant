@@ -838,9 +838,7 @@ class SensorEntity(ESPHomeEntity):
         self.device_class = device_class
         self.unit_of_measurement = unit_of_measurement
         self.accuracy_decimals = accuracy_decimals
-        self.state_class = int(
-            _SENSOR_STATE_CLASSES.get(state_class, SensorStateClass.MEASUREMENT)
-        )
+        self.state_class = int(_SENSOR_STATE_CLASSES.get(state_class, SensorStateClass.MEASUREMENT))
         self.icon = icon
         self._state: Optional[float] = None
         self._log = logging.getLogger(f"{self.__class__.__name__}[{self.key}]")
