@@ -2,7 +2,6 @@
 
 from collections.abc import Callable
 from importlib.metadata import PackageNotFoundError, version
-from pathlib import Path
 from typing import Optional
 
 # netifaces lib is from netifaces2
@@ -15,27 +14,23 @@ _esphome_version_cache: Optional[str] = None
 
 def get_version() -> str:
     """
-    Read the version from version.txt file.
+    Read the version from dist-info metadata.
 
     This function reads the content safely without risk of code injection,
     as it only reads raw text and performs no evaluation.
 
     Returns:
-        str:    The version from version.txt or 'unknown' if the file
-                does not exist or cannot be read.
+        str:    The version from dist-info metadata or 'unknown' if no version
+                metadata can be found.
     """
     global _version_cache
 
     if _version_cache is not None:
         return _version_cache
 
-    version_file = Path(__file__).parent.parent / "version.txt"
-
     try:
-        # Sicher lesen: nur Rohtext, keine Evaluierung
-        file_version = version_file.read_text(encoding="utf-8").strip()
-        _version_cache = file_version if file_version else "unknown"
-    except (FileNotFoundError, PermissionError, OSError):
+        _version_cache = version("linux_voice_assistant")
+    except PackageNotFoundError:
         _version_cache = "unknown"
 
     return _version_cache
