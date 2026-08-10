@@ -203,6 +203,7 @@ class TestPersistVolume:
         state.peripheral_api.emit_event_sync.assert_any_call(LVAEvent.VOLUME_CHANGED, {"volume": 0.0})
         state.peripheral_api.emit_event_sync.assert_any_call(LVAEvent.VOLUME_MUTED, {"muted": True})
 
+
 # ---------------------------------------------------------------------------
 # ServerState.persist_mic_gain()
 # ---------------------------------------------------------------------------
