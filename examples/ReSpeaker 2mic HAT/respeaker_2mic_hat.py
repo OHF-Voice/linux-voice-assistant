@@ -20,7 +20,7 @@ LED behaviours
   pipeline_error   : red flash on all 3 LEDs
   timer_ringing    : blue flash on all 3 LEDs (repeating)
   timer_ticking    : all 3 dim cyan, brightness proportional to time left
-  media_playing    : dim green steady on all 3 LEDs
+  volume_muted     : LED 1 solid red, LED 0 and LED 2 off
   not_ready/no_ha  : dim red pulse on all 3 LEDs
 
 On connect the script registers an HA Light entity with LVA via the
