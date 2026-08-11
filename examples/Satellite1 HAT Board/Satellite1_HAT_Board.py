@@ -223,6 +223,7 @@ class AssistState(str, Enum):
     TIMER_TICKING = "timer_ticking"
     TIMER_RINGING = "timer_ringing"
     MEDIA_PLAYING = "media_player_playing"
+    VOLUME_MUTED = "volume_muted"
 
 
 # ---------------------------------------------------------------------------
@@ -234,8 +235,9 @@ class SharedState:
         self._lock = threading.Lock()
         self.assist_state: AssistState = AssistState.NOT_READY
         self.ha_connected: bool = False
-        self.muted: bool = False
+        self.muted: bool = False          # mic mute
         self.volume: float = 1.0
+        self.volume_muted: bool = False   # media volume zero
         self.timer_total_seconds: int = 0
         self.timer_seconds_left: int = 0
         # Light entity state, driven by HA via light_command events.
