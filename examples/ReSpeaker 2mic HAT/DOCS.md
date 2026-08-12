@@ -75,6 +75,7 @@ LED 0 sits above MIC_L and LED 2 sits above MIC_R. When the microphone is muted,
 | **Timer ringing** | **Blue flash (repeating)** | **All 3** |
 | Timer ticking | Dim cyan, brightness ∝ time left | All 3 |
 | Media playing | Dim green steady | All 3 |
+| **Volume muted** | **Solid red** | **LED 1 only (center led)** |
 
 "User color" comes from the Home Assistant Light entity described below (default: HAVPE-style blue). HA brightness scales every animation in this table. Semantic colors (Thinking yellow, Speaking green, Muted red, Timer cyan/blue) are hardcoded so they remain recognisable across user customisation.
 
