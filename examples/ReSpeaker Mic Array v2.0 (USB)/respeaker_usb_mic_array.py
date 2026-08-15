@@ -86,6 +86,13 @@ USB_PRODUCT_ID    = 0x0018
 LED_COUNT         = 12
 LED_BRIGHTNESS    = 10    # 0–31 (APA102 5-bit global brightness register)
 
+# LED that lights up solid red while the media player (speaker) output is
+# muted at volume 0 — the `volume_muted` peripheral event. LED 9 is the
+# board's bottom-middle position (DOA 270°), sitting right between the
+# micro-USB connector and the 3.5 mm AUX jack on the board edge — the same
+# "bottom" position already used by the mic indicator mapping below.
+VOLUME_MUTED_LED_INDEX = 9
+
 RECONNECT_DELAY_S = 3.0
 
 
@@ -113,7 +120,7 @@ class AssistState(str, Enum):
     TIMER_TICKING = "timer_ticking"
     TIMER_RINGING = "timer_ringing"
     MEDIA_PLAYING = "media_player_playing"
-
+    VOLUME_MUTED = "volume_muted"
 
 # ---------------------------------------------------------------------------
 # Shared state
@@ -124,8 +131,9 @@ class SharedState:
         self._lock = threading.Lock()
         self.assist_state: AssistState = AssistState.NOT_READY
         self.ha_connected: bool = False
-        self.muted: bool = False
+        self.muted: bool = False          # mic mute
         self.volume: float = 1.0
+        self.volume_muted: bool = False  # media player volume zero
         self.timer_total_seconds: int = 0
         self.timer_seconds_left: int = 0
         # Light entity state, driven by HA via light_command events.
@@ -151,6 +159,7 @@ class SharedState:
                 "ha_connected":        self.ha_connected,
                 "muted":               self.muted,
                 "volume":              self.volume,
+                "volume_muted":        self.volume_muted,
                 "timer_total_seconds": self.timer_total_seconds,
                 "timer_seconds_left":  self.timer_seconds_left,
                 "light_is_on":         self.light_is_on,
@@ -164,9 +173,9 @@ class SharedState:
 # ===========================================================================
 # USB LED driver
 #
-# The ReSpeaker Mic Array v2.0 LED firmware exposes a vendor-command USB
-# interface. The copied pixel_ring reference uses command 0x06 for custom LED
-# frames and command 0x20 for brightness, both addressed to wIndex 0x1C.
+# The ReSpeaker Mic Array v2.0 accepts LED data via a USB vendor control
+# transfer.  Each LED is set as an APA102 frame: 0xFF start, then per-LED
+# bytes in the order [start_frame | brightness, B, G, R].
 # ===========================================================================
 
 RGB = Tuple[int, int, int]
@@ -186,17 +195,20 @@ def _scale(color: RGB, factor: float) -> RGB:
 
 class USBLEDRing:
     """
-    Controls the 12 LEDs on the ReSpeaker Mic Array v2.0 over USB.
+    Controls the 12 APA102 LEDs on the ReSpeaker Mic Array v2.0 over USB.
 
-    Uses the same vendor-command protocol as Seeed's pixel_ring library.
-    That protocol talks to the device recipient directly and does not require
-    detaching the kernel audio driver.
+    Uses a USB vendor control transfer (bmRequestType=0x40, bRequest=0,
+    wValue=0x0001, wIndex=0x8001) to push raw LED data to the XMOS firmware.
+    This is the same protocol used by Seeed's pixel_ring library.
     """
 
-    _CMD_SHOW = 0x06
-    _CMD_BRIGHTNESS = 0x20
+    # USB control transfer parameters matching the pixel_ring reference implementation.
+    # _CTRL_TYPE_OUT = 0x40: bmRequestType = CTRL_OUT | CTRL_TYPE_VENDOR | CTRL_RECIPIENT_DEVICE.
+    # Recipient is "device" (bits 4:0 = 0x00), so no interface needs to be claimed
+    # and the kernel audio driver must NOT be detached.
     _CTRL_TIMEOUT   = 8000  # ms
     _CTRL_REQUEST   = 0
+    _CTRL_VALUE     = 0x0001
     _CTRL_INDEX     = 0x1C
     _CTRL_TYPE_OUT  = 0x40  # vendor, device, host-to-device
 
@@ -204,7 +216,6 @@ class USBLEDRing:
         self._pixels: list[RGB] = [BLACK] * LED_COUNT
         self._dev = None
         self._dev_lock = threading.Lock()
-        self._last_brightness: Optional[int] = None
 
         if _HAS_USB:
             self._find_device()
@@ -218,8 +229,12 @@ class USBLEDRing:
                 USB_VENDOR_ID, USB_PRODUCT_ID,
             )
             return
+        try:
+            if dev.is_kernel_driver_active(0):
+                dev.detach_kernel_driver(0)
+        except Exception:  # pylint: disable=broad-except
+            pass
         self._dev = dev
-        self._last_brightness = None
         _LOGGER.info(
             "ReSpeaker Mic Array v2.0 found (USB %04x:%04x, bus %d, addr %d)",
             USB_VENDOR_ID, USB_PRODUCT_ID, dev.bus, dev.address,
@@ -231,32 +246,24 @@ class USBLEDRing:
     def set_all(self, color: RGB) -> None:
         self._pixels = [color] * LED_COUNT
 
-    def _write(self, command: int, data: list[int]) -> None:
-        self._dev.ctrl_transfer(
-            self._CTRL_TYPE_OUT,
-            self._CTRL_REQUEST,
-            command,
-            self._CTRL_INDEX,
-            data,
-            self._CTRL_TIMEOUT,
-        )
-
     def show(self, brightness: float = 1.0) -> None:
         """
         Push the current pixel buffer to the device.
 
-        The USB firmware expects command 0x06 with 4 bytes per LED in RGB0
-        order, plus command 0x20 for device brightness. Sending raw APA102
-        frames here causes the firmware to misinterpret the payload.
+        Frame layout (matches pixel_ring / APA102 USB protocol):
+          [0xFF, 0xFF, 0xFF, 0xFF]            ← start frame
+          [0xE0|bright5, B, G, R] × LED_COUNT ← one word per LED
+          [0xFF, ...]                          ← end frame (⌈n/2⌉ bytes)
         """
         bright5 = max(0, min(31, int(brightness * LED_BRIGHTNESS)))
 
-        frame: list[int] = []
+        frame = [0xFF, 0xFF, 0xFF, 0xFF]  # start frame
         for r, g, b in self._pixels:
             br = max(0, min(255, int(r * brightness)))
             bg = max(0, min(255, int(g * brightness)))
             bb = max(0, min(255, int(b * brightness)))
-            frame += [br, bg, bb, 0]
+            frame += [0xE0 | bright5, bb, bg, br]
+        frame += [0xFF] * math.ceil(LED_COUNT / 2)  # end frame
 
         with self._dev_lock:
             if self._dev is None:
@@ -264,14 +271,17 @@ class USBLEDRing:
                 _LOGGER.debug("LEDs [simulated]: %s", pixels)
                 return
             try:
-                if self._last_brightness != bright5:
-                    self._write(self._CMD_BRIGHTNESS, [bright5])
-                    self._last_brightness = bright5
-                self._write(self._CMD_SHOW, frame)
+                self._dev.ctrl_transfer(
+                    self._CTRL_TYPE_OUT,
+                    self._CTRL_REQUEST,
+                    self._CTRL_VALUE,
+                    self._CTRL_INDEX,
+                    frame,
+                    self._CTRL_TIMEOUT,
+                )
             except usb.core.USBError as exc:
                 _LOGGER.warning("USB write error: %s – attempting reconnect", exc)
                 self._dev = None
-                self._last_brightness = None
                 # Attempt to re-find the device on next show() call
                 threading.Thread(
                     target=self._reconnect, daemon=True
@@ -406,6 +416,22 @@ class LEDRing:
         self._leds.set(3, _scale(RED, factor))
         self._leds.set(6, _scale(RED, factor))
         self._leds.set(9, _scale(RED, factor))
+
+    def _apply_volume_muted_indicator(self) -> None:
+        """
+        Overlay a solid red dot on the bottom-middle LED (index
+        ``VOLUME_MUTED_LED_INDEX``, DOA 270°) when the media player output
+        is muted at volume 0.
+
+        Sits right between the board's micro-USB connector and 3.5 mm AUX
+        jack. Applied after the current pipeline animation has already
+        rendered its frame, so the indicator shows up consistently no
+        matter which animation is active — mirrors how
+        ``_apply_mic_indicators`` marks the microphone cardinal points, but
+        for the distinct speaker-mute state.
+        """
+        self._leds.set(VOLUME_MUTED_LED_INDEX, RED)
+        self._leds.show()
 
     # ------------------------------------------------------------------
     # Animations — each returns sleep time in seconds
@@ -555,6 +581,7 @@ class LEDRing:
             snap    = self._state.snapshot
             color   = self._color()
             muted   = snap["muted"]
+            volume_muted = snap["volume_muted"]
             t_total = snap["timer_total_seconds"]
             t_left  = snap["timer_seconds_left"]
 
@@ -584,6 +611,9 @@ class LEDRing:
                 sleep = self._anim_timer_tick(color, muted, t_left, t_total)
             else:
                 sleep = self._anim_off()
+
+            if volume_muted:
+                self._apply_volume_muted_indicator()
 
             time.sleep(sleep)
 
@@ -708,19 +738,11 @@ class LVAClient:
         _LOGGER.debug("Event: %s  data=%s", event, data)
 
         if event == "snapshot":
-            muted = data.get("muted", False)
-            ha_connected = data.get("ha_connected", False)
             self._state.update(
-                muted=muted,
+                muted=data.get("muted", False),
                 volume=data.get("volume", 1.0),
-                ha_connected=ha_connected,
+                ha_connected=data.get("ha_connected", False),
             )
-            if muted:
-                self._state.update(assist_state=AssistState.MUTED)
-            elif ha_connected:
-                self._state.update(assist_state=AssistState.IDLE)
-            else:
-                self._state.update(assist_state=AssistState.NOT_READY)
 
         elif event == "wake_word_detected":
             self._state.update(assist_state=AssistState.WAKE_WORD)
@@ -738,12 +760,7 @@ class LVAClient:
             self._state.update(assist_state=AssistState.IDLE)
 
         elif event == "muted":
-            muted = data.get("muted", True)
-            self._state.update(muted=muted)
-            if muted:
-                self._state.update(assist_state=AssistState.MUTED)
-            elif self._state.assist_state == AssistState.MUTED:
-                self._state.update(assist_state=AssistState.IDLE)
+            self._state.update(assist_state=AssistState.MUTED, muted=True)
 
         elif event == "pipeline_error":
             _LOGGER.warning("LVA pipeline error: %s", data.get("reason", ""))
@@ -783,18 +800,17 @@ class LVAClient:
             self._state.update(volume=data.get("volume", 1.0))
 
         elif event == "volume_muted":
-            self._state.update(muted=data.get("muted", False))
+            # Media player (speaker) mute state, carried as {"muted": bool}
+            # per the peripheral API — distinct from the microphone `muted`
+            # event above. Drives the bottom-middle LED indicator rather
+            # than replacing the whole ring animation, since the assist
+            # pipeline can still be doing something else at the same time.
+            self._state.update(volume_muted=data.get("muted", True))
 
         elif event == "zeroconf":
             status = data.get("status", "")
             if status == "connected":
                 self._state.update(ha_connected=True)
-                if self._state.assist_state == AssistState.NOT_READY:
-                    self._state.update(
-                        assist_state=(
-                            AssistState.MUTED if self._state.muted else AssistState.IDLE
-                        ),
-                    )
                 _LOGGER.info("Home Assistant connected")
             elif status == "getting_started":
                 _LOGGER.info("LVA starting up, waiting for HA …")
