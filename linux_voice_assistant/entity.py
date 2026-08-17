@@ -182,6 +182,8 @@ class MediaPlayerEntity(ESPHomeEntity):
                         self.music_player.set_volume(0)
                         self.announce_player.set_volume(0)
                         self.muted = True
+                        if hasattr(self.server, "state") and getattr(self.server, "state", None) is not None:
+                            self.server.state.persist_volume(self.volume)
                     yield self._update_state(self.state)
 
                 elif command == MediaPlayerCommand.UNMUTE:
@@ -191,6 +193,8 @@ class MediaPlayerEntity(ESPHomeEntity):
                         self.music_player.set_volume(int(self.volume * 100))
                         self.announce_player.set_volume(int(self.volume * 100))
                         self.muted = False
+                        if hasattr(self.server, "state") and getattr(self.server, "state", None) is not None:
+                            self.server.state.persist_volume(self.volume)
                     yield self._update_state(self.state)
 
             elif msg.has_volume:

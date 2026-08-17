@@ -278,6 +278,7 @@ class PeripheralAPIServer:
                 "data": {
                     "muted": state.muted,
                     "volume": round(state.volume, 3),
+                    "volume_muted": state.volume == 0.0,
                     "ha_connected": state.connected,
                     "last_stt_text": self._last_stt_text,
                     "last_tts_text": self._last_tts_text,
@@ -659,6 +660,7 @@ class PeripheralAPIServer:
             LVAEvent.MEDIA_PLAYER_PLAYING,
             LVAEvent.DISCONNECTED,
             LVAEvent.PIPELINE_ERROR,
+            LVAEvent.VOLUME_MUTED,
         }
         if event in _STATE_EVENTS:
             self._current_state = event

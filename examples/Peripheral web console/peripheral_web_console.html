@@ -361,7 +361,12 @@
         volBar.style.width  = pct + '%';
       }
       if (ev === 'volume_muted' && data) {
-        metaMuted.textContent = data.muted ? 'yes' : 'no';
+        const isMuted = !!data.muted;
+        metaMuted.textContent = isMuted ? 'yes' : 'no';
+        if (isMuted) {
+          metaVol.textContent = '0%';
+          volBar.style.width = '0%';
+        }
       }
       if (ev === 'zeroconf' && data) {
         metaHa.textContent = data.status === 'connected' ? 'yes' : 'connecting…';

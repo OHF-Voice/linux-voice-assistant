@@ -20,7 +20,7 @@ LED behaviours
   pipeline_error   : red flash on all 3 LEDs
   timer_ringing    : blue flash on all 3 LEDs (repeating)
   timer_ticking    : all 3 dim cyan, brightness proportional to time left
-  media_playing    : dim green steady on all 3 LEDs
+  volume_muted     : LED 1 solid red, LED 0 and LED 2 off
   not_ready/no_ha  : dim red pulse on all 3 LEDs
 
 On connect the script registers an HA Light entity with LVA via the
@@ -130,7 +130,7 @@ RECONNECT_DELAY_S = 3.0
 # is used to route incoming light_command events back to this script.
 LIGHT_OBJECT_ID = "leds"
 LIGHT_NAME      = "LEDs"
-LIGHT_ICON      = "mdi:circle-outline"
+LIGHT_ICON      = "mdi:led-strip-varient"
 
 
 # ===========================================================================
@@ -157,6 +157,7 @@ class AssistState(str, Enum):
     TIMER_TICKING = "timer_ticking"
     TIMER_RINGING = "timer_ringing"
     MEDIA_PLAYING = "media_player_playing"
+    VOLUME_MUTED  = "volume_muted"
 
 
 # Effect name. Must match the LEDLightEntity effects list the peripheral
@@ -175,8 +176,9 @@ class SharedState:
         self._lock = threading.Lock()
         self.assist_state: AssistState = AssistState.NOT_READY
         self.ha_connected: bool = False
-        self.muted: bool = False
+        self.muted: bool = False          # mic mute
         self.volume: float = 1.0
+        self.volume_muted: bool = False   # media volume zero
         self.timer_total_seconds: int = 0
         self.timer_seconds_left: int = 0
         # Light entity state, driven by HA via light_command events.
@@ -213,6 +215,7 @@ class SharedState:
                 "ha_connected":        self.ha_connected,
                 "muted":               self.muted,
                 "volume":              self.volume,
+                "volume_muted":        self.volume_muted,
                 "timer_total_seconds": self.timer_total_seconds,
                 "timer_seconds_left":  self.timer_seconds_left,
                 "light_is_on":         self.light_is_on,
@@ -379,6 +382,9 @@ class LEDAnimator:
             # Left and right LEDs red (mic positions), centre off
             self._task = asyncio.create_task(self._muted())
 
+        elif state == AssistState.VOLUME_MUTED:
+            self._task = asyncio.create_task(self._volume_muted())
+      
         elif state == AssistState.ERROR:
             self._task = asyncio.create_task(
                 self._flash_all(RED, flashes=3, on_ms=150, off_ms=100, then_off=True)
@@ -456,6 +462,13 @@ class LEDAnimator:
         self._leds.set(2, RED)
         self._leds.show(self._brightness(0.6))
 
+    async def _volume_muted(self) -> None:
+        """Centre LED red; left and right off."""
+        self._leds.set(0, OFF)
+        self._leds.set(1, RED)
+        self._leds.set(2, OFF)
+        self._leds.show(self._brightness(0.6))
+  
     async def _flash_all(
         self,
         color: ColorSource,
@@ -922,11 +935,11 @@ class LVAClient:
             self._state.update(volume=data.get("volume", 1.0))
 
         elif event == "volume_muted":
-            muted = data.get("muted", False)
-            self._state.update(muted=muted)
-            if muted:
-                self._state.update(assist_state=AssistState.MUTED)
-            elif self._state.assist_state == AssistState.MUTED:
+            volume_muted = data.get("muted", True)
+            self._state.update(volume_muted=volume_muted)
+            if volume_muted:
+                self._state.update(assist_state=AssistState.VOLUME_MUTED)
+            elif self._state.assist_state == AssistState.VOLUME_MUTED:
                 self._state.update(assist_state=AssistState.IDLE)
 
         elif event == "zeroconf":

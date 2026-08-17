@@ -1,7 +1,7 @@
 """Unit tests for shared models."""
 
 import json
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import pytest
 
@@ -191,6 +191,17 @@ class TestPersistVolume:
         state = make_server_state(tmp_path)
         state.persist_volume(1.0)
         assert state.volume == 1.0
+
+    def test_emits_volume_muted_event_when_volume_zero(self, tmp_path):
+        from linux_voice_assistant.peripheral_api import LVAEvent
+
+        state = make_server_state(tmp_path)
+        state.peripheral_api = Mock()
+
+        state.persist_volume(0.0)
+
+        state.peripheral_api.emit_event_sync.assert_any_call(LVAEvent.VOLUME_CHANGED, {"volume": 0.0})
+        state.peripheral_api.emit_event_sync.assert_any_call(LVAEvent.VOLUME_MUTED, {"muted": True})
 
 
 # ---------------------------------------------------------------------------

@@ -98,6 +98,15 @@ LED_BRIGHTNESS = 168   # 66 % of 255 – matches ESPHome default
 LED_INVERT     = False
 LED_CHANNEL    = 0
 
+# LEDs physically sitting in the AUX (3.5 mm) audio jack corner of the board,
+# identified by their silkscreen designators on the Satellite1 HAT (D35, D1,
+# D2). These three ring positions light up solid red whenever the media
+# player volume is at zero (the `volume_muted` peripheral event), independent
+# of whatever pipeline animation is currently running. Verify the mapping
+# against your board revision — adjust if your unit's jack corner sits at a
+# different position on the ring.
+AUX_JACK_LED_INDICES = (11, 0, 1)
+
 # Default ring color  (ESPHome default: 9.4 % R, 73.3 % G, 94.9 % B)
 DEFAULT_R, DEFAULT_G, DEFAULT_B = 24, 187, 242
 
@@ -223,6 +232,7 @@ class AssistState(str, Enum):
     TIMER_TICKING = "timer_ticking"
     TIMER_RINGING = "timer_ringing"
     MEDIA_PLAYING = "media_player_playing"
+    VOLUME_MUTED  = "volume_muted"
 
 
 # ---------------------------------------------------------------------------
@@ -234,8 +244,9 @@ class SharedState:
         self._lock = threading.Lock()
         self.assist_state: AssistState = AssistState.NOT_READY
         self.ha_connected: bool = False
-        self.muted: bool = False
+        self.muted: bool = False  # mic mute
         self.volume: float = 1.0
+        self.volume_muted: bool = False  # media player volume zero
         self.timer_total_seconds: int = 0
         self.timer_seconds_left: int = 0
         # Light entity state, driven by HA via light_command events.
@@ -265,6 +276,7 @@ class SharedState:
                 "ha_connected":         self.ha_connected,
                 "muted":                self.muted,
                 "volume":               self.volume,
+                "volume_muted":         self.volume_muted,
                 "timer_total_seconds":  self.timer_total_seconds,
                 "timer_seconds_left":   self.timer_seconds_left,
                 "light_is_on":          self.light_is_on,
@@ -565,6 +577,21 @@ class LEDRing:
         self._write()
         return 0.1
 
+    def _apply_volume_muted_indicator(self) -> None:
+        """
+        Overlay a solid red indicator on the AUX jack corner LEDs
+        (designators D35, D1, D2 — see ``AUX_JACK_LED_INDICES``) when the
+        media player output is muted.
+
+        Applied as a post-render overlay after the current pipeline
+        animation has already written its frame, so the indicator shows up
+        consistently no matter which animation is active, without having to
+        thread the flag through every individual ``_anim_*`` method.
+        """
+        for i in AUX_JACK_LED_INDICES:
+            self._set(i, RED)
+        self._write()
+
     # ------------------------------------------------------------------
     # Animation loop
     # ------------------------------------------------------------------
@@ -577,6 +604,7 @@ class LEDRing:
             snap = self._state.snapshot
             color        = self._color()
             muted        = snap["muted"]
+            volume_muted = snap["volume_muted"]
             t_total      = snap["timer_total_seconds"]
             t_left       = snap["timer_seconds_left"]
             ha_connected = snap["ha_connected"]
@@ -619,6 +647,9 @@ class LEDRing:
 
             else:
                 sleep = self._anim_off()
+
+            if volume_muted:
+                self._apply_volume_muted_indicator()
 
             time.sleep(sleep)
 
@@ -986,6 +1017,9 @@ class LVAClient:
             self._state.update(
                 muted=data.get("muted", False),
                 volume=data.get("volume", 1.0),
+                # Not currently sent by LVA's snapshot payload, but read it
+                # defensively in case a future LVA version adds it.
+                volume_muted=data.get("volume_muted", False),
                 ha_connected=data.get("ha_connected", False),
             )
             snap = self._state.snapshot
@@ -1072,7 +1106,17 @@ class LVAClient:
             self._state.update(volume=data.get("volume", 1.0))
 
         elif event == "volume_muted":
-            self._state.update(muted=data.get("muted", False))
+            # Media player (speaker) mute state, distinct from the
+            # microphone `muted` event above. Drives the red indicator on
+            # the AUX jack corner LEDs (see AUX_JACK_LED_INDICES) rather
+            # than swapping the whole ring animation, since the assist
+            # pipeline can still be doing something else at the same time.
+            volume_muted = data.get("muted", True)
+            self._state.update(volume_muted=volume_muted)
+            if volume_muted:
+                self._state.update(assist_state=AssistState.VOLUME_MUTED)
+            elif self._state.assist_state == AssistState.VOLUME_MUTED:
+                self._state.update(assist_state=AssistState.IDLE)
 
         # --- Zeroconf / connection events ----------------------------------
         elif event == "zeroconf":

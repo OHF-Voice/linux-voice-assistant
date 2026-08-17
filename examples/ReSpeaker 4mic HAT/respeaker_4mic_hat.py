@@ -93,6 +93,15 @@ SPI_DEVICE     = 1
 # 10 ≈ 32 % (gentle default), 31 = maximum.
 LED_BRIGHTNESS = 10
 
+# LED that lights up solid red while the media player (speaker) output is
+# muted at volume 0 — the `volume_muted` peripheral event. Ring index 6 is
+# the bottom-middle position (180°, directly opposite index 0 at the top),
+# following the same 0=top / 3=right / 6=bottom / 9=left convention used for
+# the mic corner indicators below. Sits between the two bottom mic corners
+# (LEDs 4 and 7) so it reads as a distinct "speaker muted" dot rather than
+# overlapping a mic indicator.
+VOLUME_MUTED_LED_INDEX = 6
+
 # Default ring colour (R, G, B) — matches HA Voice PE default
 DEFAULT_R, DEFAULT_G, DEFAULT_B = 24, 187, 242
 
@@ -124,6 +133,7 @@ class AssistState(str, Enum):
     TIMER_TICKING = "timer_ticking"
     TIMER_RINGING = "timer_ringing"
     MEDIA_PLAYING = "media_player_playing"
+    VOLUME_MUTED  = "volume_muted"
 
 
 # ---------------------------------------------------------------------------
@@ -135,8 +145,9 @@ class SharedState:
         self._lock = threading.Lock()
         self.assist_state: AssistState = AssistState.NOT_READY
         self.ha_connected: bool = False
-        self.muted: bool = False
+        self.muted: bool = False          # mic mute
         self.volume: float = 1.0
+        self.volume_muted: bool = False   # media player (speaker) mute
         self.timer_total_seconds: int = 0
         self.timer_seconds_left: int = 0
         # Light entity state, driven by HA via light_command events.
@@ -162,6 +173,7 @@ class SharedState:
                 "ha_connected":        self.ha_connected,
                 "muted":               self.muted,
                 "volume":              self.volume,
+                "volume_muted":        self.volume_muted,
                 "timer_total_seconds": self.timer_total_seconds,
                 "timer_seconds_left":  self.timer_seconds_left,
                 "light_is_on":         self.light_is_on,
@@ -317,6 +329,19 @@ class LEDRing:
         self._set(7,  _scale(RED, factor))
         self._set(10, _scale(RED, factor))
 
+    def _apply_volume_muted_indicator(self) -> None:
+        """
+        Overlay a solid red dot on the bottom-middle LED (index
+        ``VOLUME_MUTED_LED_INDEX``) when the media player output is muted.
+
+        Applied after the current pipeline animation has already rendered
+        its frame, so the indicator shows up consistently no matter which
+        animation is active — mirrors how ``_apply_mic_indicators`` marks
+        the microphone corners, but for the distinct speaker-mute state.
+        """
+        self._set(VOLUME_MUTED_LED_INDEX, RED)
+        self._write()
+
     # ------------------------------------------------------------------
     # Animation implementations
     # ------------------------------------------------------------------
@@ -465,6 +490,7 @@ class LEDRing:
             snap    = self._state.snapshot
             color   = self._color()
             muted   = snap["muted"]
+            volume_muted = snap["volume_muted"]
             t_total = snap["timer_total_seconds"]
             t_left  = snap["timer_seconds_left"]
 
@@ -494,6 +520,9 @@ class LEDRing:
                 sleep = self._anim_timer_tick(color, muted, t_left, t_total)
             else:
                 sleep = self._anim_off()
+
+            if volume_muted:
+                self._apply_volume_muted_indicator()
 
             time.sleep(sleep)
 
@@ -690,7 +719,17 @@ class LVAClient:
             self._state.update(volume=data.get("volume", 1.0))
 
         elif event == "volume_muted":
-            self._state.update(muted=data.get("muted", False))
+            # Media player (speaker) mute state, carried as {"muted": bool}
+            # per the peripheral API — distinct from the microphone `muted`
+            # event above. Drives the bottom-middle LED indicator rather
+            # than replacing the whole ring animation, since the assist
+            # pipeline can still be doing something else at the same time.
+            volume_muted = data.get("muted", True)
+            self._state.update(volume_muted=volume_muted)
+            if volume_muted:
+                self._state.update(assist_state=AssistState.VOLUME_MUTED)
+            elif self._state.assist_state == AssistState.VOLUME_MUTED:
+                self._state.update(assist_state=AssistState.IDLE)
 
         elif event == "zeroconf":
             status = data.get("status", "")

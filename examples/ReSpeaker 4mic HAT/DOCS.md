@@ -55,6 +55,7 @@ All animations mirror the Home Assistant Voice PE ESPHome firmware exactly.
 | Error | Red pulse | All LEDs red, pulsing |
 | Timer ticking | Countdown arc | Arc proportional to `seconds_left / total_seconds` |
 | Timer ringing | Pulse + optional red | Full ring pulsing; red at corners if muted |
+| Volume muted | Solid ring + red indicator | Red at the bottom-mid LED | 
 
 "User color" comes from the Home Assistant Light entity described below (default: HAVPE-style blue). HA brightness scales every animation in this table. Semantic colors (Waiting/Listening cyan spin, Thinking pulse, Replying anticlockwise, Muted solid + red, Timer pulse/arc, Error red pulse) are hardcoded so they remain recognisable across user customisation.
 
