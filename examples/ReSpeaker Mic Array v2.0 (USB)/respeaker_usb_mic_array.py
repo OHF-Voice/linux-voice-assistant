@@ -814,7 +814,7 @@ class LVAClient:
 
         elif event == "volume_muted":
             Volume_muted = data.get("muted", True)
-            self._state.update(muted=Volume_muted)
+            self._state.update(volume_muted=Volume_muted)
             if Volume_muted:
                 self._state.update(assist_state=AssistState.VOLUME_MUTED)
             elif self._state.assist_state == AssistState.VOLUME_MUTED:
