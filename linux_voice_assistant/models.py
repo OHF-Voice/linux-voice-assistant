@@ -265,3 +265,14 @@ class ServerState:
         self.preferences.mic_volume = volume_int
         _LOGGER.info("Saving mic_volume %s to %s", volume_int, self.preferences_path)
         self.save_preferences()
+
+
+def initial_stop_word_threshold(saved_sensitivity: Optional[float]) -> float:
+    """
+    Resolve the stop word probability cutoff to start from, clamped to 0.0-1.0.
+    :param saved_sensitivity: Value persisted in preferences, or None if it has never been set.
+    """
+    if saved_sensitivity is None:
+        return ServerState.stop_word_threshold
+
+    return max(0.0, min(1.0, float(saved_sensitivity)))

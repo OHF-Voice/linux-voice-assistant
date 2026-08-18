@@ -18,7 +18,7 @@ from getmac import get_mac_address  # type: ignore
 from pymicro_wakeword import MicroWakeWord, MicroWakeWordFeatures
 from pyopen_wakeword import OpenWakeWord, OpenWakeWordFeatures
 
-from .models import Preferences, ServerState, WakeWordType
+from .models import Preferences, ServerState, WakeWordType, initial_stop_word_threshold
 from .mpv_player import MpvMediaPlayer
 from .peripheral_api import LVAEvent, PeripheralAPIServer
 from .satellite import VoiceSatelliteProtocol
@@ -379,6 +379,10 @@ async def main() -> None:
     initial_volume = max(0.0, min(1.0, float(initial_volume)))
     preferences.volume = initial_volume
 
+    # Load stop word sensitivity from preferences on startup, and ensure it's between 0.0 and 1.0
+    initial_threshold = initial_stop_word_threshold(preferences.stop_word_sensitivity)
+    preferences.stop_word_sensitivity = initial_threshold
+
     if args.enable_thinking_sound:
         preferences.thinking_sound = 1
 
@@ -441,6 +445,7 @@ async def main() -> None:
         output_only=args.output_only,
         download_dir=args.download_dir,
         volume=initial_volume,
+        stop_word_threshold=initial_threshold,
         mic_volume=preferences.mic_volume,
         mic_auto_gain=preferences.mic_auto_gain,
         mic_noise_suppression=preferences.mic_noise_suppression,

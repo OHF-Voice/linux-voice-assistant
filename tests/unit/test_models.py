@@ -282,3 +282,30 @@ class TestPersistMicNoise:
         with patch.object(state, "save_preferences") as mock_save:
             state.persist_mic_noise(4.0)
             mock_save.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# initial_stop_word_threshold()
+# ---------------------------------------------------------------------------
+
+
+class TestInitialStopWordThreshold:
+    def test_saved_sensitivity_is_restored(self):
+        from linux_voice_assistant.models import initial_stop_word_threshold
+
+        assert initial_stop_word_threshold(0.9) == pytest.approx(0.9)
+
+    def test_falls_back_to_server_state_default_when_never_set(self):
+        from linux_voice_assistant.models import ServerState, initial_stop_word_threshold
+
+        assert initial_stop_word_threshold(None) == pytest.approx(ServerState.stop_word_threshold)
+
+    def test_clamped_to_one_when_above(self):
+        from linux_voice_assistant.models import initial_stop_word_threshold
+
+        assert initial_stop_word_threshold(1.5) == pytest.approx(1.0)
+
+    def test_clamped_to_zero_when_below(self):
+        from linux_voice_assistant.models import initial_stop_word_threshold
+
+        assert initial_stop_word_threshold(-0.5) == pytest.approx(0.0)
