@@ -21,6 +21,7 @@ if TYPE_CHECKING:
         MediaPlayerEntity,
         MicSettingEntity,
         MuteSwitchEntity,
+        ProxiedEntity,
         StopWordSensitivityNumberEntity,
         ThinkingSoundEntity,
         WakeWord1SensitivityNumberEntity,
@@ -78,6 +79,23 @@ class LightRegistration:
     effects: List[str] = field(default_factory=list)
     supports_rgb: bool = True
     supports_brightness: bool = True
+
+
+@dataclass
+class EntityRegistration:
+    """A generic ESPHome entity a peripheral asked LVA to proxy.
+
+    The peripheral sends this with the register_entity command after
+    connecting. LVA materialises a matching ProxiedEntity so HA can
+    display it under the same device. spec holds the raw descriptor
+    fields (name, device_class, unit_of_measurement, ...) passed straight
+    through to the ESPHome ListEntities message; core does not interpret
+    them.
+    """
+
+    component: str
+    object_id: str
+    spec: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -145,6 +163,14 @@ class ServerState:
     # entity when hardware that actually supports button presses is present.
     # Survives HA reconnects so the entity is re-registered automatically.
     pending_button: bool = False
+
+    # Generic entities declared by peripherals via register_entity. Survives
+    # HA reconnects so the satellite can rebuild its entities whenever it is
+    # constructed again.
+    pending_entities: "List[EntityRegistration]" = field(default_factory=list)
+    # Materialised ProxiedEntities keyed by object_id, so update_entity
+    # readings can be routed to the right entity.
+    proxied_entities: "Dict[str, ProxiedEntity]" = field(default_factory=dict)
 
     # Optional peripheral WebSocket API (LEDs, buttons, HAT boards).
     # Assigned in __main__ before the event loop starts.

@@ -1,9 +1,10 @@
 import logging
 from abc import abstractmethod
 from collections.abc import Iterable
-from typing import Callable, List, Optional, Union
+from typing import Any, Callable, Dict, List, Optional, Type, Union
 
 # pylint: disable=no-name-in-module
+from aioesphomeapi import api_pb2  # entity builder resolves classes dynamically
 from aioesphomeapi.api_pb2 import (  # type: ignore[attr-defined]
     EventResponse,
     LightCommandRequest,
@@ -797,6 +798,115 @@ class ButtonEventSensorEntity(ESPHomeEntity):
         )
 
 
+# -----------------------------------------------------------------------------
+# Generic proxied entities (peripheral sidecars)
+# -----------------------------------------------------------------------------
+
+# Fields core sets itself on proxied entities; never accepted from a peripheral.
+# Stripping device_id preserves the same-HA-device guarantee; key is allocated
+# by the satellite so a peripheral cannot shadow another entity's key.
+PROXIED_RESERVED_FIELDS = frozenset({"key", "device_id"})
+
+
+def _camel(component: str) -> str:
+    """Convert an ESPHome component name to protobuf CamelCase ("binary_sensor" -> "BinarySensor")."""
+    return "".join(part.capitalize() for part in component.split("_"))
+
+
+def is_reporting_component(component: str) -> bool:
+    """True if the component can be proxied for a peripheral.
+
+    Derived from the aioesphomeapi protobuf schema, not a hardcoded list:
+    a component qualifies iff its ESPHome messages exist and its state
+    message has the reporting shape (state + missing_state). This admits
+    sensor, binary_sensor, text_sensor, number and select (the latter two
+    proxied read-only) while excluding controllable/complex components
+    (switch, cover, fan, ...) that need a reverse HA -> peripheral
+    direction.
+    """
+    camel = _camel(component)
+    list_cls = getattr(api_pb2, f"ListEntities{camel}Response", None)
+    state_cls = getattr(api_pb2, f"{camel}StateResponse", None)
+    if list_cls is None or state_cls is None:
+        return False
+    return {"state", "missing_state"} <= {f.name for f in state_cls.DESCRIPTOR.fields}
+
+
+def validate_entity_spec(component: str, spec: Dict[str, Any]) -> None:
+    """Validate a register_entity descriptor against the component's protobuf schema.
+
+    Raises TypeError or ValueError when a field value does not fit the
+    ESPHome ListEntities message, so callers can fail closed at
+    registration time instead of crashing later at HA enumeration.
+    """
+    list_cls: Type[message.Message] = getattr(api_pb2, f"ListEntities{_camel(component)}Response")
+    allowed = {f.name for f in list_cls.DESCRIPTOR.fields} - PROXIED_RESERVED_FIELDS
+    list_cls(**{k: v for k, v in spec.items() if k in allowed})
+
+
+class ProxiedEntity(ESPHomeEntity):
+    """Generic ESPHome entity proxied on behalf of a peripheral sidecar.
+
+    The peripheral declares the entity with the register_entity command
+    and pushes readings with update_entity. There is no per-component
+    code here: the component name picks the protobuf messages by naming
+    convention and the peripheral owns all ESPHome semantics
+    (device_class, unit_of_measurement, ...), sent as descriptor fields
+    that pass straight through to the ListEntities message.
+    """
+
+    def __init__(
+        self,
+        server: APIServer,
+        key: int,
+        component: str,
+        spec: Dict[str, Any],
+    ) -> None:
+        ESPHomeEntity.__init__(self, server)
+
+        self.key = key
+        self.component = component
+        self.object_id = str(spec["object_id"])
+        camel = _camel(component)
+        self._list_cls: Type[message.Message] = getattr(api_pb2, f"ListEntities{camel}Response")
+        self._state_cls: Type[message.Message] = getattr(api_pb2, f"{camel}StateResponse")
+
+        allowed = {f.name for f in self._list_cls.DESCRIPTOR.fields} - PROXIED_RESERVED_FIELDS
+        self._list_kwargs: Dict[str, Any] = {k: v for k, v in spec.items() if k in allowed}
+        self._list_kwargs["key"] = key
+        # Build the message once now so a bad descriptor fails at
+        # construction time rather than at HA enumeration.
+        self._list_cls(**self._list_kwargs)
+
+        self._state: Optional[Any] = None
+        self._log = logging.getLogger(f"{self.__class__.__name__}[{self.key}]")
+
+    def update_state(self, value: Any) -> None:
+        """Store a new reading from the peripheral.
+
+        Raises TypeError/ValueError when the value does not fit the
+        component's protobuf state field, so callers can reject bad
+        updates without ever caching them.
+        """
+        # Constructing the message validates the value against the field type.
+        self._state_cls(key=self.key, state=value, missing_state=False)
+        self._state = value
+        self._log.debug("Proxied entity state updated: %s", value)
+
+    def handle_message(self, msg: message.Message) -> Iterable[message.Message]:
+        if isinstance(msg, ListEntitiesRequest):
+            yield self._list_cls(**self._list_kwargs)
+        elif isinstance(msg, SubscribeHomeAssistantStatesRequest):
+            # Report immediately; missing_state=True until the first reading
+            # keeps HA showing "unknown" rather than a spurious zero value.
+            yield self._get_state_message()
+
+    def _get_state_message(self) -> message.Message:
+        if self._state is None:
+            return self._state_cls(key=self.key, missing_state=True)
+        return self._state_cls(key=self.key, state=self._state, missing_state=False)
+
+
 # Backward compatibility export aliases
 __all__ = [
     "ESPHomeEntity",
@@ -805,6 +915,9 @@ __all__ = [
     "ThinkingSoundEntity",
     "LEDLightEntity",
     "ButtonEventSensorEntity",
+    "ProxiedEntity",
+    "is_reporting_component",
+    "validate_entity_spec",
     "WakeWord1SensitivityNumberEntity",
     "WakeWord2SensitivityNumberEntity",
     "StopWordSensitivityNumberEntity",

@@ -92,6 +92,25 @@ Commands accepted from the peripheral container
               events to Home Assistant when the corresponding
               button_* commands are sent. Send once after connecting;
               duplicate registrations are ignored.
+  register_entity   data: {"component": str, "object_id": str, ...descriptor}
+              The peripheral declares a generic reporting entity
+              (sensor, binary_sensor, text_sensor, number, select —
+              the latter two read-only) it wants
+              exposed under the same HA device. Besides component and
+              object_id every descriptor key maps 1:1 to a field on the
+              ESPHome ListEntities<Component>Response message (name,
+              device_class, unit_of_measurement, accuracy_decimals,
+              state_class, icon, ...) and passes straight through;
+              enum-typed fields take their protobuf integer value and
+              unknown keys are dropped. Send once after connecting;
+              duplicate registrations for the same object_id are
+              ignored.
+  update_entity     data: {"object_id": str, "state": number|bool|str}
+              Push a new reading for an entity previously declared with
+              register_entity. The state type must match the component
+              (number for sensor/number, bool for binary_sensor, string
+              for text_sensor). Until the first update the entity shows
+              as "unknown" in HA.
 """
 
 from __future__ import annotations
@@ -99,6 +118,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import time
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Dict, Optional, Set
@@ -110,6 +130,11 @@ if TYPE_CHECKING:
     from .models import ServerState
 
 _LOGGER = logging.getLogger(__name__)
+
+# register_entity input constraints: bound both fields so a misbehaving
+# peripheral cannot inject oversized or malformed identifiers.
+_VALID_COMPONENT = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
+_VALID_OBJECT_ID = re.compile(r"^[a-z0-9_]{1,64}$")
 
 
 # ---------------------------------------------------------------------------
@@ -161,6 +186,8 @@ class LVACommand(str, Enum):
     BUTTON_LONG_PRESS = "button_long_press"
     REGISTER_LIGHT = "register_light"
     REGISTER_BUTTON = "register_button"
+    REGISTER_ENTITY = "register_entity"
+    UPDATE_ENTITY = "update_entity"
 
 
 # ---------------------------------------------------------------------------
@@ -183,6 +210,7 @@ class PeripheralAPIServer:
     DEFAULT_VOLUME_STEP: float = 0.05
     LATE_ENTITY_RECONNECT_DEBOUNCE_S: float = 1.5
     LATE_ENTITY_RECONNECT_COOLDOWN_S: float = 60.0
+    MAX_PROXIED_ENTITIES: int = 64
 
     def __init__(
         self,
@@ -480,6 +508,12 @@ class PeripheralAPIServer:
         elif command == LVACommand.REGISTER_BUTTON:
             self._register_button(satellite)
 
+        elif command == LVACommand.REGISTER_ENTITY:
+            self._register_entity(msg.get("data") or {}, satellite)
+
+        elif command == LVACommand.UPDATE_ENTITY:
+            self._update_entity(msg.get("data") or {}, satellite)
+
     def _register_light(self, data: Dict[str, Any], satellite: Any) -> None:
         """Register a Light declared by a peripheral.
 
@@ -548,6 +582,93 @@ class PeripheralAPIServer:
             satellite.register_pending_button()
 
         self._schedule_ha_reconnect_for_late_entity("button", "button_press_event")
+
+    def _register_entity(self, data: Dict[str, Any], satellite: Any) -> None:
+        """Register a generic reporting entity declared by a peripheral.
+
+        Validation fails closed: unsupported components, malformed
+        identifiers, object_id collisions and descriptor fields that do
+        not fit the ESPHome schema are all rejected with a warning
+        instead of ever reaching HA.
+
+        Idempotent on object_id: repeat registrations (e.g. after a
+        peripheral reconnect) keep the existing entity and its state.
+        """
+        from .entity import is_reporting_component, validate_entity_spec  # local import to avoid a cycle
+        from .models import EntityRegistration  # local import to avoid a cycle
+
+        state = self._state
+        if state is None:
+            return
+
+        component = str(data.get("component", "")).strip()
+        object_id = str(data.get("object_id", "")).strip()
+
+        if not _VALID_COMPONENT.match(component) or not is_reporting_component(component):
+            _LOGGER.warning("register_entity with unsupported component '%s'; ignoring", component)
+            return
+
+        if not _VALID_OBJECT_ID.match(object_id):
+            _LOGGER.warning("register_entity with invalid object_id '%s'; ignoring", object_id)
+            return
+
+        if any(reg.object_id == object_id for reg in state.pending_entities):
+            # Same entity already on file (peripheral reconnect); nothing to do.
+            return
+
+        if any(spec.object_id == object_id for spec in state.pending_lights) or any(getattr(entity, "object_id", None) == object_id for entity in state.entities):
+            _LOGGER.warning("register_entity for '%s' collides with an existing entity; ignoring", object_id)
+            return
+
+        if len(state.pending_entities) >= self.MAX_PROXIED_ENTITIES:
+            _LOGGER.warning("register_entity for '%s' ignored: cap of %d proxied entities reached", object_id, self.MAX_PROXIED_ENTITIES)
+            return
+
+        spec = dict(data)
+        try:
+            # Build the ListEntities message once now so a bad descriptor
+            # fails here instead of at HA enumeration.
+            validate_entity_spec(component, spec)
+        except (TypeError, ValueError) as err:
+            _LOGGER.warning("register_entity for '%s' has an invalid spec: %s", object_id, err)
+            return
+
+        state.pending_entities.append(EntityRegistration(component=component, object_id=object_id, spec=spec))
+        _LOGGER.info("Entity registered: %s (component=%s)", object_id, component)
+
+        # If the satellite is already running, materialise the entity now so
+        # update_entity readings route correctly. HA only sees it after the
+        # integration reconnects, but LVA stays consistent.
+        if satellite is not None:
+            satellite.register_pending_entities()
+
+        self._schedule_ha_reconnect_for_late_entity(component, object_id)
+
+    def _update_entity(self, data: Dict[str, Any], satellite: Any) -> None:
+        """Route a reading from a peripheral to its proxied entity.
+
+        Unknown object_ids (late/out-of-order registration) and state
+        values that do not fit the component's protobuf field are
+        ignored gracefully.
+        """
+        state = self._state
+        if state is None:
+            return
+
+        object_id = str(data.get("object_id", "")).strip()
+        entity = state.proxied_entities.get(object_id)
+        if entity is None:
+            _LOGGER.debug("update_entity for unknown object_id '%s'; ignoring", object_id)
+            return
+
+        try:
+            entity.update_state(data.get("state"))
+        except (TypeError, ValueError) as err:
+            _LOGGER.warning("update_entity for '%s' has a bad state: %s", object_id, err)
+            return
+
+        if satellite is not None:
+            satellite.send_messages([entity._get_state_message()])  # pylint: disable=protected-access
 
     # ------------------------------------------------------------------
     # Helpers

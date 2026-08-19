@@ -56,6 +56,7 @@ from .entity import (
     MediaPlayerEntity,
     MicSettingEntity,
     MuteSwitchEntity,
+    ProxiedEntity,
     StopWordSensitivityNumberEntity,
     ThinkingSoundEntity,
     WakeWord1SensitivityNumberEntity,
@@ -335,6 +336,10 @@ class VoiceSatelliteProtocol(APIServer):
         # button support before this satellite was constructed (e.g. on an HA
         # reconnect while the peripheral container stayed connected to LVA).
         self.register_pending_button()
+        # Materialise the generic entities peripherals registered via
+        # register_entity before this satellite was constructed (or reattach
+        # existing ones after an HA reconnect).
+        self.register_pending_entities()
 
         # ---- Instance variables ----
 
@@ -430,6 +435,41 @@ class VoiceSatelliteProtocol(APIServer):
         self.state.entities.append(entity)
         self.state.button_event_sensor_entity = entity
         _LOGGER.info("Button event sensor entity materialised")
+
+    def register_pending_entities(self) -> None:
+        """Materialise ProxiedEntities for peripheral registered entities.
+
+        Mirrors register_pending_lights: called from __init__ so entities
+        exist by the time HA enumerates, and again from the peripheral_api
+        dispatcher when a registration arrives after the satellite is
+        already running. HA only sees a late registration after its next
+        reconnect, but LVA stays consistent.
+        """
+        for registration in self.state.pending_entities:
+            existing = self.state.proxied_entities.get(registration.object_id)
+            if existing is not None:
+                # Already materialised. Reattach the server in case the
+                # satellite has been reconstructed (HA reconnect).
+                existing.server = self
+                if existing not in self.state.entities:
+                    self.state.entities.append(existing)
+                continue
+
+            try:
+                entity = ProxiedEntity(
+                    server=self,
+                    key=len(self.state.entities),
+                    component=registration.component,
+                    spec=registration.spec,
+                )
+            except (TypeError, ValueError):
+                # Specs are validated at registration time; a failure here is
+                # a bug, but must not take down the whole satellite.
+                _LOGGER.exception("Failed to materialise proxied entity '%s'; skipping", registration.object_id)
+                continue
+
+            self.state.entities.append(entity)
+            self.state.proxied_entities[registration.object_id] = entity
 
     def _on_led_light_changed(self, object_id: str) -> None:
         """Forward an HA Light entity change to peripherals as light_command.
