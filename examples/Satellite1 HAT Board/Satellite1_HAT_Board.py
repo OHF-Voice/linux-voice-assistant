@@ -1168,7 +1168,7 @@ class LVAClient:
             # the AUX jack corner LEDs (see AUX_JACK_LED_INDICES) rather
             # than swapping the whole ring animation, since the assist
             # pipeline can still be doing something else at the same time.
-            volume_muted = data.get("muted", False)
+            volume_muted = data.get("muted", True)
             self._state.update(volume_muted=volume_muted)
             if volume_muted:
                 self._state.update(assist_state=AssistState.VOLUME_MUTED)
