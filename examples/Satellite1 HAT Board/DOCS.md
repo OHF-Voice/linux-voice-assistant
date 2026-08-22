@@ -189,7 +189,7 @@ All animations mirror the Home Assistant Voice PE ESPHome firmware exactly. The 
 | Error | Red pulse | All LEDs red, pulsing |
 | Timer ticking | Countdown arc | Arc length proportional to `seconds_left / total_seconds`, tinted by your color |
 | Timer ringing | Pulse + optional red | Full ring pulsing in your color; red at 3 & 9 if muted |
-| Volume changed | Volume Display arc | Temporary arc (2.5s) showing the current volume level, starting from the AUX jack corner LED (D1, index 0) and sweeping clockwise across all 24 LEDs.
+| Volume changed | Volume Display arc | Temporary arc (2.5s) showing the current volume level, starting from the AUX jack corner LED (D1, index 0) and sweeping clockwise across all 24 LEDs |
 | Volume muted | Solid ring + red indicator | red at the AUX jack corner LEDs positions 11, 0, 1 to indicate the media player volume is zero |
 
 **Note:** All animations except twinkle, off, and error animations use the color from the HA Light entity. This means you can customize the entire LED experience from Home Assistant by adjusting the light's RGB color and brightness.
