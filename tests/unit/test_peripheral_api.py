@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+from typing import Any, Dict, Optional
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -31,8 +32,8 @@ def make_media_entity(key: int = 1, volume: float = 0.5, muted: bool = False):
     return entity
 
 
-async def dispatch(server: PeripheralAPIServer, command: str, data: dict = None) -> None:
-    payload = {"command": command}
+async def dispatch(server: PeripheralAPIServer, command: str, data: Optional[dict] = None) -> None:
+    payload: Dict[str, Any] = {"command": command}
     if data is not None:
         payload["data"] = data
     await server._dispatch_command(json.dumps(payload))  # pylint: disable=protected-access
