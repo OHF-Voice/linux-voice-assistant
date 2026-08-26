@@ -93,6 +93,13 @@ SPI_DEVICE     = 1
 # 10 ≈ 32 % (gentle default), 31 = maximum.
 LED_BRIGHTNESS = 10
 
+# Volume Display effect
+# Mirrors the ESPHome Voice PE "Volume Display" addressable_lambda. Origin
+# is LED 6 (bottom-mid) — the same reference LED already used for the
+# volume_muted indicator (VOLUME_MUTED_LED_INDEX) — so the arc grows from
+# the same spot that turns solid red when volume is silenced.
+VOLUME_DISPLAY_SECONDS = 2.5
+
 # LED that lights up solid red while the media player (speaker) output is
 # muted at volume 0 — the `volume_muted` peripheral event. Ring index 6 is
 # the bottom-middle position (180°, directly opposite index 0 at the top),
@@ -147,6 +154,10 @@ class SharedState:
         self.ha_connected: bool = False
         self.muted: bool = False          # mic mute
         self.volume: float = 1.0
+        # Monotonic deadline until which the Volume Display arc takes over
+        # the ring, set on each volume_changed event. 0 (or in the past)
+        # means the arc is not showing.
+        self.volume_display_until: float = 0.0      
         self.volume_muted: bool = False   # media player (speaker) mute
         self.timer_total_seconds: int = 0
         self.timer_seconds_left: int = 0
@@ -173,6 +184,7 @@ class SharedState:
                 "ha_connected":        self.ha_connected,
                 "muted":               self.muted,
                 "volume":              self.volume,
+                "volume_display_until": self.volume_display_until,
                 "volume_muted":        self.volume_muted,
                 "timer_total_seconds": self.timer_total_seconds,
                 "timer_seconds_left":  self.timer_seconds_left,
@@ -478,6 +490,32 @@ class LEDRing:
         self._write()
         return 0.1
 
+    def _anim_volume_display(self, color: RGB, volume: float) -> float:
+        """
+        Arc showing the current volume level, originating at LED 6
+        (bottom-mid — same LED as VOLUME_MUTED_LED_INDEX) and sweeping
+        clockwise around the ring.
+
+        Mirrors the ESPHome Voice PE "Volume Display" addressable_lambda —
+        proportional arc with a partial-brightness leading LED, plus a red
+        indicator on the origin LED when volume is silenced.
+        """
+        silenced_color = RED
+        volume_ratio = LED_COUNT * max(0.0, min(1.0, volume))
+
+        for i in range(LED_COUNT):
+            if i <= volume_ratio:
+                brightness = min(volume_ratio - i, 1.0)
+                self._set((VOLUME_MUTED_LED_INDEX + i) % LED_COUNT, _scale(color, brightness))
+            else:
+                self._set((VOLUME_MUTED_LED_INDEX + i) % LED_COUNT, BLACK)
+
+        if volume <= 0.0:
+            self._set(VOLUME_MUTED_LED_INDEX, silenced_color)
+
+        self._write()
+        return 0.05  # matches the 50ms update_interval of the ESPHome effect
+  
     # ------------------------------------------------------------------
     # Animation loop
     # ------------------------------------------------------------------
@@ -494,7 +532,12 @@ class LEDRing:
             t_total = snap["timer_total_seconds"]
             t_left  = snap["timer_seconds_left"]
 
-            if anim == self.ANIM_OFF:
+            # Volume Display takes over the ring temporarily, regardless of
+            # the current pipeline state, then falls back to the normal
+            # animation once its deadline passes.
+            if snap["volume_display_until"] > time.monotonic():
+                sleep = self._anim_volume_display(color, snap["volume"])
+            elif anim == self.ANIM_OFF:
                 sleep = self._anim_off()
             elif anim == self.ANIM_IDLE:
                 sleep = self._anim_idle()
@@ -716,7 +759,10 @@ class LVAClient:
             self._state.update(assist_state=AssistState.MEDIA_PLAYING)
 
         elif event == "volume_changed":
-            self._state.update(volume=data.get("volume", 1.0))
+            self._state.update(
+                volume=data.get("volume", 1.0),
+                volume_display_until=time.monotonic() + VOLUME_DISPLAY_SECONDS,
+            )
 
         elif event == "volume_muted":
             # Media player (speaker) mute state, carried as {"muted": bool}

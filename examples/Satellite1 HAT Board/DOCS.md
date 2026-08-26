@@ -4,7 +4,7 @@
 
 Peripheral controller for the [Satellite1 HAT Board](https://futureproofhomes.net/products/satellite1-top-microphone-board) by FutureProofHomes, running alongside the Linux Voice Assistant (LVA) container.
 
-The controller runs as a separate Docker container on the same Raspberry Pi. It connects to LVA's peripheral WebSocket API, drives the 12-LED SK6812 ring with animations that mirror the [Home Assistant Voice PE](https://www.home-assistant.io/voice-pe/) LED behaviour, and maps the four hardware buttons to LVA commands with multipress support on the context action button.
+The controller runs as a separate Docker container on the same Raspberry Pi. It connects to LVA's peripheral WebSocket API, drives the 24-LED WS2812 ring with animations that mirror the [Home Assistant Voice PE](https://www.home-assistant.io/voice-pe/) LED behaviour, and maps the four hardware buttons to LVA commands with multipress support on the context action button.
 
 ---
 
@@ -13,7 +13,7 @@ The controller runs as a separate Docker container on the same Raspberry Pi. It 
 | Component | Details |
 |---|---|
 | Microphone array | XMOS XVF3800 (USB, far-field, onboard DSP) |
-| LED ring | 12 × SK6812 RGBW NeoPixels |
+| LED ring | 24 × WS2812 RGBW NeoPixels |
 | Buttons | 4 × tactile (top, bottom, left, right) |
 | Audio output | I2S line-out (optional) |
 | Interface | Raspberry Pi 40-pin HAT connector |
@@ -189,6 +189,7 @@ All animations mirror the Home Assistant Voice PE ESPHome firmware exactly. The 
 | Error | Red pulse | All LEDs red, pulsing |
 | Timer ticking | Countdown arc | Arc length proportional to `seconds_left / total_seconds`, tinted by your color |
 | Timer ringing | Pulse + optional red | Full ring pulsing in your color; red at 3 & 9 if muted |
+| Volume changed | Volume Display arc | Temporary arc (2.5s) showing the current volume level, starting from the AUX jack corner LED (D1, index 0) and sweeping clockwise across all 24 LEDs |
 | Volume muted | Solid ring + red indicator | red at the AUX jack corner LEDs positions 11, 0, 1 to indicate the media player volume is zero |
 
 **Note:** All animations except twinkle, off, and error animations use the color from the HA Light entity. This means you can customize the entire LED experience from Home Assistant by adjusting the light's RGB color and brightness.
@@ -204,7 +205,7 @@ All animations mirror the Home Assistant Voice PE ESPHome firmware exactly. The 
 Edit `/boot/firmware/config.txt` (or `/boot/config.txt` on older Raspberry Pi OS):
 
 ```ini
-# Enable PWM on GPIO 12 for the SK6812 LED ring
+# Enable PWM on GPIO 12 for the WS2812 LED ring
 dtoverlay=pwm,pin=12,func=4
 
 # Disable onboard audio — it shares PWM0 with GPIO 12
@@ -301,7 +302,7 @@ LONG_PRESS_MS         = 1000   # Duration to detect long press (ms)
 
 
 # LED ring
-LED_COUNT      = 12
+LED_COUNT      = 24
 LED_BRIGHTNESS = 168    # 0–255, default is 66 % (168)
 
 # HA Light entity registration

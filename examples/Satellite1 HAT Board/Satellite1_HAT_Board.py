@@ -7,7 +7,7 @@ hardware buttons to LVA peripheral API commands.
 
 Hardware layout (Satellite 1 HAT on Raspberry Pi)
 --------------------------------------------------
-  LED ring   : 12 × SK6812 RGBW NeoPixels  →  GPIO 12 (PWM0)
+  LED ring   : 24 x WS2812 RGBW NeoPixels  →  GPIO 12 (PWM0)
   Right btn  : Volume Up                    →  GPIO 17
   Left btn   : Volume Down                  →  GPIO 27
   Top btn    : Mute / Unmute mic            →  GPIO 22
@@ -91,21 +91,33 @@ BTN_ACTION     = 23   # Bottom button
 BTN_DEBOUNCE_MS = 30  # Milliseconds
 
 # LED ring
-LED_COUNT      = 12
+LED_COUNT      = 24
 LED_FREQ_HZ    = 800_000
 LED_DMA        = 10
 LED_BRIGHTNESS = 168   # 66 % of 255 – matches ESPHome default
 LED_INVERT     = False
 LED_CHANNEL    = 0
 
+# Four mic positions at the cardinal points (top, right, bottom, left),
+# spaced LED_COUNT/4 apart. On the 24-LED ring: LEDs 0, 6, 12, 18.
+MIC_LED_POSITIONS = tuple(i * (LED_COUNT // 4) for i in range(4))
+
 # LEDs physically sitting in the AUX (3.5 mm) audio jack corner of the board,
 # identified by their silkscreen designators on the Satellite1 HAT (D35, D1,
 # D2). These three ring positions light up solid red whenever the media
 # player volume is at zero (the `volume_muted` peripheral event), independent
-# of whatever pipeline animation is currently running. Verify the mapping
-# against your board revision — adjust if your unit's jack corner sits at a
-# different position on the ring.
-AUX_JACK_LED_INDICES = (11, 0, 1)
+# of whatever pipeline animation is currently running. Scaled to the 24-LED
+# ring to cover the same angular span as the original 12-LED mapping —
+# verify against your board revision and adjust if it differs.
+AUX_JACK_LED_INDICES = (22, 23, 0, 1, 2)
+
+# Volume Display effect
+# Mirrors the ESPHome Voice PE "Volume Display" addressable_lambda, but
+# rotated so the arc originates at the AUX jack corner LED (D1, index 0)
+# instead of Voice PE's origin — matching this board's physical AUX jack
+# placement. Shown as a temporary overlay for this many seconds after
+# volume_changed.
+VOLUME_DISPLAY_SECONDS = 2.5
 
 # Default ring color  (ESPHome default: 9.4 % R, 73.3 % G, 94.9 % B)
 DEFAULT_R, DEFAULT_G, DEFAULT_B = 24, 187, 242
@@ -246,6 +258,10 @@ class SharedState:
         self.ha_connected: bool = False
         self.muted: bool = False  # mic mute
         self.volume: float = 1.0
+        # Monotonic deadline until which the Volume Display arc takes over
+        # the ring, set on each volume_changed event. 0 (or in the past)
+        # means the arc is not showing.
+        self.volume_display_until: float = 0.0        
         self.volume_muted: bool = False  # media player volume zero
         self.timer_total_seconds: int = 0
         self.timer_seconds_left: int = 0
@@ -276,6 +292,7 @@ class SharedState:
                 "ha_connected":         self.ha_connected,
                 "muted":                self.muted,
                 "volume":               self.volume,
+                "volume_display_until": self.volume_display_until,
                 "volume_muted":         self.volume_muted,
                 "timer_total_seconds":  self.timer_total_seconds,
                 "timer_seconds_left":   self.timer_seconds_left,
@@ -499,18 +516,12 @@ class LEDRing:
     def _anim_muted(self, color: RGB, muted: bool) -> float:
         """
         Solid ring with red indicators at all 4 mic positions when muted.
-        Satellite 1 HAT has mics at 12, 3, 6 and 9 o'clock → LEDs 0, 3, 6, 9.
         """
         for i in range(LED_COUNT):
             self._set(i, color)
 
         if muted:
-            # 4 mic positions: top (0), right (3), bottom (6), left (9)
-            # Blank the immediate neighbours so the red indicators stand out
-            self._set(11, BLACK); self._set(0, RED);  self._set(1, BLACK)
-            self._set(2,  BLACK); self._set(3, RED);  self._set(4, BLACK)
-            self._set(5,  BLACK); self._set(6, RED);  self._set(7, BLACK)
-            self._set(8,  BLACK); self._set(9, RED);  self._set(10, BLACK)
+            self._apply_mic_indicators()
 
         self._write()
         return 0.016
@@ -567,15 +578,53 @@ class LEDRing:
                 self._set(i, BLACK)
 
         if muted:
-            # 4 mic positions: LEDs 0, 3, 6, 9
-            self._set(11, BLACK); self._set(0, RED);  self._set(1, BLACK)
-            self._set(2,  BLACK); self._set(3, RED);  self._set(4, BLACK)
-            self._set(5,  BLACK); self._set(6, RED);  self._set(7, BLACK)
-            self._set(8,  BLACK); self._set(9, RED);  self._set(10, BLACK)
+            self._apply_mic_indicators()
 
         self._index = (LED_COUNT + self._index - 1) % LED_COUNT
         self._write()
         return 0.1
+
+    def _anim_volume_display(self, color: RGB, volume: float) -> float:
+        """
+        Arc showing the current volume level, originating at the AUX jack
+        corner LED (D1, index 0) and sweeping clockwise around the ring.
+
+        Mirrors the ESPHome Voice PE "Volume Display" addressable_lambda
+        exactly, except the arc's origin is rotated from LED 6 to LED 0 to
+        match this board's AUX jack corner LED placement.
+        """
+        silenced_color = RED
+        volume_ratio = LED_COUNT * max(0.0, min(1.0, volume))
+
+        for i in range(LED_COUNT):
+            if i <= volume_ratio:
+                brightness = min(volume_ratio - i, 1.0)
+                self._set(i, _scale(color, brightness))
+            else:
+                self._set(i, BLACK)
+
+        if volume <= 0.0:
+            self._set(0, silenced_color)
+
+        self._write()
+        return 0.05  # matches the 50ms update_interval of the ESPHome effect
+
+    def _apply_mic_indicators(self) -> None:
+        """
+        Mark all 4 mic positions (cardinal points) red on the already
+        rendered frame, blanking immediate neighbours so each indicator
+        reads as a distinct dot. Positions are LED_COUNT/4 apart —
+        LEDs 0, 6, 12, 18 on the 24-LED ring.
+        """
+        for pos in MIC_LED_POSITIONS:
+            self._set((pos - 1) % LED_COUNT, BLACK)
+            self._set(pos, RED)
+            self._set((pos + 1) % LED_COUNT, BLACK)
+
+    def _apply_mic_indicators_pulsed(self, factor: float) -> None:
+        """Pulsed version for timer_ring — keeps indicators in sync with ring brightness."""
+        for pos in MIC_LED_POSITIONS:
+            self._set(pos, _scale(RED, factor))
 
     def _apply_volume_muted_indicator(self) -> None:
         """
@@ -609,7 +658,12 @@ class LEDRing:
             t_left       = snap["timer_seconds_left"]
             ha_connected = snap["ha_connected"]
 
-            if anim == self.ANIM_IDLE:
+            # Volume Display takes over the ring temporarily, regardless of
+            # the current pipeline state, then falls back to the normal
+            # animation once its deadline passes.
+            if snap["volume_display_until"] > time.monotonic():
+                sleep = self._anim_volume_display(color, snap["volume"])
+            elif anim == self.ANIM_IDLE:
                 sleep = self._anim_idle()
 
             elif anim == self.ANIM_OFF:
@@ -1103,7 +1157,10 @@ class LVAClient:
             self._state.update(assist_state=AssistState.MEDIA_PLAYING)
 
         elif event == "volume_changed":
-            self._state.update(volume=data.get("volume", 1.0))
+            self._state.update(
+                volume=data.get("volume", 1.0),
+                volume_display_until=time.monotonic() + VOLUME_DISPLAY_SECONDS,
+            )
 
         elif event == "volume_muted":
             # Media player (speaker) mute state, distinct from the
