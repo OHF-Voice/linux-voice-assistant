@@ -286,6 +286,11 @@ class SharedState:
         self.hsv_hue: int = DEFAULT_HUE
         self.hsv_saturation: float = DEFAULT_SATURATION
         self.hsv_value: float = DEFAULT_VALUE
+        # True for as long as the action (bottom) button is physically held
+        # down, regardless of press duration. Drives the "light up while
+        # pressed" tactile feedback in LEDRing (only applied when the HA
+        # Light entity is off — see LEDRing._anim_action_held).
+        self.action_button_down: bool = False
 
     def update(self, **kwargs) -> None:
         with self._lock:
@@ -312,6 +317,7 @@ class SharedState:
                 "hsv_hue":              self.hsv_hue,
                 "hsv_saturation":       self.hsv_saturation,
                 "hsv_value":            self.hsv_value,
+                "action_button_down":   self.action_button_down,
             }
 
 
@@ -461,6 +467,25 @@ class LEDRing:
         else:
             self._all_off()
         return 0.1
+
+    def _anim_action_held(self, color: RGB, brightness: float) -> float:
+        """
+        Force the ring fully on at the current (or default, if none has been
+        chosen yet) light color while the action button is physically held
+        down and the HA Light entity is off.
+
+        Only takes over when the Light entity is off — if it's already on,
+        the idle animation is already showing the color and the ring is
+        left alone. Gives instant visual feedback for every press,
+        including a very short tap (turns off the moment the button is
+        released), and refreshes quickly so that rotating the color wheel
+        (holding action + a volume button) shows up on the ring in real
+        time.
+        """
+        for i in range(LED_COUNT):
+            self._set(i, _scale(color, brightness))
+        self._write()
+        return 0.05
 
     def _anim_off(self) -> float:
         self._all_off()
@@ -665,12 +690,24 @@ class LEDRing:
             t_total      = snap["timer_total_seconds"]
             t_left       = snap["timer_seconds_left"]
             ha_connected = snap["ha_connected"]
+            action_button_down = snap["action_button_down"]
 
             # Volume Display takes over the ring temporarily, regardless of
             # the current pipeline state, then falls back to the normal
             # animation once its deadline passes.
             if snap["volume_display_until"] > time.monotonic():
                 sleep = self._anim_volume_display(color, snap["volume"])
+
+            # The action button forces the ring on at the current (or
+            # default) color while physically held down — but only when the
+            # HA Light entity is off; if it's already on, the idle animation
+            # is already showing the color and there's nothing extra to do.
+            # This also carries live updates while the color wheel is being
+            # rotated (holding action + a volume button), since that
+            # rotation writes the new color straight into shared state.
+            elif action_button_down and not snap["light_is_on"]:
+                sleep = self._anim_action_held(color, snap["light_brightness"])
+
             elif anim == self.ANIM_IDLE:
                 sleep = self._anim_idle()
 
@@ -782,6 +819,13 @@ class ButtonHandler:
       Holding the volume button past VOLUME_HOLD_THRESHOLD_MS while the
       action button is held rotates continuously through the color wheel
       using the same repeat mechanism, until the volume button is released.
+      Color changes are applied to the LED ring immediately so the wheel
+      rotation previews in real time.
+    - The action button also lights up the LED ring at the chosen (or
+      default) color for as long as it's physically held down — even for a
+      quick tap — turning off again on release. This only happens when the
+      HA Light entity is off; if it's already on, the idle animation is
+      already showing the color.
     """
 
     def __init__(
@@ -824,9 +868,9 @@ class ButtonHandler:
         btn_down.when_pressed  = lambda: self._on_volume_button_pressed("down")
         btn_down.when_released = lambda: self._on_volume_button_released("down")
         btn_mute.when_pressed = self._on_mute
-        btn_act.when_pressed  = self._on_action
+        btn_act.when_pressed  = self._on_action_pressed
         btn_act.when_held     = self._on_action_held
-        btn_act.when_released = self._on_action_released
+        btn_act.when_released = self._on_action_button_released
         btn_act.hold_time     = 0.1  # 100ms to detect hold
 
         # Keep references — gpiozero Buttons are released when garbage-collected
@@ -931,6 +975,26 @@ class ButtonHandler:
         self._volume_repeat_stop[which] = None
         self._volume_repeat_threads[which] = None
 
+    def _on_action_pressed(self) -> None:
+        """
+        Action button physically pressed down.
+
+        Fires the usual context-sensitive command immediately (unchanged
+        behaviour), and also marks the button as held down so the LED ring
+        can react instantly — even for a very short tap. The ring itself
+        only lights up in response to this when the HA Light entity is off
+        (see LEDRing._anim_action_held); if it's already on, the idle
+        animation is already showing the color and there's nothing extra
+        to do.
+        """
+        self._state.update(action_button_down=True)
+        self._on_action()
+
+    def _on_action_button_released(self) -> None:
+        """Action button released – exit color-change mode and stop forcing the ring on."""
+        self._on_action_released()
+        self._state.update(action_button_down=False)
+
     def _on_action_held(self) -> None:
         """Action button held – enter color change mode."""
         self._action_button_held = True
@@ -953,13 +1017,26 @@ class ButtonHandler:
         self._send_color_command(new_hue, snap["hsv_saturation"], snap["hsv_value"])
     
     def _send_color_command(self, hue: int, saturation: float, value: float) -> None:
-        """Convert HSV to RGB and send light_command to LVA."""
-        # Update local HSV state
-        self._state.update(hsv_hue=hue, hsv_saturation=saturation, hsv_value=value)
-        
-        # Convert HSV to RGB for light command
+        """
+        Convert HSV to RGB, apply it to shared state immediately for a
+        real-time preview on the LED ring, and notify LVA/Home Assistant.
+        """
         r, g, b = hsv_to_rgb(hue, saturation, value)
-        
+
+        # Update local state right away so the ring reflects the new color
+        # as it's being picked, without waiting on a light_command
+        # round-trip through LVA/Home Assistant. This also turns the light
+        # "on" — picking a color is an explicit, deliberate action.
+        self._state.update(
+            hsv_hue=hue,
+            hsv_saturation=saturation,
+            hsv_value=value,
+            light_is_on=True,
+            light_red=r / 255.0,
+            light_green=g / 255.0,
+            light_blue=b / 255.0,
+        )
+
         # Normalize RGB to 0-1 range
         light_cmd = {
             "command": "light_command",
