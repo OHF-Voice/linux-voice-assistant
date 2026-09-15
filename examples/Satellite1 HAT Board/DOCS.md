@@ -104,10 +104,14 @@ target:
 ## Button behaviour
 
 ### Right button — Volume Up
-Sends `volume_up` to LVA. Each press increases volume by one step.
+Sends `volume_up` to LVA. A quick press increases volume by one step.
+
+**Hold to adjust gradually:** keep the button held past 1000 ms and the controller keeps sending `volume_up` every ~150 ms — volume rises smoothly for as long as the button stays down, instead of one step per press. Release the button to stop.
 
 ### Left button — Volume Down
-Sends `volume_down` to LVA. Each press decreases volume by one step.
+Sends `volume_down` to LVA. A quick press decreases volume by one step.
+
+**Hold to adjust gradually:** the same behaviour applies in reverse — holding the button past 1000 ms repeats `volume_down` every ~150 ms until released.
 
 ### Top button — Mute / Unmute
 Toggles microphone mute. Sends `mute_mic` when unmuted, `unmute_mic` when muted. The LED ring switches to the muted indicator pattern immediately.
@@ -126,6 +130,8 @@ Context-aware command based on current assistant state, mirroring the Home Assis
 | Wake word / listening / thinking / TTS speaking | `stop_pipeline` |
 | Music / media playing | `stop_media_player` |
 | Any other (idle) | `start_listening` |
+
+**LED feedback while pressed:** whenever the button is physically held down — even for a very short tap — the LED ring lights up at the currently chosen color (or the default cyan if no color has been picked yet), then turns off again the instant the button is released. This only kicks in when the HA Light entity is currently **off**; if the light is already on, the idle animation is already showing the color, so nothing changes.
 
 #### Multi-press gestures
 
@@ -155,6 +161,10 @@ Hold down the action button and use the volume buttons to rotate through the HSV
 | **Hold + Volume Up** | Rotate hue +10° (clockwise around color wheel) |
 | **Hold + Volume Down** | Rotate hue -10° (counter-clockwise around color wheel) |
 
+**Hold the volume button to keep rotating:** a quick press of a volume button while holding the action button steps the hue by 10° once, same as above. If you keep the volume button held past 1000 ms, the controller keeps stepping the hue every ~150 ms — the color keeps rotating around the wheel for as long as you hold it, and stops the moment you release the volume button (the action button can stay held throughout).
+
+**Real-time preview:** every hue step — whether from a single tap or the continuous hold-rotation — is applied to shared state immediately and shows up on the LED ring right away, without waiting on Home Assistant to echo the change back. This means the ring always reflects exactly the color you're about to select while you're still picking it.
+
 The color wheel provides **36 distinct color stops** (0°–360° in 10° increments):
 - **0°** – Red
 - **60°** – Yellow
@@ -163,12 +173,12 @@ The color wheel provides **36 distinct color stops** (0°–360° in 10° increm
 - **240°** – Blue
 - **300°** – Magenta
 
-Each press changes the hue by 10°, allowing smooth navigation around the full color spectrum. The LED ring updates immediately to show the new color during idle/standby (when the light is on).
+Each press (or hold-repeat step) changes the hue by 10°, allowing smooth navigation around the full color spectrum. The LED ring updates immediately to show the new color during idle/standby (when the light is on).
 
 **Example workflow:**
 1. Press and hold the action button
-2. Press volume up repeatedly to cycle through warm colors (red → orange → yellow)
-3. Release action button to confirm and exit color mode
+2. Press and hold volume up to rotate continuously through warm colors (red → orange → yellow), or tap it repeatedly for single 10° steps
+3. Release the volume button once you like the color, then release the action button to confirm and exit color mode
 4. The new color persists in Home Assistant
 
 ---
@@ -191,6 +201,7 @@ All animations mirror the Home Assistant Voice PE ESPHome firmware exactly. The 
 | Timer ringing | Pulse + optional red | Full ring pulsing in your color; red at 3 & 9 if muted |
 | Volume changed | Volume Display arc | Temporary arc (2.5s) showing the current volume level, starting from the AUX jack corner LED (D1, index 0) and sweeping clockwise across all 24 LEDs |
 | Volume muted | Solid ring + red indicator | red at the AUX jack corner LEDs positions 11, 0, 1 to indicate the media player volume is zero |
+| Action button held (light off) | Solid ring in chosen/default color | Overrides whatever else is showing for as long as the action button is physically held down, only while the HA Light entity is off — gives instant tactile feedback and previews color-wheel changes live |
 
 **Note:** All animations except twinkle, off, and error animations use the color from the HA Light entity. This means you can customize the entire LED experience from Home Assistant by adjusting the light's RGB color and brightness.
 
@@ -295,6 +306,11 @@ BTN_MUTE        = 22
 BTN_ACTION      = 23
 
 BTN_DEBOUNCE_MS = 150   # Button debounce in milliseconds
+
+# Volume button hold-to-repeat (also drives continuous color wheel rotation
+# while the action button is held — see "Hold + Volume buttons" above)
+VOLUME_HOLD_THRESHOLD_MS = 1000  # Hold time before gradual repeat kicks in
+VOLUME_HOLD_REPEAT_S     = 0.15  # Seconds between repeated steps while held
 
 # Button multipress timing
 MULTIPRESS_TIMEOUT_MS = 500    # Time window between presses (ms)
@@ -417,7 +433,13 @@ automation:
 2. Confirm onboard audio is disabled (`dtparam=audio=on` is commented out).
 3. Check the container is running as root (`user: "0:0"` in compose file) — `rpi-ws281x` requires root for DMA access via `/dev/mem`.
 4. Run with `--debug` and look for `LED ring initialised` in the logs. If `rpi_ws281x not found` appears, the Python package failed to install — rebuild the image.
-5. **If you see only pipeline animations (listening, thinking, etc.) but no idle glow:** The light entity defaults to **off** in Home Assistant to match Voice PE behavior. Turn on the `light.<satellite>_leds` entity in HA to show the idle LED color.
+5. **If you see only pipeline animations (listening, thinking, etc.) but no idle glow:** The light entity defaults to **off** in Home Assistant to match Voice PE behavior. Turn on the `light.<satellite>_leds` entity in HA to show the idle LED color, or simply hold the action button — it lights the ring at the current color while held whenever the light is off.
+
+### Volume doesn't change smoothly while holding the button
+
+1. Confirm you're holding the button past 1000 ms (`VOLUME_HOLD_THRESHOLD_MS`) — a shorter press only sends a single step, by design.
+2. Run with `--debug` — each repeated step logs `Button → volume_up` / `Button → volume_down` roughly every 150 ms while held.
+3. If the repeat feels too fast/slow, adjust `VOLUME_HOLD_REPEAT_S` at the top of `Satellite1_HAT_Board.py`.
 
 ### Buttons do not respond
 
