@@ -322,7 +322,7 @@ asyncio.run(main())
 The repository ships with ready-to-use peripheral controllers for popular hardware boards. Each example is a standalone Docker container that connects to LVA over this API.
 
 - [Peripheral Web Console](https://github.com/OHF-Voice/linux-voice-assistant/blob/main/examples/Peripheral%20web%20console/DOCS.md) — browser-based real-time dashboard showing all events and a command palette; useful for debugging your setup or testing automations without any hardware
-- [Satellite1 HAT Board](https://github.com/OHF-Voice/linux-voice-assistant/blob/main/examples/Satellite1%20HAT%20Board/DOCS.md) — 12-LED SK6812 ring + 4 buttons; animations mirror the Home Assistant Voice PE firmware exactly
+- [Satellite1 HAT Board](https://github.com/OHF-Voice/linux-voice-assistant/blob/main/examples/Satellite1%20HAT%20Board/DOCS.md) — 24-LED WS2812 ring + 4 buttons; animations mirror the Home Assistant Voice PE firmware exactly
 - [ReSpeaker 2-Mic Pi HAT](https://github.com/OHF-Voice/linux-voice-assistant/blob/main/examples/ReSpeaker%202mic%20HAT/DOCS.md) — 3 APA102 LEDs + 1 onboard button; compact single-button controller
 - [ReSpeaker 4-Mic Array HAT](https://github.com/OHF-Voice/linux-voice-assistant/blob/main/examples/ReSpeaker%204mic%20HAT/DOCS.md) — 12 APA102 LEDs + external GPIO buttons; four-microphone circular array
 - [ReSpeaker Mic Array v2.0 (USB)](https://github.com/OHF-Voice/linux-voice-assistant/blob/main/examples/ReSpeaker%20Mic%20Array%20v2.0%20(USB)/DOCS.md) — 12 APA102 LEDs driven over USB HID; plug-and-play, no GPIO required
