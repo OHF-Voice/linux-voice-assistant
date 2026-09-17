@@ -466,7 +466,7 @@ class VoiceSatelliteProtocol(APIServer):
         self.state.entities.append(entity)
         self.state.button_lock_entity = entity
         _LOGGER.info("Button lock switch entity materialised")
-    
+
     def _on_led_light_changed(self, object_id: str) -> None:
         """Forward an HA Light entity change to peripherals as light_command.
 
@@ -481,7 +481,7 @@ class VoiceSatelliteProtocol(APIServer):
     def _on_button_lock_changed(self, is_locked: bool) -> None:
         """Forward a button-lock switch change to peripherals as button_lock_changed."""
         self._emit(LVAEvent.BUTTON_LOCK_CHANGED, {"locked": is_locked})
-    
+
     # ------------------------------------------------------------------
     # Mute / thinking sound
     # ------------------------------------------------------------------
