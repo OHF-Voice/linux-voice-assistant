@@ -16,6 +16,7 @@ if TYPE_CHECKING:
 
     from .entity import (
         ButtonEventSensorEntity,
+        ButtonLockEntity,
         ESPHomeEntity,
         LEDLightEntity,
         MediaPlayerEntity,
@@ -146,6 +147,13 @@ class ServerState:
     # Survives HA reconnects so the entity is re-registered automatically.
     pending_button: bool = False
 
+    # True once a peripheral sends register_button_lock. Gates creation of
+    # ButtonLockEntity so the HA device page only shows the "Disable button
+    # controls" switch when hardware that actually supports it is present.
+    # Survives HA reconnects so the entity is re-registered automatically.
+    pending_button_lock: bool = False
+    button_lock_entity: "Optional[ButtonLockEntity]" = None
+    
     # Optional peripheral WebSocket API (LEDs, buttons, HAT boards).
     # Assigned in __main__ before the event loop starts.
     peripheral_api: "Optional[Any]" = None  # PeripheralAPIServer at runtime
