@@ -52,6 +52,7 @@ from pyopen_wakeword import OpenWakeWord
 from .api_server import APIServer
 from .entity import (
     ButtonEventSensorEntity,
+    ButtonLockEntity,
     LEDLightEntity,
     MediaPlayerEntity,
     MicSettingEntity,
@@ -335,6 +336,9 @@ class VoiceSatelliteProtocol(APIServer):
         # button support before this satellite was constructed (e.g. on an HA
         # reconnect while the peripheral container stayed connected to LVA).
         self.register_pending_button()
+        # Materialise ButtonLockEntity if a peripheral already registered
+        # the button-lock switch before this satellite was constructed.
+        self.register_pending_button_lock()
 
         # ---- Instance variables ----
 
@@ -431,6 +435,38 @@ class VoiceSatelliteProtocol(APIServer):
         self.state.button_event_sensor_entity = entity
         _LOGGER.info("Button event sensor entity materialised")
 
+    def register_pending_button_lock(self) -> None:
+        """Materialise the button-lock switch once a peripheral has registered it.
+
+        Called from __init__ (handles HA reconnects where the peripheral
+        container stayed connected to LVA and pending_button_lock is already
+        True) and from PeripheralAPIServer._register_button_lock() when the
+        command arrives at runtime.
+
+        Safe to call multiple times: idempotent — if the entity already
+        exists it is only reattached to the current satellite server
+        instance, preserving its current lock state.
+        """
+        if not self.state.pending_button_lock:
+            return
+
+        if self.state.button_lock_entity is not None:
+            self.state.button_lock_entity.server = self
+            if self.state.button_lock_entity not in self.state.entities:
+                self.state.entities.append(self.state.button_lock_entity)
+            return
+
+        entity = ButtonLockEntity(
+            server=self,
+            key=len(self.state.entities),
+            name="Disable button controls",
+            object_id="disable_button_controls",
+            on_changed=self._on_button_lock_changed,
+        )
+        self.state.entities.append(entity)
+        self.state.button_lock_entity = entity
+        _LOGGER.info("Button lock switch entity materialised")
+    
     def _on_led_light_changed(self, object_id: str) -> None:
         """Forward an HA Light entity change to peripherals as light_command.
 
@@ -442,6 +478,10 @@ class VoiceSatelliteProtocol(APIServer):
             return
         self._emit(LVAEvent.LIGHT_COMMAND, entity.state_dict())
 
+    def _on_button_lock_changed(self, is_locked: bool) -> None:
+        """Forward a button-lock switch change to peripherals as button_lock_changed."""
+        self._emit(LVAEvent.BUTTON_LOCK_CHANGED, {"locked": is_locked})
+    
     # ------------------------------------------------------------------
     # Mute / thinking sound
     # ------------------------------------------------------------------
