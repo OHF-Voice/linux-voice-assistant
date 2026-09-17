@@ -112,7 +112,7 @@ Commands accepted from the peripheral container
               responsible for honoring the lock state — LVA does not
               gate anything on its end. Send once after connecting;
               duplicate registrations are ignored and preserve the
-              current lock state.            
+              current lock state.          
 """
 
 from __future__ import annotations
