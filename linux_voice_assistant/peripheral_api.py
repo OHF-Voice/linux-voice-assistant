@@ -112,7 +112,7 @@ Commands accepted from the peripheral container
               responsible for honoring the lock state — LVA does not
               gate anything on its end. Send once after connecting;
               duplicate registrations are ignored and preserve the
-              current lock state.              
+              current lock state.            
 """
 
 from __future__ import annotations
@@ -507,7 +507,7 @@ class PeripheralAPIServer:
 
         elif command == LVACommand.REGISTER_BUTTON_LOCK:
             self._register_button_lock(satellite)
-  
+
     def _register_light(self, data: Dict[str, Any], satellite: Any) -> None:
         """Register a Light declared by a peripheral.
 
@@ -605,7 +605,7 @@ class PeripheralAPIServer:
             satellite.register_pending_button_lock()
 
         self._schedule_ha_reconnect_for_late_entity("button_lock", "disable_button_controls")
-  
+
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
