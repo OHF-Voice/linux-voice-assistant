@@ -461,10 +461,12 @@ class VoiceSatelliteProtocol(APIServer):
             key=len(self.state.entities),
             name="Disable button controls",
             object_id="disable_button_controls",
-            on_changed=self._on_button_lock_changed,
+            get_locked=lambda: self.state.button_controls_locked,
+            set_locked=self._set_button_controls_locked,
         )
         self.state.entities.append(entity)
         self.state.button_lock_entity = entity
+        entity.sync_with_state()
         _LOGGER.info("Button lock switch entity materialised")
 
     def _on_led_light_changed(self, object_id: str) -> None:
