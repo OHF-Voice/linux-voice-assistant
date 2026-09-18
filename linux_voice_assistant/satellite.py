@@ -513,7 +513,7 @@ class VoiceSatelliteProtocol(APIServer):
             self.state.button_lock_entity.sync_with_state()
 
         self._emit(LVAEvent.BUTTON_LOCK_CHANGED, {"locked": self.state.button_controls_locked})
-    
+
     def _set_sensitivity_1(self, new_value: float) -> None:
         self.state.wake_word_1_threshold = float(new_value)
         self.state.preferences.wake_word_1_sensitivity = float(new_value)
