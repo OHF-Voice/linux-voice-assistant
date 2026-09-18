@@ -499,6 +499,21 @@ class VoiceSatelliteProtocol(APIServer):
             pass
         self.state.save_preferences()
 
+    def _set_button_controls_locked(self, new_state: bool) -> None:
+        self.state.button_controls_locked = bool(new_state)
+        self.state.preferences.button_controls_locked = 1 if self.state.button_controls_locked else 0
+        self.state.save_preferences()
+
+        if self.state.button_controls_locked:
+            _LOGGER.debug("On-board button controls locked")
+        else:
+            _LOGGER.debug("On-board button controls unlocked")
+
+        if self.state.button_lock_entity is not None:
+            self.state.button_lock_entity.sync_with_state()
+
+        self._emit(LVAEvent.BUTTON_LOCK_CHANGED, {"locked": self.state.button_controls_locked})
+    
     def _set_sensitivity_1(self, new_value: float) -> None:
         self.state.wake_word_1_threshold = float(new_value)
         self.state.preferences.wake_word_1_sensitivity = float(new_value)
