@@ -819,7 +819,8 @@ class ButtonLockEntity(ESPHomeEntity):
         key: int,
         name: str,
         object_id: str,
-        on_changed: Optional[Callable[[bool], None]] = None,
+        get_locked: Callable[[], bool],
+        set_locked: Callable[[bool], None],
         icon: str = "mdi:button-pointer",
     ) -> None:
         ESPHomeEntity.__init__(self, server)
@@ -827,23 +828,25 @@ class ButtonLockEntity(ESPHomeEntity):
         self.name = name
         self.object_id = object_id
         self.icon = icon
-        self._on_changed = on_changed
+        self._get_locked = get_locked
+        self._set_locked = set_locked
+        self._switch_state = self._get_locked()  # Sync internal state with actual value on init
 
-        # Disabled by default: on-board buttons remain active until the
-        # user explicitly locks them from the device page.
-        self.is_locked: bool = False
+    def update_get_locked(self, get_locked: Callable[[], bool]) -> None:
+        self._get_locked = get_locked
 
-    def update_on_changed(self, on_changed: Optional[Callable[[bool], None]]) -> None:
-        self._on_changed = on_changed
+    def update_set_locked(self, set_locked: Callable[[bool], None]) -> None:
+        self._set_locked = set_locked
+
+    def sync_with_state(self) -> None:
+        self._switch_state = self._get_locked()
 
     def handle_message(self, msg: message.Message) -> Iterable[message.Message]:
         if isinstance(msg, SwitchCommandRequest) and (msg.key == self.key):
             new_state = bool(msg.state)
-            changed = new_state != self.is_locked
-            self.is_locked = new_state
-            if changed and self._on_changed is not None:
-                self._on_changed(self.is_locked)
-            yield SwitchStateResponse(key=self.key, state=self.is_locked)
+            self._switch_state = new_state
+            self._set_locked(new_state)
+            yield SwitchStateResponse(key=self.key, state=self._switch_state)
         elif isinstance(msg, ListEntitiesRequest):
             yield ListEntitiesSwitchResponse(
                 object_id=self.object_id,
@@ -853,7 +856,8 @@ class ButtonLockEntity(ESPHomeEntity):
                 icon=self.icon,
             )
         elif isinstance(msg, SubscribeHomeAssistantStatesRequest):
-            yield SwitchStateResponse(key=self.key, state=self.is_locked)
+            self.sync_with_state()
+            yield SwitchStateResponse(key=self.key, state=self._switch_state)
 
 
 # Backward compatibility export aliases
