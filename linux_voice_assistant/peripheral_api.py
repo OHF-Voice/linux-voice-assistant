@@ -303,7 +303,7 @@ class PeripheralAPIServer:
                     "volume": round(state.volume, 3),
                     "volume_muted": state.volume == 0.0,
                     "ha_connected": state.connected,
-                    "button_controls_locked": (state.button_lock_entity.is_locked if state.button_lock_entity is not None else False),
+                    "button_controls_locked": state.button_controls_locked,
                     "last_stt_text": self._last_stt_text,
                     "last_tts_text": self._last_tts_text,
                 },
