@@ -67,6 +67,28 @@ Togges microphone mute. Sends `mute_mic` when unmuted, `unmute_mic` when muted.
 
 > **Mute button caveat:** The Jabra Speak 410 does not expose the mute button state over HID when not in an active call. The controller detects mute by reading the raw audio stream from PipeWire — all-zero audio indicates hardware mute has engaged. This requires PipeWire to be exposed to the container (see installation).
 
+### Disabling button controls from Home Assistant
+
+On connect, the controller registers a **Disable button controls** switch
+with LVA, which appears on the device page as
+`switch.<satellite>_disable_button_controls` (off by default).
+
+When turned **on** in Home Assistant, the call/hang-up button, volume
+buttons, and mute button all stop sending commands to LVA (and, when
+`VOLUME_CONTROL=pipewire` is set, volume buttons also stop adjusting the
+PipeWire sink directly). When turned **off**, normal button behavior
+resumes immediately.
+
+> **Note:** Unlike the other example peripherals, the mute button on this
+> device is also gated by the lock, since it is a physical button command
+> like any other rather than a dedicated hardware mute switch. If you'd
+> prefer mute to remain functional while locked, that's a small change in
+> `main.py`'s `Telephony.mute` / `Volume.mute` handling.
+
+The lock state is persisted by LVA across restarts. On (re)connect, the
+controller reads the current value from the `snapshot` event's
+`button_controls_locked` field.
+
 ---
 
 ## Installation
