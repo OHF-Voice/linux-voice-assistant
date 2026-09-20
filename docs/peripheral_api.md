@@ -65,6 +65,7 @@ Immediately after connecting, LVA sends a snapshot so your client can synchronis
     "muted": false,
     "volume": 0.8,
     "ha_connected": true,
+    "button_controls_disabled": false,
     "last_stt_text": "set a timer for five minutes",
     "last_tts_text": "Sure, I've set a timer for five minutes."
   }
@@ -124,6 +125,7 @@ These are all the events LVA emits. Your peripheral script receives them and rea
 | `disconnected` | — | The TCP connection to Home Assistant was lost. Show a "no connection" animation and keep it until you see `zeroconf` with `status: connected`. Note: if LVA itself is not running, your client will see a WebSocket connection failure instead — treat that the same way. |
 | `muted` | `{"muted": bool}` | The microphone mute state changed. `true` = muted (show a muted indicator on your LEDs, e.g. red at mic positions), `false` = unmuted. Emitted on every transition in both directions, so peripherals can track mute state without inferring it from `idle`. |
 | `zeroconf` | `{"status": "getting_started" \| "connected"}` | Reports LVA's connection lifecycle. `getting_started` is emitted at startup before HA connects; `connected` is emitted once the HA TCP handshake completes. Use `connected` to clear a "no connection" animation. |
+| `button_controls_disabled` | `{"disabled": bool}` | Reflects the "Disable button controls" switch on the Home Assistant device page. `true` = on-board buttons should be ignored by the peripheral; `false` = normal button behaviour. Off by default. Also included directly in the `snapshot` payload for newly-connecting clients. |
 
 ### Timer events
 
@@ -165,6 +167,7 @@ For HA to see your entity, your peripheral must register before HA enumerates th
 |---------|------|-------------|
 | `register_light` | `{"name": str, "object_id": str, "effects": [str], "supports_rgb": bool, "supports_brightness": bool}` | Register a Light entity for an LED strip, ring, or single LED. HA exposes it as `light.<satellite>_<object_id>` with on/off, brightness, RGB, and a selectable effect from the declared list. Subsequent HA changes are delivered as `light_command` events. Send once after connecting; repeat registrations for the same `object_id` are idempotent (no-op). Example: `{"command": "register_light", "data": {"name": "LEDs", "object_id": "leds", "effects": ["Voice Assistant"], "supports_rgb": true, "supports_brightness": true}}` |
 | `register_button` | `{"name": Button Press, "button_press_event": str}` | Register a Button entity for a physical button on your peripheral. When the user presses the button in HA, LVA emits a `button_press` event to all connected peripherals. Send once after connecting; repeat registrations for the same `object_id` are idempotent (no-op). Example: `{"command": "register_button"}` |
+| `register_button_lock` | `{"name": Button Lock, "button_lock_event": str}` | Register a Button Lock entity for a "Disable button controls" switch on the HA device page. When the user toggles it, LVA emits a `button_lock_changed` event to all connected peripherals. Send once after connecting; repeat registrations for the same `object_id` are idempotent (no-op). Example: `{"command": "register_button_lock"}` |
 
 ### Voice pipeline
 
@@ -322,7 +325,7 @@ asyncio.run(main())
 The repository ships with ready-to-use peripheral controllers for popular hardware boards. Each example is a standalone Docker container that connects to LVA over this API.
 
 - [Peripheral Web Console](https://github.com/OHF-Voice/linux-voice-assistant/blob/main/examples/Peripheral%20web%20console/DOCS.md) — browser-based real-time dashboard showing all events and a command palette; useful for debugging your setup or testing automations without any hardware
-- [Satellite1 HAT Board](https://github.com/OHF-Voice/linux-voice-assistant/blob/main/examples/Satellite1%20HAT%20Board/DOCS.md) — 12-LED SK6812 ring + 4 buttons; animations mirror the Home Assistant Voice PE firmware exactly
+- [Satellite1 HAT Board](https://github.com/OHF-Voice/linux-voice-assistant/blob/main/examples/Satellite1%20HAT%20Board/DOCS.md) — 24-LED WS2812 ring + 4 buttons; animations mirror the Home Assistant Voice PE firmware exactly
 - [ReSpeaker 2-Mic Pi HAT](https://github.com/OHF-Voice/linux-voice-assistant/blob/main/examples/ReSpeaker%202mic%20HAT/DOCS.md) — 3 APA102 LEDs + 1 onboard button; compact single-button controller
 - [ReSpeaker 4-Mic Array HAT](https://github.com/OHF-Voice/linux-voice-assistant/blob/main/examples/ReSpeaker%204mic%20HAT/DOCS.md) — 12 APA102 LEDs + external GPIO buttons; four-microphone circular array
 - [ReSpeaker Mic Array v2.0 (USB)](https://github.com/OHF-Voice/linux-voice-assistant/blob/main/examples/ReSpeaker%20Mic%20Array%20v2.0%20(USB)/DOCS.md) — 12 APA102 LEDs driven over USB HID; plug-and-play, no GPIO required
