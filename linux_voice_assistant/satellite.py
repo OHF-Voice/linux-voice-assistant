@@ -1111,7 +1111,12 @@ class VoiceSatelliteProtocol(APIServer):
             self.state.connected = False
 
         if self.state.satellite is self:
-            self.state.satellite = None
+            # Hand the satellite slot to another live connection instead of
+            # clearing it.  state.satellite gates wake word detection in
+            # __main__ ("if state.satellite is None: ... continue"), so
+            # clearing it while another client is still connected silently
+            # stops wake word detection until a new connection arrives.
+            self.state.satellite = self.state.connections[-1] if self.state.connections else None
 
         if self.state.mute_switch_entity is not None:
             self.state.mute_switch_entity.sync_with_state()

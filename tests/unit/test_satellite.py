@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from tests.unit.conftest import make_satellite, make_state
+from tests.unit.conftest import make_extra_connection, make_satellite, make_state
 
 # ---------------------------------------------------------------------------
 # Initialization
@@ -367,3 +367,31 @@ class TestConnectionLost:
         sat = make_satellite(tmp_path)
         sat.connection_lost(None)
         sat.state.tts_player.stop.assert_called()
+
+    def test_connection_lost_hands_slot_to_remaining_connection(self, tmp_path):
+        """A secondary client dropping must not clear the satellite slot.
+
+        state.satellite gates wake word detection in __main__, so
+        clearing it while another client is still connected silently stops
+        wake word detection until a new connection happens to arrive.
+        """
+        sat = make_satellite(tmp_path)
+        sat.connection_made(MagicMock())
+
+        extra = make_extra_connection(sat.state)
+        extra.connection_made(MagicMock())
+        assert sat.state.satellite is extra
+
+        extra.connection_lost(None)
+
+        assert sat.state.satellite is sat
+        assert sat.state.connections == [sat]
+
+    def test_connection_lost_clears_slot_when_last_connection(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        sat.connection_made(MagicMock())
+
+        sat.connection_lost(None)
+
+        assert sat.state.satellite is None
+        assert sat.state.connections == []
