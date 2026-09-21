@@ -90,10 +90,8 @@ def make_state(tmp_path=None, **overrides):
     return ServerState(**values)
 
 
-def make_satellite(tmp_path=None, state_overrides=None):
-    """Build a VoiceSatelliteProtocol with heavy dependencies mocked."""
-    state = make_state(tmp_path, **(state_overrides or {}))
-
+def _build_satellite(state):
+    """Build a VoiceSatelliteProtocol on an existing state, deps mocked."""
     with (
         patch("linux_voice_assistant.satellite.WakeWord1SensitivityNumberEntity", MagicMock()),
         patch("linux_voice_assistant.satellite.WakeWord2SensitivityNumberEntity", MagicMock()),
@@ -106,3 +104,13 @@ def make_satellite(tmp_path=None, state_overrides=None):
     satellite._writelines = MagicMock()
     satellite._loop = None
     return satellite
+
+
+def make_satellite(tmp_path=None, state_overrides=None):
+    """Build a VoiceSatelliteProtocol with heavy dependencies mocked."""
+    return _build_satellite(make_state(tmp_path, **(state_overrides or {})))
+
+
+def make_extra_connection(state):
+    """Build a second VoiceSatelliteProtocol sharing an existing state."""
+    return _build_satellite(state)
