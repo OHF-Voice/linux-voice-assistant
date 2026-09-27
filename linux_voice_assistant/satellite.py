@@ -346,6 +346,9 @@ class VoiceSatelliteProtocol(APIServer):
         self._tts_url: Optional[str] = None
         self._tts_played = False
         self._continue_conversation = False
+        # Phrase that started the conversation; HA picks the pipeline slot from it,
+        # so a follow-up without it would fall back to slot 1.
+        self._wake_word_phrase = ""
         self._timer_finished = False
         self._timer_ring_start: Optional[float] = None
         self._processing = False
@@ -692,6 +695,7 @@ class VoiceSatelliteProtocol(APIServer):
 
             self.state.active_wake_words.add(self.state.stop_word.id)
             self._continue_conversation = msg.start_conversation
+            self._wake_word_phrase = ""
 
             self.duck()
             self._emit(LVAEvent.TTS_SPEAKING)
@@ -884,6 +888,7 @@ class VoiceSatelliteProtocol(APIServer):
 
         wake_word_phrase = wake_word.wake_word  # type: ignore[union-attr]
         _LOGGER.debug("Detected wake word: %s", wake_word_phrase)
+        self._wake_word_phrase = wake_word_phrase
 
         self._timer_finished = False
         self._timer_ring_start = None
@@ -938,6 +943,7 @@ class VoiceSatelliteProtocol(APIServer):
             return
 
         _LOGGER.debug("Button start_listening triggered")
+        self._wake_word_phrase = ""
         self._timer_finished = False
         self._timer_ring_start = None
         _LOGGER.debug("Stopping timer finished sound")
@@ -1007,7 +1013,7 @@ class VoiceSatelliteProtocol(APIServer):
                     self._pipeline_active = False
                     self.unduck()
                     return
-                self.send_messages([VoiceAssistantRequest(start=True)])
+                self.send_messages([VoiceAssistantRequest(start=True, wake_word_phrase=self._wake_word_phrase)])
                 self._is_streaming_audio = True
                 _LOGGER.debug("Continued conversation started")
 
