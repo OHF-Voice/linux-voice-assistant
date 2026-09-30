@@ -2,12 +2,15 @@
 
 import json
 import logging
+import time
 from collections.abc import Iterable
 from dataclasses import asdict, dataclass, field
 from enum import Enum
 from pathlib import Path
 from queue import Queue
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Union
+
+from .util import call_all
 
 if TYPE_CHECKING:
     from google.protobuf import message
@@ -82,6 +85,32 @@ class LightRegistration:
 
 
 @dataclass
+class LocalTimer:
+    """
+    Local countdown tracker for a Home Assistant timer.
+
+    Populated from VOICE_ASSISTANT_TIMER_STARTED/UPDATED events so LVA can
+    keep counting down (and ring) locally even if the connection to Home
+    Assistant is lost before the timer actually finishes.
+    """
+
+    id: str
+    name: str
+    total_seconds: int
+    ends_at: float  # time.monotonic() deadline
+
+    def seconds_left(self, now: Optional[float] = None) -> int:
+        """Return the remaining whole seconds, clamped to zero."""
+        now = time.monotonic() if now is None else now
+        return max(0, int(round(self.ends_at - now)))
+
+    def is_expired(self, now: Optional[float] = None) -> bool:
+        """Return whether the local deadline has passed."""
+        now = time.monotonic() if now is None else now
+        return now >= self.ends_at
+
+
+@dataclass
 class Preferences:
     active_wake_words: List[Optional[str]] = field(default_factory=list)
     volume: Optional[float] = None
@@ -148,6 +177,17 @@ class ServerState:
     # Survives HA reconnects so the entity is re-registered automatically.
     pending_button: bool = False
 
+    # Local countdown state for active timers, keyed by timer id. Lets LVA keep
+    # ticking down (and ring) even if the connection to Home Assistant drops
+    # mid-timer. Populated/refreshed from VOICE_ASSISTANT_TIMER_STARTED/UPDATED
+    # and cleared on VOICE_ASSISTANT_TIMER_CANCELLED/FINISHED.
+    local_timers: "Dict[str, LocalTimer]" = field(default_factory=dict)
+
+    # id of the timer currently ringing (if any). Guards against a local
+    # expiry and a (possibly late) VOICE_ASSISTANT_TIMER_FINISHED for the
+    # same timer both starting the ring loop.
+    ringing_timer_id: Optional[str] = None
+    timer_ring_start: Optional[float] = None
     # True once a peripheral sends register_button_lock. Gates creation of
     # ButtonLockEntity so the HA device page only shows the "Disable button
     # controls" switch when hardware that actually supports it is present.
@@ -275,6 +315,115 @@ class ServerState:
         self.preferences.mic_volume = volume_int
         _LOGGER.info("Saving mic_volume %s to %s", volume_int, self.preferences_path)
         self.save_preferences()
+
+    def update_local_timer(self, timer_id: str, name: str, total_seconds: int, seconds_left: int) -> None:
+        """
+        Record/refresh the local countdown for a running timer.
+        :param timer_id: id of the timer, as reported by Home Assistant.
+        :param name: display name of the timer.
+        :param total_seconds: original timer duration.
+        :param seconds_left: remaining seconds as of this update.
+        """
+        self.local_timers[timer_id] = LocalTimer(
+            id=timer_id,
+            name=name,
+            total_seconds=total_seconds,
+            ends_at=time.monotonic() + max(0, int(seconds_left)),
+        )
+
+    def cancel_local_timer(self, timer_id: str) -> None:
+        """Drop local countdown tracking for a timer Home Assistant cancelled."""
+        self.local_timers.pop(timer_id, None)
+        if self.ringing_timer_id == timer_id:
+            self.stop_timer_ringing()
+
+    def check_local_timers(self) -> None:
+        """
+        Poll local timers for local expiry.
+
+        Called periodically from the main event loop so a timer still rings
+        even if Home Assistant (and therefore VOICE_ASSISTANT_TIMER_FINISHED)
+        is unreachable when the countdown reaches zero.
+        """
+        if not self.local_timers:
+            return
+
+        now = time.monotonic()
+        expired = [timer for timer in self.local_timers.values() if timer.is_expired(now)]
+        for timer in expired:
+            timer_data = {
+                "id": timer.id,
+                "name": timer.name,
+                "total_seconds": timer.total_seconds,
+                "seconds_left": 0,
+            }
+            self.start_timer_ringing(timer.id, timer_data)
+
+    def start_timer_ringing(self, timer_id: str, timer_data: Dict[str, Any]) -> None:
+        """
+        Start the timer-finished ring loop.
+
+        Safe to call from either the HA VOICE_ASSISTANT_TIMER_FINISHED handler
+        or the local countdown watchdog; a no-op if a timer is already ringing
+        so the two triggers can't double-ring.
+        :param timer_id: id of the timer that finished.
+        :param timer_data: event payload (id/name/total_seconds/seconds_left) forwarded to peripherals.
+        """
+        if self.ringing_timer_id is not None:
+            return
+
+        _LOGGER.info("Timer '%s' finished, starting ring", timer_id)
+        self.ringing_timer_id = timer_id
+        self.timer_ring_start = time.monotonic()
+        self.local_timers.pop(timer_id, None)
+        self.active_wake_words.add(self.stop_word.id)
+        self.music_player.duck()
+
+        self._emit_timer_event("timer_ringing", timer_data)
+        self._continue_timer_ring()
+
+    def _continue_timer_ring(self) -> None:
+        """Loop the timer-finished sound until stopped or the max ring duration elapses."""
+        if self.ringing_timer_id is None:
+            return
+
+        if self.timer_ring_start is not None:
+            elapsed = time.monotonic() - self.timer_ring_start
+            if elapsed >= self.timer_max_ring_seconds:
+                _LOGGER.info(
+                    "Timer auto-stopped after %.0f seconds (max=%.0f)",
+                    elapsed,
+                    self.timer_max_ring_seconds,
+                )
+                self.stop_timer_ringing()
+                return
+
+        self.tts_player.play(
+            self.timer_finished_sound,
+            done_callback=lambda: call_all(lambda: time.sleep(1.0), self._continue_timer_ring),
+        )
+
+    def stop_timer_ringing(self) -> None:
+        """Stop a currently-ringing timer, if any."""
+        if self.ringing_timer_id is None:
+            return
+
+        _LOGGER.debug("Stopping timer ring for '%s'", self.ringing_timer_id)
+        self.ringing_timer_id = None
+        self.timer_ring_start = None
+        self.active_wake_words.discard(self.stop_word.id)
+        self.music_player.unduck()
+        self.tts_player.stop()
+        self._emit_timer_event("idle", None)
+
+    def _emit_timer_event(self, event: str, data: Optional[Dict[str, Any]]) -> None:
+        """Emit a peripheral event by name, tolerating a missing/disabled peripheral API."""
+        api = self.peripheral_api
+        if api is None:
+            return
+        from .peripheral_api import LVAEvent  # local import avoids a circular dependency
+
+        api.emit_event_sync(LVAEvent(event), data)
 
 
 def initial_stop_word_threshold(saved_sensitivity: Optional[float]) -> float:

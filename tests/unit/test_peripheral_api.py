@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import time
 from typing import Any, Dict, Optional
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -506,24 +507,26 @@ class TestDispatchStopTimerRinging:
     async def test_stops_ringing_timer(self, tmp_path):
         state = make_state(tmp_path)
         satellite = MagicMock()
-        satellite._timer_finished = True  # pylint: disable=protected-access
         state.satellite = satellite
         state.active_wake_words.add(state.stop_word.id)
+        state.ringing_timer_id = "timer-1"
+        state.timer_ring_start = time.monotonic()
         server = make_server(state)
 
         await dispatch(server, LVACommand.STOP_TIMER_RINGING.value)
 
-        assert satellite._timer_finished is False  # pylint: disable=protected-access
+        assert state.ringing_timer_id is None
+        assert state.timer_ring_start is None
         assert state.stop_word.id not in state.active_wake_words
         state.tts_player.stop.assert_called_once()
-        satellite.unduck.assert_called_once()
+        state.music_player.unduck.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_noop_when_not_ringing(self, tmp_path):
         state = make_state(tmp_path)
         satellite = MagicMock()
-        satellite._timer_finished = False  # pylint: disable=protected-access
         state.satellite = satellite
+        state.ringing_timer_id = None
         server = make_server(state)
 
         await dispatch(server, LVACommand.STOP_TIMER_RINGING.value)
@@ -537,6 +540,20 @@ class TestDispatchStopTimerRinging:
         server = make_server(state)
 
         await dispatch(server, LVACommand.STOP_TIMER_RINGING.value)  # should not raise
+
+    @pytest.mark.asyncio
+    async def test_stops_ringing_timer_when_no_satellite(self, tmp_path):
+        """Peripheral must be able to dismiss a ringing timer even while HA is disconnected."""
+        state = make_state(tmp_path)
+        state.satellite = None
+        state.ringing_timer_id = "timer-1"
+        state.active_wake_words.add(state.stop_word.id)
+        server = make_server(state)
+
+        await dispatch(server, LVACommand.STOP_TIMER_RINGING.value)
+
+        assert state.ringing_timer_id is None
+        state.tts_player.stop.assert_called_once()
 
 
 # ---------------------------------------------------------------------------
