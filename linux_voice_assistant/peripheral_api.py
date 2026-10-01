@@ -132,6 +132,10 @@ if TYPE_CHECKING:
 
 _LOGGER = logging.getLogger(__name__)
 
+# Hosts that only accept connections from this machine. The peripheral API
+# has no authentication, so binding to anything else exposes it to the LAN.
+_LOOPBACK_HOSTS = {"127.0.0.1", "::1", "localhost"}
+
 
 # ---------------------------------------------------------------------------
 # Public enumerations
@@ -257,6 +261,19 @@ class PeripheralAPIServer:
         self._loop = asyncio.get_running_loop()
         self._server = await serve(self._handle_client, self._host, self._port)
         _LOGGER.info("Peripheral API listening at ws://%s:%d", self._host, self._port)
+
+        if self._host not in _LOOPBACK_HOSTS:
+            _LOGGER.warning(
+                "Peripheral API is bound to %s, which accepts connections from "
+                "the network, not just this machine. This API has no "
+                "authentication: anyone who can reach %s:%d can open the mic, "
+                "start a voice pipeline, or change the volume. Use "
+                "--peripheral-host 127.0.0.1 unless you specifically need "
+                "remote peripheral access.",
+                self._host,
+                self._host,
+                self._port,
+            )
 
     async def stop(self) -> None:
         """Gracefully shut down the server and all client connections."""
