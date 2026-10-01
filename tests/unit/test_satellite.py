@@ -389,3 +389,69 @@ class TestConnectionLost:
         sat = make_satellite(tmp_path)
         sat.connection_lost(None)
         sat.state.tts_player.stop.assert_called()
+
+
+# ---------------------------------------------------------------------------
+# Timer events
+# ---------------------------------------------------------------------------
+
+
+def _timer_msg(seconds_left=60, total_seconds=300, timer_id="t1", name="pasta"):
+    msg = MagicMock()
+    msg.timer_id = timer_id
+    msg.name = name
+    msg.total_seconds = total_seconds
+    msg.seconds_left = seconds_left
+    return msg
+
+
+class TestHandleTimerEvent:
+    def _sat(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        sat.state.peripheral_api = MagicMock()
+        return sat
+
+    def _emitted(self, sat):
+        return [c.args for c in sat.state.peripheral_api.emit_event_sync.call_args_list]
+
+    def test_started_emits_ticking_with_data(self, tmp_path):
+        from aioesphomeapi.model import VoiceAssistantTimerEventType
+
+        from linux_voice_assistant.peripheral_api import LVAEvent
+
+        sat = self._sat(tmp_path)
+        sat.handle_timer_event(VoiceAssistantTimerEventType.VOICE_ASSISTANT_TIMER_STARTED, _timer_msg())
+        event, data = self._emitted(sat)[0]
+        assert event == LVAEvent.TIMER_TICKING
+        assert data["seconds_left"] == 60
+
+    def test_cancelled_zeroes_the_countdown(self, tmp_path):
+        from aioesphomeapi.model import VoiceAssistantTimerEventType
+
+        from linux_voice_assistant.peripheral_api import LVAEvent
+
+        sat = self._sat(tmp_path)
+        sat.handle_timer_event(
+            VoiceAssistantTimerEventType.VOICE_ASSISTANT_TIMER_CANCELLED,
+            _timer_msg(seconds_left=42),
+        )
+        emitted = self._emitted(sat)
+        assert [e for e, *_ in emitted] == [LVAEvent.TIMER_UPDATED, LVAEvent.IDLE]
+
+        _, data = emitted[0]
+        assert data["seconds_left"] == 0
+        # The identity is preserved, so a peripheral tracking several timers
+        # knows which one went away.
+        assert data["id"] == "t1"
+        assert data["total_seconds"] == 300
+
+    # Peripherals that re-check a running timer on `idle` must see the zeroed
+    # update first, or they stay in the countdown state.
+    def test_cancelled_still_ends_with_idle(self, tmp_path):
+        from aioesphomeapi.model import VoiceAssistantTimerEventType
+
+        from linux_voice_assistant.peripheral_api import LVAEvent
+
+        sat = self._sat(tmp_path)
+        sat.handle_timer_event(VoiceAssistantTimerEventType.VOICE_ASSISTANT_TIMER_CANCELLED, _timer_msg())
+        assert self._emitted(sat)[-1][0] == LVAEvent.IDLE

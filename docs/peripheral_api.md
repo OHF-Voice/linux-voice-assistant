@@ -132,7 +132,7 @@ These are all the events LVA emits. Your peripheral script receives them and rea
 | Event | Data | Description |
 |-------|------|-------------|
 | `timer_ticking` | `{"id": str, "name": str, "total_seconds": int, "seconds_left": int}` | A timer has been set and is counting down. Show a countdown animation proportional to `seconds_left / total_seconds`. |
-| `timer_updated` | `{"id": str, "name": str, "total_seconds": int, "seconds_left": int}` | A running timer was adjusted. Update your countdown display. |
+| `timer_updated` | `{"id": str, "name": str, "total_seconds": int, "seconds_left": int}` | A running timer was adjusted. Update your countdown display. Also sent with `seconds_left` of `0`, followed by `idle`, when a timer is cancelled: treat zero as the timer being gone and clear it. A timer expiring normally arrives as `timer_ringing`. |
 | `timer_ringing` | `{"id": str, "name": str, "total_seconds": int, "seconds_left": int}` | The timer has expired and the alarm sound is playing. Show a repeating alert animation. Send `stop_timer_ringing` to dismiss. |
 
 ### Media and volume events
