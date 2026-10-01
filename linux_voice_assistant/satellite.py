@@ -656,6 +656,12 @@ class VoiceSatelliteProtocol(APIServer):
             self._emit(LVAEvent.TIMER_UPDATED, timer_data)
 
         elif event_type == VoiceAssistantTimerEventType.VOICE_ASSISTANT_TIMER_CANCELLED:
+            # Report the cancel as a zeroed update before going idle. Every
+            # shipped peripheral already reads `seconds_left` from
+            # `timer_updated`, and none of them treats zero as "ringing",
+            # that is `timer_ringing`, so the countdown clears without any
+            # peripheral having to learn a new event.
+            self._emit(LVAEvent.TIMER_UPDATED, {**timer_data, "seconds_left": 0})
             self._emit(LVAEvent.IDLE)
 
         elif event_type == VoiceAssistantTimerEventType.VOICE_ASSISTANT_TIMER_FINISHED:
