@@ -41,26 +41,23 @@
 
 ### Linting
 ```bash
-./script/lint           # Run all linting checks
-./script/lint_black     # Black formatting check (add --auto to fix)
-./script/lint_isort     # isort import sorting check (add --auto to fix)
-./script/lint_flake8    # flake8 style checks
-./script/lint_mypy      # mypy type checking
-./script/lint_pylint    # pylint code quality checks
+prek run lint --all-files # Run all linting checks (has to be done inside the dev venv)
+./script/lint_ruff     # Run Ruff
+./script/lint_mypy   # pylint code quality checks
 ```
 
 ### Testing
 ```bash
-./script/tests          # Run pytest unit tests
+prek run tests --all-files # Run pytest unit tests (has to be done inside the dev venv)
 ```
 
 ## Code Quality Standards
 
 - **Python**: 3.11, 3.12, 3.13 supported
-- **Formatting**: Black (200 char line length, py312/py312 target)
-- **Import Sorting**: isort with black profile
+- **Formatting**: BRuff
+- **Import Sorting**: Ruff
 - **Type Checking**: mypy with strict settings
-- **Linting**: pylint (many checks disabled in pyproject.toml for practical reasons)
+- **Linting**: Ruff (many checks disabled in pyproject.toml for practical reasons)
 
 ## Testing Strategy
 
@@ -83,9 +80,8 @@
 
 When making code changes, run these commands in order:
 
-1. **Format code**: `./script/lint_black --auto` and `./script/lint_isort --auto`
-2. **Run linting**: `./script/lint`
-3. **Run tests**: `./script/tests`
+1. **Format code and Lint**: `prek run lint --all-files`(inside the dev venv)
+2. **Run tests**: `prek run tests --all-files` (inside the dev venv)
 
 ## Code Style
 
@@ -116,7 +112,7 @@ Private methods should be at the bottom of the file, public at the top.
 ## Verification Checklist
 
 Before claiming completion:
-- [ ] Ran `./script/lint` - all checks passed
+- [ ] Ran `prek run lint --all-files` - all checks passed
 - [ ] Ran `./script/tests` - all tests passed
 - [ ] For audio-related changes: Note that hardware testing (microphone/speaker) was NOT performed
 - [ ] Did NOT claim hardware behavior is verified unless actually exercised

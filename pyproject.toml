@@ -39,13 +39,10 @@ dynamic = ["version"]
 
 [project.optional-dependencies]
 dev = [
-    "black",
-    "flake8",
     "mypy",
-    "pylint",
     "pytest",
-    "isort",
-    "autopep8",
+    "ruff",
+    "prek",
     "pytest-asyncio",
 ]
 
@@ -64,75 +61,47 @@ include-package-data = true
 include = ["linux_voice_assistant", "linux_voice_assistant.*"]
 exclude = ["tests", "tests.*"]
 
-[tool.black]
+[tool.ruff]
 line-length = 200
-target-version = ['py312', 'py313']
-include = '\.pyi?$'
-exclude = '''
-/(
-  \.eggs
-| \.git
-| \.hg
-| \.mypy_cache
-| \.tox
-| \.venv
-| _build
-| buck-out
-| build
-| dist
-)/
-'''
-
-[tool.isort]
-profile = "black"
-line_length = 200
-multi_line_output = 3
-include_trailing_comma = true
-force_grid_wrap = 0
-use_parentheses = true
-
-[tool.pylint."MESSAGES CONTROL"]
-disable = [
-  "abstract-method",
-  "cyclic-import",
-  "duplicate-code",
-  "global-statement",
-  "import-outside-toplevel",
-  "inconsistent-return-statements",
-  "locally-disabled",
-  "not-context-manager",
-  "too-few-public-methods",
-  "too-many-arguments",
-  "too-many-branches",
-  "too-many-instance-attributes",
-  "too-many-lines",
-  "too-many-locals",
-  "too-many-public-methods",
-  "too-many-return-statements",
-  "too-many-statements",
-  "too-many-boolean-expressions",
-  "unnecessary-pass",
-  "unused-argument",
-  "broad-except",
-  "too-many-nested-blocks",
-  "invalid-name",
-  "unused-import",
-  "fixme",
-  "useless-super-delegation",
-  "missing-module-docstring",
-  "missing-class-docstring",
-  "missing-function-docstring",
-  "import-error",
-  "consider-using-with",
-  "R0917",
-  "C0301",
+target-version = "py312"
+extend-exclude = [
+  ".eggs",
+  ".git",
+  ".hg",
+  ".mypy_cache",
+  ".tox",
+  ".venv",
+  "_build",
+  "buck-out",
+  "build",
+  "dist",
 ]
 
-[tool.pylint."DESIGN"]
-max-args = 50
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "PL", "B"]
+ignore = [
+  "PLR0904",  # too-many-public-methods
+  "PLR0911",  # too-many-return-statements
+  "PLR0912",  # too-many-branches
+  "PLR0913",  # too-many-arguments
+  "PLR0914",  # too-many-locals
+  "PLR0915",  # too-many-statements
+  "PLR0916",  # too-many-boolean-expressions
+  "PLR0917",  # too-many-positional
+  "PLR1702",  # too-many-nested-blocks
+  "PLW0603",  # global-statement
+  "PLW2901",  # redefined-loop-name (broad-except adjacent noise)
+  "PLC0415",  # import-outside-top-level
+  "PLR2004",  # magic-value-comparison (pylint doesn't flag this by default; kept off to match prior behavior)
+  "PLW0642",  # self/cls reassignment noise
+  "E501",     # line-too-long, handled by formatter/line-length instead
+]
 
-[tool.pylint.format]
-expected-line-ending-format = "LF"
+[tool.ruff.lint.isort]
+combine-as-imports = true
+
+[tool.ruff.format]
+quote-style = "double"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

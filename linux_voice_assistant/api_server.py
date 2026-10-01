@@ -28,7 +28,6 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class APIServer(asyncio.Protocol):
-
     def __init__(self, name: str) -> None:
         self.name = name
 

@@ -4,7 +4,6 @@ from linux_voice_assistant.player.state import PlayerState
 
 
 class AudioPlayer(ABC):
-
     @abstractmethod
     def play(self, url: str) -> None:
         pass
