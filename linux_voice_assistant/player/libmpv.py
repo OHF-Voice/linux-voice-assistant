@@ -167,21 +167,24 @@ class LibMpvPlayer(AudioPlayer):
 
             # mpv END_FILE_REASON constants:
             # 0 = eof (end of file), 1 = stop, 2 = abort, 3 = quit, 4 = error
-            is_eof = reason == 0
+            # Treat EOF and ERROR as completion.
+            # STOP/ABORT/QUIT are intentional interruptions handled by stop().
+            is_complete = reason in (0, 4)
 
             self._log.debug(
-                "_on_end_file: reason=%s (is_eof=%s), state=%s, has_callback=%s",
+                "_on_end_file: reason=%s (is_complete=%s), state=%s, has_callback=%s",
                 reason,
-                is_eof,
+                is_complete,
                 self._state,
                 self._done_callback is not None,
             )
 
-            # Only process "eof" (reason=0) events as actual track completion.
-            # Other reasons are from track changes, stops, or errors.
-            if not is_eof:
-                self._log.debug("_on_end_file: ignoring non-eof event (reason=%s)", reason)
+            if not is_complete:
+                self._log.debug("_on_end_file: ignoring non-completion event (reason=%s)", reason)
                 return
+
+            if reason == 4:
+                self._log.warning("_on_end_file: playback ended with error; invoking done_callback")
 
             self._set_state(PlayerState.IDLE)
             callback = self._done_callback
