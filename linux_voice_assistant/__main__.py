@@ -383,6 +383,15 @@ async def main() -> None:
     initial_threshold = initial_stop_word_threshold(preferences.stop_word_sensitivity)
     preferences.stop_word_sensitivity = initial_threshold
 
+    # Load button-lock state from preferences on startup. This must happen
+    # before ServerState is constructed (and therefore before the peripheral
+    # WebSocket server can accept any connection), because the very first
+    # snapshot sent to a (re)connecting peripheral must already reflect the
+    # persisted value — peripherals only learn the lock state from that
+    # snapshot or a later button_lock_changed event, and nothing re-sends
+    # a corrected snapshot after the fact.
+    initial_button_controls_locked = bool(preferences.button_controls_locked)
+
     if args.enable_thinking_sound:
         preferences.thinking_sound = 1
 
@@ -446,6 +455,7 @@ async def main() -> None:
         download_dir=args.download_dir,
         volume=initial_volume,
         stop_word_threshold=initial_threshold,
+        button_controls_locked=initial_button_controls_locked,
         mic_volume=preferences.mic_volume,
         mic_auto_gain=preferences.mic_auto_gain,
         mic_noise_suppression=preferences.mic_noise_suppression,
