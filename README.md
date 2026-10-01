@@ -76,7 +76,7 @@ For all other users, we have different installation methods available (Docker, s
 ```sh
 usage: __main__.py [-h] [--name NAME] [--audio-input-device AUDIO_INPUT_DEVICE] [--list-input-devices] [--audio-input-block-size AUDIO_INPUT_BLOCK_SIZE] [--audio-output-device AUDIO_OUTPUT_DEVICE] [--music-output-device MUSIC_OUTPUT_DEVICE] [--list-output-devices] [--wake-word-dir WAKE_WORD_DIR]  [--mic-auto-gain] [--mic-noise-suppression]
                    [--wake-model WAKE_MODEL] [--stop-model STOP_MODEL] [--download-dir DOWNLOAD_DIR] [--refractory-seconds REFRACTORY_SECONDS] [--wakeup-sound WAKEUP_SOUND] [--timer-finished-sound TIMER_FINISHED_SOUND] [--processing-sound PROCESSING_SOUND]
-                   [--mute-sound MUTE_SOUND] [--unmute-sound UNMUTE_SOUND] [--preferences-file PREFERENCES_FILE] [--host HOST] [--network-interface NETWORK_INTERFACE] [--port PORT] [--enable-thinking-sound] [--listen-during-wake-sound] [--debug]
+                   [--mute-sound MUTE_SOUND] [--unmute-sound UNMUTE_SOUND] [--continue-conversation-sound CONTINUE_CONVERSATION_SOUND] [--preferences-file PREFERENCES_FILE] [--host HOST] [--network-interface NETWORK_INTERFACE] [--port PORT] [--enable-thinking-sound] [--listen-during-wake-sound] [--debug]
 ```
 
 | Parameter                       | Description                                                   | Default                              |
@@ -103,6 +103,7 @@ usage: __main__.py [-h] [--name NAME] [--audio-input-device AUDIO_INPUT_DEVICE] 
 | `--processing-sound`            | Sound played while assistant is processing                    | `sounds/processing.wav`              |
 | `--mute-sound`                  | Sound played when muting the assistant                        | `sounds/mute_switch_on.flac`         |
 | `--unmute-sound`                | Sound played when unmuting the assistant                      | `sounds/mute_switch_off.flac`        |
+| `--continue-conversation-sound` | Sound played when the mic re-opens for a follow-up question   | `--wakeup-sound`                     |
 | `--preferences-file`            | Path to preferences JSON file                                 | `preferences.json`                   |
 | `--host`                        | IP-Address for ESPHome server, use 0.0.0.0 for all            | Autodetected                         |
 | `--network-interface`           | Network interface for ESPHome server                          | Autodetected                         |

@@ -383,6 +383,54 @@ class ThinkingSoundEntity(ESPHomeEntity):
             yield SwitchStateResponse(key=self.key, state=self._switch_state)
 
 
+class ContinueConversationSoundEntity(ESPHomeEntity):
+    """Switch entity for the sound played when the mic re-opens for a follow-up question."""
+
+    def __init__(
+        self,
+        server: APIServer,
+        key: int,
+        name: str,
+        object_id: str,
+        get_enabled: Callable[[], bool],
+        set_enabled: Callable[[bool], None],
+    ) -> None:
+        ESPHomeEntity.__init__(self, server)
+        self.key = key
+        self.name = name
+        self.object_id = object_id
+        self._get_enabled = get_enabled
+        self._set_enabled = set_enabled
+        self._switch_state = self._get_enabled()
+
+    def update_get_enabled(self, get_enabled: Callable[[], bool]) -> None:
+        self._get_enabled = get_enabled
+
+    def update_set_enabled(self, set_enabled: Callable[[bool], None]) -> None:
+        self._set_enabled = set_enabled
+
+    def sync_with_state(self) -> None:
+        self._switch_state = self._get_enabled()
+
+    def handle_message(self, msg: message.Message) -> Iterable[message.Message]:
+        if isinstance(msg, SwitchCommandRequest) and (msg.key == self.key):
+            new_state = bool(msg.state)
+            self._switch_state = new_state
+            self._set_enabled(new_state)
+            yield SwitchStateResponse(key=self.key, state=self._switch_state)
+        elif isinstance(msg, ListEntitiesRequest):
+            yield ListEntitiesSwitchResponse(
+                object_id=self.object_id,
+                key=self.key,
+                name=self.name,
+                entity_category=EntityCategory.CONFIG,
+                icon="mdi:chat-question",
+            )
+        elif isinstance(msg, SubscribeHomeAssistantStatesRequest):
+            self.sync_with_state()
+            yield SwitchStateResponse(key=self.key, state=self._switch_state)
+
+
 class MicSettingEntity(ESPHomeEntity):
     def __init__(
         self,
@@ -866,6 +914,7 @@ __all__ = [
     "MediaPlayerEntity",
     "MuteSwitchEntity",
     "ThinkingSoundEntity",
+    "ContinueConversationSoundEntity",
     "LEDLightEntity",
     "ButtonEventSensorEntity",
     "ButtonLockEntity",
