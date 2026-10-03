@@ -1,6 +1,7 @@
 """Unit tests for shared models."""
 
 import json
+from pathlib import Path
 from unittest.mock import Mock, patch
 
 import pytest
@@ -309,3 +310,49 @@ class TestInitialStopWordThreshold:
         from linux_voice_assistant.models import initial_stop_word_threshold
 
         assert initial_stop_word_threshold(-0.5) == pytest.approx(0.0)
+
+
+# ---------------------------------------------------------------------------
+# AvailableWakeWord.load()
+# ---------------------------------------------------------------------------
+
+
+class _FakeOpenWakeWord:
+    """Stands in for pyopen_wakeword's model, which derives ``id`` from the filename."""
+
+    @classmethod
+    def from_model(cls, model_path):
+        model = cls()
+        model.id = Path(model_path).stem
+        return model
+
+
+def make_available_oww(model_id: str, model_file: str, wake_word: str = "Ok Nabu (OWW)"):
+    from linux_voice_assistant.models import AvailableWakeWord, WakeWordType
+
+    return AvailableWakeWord(
+        id=model_id,
+        type=WakeWordType.OPEN_WAKE_WORD,
+        wake_word=wake_word,
+        trained_languages=["en"],
+        wake_word_path=Path("/mock/wakewords") / model_file,
+    )
+
+
+class TestAvailableWakeWordLoad:
+    def test_oww_id_comes_from_the_manifest_not_the_filename(self):
+        """Detection matches on model.id, so it must be the id the model is stored under."""
+        available = make_available_oww("okay_nabu_oww", "ok_nabu_v0.1.tflite")
+
+        with patch("pyopen_wakeword.OpenWakeWord", _FakeOpenWakeWord):
+            model = available.load()
+
+        assert model.id == "okay_nabu_oww"
+
+    def test_oww_wake_word_is_set(self):
+        available = make_available_oww("okay_nabu_oww", "ok_nabu_v0.1.tflite")
+
+        with patch("pyopen_wakeword.OpenWakeWord", _FakeOpenWakeWord):
+            model = available.load()
+
+        assert model.wake_word == "Ok Nabu (OWW)"
