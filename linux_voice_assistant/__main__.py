@@ -786,7 +786,19 @@ def process_audio(state: ServerState, mic, block_size: int):
                         oww_inputs.clear()
                         oww_inputs.extend(oww_features.process_streaming(audio_chunk))
 
+                    pipeline_active = bool(state.satellite and getattr(state.satellite, "_pipeline_active", False))
                     for wake_word_index, wake_word in enumerate(wake_words):
+                        if pipeline_active:
+                            # A response (or an already-active pipeline run) is in
+                            # progress. Skip wake word scoring entirely instead of
+                            # only filtering the result in Satellite.wakeup() - the
+                            # device's own TTS audio scores as a near-certain match
+                            # for its own wake word (residual echo, no AEC), so this
+                            # avoids needless inference and the narrow race where a
+                            # fresh detection lands just after REFRACTORY_SECONDS
+                            # elapses but before playback has actually finished.
+                            continue
+
                         activated = False
 
                         # Set dynamic threshold depending on wake word index
