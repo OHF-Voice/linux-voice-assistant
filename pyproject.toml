@@ -38,6 +38,12 @@ dependencies = [
 dynamic = ["version"]
 
 [project.optional-dependencies]
+# ONNX Runtime backend for openWakeWord-compatible classifiers that cannot be
+# exported to builtin TFLite ops (e.g. livekit-wakeword's conv_attention head).
+# Install with: pip install 'linux-voice-assistant[onnx]'
+onnx = [
+    "onnxruntime>=1.17,<2",
+]
 dev = [
     "black",
     "flake8",

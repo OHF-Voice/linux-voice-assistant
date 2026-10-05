@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from pymicro_wakeword import MicroWakeWord
     from pyopen_wakeword import OpenWakeWord
 
+    from .onnx_wake_word import OnnxWakeWord
     from .entity import (
         ButtonEventSensorEntity,
         ButtonLockEntity,
@@ -36,6 +37,10 @@ _LOGGER = logging.getLogger(__name__)
 class WakeWordType(str, Enum):
     MICRO_WAKE_WORD = "micro"
     OPEN_WAKE_WORD = "openWakeWord"
+    # openWakeWord-compatible classifier running under ONNX Runtime. Needed for
+    # heads that pyopen_wakeword (TFLite-only) cannot load, e.g. livekit
+    # livekit-wakeword's conv_attention.
+    ONNX_WAKE_WORD = "onnx"
 
 
 @dataclass
@@ -47,7 +52,7 @@ class AvailableWakeWord:
     wake_word_path: Path
     probability_cutoff: float = 0.7
 
-    def load(self) -> "Union[MicroWakeWord, OpenWakeWord]":
+    def load(self) -> "Union[MicroWakeWord, OpenWakeWord, OnnxWakeWord]":
         if self.type == WakeWordType.MICRO_WAKE_WORD:
             from pymicro_wakeword import MicroWakeWord
 
@@ -60,6 +65,14 @@ class AvailableWakeWord:
             setattr(oww_model, "wake_word", self.wake_word)
 
             return oww_model
+
+        if self.type == WakeWordType.ONNX_WAKE_WORD:
+            from .onnx_wake_word import OnnxWakeWord
+
+            onnx_model = OnnxWakeWord(id=self.id, onnx_model=self.wake_word_path)
+            onnx_model.wake_word = self.wake_word
+
+            return onnx_model
 
         raise ValueError(f"Unexpected wake word type: {self.type}")
 
@@ -108,7 +121,7 @@ class ServerState:
     audio_queue: "Queue[Optional[bytes]]"
     entities: "List[ESPHomeEntity]"
     available_wake_words: "Dict[str, AvailableWakeWord]"
-    wake_words: "Dict[str, Union[MicroWakeWord, OpenWakeWord]]"
+    wake_words: "Dict[str, Union[MicroWakeWord, OpenWakeWord, OnnxWakeWord]]"
     active_wake_words: Set[str]
     stop_word: "MicroWakeWord"
     music_player: "MpvMediaPlayer"

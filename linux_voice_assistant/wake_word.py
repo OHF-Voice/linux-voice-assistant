@@ -49,7 +49,7 @@ def find_available_wake_words(wake_word_dirs: List[Path], stop_model_id: str) ->
 
                 _LOGGER.debug("Model %s is of type: %s", model_id, model_type)
 
-                if model_type == WakeWordType.OPEN_WAKE_WORD:
+                if model_type in (WakeWordType.OPEN_WAKE_WORD, WakeWordType.ONNX_WAKE_WORD):
                     wake_word_path = model_config_path.parent / model_config["model"]
                 else:
                     wake_word_path = model_config_path

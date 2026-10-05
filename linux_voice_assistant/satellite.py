@@ -49,6 +49,8 @@ from google.protobuf import message
 from pymicro_wakeword import MicroWakeWord
 from pyopen_wakeword import OpenWakeWord
 
+from .onnx_wake_word import OnnxWakeWord
+
 from .api_server import APIServer
 from .entity import (
     ButtonEventSensorEntity,
@@ -878,7 +880,7 @@ class VoiceSatelliteProtocol(APIServer):
     # Wake word / stop
     # ------------------------------------------------------------------
 
-    def wakeup(self, wake_word: Union[MicroWakeWord, OpenWakeWord]) -> None:
+    def wakeup(self, wake_word: Union[MicroWakeWord, OpenWakeWord, OnnxWakeWord]) -> None:
 
         if self.state.muted:
             # Don't respond to wake words when muted (voice_assistant.stop behavior)

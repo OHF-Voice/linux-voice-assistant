@@ -18,6 +18,8 @@ from getmac import get_mac_address  # type: ignore
 from pymicro_wakeword import MicroWakeWord, MicroWakeWordFeatures
 from pyopen_wakeword import OpenWakeWord, OpenWakeWordFeatures
 
+from .onnx_wake_word import OnnxWakeWord
+
 from .models import Preferences, ServerState, WakeWordType, initial_stop_word_threshold
 from .mpv_player import MpvMediaPlayer
 from .peripheral_api import LVAEvent, PeripheralAPIServer
@@ -722,7 +724,7 @@ def process_audio(state: ServerState, mic, block_size: int):
                                 state.wake_word_2_threshold = default_threshold
                             _LOGGER.debug("Wake Word 2 threshold set to %.3f (was %.3f, preferences: %s)", state.wake_word_2_threshold, old_val, state.preferences.wake_word_2_sensitivity)
 
-                        if isinstance(wake_word, OpenWakeWord):
+                        if isinstance(wake_word, (OpenWakeWord, OnnxWakeWord)):
                             has_oww = True
 
                     # Sync entity states after threshold values were updated
@@ -811,7 +813,7 @@ def process_audio(state: ServerState, mic, block_size: int):
                                 if wake_word.process_streaming(micro_input):
                                     wake_word.debug_probabilities = True
                                     activated = True
-                        elif isinstance(wake_word, OpenWakeWord):
+                        elif isinstance(wake_word, (OpenWakeWord, OnnxWakeWord)):
                             for oww_input in oww_inputs:
                                 for prob in wake_word.process_streaming(oww_input):
                                     if prob > threshold:
