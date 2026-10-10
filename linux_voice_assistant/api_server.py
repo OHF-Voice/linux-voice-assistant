@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import threading
+import time
 from abc import abstractmethod
 from collections.abc import Iterable
 from typing import TYPE_CHECKING, Optional
@@ -26,6 +27,9 @@ PROTO_TO_MESSAGE_TYPE = {v: k for k, v in MESSAGE_TYPE_TO_PROTO.items()}
 
 _LOGGER = logging.getLogger(__name__)
 
+API_IDLE_TIMEOUT_SECONDS = 90.0
+API_IDLE_CHECK_INTERVAL_SECONDS = 5.0
+
 
 class APIServer(asyncio.Protocol):
 
@@ -39,12 +43,18 @@ class APIServer(asyncio.Protocol):
         self._writelines = None
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._loop_thread_id: Optional[int] = None
+        self._last_rx = time.monotonic()
+        self._api_authenticated = False
+        self._api_idle_timeout = API_IDLE_TIMEOUT_SECONDS
+        self._api_idle_check_interval = API_IDLE_CHECK_INTERVAL_SECONDS
+        self._idle_task: Optional[asyncio.Task] = None
 
     @abstractmethod
     def handle_message(self, msg: message.Message) -> Iterable[message.Message]:
         pass
 
     def process_packet(self, msg_type: int, packet_data: bytes) -> None:
+        self._last_rx = time.monotonic()
         msg_class = MESSAGE_TYPE_TO_PROTO[msg_type]
         msg_inst = msg_class.FromString(packet_data)
 

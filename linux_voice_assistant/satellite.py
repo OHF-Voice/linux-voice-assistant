@@ -63,6 +63,7 @@ from .entity import (
     WakeWord2SensitivityNumberEntity,
 )
 from .models import AvailableWakeWord, ServerState, WakeWordType
+from .network_supervisor import connection_idle_expired
 from .peripheral_api import LVAEvent
 from .util import call_all
 
@@ -1077,12 +1078,22 @@ class VoiceSatelliteProtocol(APIServer):
         # broadcast to all of them (see ServerState.broadcast).
         if self not in self.state.connections:
             self.state.connections.append(self)
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            self._idle_task = None
+        else:
+            self._idle_task = loop.create_task(self._watch_api_idle())
 
     # ------------------------------------------------------------------
     # Connection lifecycle
     # ------------------------------------------------------------------
 
     def connection_lost(self, exc: Optional[Exception]) -> None:
+        idle_task = self._idle_task
+        self._idle_task = None
+        if idle_task is not None and not idle_task.done():
+            idle_task.cancel()
         super().connection_lost(exc)
 
         self._disconnect_event.set()
@@ -1140,6 +1151,7 @@ class VoiceSatelliteProtocol(APIServer):
         super().process_packet(msg_type, packet_data)
 
         if msg_type == PROTO_TO_MESSAGE_TYPE[AuthenticationRequest]:
+            self._api_authenticated = True
             self.state.connected = True
             _LOGGER.debug("Authentication successful, connected to Home Assistant")
 
@@ -1226,3 +1238,23 @@ class VoiceSatelliteProtocol(APIServer):
             trained_languages=external_wake_word.trained_languages,
             wake_word_path=config_path,
         )
+
+    async def _watch_api_idle(self) -> None:
+        """Close the transport when an authenticated peer stops sending frames."""
+        while True:
+            await asyncio.sleep(self._api_idle_check_interval)
+            if not connection_idle_expired(
+                authenticated=self._api_authenticated,
+                last_rx=self._last_rx,
+                now=time.monotonic(),
+                limit=self._api_idle_timeout,
+            ):
+                continue
+            if self._transport is None:
+                return
+            _LOGGER.warning(
+                "Closing idle Home Assistant connection after %.0fs without data",
+                self._api_idle_timeout,
+            )
+            self._transport.close()
+            return
