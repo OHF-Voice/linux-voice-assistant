@@ -528,11 +528,13 @@ async def main() -> None:
     process_audio_thread.start()
 
     # Auto discovery (zeroconf, mDNS)
-    discovery: Optional[HomeAssistantZeroconf] = None
+    discovery_slot: Optional[_DiscoverySlot] = None
+    mdns_refresh_task: Optional[asyncio.Task[None]] = None
     fixed_host = args.host or None
     try:
-        discovery = _make_discovery(args.port, state, host_ip_address)
-        await discovery.register_server()
+        discovery_slot = _DiscoverySlot(_make_discovery(args.port, state, host_ip_address))
+        await discovery_slot.discovery.register_server()
+        mdns_refresh_task = asyncio.create_task(_refresh_mdns_when_disconnected(state, discovery_slot, args.port))
 
         # ------------------------------------------------------------------
         # Start peripheral API and signal "getting started" to peripherals
@@ -563,25 +565,39 @@ async def main() -> None:
             still_serving = await _serve_until_rebind(server, state, network_interface, host_ip_address)
             if not still_serving:
                 break
-            await discovery.stop()
+            discovery_slot.rebinding = True
+            async with discovery_slot.lock:
+                await discovery_slot.discovery.stop()
             host_ip_address = await wait_for_bind_address(network_interface, fixed_host)
             state.ip_address = host_ip_address
             server = await _bind_esphome_server(loop, state, host_ip_address, args.port, exit_on_failure=False)
-            discovery = _make_discovery(args.port, state, host_ip_address)
-            await discovery.register_server()
+            async with discovery_slot.lock:
+                discovery_slot.discovery = _make_discovery(args.port, state, host_ip_address)
+                await discovery_slot.discovery.register_server()
+                discovery_slot.rebinding = False
     except KeyboardInterrupt:
         pass
     finally:
+        if mdns_refresh_task is not None:
+            mdns_refresh_task.cancel()
+            await asyncio.gather(mdns_refresh_task, return_exceptions=True)
         server.close()
         await server.wait_closed()
-        if discovery is not None:
-            await discovery.stop()
+        if discovery_slot is not None:
+            await discovery_slot.discovery.stop()
         state.audio_queue.put_nowait(None)
         process_audio_thread.join()
         if peripheral_api is not None:
             await peripheral_api.stop()
 
     _LOGGER.debug("Server stopped")
+
+
+class _DiscoverySlot:
+    def __init__(self, discovery: HomeAssistantZeroconf) -> None:
+        self.discovery = discovery
+        self.lock = asyncio.Lock()
+        self.rebinding = False
 
 
 def _make_discovery(port: int, state: ServerState, host_ip_address: str) -> HomeAssistantZeroconf:
@@ -647,6 +663,20 @@ async def _bind_esphome_server(loop: asyncio.AbstractEventLoop, state: ServerSta
                 delay,
             )
             await asyncio.sleep(delay)
+
+
+async def _refresh_mdns_when_disconnected(state: ServerState, slot: _DiscoverySlot, port: int) -> None:
+    """Re-announce mDNS after the last Home Assistant connection closes."""
+    while True:
+        await state.mdns_refresh.wait()
+        async with slot.lock:
+            state.mdns_refresh.clear()
+            if state.connections or slot.rebinding:
+                continue
+            _LOGGER.info("Re-announcing mDNS after Home Assistant disconnect")
+            await slot.discovery.stop()
+            slot.discovery = _make_discovery(port, state, state.ip_address)
+            await slot.discovery.register_server()
 
 
 async def _serve_until_rebind(server: asyncio.Server, state: ServerState, interface: str, bound_ip: str) -> bool:

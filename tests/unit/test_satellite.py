@@ -368,6 +368,18 @@ class TestConnectionLost:
         sat.connection_lost(None)
         sat.state.tts_player.stop.assert_called()
 
+    def test_last_disconnect_requests_mdns_refresh(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        sat.state.connections.append(sat)
+        sat.connection_lost(None)
+        assert sat.state.mdns_refresh.is_set()
+
+    def test_remaining_client_does_not_request_mdns_refresh(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        sat.state.connections.extend([sat, MagicMock()])
+        sat.connection_lost(None)
+        assert sat.state.mdns_refresh.is_set() is False
+
 
 # ---------------------------------------------------------------------------
 # Timer events

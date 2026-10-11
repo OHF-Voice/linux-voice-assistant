@@ -1126,6 +1126,7 @@ class VoiceSatelliteProtocol(APIServer):
 
             self.state.stop_word.is_active = False  # type: ignore[attr-defined]
             self.state.connected = False
+            self.state.mdns_refresh.set()
 
         if self.state.satellite is self:
             self.state.satellite = None
