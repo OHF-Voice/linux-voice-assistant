@@ -801,6 +801,65 @@ class ButtonEventSensorEntity(ESPHomeEntity):
         )
 
 
+class ButtonLockEntity(ESPHomeEntity):
+    """Switch entity for disabling a peripheral's on-board buttons.
+
+    Registered by a peripheral via register_button_lock, mirroring the
+    opt-in pattern used by register_light. LVA only exposes the switch
+    in Home Assistant and owns its state; it has no opinion on what
+    "locked" means for the hardware. When Home Assistant changes the
+    switch, on_changed fires so the peripheral API server can broadcast
+    a button_lock_changed event back to the peripheral, which decides
+    whether to keep executing button-triggered commands.
+    """
+
+    def __init__(
+        self,
+        server: APIServer,
+        key: int,
+        name: str,
+        object_id: str,
+        get_locked: Callable[[], bool],
+        set_locked: Callable[[bool], None],
+        icon: str = "mdi:button-pointer",
+    ) -> None:
+        ESPHomeEntity.__init__(self, server)
+        self.key = key
+        self.name = name
+        self.object_id = object_id
+        self.icon = icon
+        self._get_locked = get_locked
+        self._set_locked = set_locked
+        self._switch_state = self._get_locked()  # Sync internal state with actual value on init
+
+    def update_get_locked(self, get_locked: Callable[[], bool]) -> None:
+        self._get_locked = get_locked
+
+    def update_set_locked(self, set_locked: Callable[[bool], None]) -> None:
+        self._set_locked = set_locked
+
+    def sync_with_state(self) -> None:
+        self._switch_state = self._get_locked()
+
+    def handle_message(self, msg: message.Message) -> Iterable[message.Message]:
+        if isinstance(msg, SwitchCommandRequest) and (msg.key == self.key):
+            new_state = bool(msg.state)
+            self._switch_state = new_state
+            self._set_locked(new_state)
+            yield SwitchStateResponse(key=self.key, state=self._switch_state)
+        elif isinstance(msg, ListEntitiesRequest):
+            yield ListEntitiesSwitchResponse(
+                object_id=self.object_id,
+                key=self.key,
+                name=self.name,
+                entity_category=EntityCategory.CONFIG,
+                icon=self.icon,
+            )
+        elif isinstance(msg, SubscribeHomeAssistantStatesRequest):
+            self.sync_with_state()
+            yield SwitchStateResponse(key=self.key, state=self._switch_state)
+
+
 # Backward compatibility export aliases
 __all__ = [
     "ESPHomeEntity",
@@ -809,6 +868,7 @@ __all__ = [
     "ThinkingSoundEntity",
     "LEDLightEntity",
     "ButtonEventSensorEntity",
+    "ButtonLockEntity",
     "WakeWord1SensitivityNumberEntity",
     "WakeWord2SensitivityNumberEntity",
     "StopWordSensitivityNumberEntity",

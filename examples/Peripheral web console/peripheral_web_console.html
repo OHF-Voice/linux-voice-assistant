@@ -117,6 +117,10 @@
         <span class="meta-label">HA Connected</span>
         <span class="meta-value" id="meta-ha">—</span>
       </div>
+      <div class="meta-item">
+        <span class="meta-label">Buttons Locked</span>
+        <span class="meta-value" id="meta-locked">—</span>
+      </div>      
     </div>
 
     <!-- Volume bar -->
@@ -311,6 +315,9 @@
       // Register the Button entity with LVA so HA can receive button events.
       ws.send(JSON.stringify({command: 'register_button'}));
       log('sent', '↑ register_button');
+
+      ws.send(JSON.stringify({command: 'register_button_lock'}));
+      log('sent', '↑ register_button_lock');
     };
 
     ws.onclose = () => {
@@ -340,6 +347,8 @@
         metaMuted.textContent = data.muted !== undefined ? (data.muted ? 'yes' : 'no') : '—';
         metaHa.textContent    = data.ha_connected !== undefined ? (data.ha_connected ? 'yes' : 'no') : '—';
         volBar.style.width    = (data.volume !== undefined ? data.volume * 100 : 0).toFixed(0) + '%';
+        buttonsLocked = !!data.button_controls_locked;
+        applyButtonLockUI();
 
         // Restore last conversation context
         if (data.last_stt_text) {
@@ -398,6 +407,10 @@
           timerBox.classList.remove('hidden');
         }
       }
+      if (ev === 'button_lock_changed' && data) {
+        buttonsLocked = !!data.locked;
+        applyButtonLockUI();
+      }
 
       setState(ev);
       log('recv', ev, dataStr);
@@ -416,6 +429,10 @@
       log('err-item', '✗ not connected — connect first');
       return;
     }
+    if (buttonsLocked) {
+      log('err-item', '✗ button controls locked — ignoring ' + command);
+      return;
+    }    
     const msg = { command };
     if (data) msg.data = data;
     ws.send(JSON.stringify(msg));
@@ -435,4 +452,15 @@
     send('set_volume', { volume: clamped });
     volumeInput.value = '';  // Clear after sending
   }
+
+  let buttonsLocked = false;
+
+  function applyButtonLockUI() {
+    document.getElementById('meta-locked').textContent = buttonsLocked ? 'yes' : 'no';
+    document.querySelectorAll('.cmd-grid .cmd-btn').forEach((el) => {
+      el.disabled = buttonsLocked;
+      el.style.opacity = buttonsLocked ? '0.4' : '';
+      el.style.cursor = buttonsLocked ? 'not-allowed' : '';
+    });
+  }  
 </script>

@@ -181,6 +181,22 @@ Each press (or hold-repeat step) changes the hue by 10°, allowing smooth naviga
 3. Release the volume button once you like the color, then release the action button to confirm and exit color mode
 4. The new color persists in Home Assistant
 
+#### Disabling button controls from Home Assistant
+
+On connect, the controller registers a **Disable button controls** switch
+with LVA, which appears on the device page as
+`switch.<satellite>_disable_button_controls` (off by default).
+
+When turned **on** in Home Assistant, the action button (context command), volume buttons, mute button, and the hold + volume color-wheel gesture are all ignored — pressing them has no effect on LVA or the LED ring color.
+
+When turned **off**, button behavior resumes immediately.
+
+The switch state is persisted by LVA across restarts, so a lock set from
+Home Assistant survives a reboot of the satellite. On reconnect, the
+controller reads the current state from the `snapshot` event's
+`button_controls_locked` field and applies it immediately, without
+waiting for a change.
+
 ---
 
 ## LED ring animations
