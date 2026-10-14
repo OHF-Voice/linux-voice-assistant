@@ -1,6 +1,5 @@
 """Unit tests for utility functions."""
 
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 # ---------------------------------------------------------------------------
@@ -15,71 +14,47 @@ class TestGetVersion:
 
         util._version_cache = None
 
-    def test_returns_unknown_when_file_missing(self):
+    def test_returns_package_version(self):
         import linux_voice_assistant.util as util
 
-        util._version_cache = None
-
-        with patch.object(Path, "read_text", side_effect=FileNotFoundError):
+        with patch.object(util, "version", return_value="1.2.3"):
             result = util.get_version()
-        assert result == "unknown"
 
-    def test_returns_version_string_from_file(self):
-        import linux_voice_assistant.util as util
-
-        util._version_cache = None
-
-        with patch.object(Path, "read_text", return_value="1.2.3\n"):
-            result = util.get_version()
         assert result == "1.2.3"
 
-    def test_strips_whitespace_from_version(self):
+    def test_returns_unknown_when_package_metadata_missing(self):
+        from importlib.metadata import PackageNotFoundError
+
         import linux_voice_assistant.util as util
 
-        util._version_cache = None
-
-        with patch.object(Path, "read_text", return_value="  2.0.0  \n"):
+        with patch.object(
+            util,
+            "version",
+            side_effect=PackageNotFoundError,
+        ):
             result = util.get_version()
-        assert result == "2.0.0"
 
-    def test_returns_unknown_for_empty_file(self):
-        import linux_voice_assistant.util as util
-
-        util._version_cache = None
-
-        with patch.object(Path, "read_text", return_value="   "):
-            result = util.get_version()
         assert result == "unknown"
 
     def test_caches_result_after_first_call(self):
         import linux_voice_assistant.util as util
 
-        util._version_cache = None
+        with patch.object(util, "version", return_value="3.0.0") as mock_version:
+            assert util.get_version() == "3.0.0"
+            assert util.get_version() == "3.0.0"
 
-        with patch.object(Path, "read_text", return_value="3.0.0") as mock_read:
-            util.get_version()
-            util.get_version()
-            mock_read.assert_called_once()
+        mock_version.assert_called_once()
 
     def test_returns_cached_value_on_second_call(self):
         import linux_voice_assistant.util as util
 
         util._version_cache = None
 
-        with patch.object(Path, "read_text", return_value="4.0.0"):
+        with patch.object(util, "version", return_value="4.0.0"):
             first = util.get_version()
 
         second = util.get_version()
         assert first == second == "4.0.0"
-
-    def test_returns_unknown_on_permission_error(self):
-        import linux_voice_assistant.util as util
-
-        util._version_cache = None
-
-        with patch.object(Path, "read_text", side_effect=PermissionError):
-            result = util.get_version()
-        assert result == "unknown"
 
 
 # ---------------------------------------------------------------------------
