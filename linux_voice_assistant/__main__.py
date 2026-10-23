@@ -81,7 +81,7 @@ async def main() -> None:
     parser.add_argument(
         "--audio-input-channels",
         type=int,
-        default=1,
+        default=2,
         choices=(1, 2),
         help="Number of mic channels to capture and stream (1=mono, 2=dual-channel voice)",
     )
