@@ -41,6 +41,13 @@ class TestInit:
         assert sat.state.thinking_sound_entity is not None
         assert isinstance(sat.state.thinking_sound_entity, ThinkingSoundEntity)
 
+    def test_follow_up_sound_switch_created_disabled(self, tmp_path):
+        from linux_voice_assistant.entity import ContinueConversationSoundEntity
+
+        sat = make_satellite(tmp_path)
+        assert isinstance(sat.state.continue_conversation_sound_entity, ContinueConversationSoundEntity)
+        assert sat.state.continue_conversation_sound_enabled is False
+
     def test_mic_gain_entity_created(self, tmp_path):
         from linux_voice_assistant.entity import MicSettingEntity
 
@@ -88,6 +95,21 @@ class TestInit:
             sat = VoiceSatelliteProtocol(state)
 
         assert sat.state.thinking_sound_enabled is True
+
+    def test_follow_up_sound_loaded_from_preferences(self, tmp_path):
+        state = make_state(tmp_path)
+        state.preferences.continue_conversation_sound = 1
+
+        with (
+            patch("linux_voice_assistant.satellite.WakeWord1SensitivityNumberEntity", MagicMock()),
+            patch("linux_voice_assistant.satellite.WakeWord2SensitivityNumberEntity", MagicMock()),
+            patch("linux_voice_assistant.satellite.StopWordSensitivityNumberEntity", MagicMock()),
+        ):
+            from linux_voice_assistant.satellite import VoiceSatelliteProtocol
+
+            sat = VoiceSatelliteProtocol(state)
+
+        assert sat.state.continue_conversation_sound_enabled is True
 
     def test_output_only_sets_limited_features(self, tmp_path):
         from aioesphomeapi.model import VoiceAssistantFeature

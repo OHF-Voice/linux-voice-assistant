@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     from .entity import (
         ButtonEventSensorEntity,
         ButtonLockEntity,
+        ContinueConversationSoundEntity,
         ESPHomeEntity,
         LEDLightEntity,
         MediaPlayerEntity,
@@ -86,6 +87,7 @@ class Preferences:
     active_wake_words: List[Optional[str]] = field(default_factory=list)
     volume: Optional[float] = None
     thinking_sound: int = 0  # 0 = disabled, 1 = enabled
+    continue_conversation_sound: int = 0  # 0 = disabled, 1 = enabled
     button_controls_locked: int = 0  # 0 = buttons enabled (default), 1 = buttons locked
     wake_word_1_sensitivity: Optional[float] = None
     wake_word_2_sensitivity: Optional[float] = None
@@ -127,11 +129,13 @@ class ServerState:
     download_dir: Path
     continue_conversation_delay: float = 0.5  # seconds to wait after TTS before opening mic
 
+    continue_conversation_sound: str = ""
     media_player_entity: "Optional[MediaPlayerEntity]" = None
     satellite: "Optional[VoiceSatelliteProtocol]" = None
     connections: "List[VoiceSatelliteProtocol]" = field(default_factory=list)
     mute_switch_entity: "Optional[MuteSwitchEntity]" = None
     thinking_sound_entity: "Optional[ThinkingSoundEntity]" = None
+    continue_conversation_sound_entity: "Optional[ContinueConversationSoundEntity]" = None
     button_event_sensor_entity: "Optional[ButtonEventSensorEntity]" = None
 
     # Lights declared by peripherals via register_light. Survives HA
@@ -168,6 +172,7 @@ class ServerState:
     wake_words_changed: bool = False
     refractory_seconds: float = 2.0
     thinking_sound_enabled: bool = False
+    continue_conversation_sound_enabled: bool = False
     button_controls_locked: bool = False
     output_only: bool = False
     muted: bool = False

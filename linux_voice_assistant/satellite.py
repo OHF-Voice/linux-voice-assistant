@@ -53,6 +53,7 @@ from .api_server import APIServer
 from .entity import (
     ButtonEventSensorEntity,
     ButtonLockEntity,
+    ContinueConversationSoundEntity,
     LEDLightEntity,
     MediaPlayerEntity,
     MicSettingEntity,
@@ -180,6 +181,28 @@ class VoiceSatelliteProtocol(APIServer):
         thinking_sound_switch.update_get_thinking_sound_enabled(lambda: self.state.thinking_sound_enabled)
         thinking_sound_switch.update_set_thinking_sound_enabled(self._set_thinking_sound_enabled)
         thinking_sound_switch.sync_with_state()
+
+        # Add/update follow-up (continue conversation) sound entity
+        self.state.continue_conversation_sound_enabled = bool(self.state.preferences.continue_conversation_sound)
+        follow_up_sound_switch = self.state.continue_conversation_sound_entity
+        if follow_up_sound_switch is None:
+            follow_up_sound_switch = ContinueConversationSoundEntity(
+                server=self,
+                key=len(state.entities),
+                name="Follow-up Sound",
+                object_id="continue_conversation_sound",
+                get_enabled=lambda: self.state.continue_conversation_sound_enabled,
+                set_enabled=self._set_continue_conversation_sound_enabled,
+            )
+            self.state.entities.append(follow_up_sound_switch)
+            self.state.continue_conversation_sound_entity = follow_up_sound_switch
+        elif follow_up_sound_switch not in self.state.entities:
+            self.state.entities.append(follow_up_sound_switch)
+
+        follow_up_sound_switch.server = self
+        follow_up_sound_switch.update_get_enabled(lambda: self.state.continue_conversation_sound_enabled)
+        follow_up_sound_switch.update_set_enabled(self._set_continue_conversation_sound_enabled)
+        follow_up_sound_switch.sync_with_state()
 
         # Add/update Wake Word 1 sensitivity number entity
         sensitivity_1_entity = self.state.sensitivity_1_number_entity
@@ -487,6 +510,12 @@ class VoiceSatelliteProtocol(APIServer):
     # ------------------------------------------------------------------
     # Mute / thinking sound
     # ------------------------------------------------------------------
+
+    def _set_continue_conversation_sound_enabled(self, new_state: bool) -> None:
+        self.state.continue_conversation_sound_enabled = bool(new_state)
+        self.state.preferences.continue_conversation_sound = 1 if new_state else 0
+        _LOGGER.debug("Follow-up sound %s", "enabled" if new_state else "disabled")
+        self.state.save_preferences()
 
     def _set_thinking_sound_enabled(self, new_state: bool) -> None:
         self.state.thinking_sound_enabled = bool(new_state)
@@ -1007,15 +1036,30 @@ class VoiceSatelliteProtocol(APIServer):
             self._emit(LVAEvent.LISTENING)
             _LOGGER.debug("Continuing conversation after %.2fs settle delay", self.state.continue_conversation_delay)
 
+            def _open_mic() -> None:
+                self.send_messages([VoiceAssistantRequest(start=True)])
+                self._is_streaming_audio = True
+                _LOGGER.debug("Continued conversation started")
+
             def _start_continued_conversation() -> None:
                 if self.state.muted:
                     _LOGGER.debug("Skipping continued conversation: muted")
                     self._pipeline_active = False
                     self.unduck()
                     return
-                self.send_messages([VoiceAssistantRequest(start=True)])
-                self._is_streaming_audio = True
-                _LOGGER.debug("Continued conversation started")
+
+                if not (self.state.continue_conversation_sound_enabled and self.state.continue_conversation_sound):
+                    _open_mic()
+                elif self.state.listen_during_wake_sound:
+                    self.state.tts_player.play(self.state.continue_conversation_sound)
+                    _open_mic()
+                else:
+                    # Same flow as wakeup(): the chime plays first so the mic does
+                    # not stream it back to Home Assistant.
+                    self.state.tts_player.play(
+                        self.state.continue_conversation_sound,
+                        done_callback=_open_mic,
+                    )
 
             threading.Timer(self.state.continue_conversation_delay, _start_continued_conversation).start()
         else:
