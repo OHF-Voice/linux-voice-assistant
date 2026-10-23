@@ -26,7 +26,8 @@
 - `linux_voice_assistant/satellite.py` - VoiceSatelliteProtocol implementation (ESPHome API)
 - `linux_voice_assistant/wake_word.py` - Wake word model loading and detection
 - `linux_voice_assistant/webrtc.py` - WebRTC noise gain/NS processing
-- `linux_voice_assistant/mpv_player.py` - MPV-based media player
+- `linux_voice_assistant/mpv_player.py` - MediaPlayer facade used by LVA (playlists, done callbacks), delegates to `player/libmpv.py`
+- `linux_voice_assistant/player/libmpv.py` - libmpv wrapper: playback, thread-safe state, volume/ducking, end-of-file callbacks
 - `linux_voice_assistant/entity.py` - Entity definitions (MediaPlayer, MuteSwitch, etc.)
 - `linux_voice_assistant/api_server.py` - ESPHome API server 
 - `linux_voice_assistant/peripheral_api.py` - Peripheral WebSocket API server
@@ -125,6 +126,6 @@ Before claiming completion:
 ## Areas Requiring Extra Care
 
 - `linux_voice_assistant/wake_word.py` - Wake word model loading is hardware-dependent
-- `linux_voice_assistant/mpv_player.py` - Audio output requires `libmpv-dev`
+- `linux_voice_assistant/mpv_player.py` and `linux_voice_assistant/player/libmpv.py` - Audio output requires `libmpv-dev`
 - `linux_voice_assistant/webrtc.py` - Noise suppression/gain algorithms
 - `linux_voice_assistant/satellite.py` - ESPHome API protocol handling
