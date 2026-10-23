@@ -4,6 +4,36 @@ from typing import Callable, List, Optional, Union
 
 from .player.libmpv import LibMpvPlayer
 from .player.state import PlayerState
+import subprocess
+import os
+
+def play_with_aplay(url: str) -> bool:
+    """
+    Play WAV wake sound using aplay for instant startup.
+    Returns True if aplay handled it, False if mpv should handle it.
+    """
+    try:
+        if url.startswith("http://") or url.startswith("https://"):
+            ffmpeg = subprocess.Popen(
+                ["ffmpeg", "-i", url, "-f", "s16le", "-ar", "24000", "-ac", "1", "-"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL
+            )
+
+            aplay = subprocess.Popen(
+                ["aplay", "-D", "default", "-f", "S16_LE", "-r", "24000", "-c", "1"],
+                stdin=ffmpeg.stdout
+            )
+            aplay.wait()
+        else:
+            subprocess.Popen(
+                ["aplay", "-D", "default", url],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
+        return True
+    except Exception:
+        return False
 
 
 class MpvMediaPlayer:
@@ -61,6 +91,15 @@ class MpvMediaPlayer:
 
         # Start playing first URL
         next_url = self._playlist.pop(0)
+        # Try playing with aplay first
+        if play_with_aplay(next_url):
+            if self._done_callback:
+                try:
+                    self._done_callback()
+                except Exception:
+                    pass
+            return
+
         self._player.play(next_url, done_callback=self._on_track_finished, stop_first=stop_first)
 
     def _on_track_finished(self) -> None:
@@ -68,7 +107,14 @@ class MpvMediaPlayer:
         if self._playlist:
             # More tracks to play
             next_url = self._playlist.pop(0)
-            self._log.debug("Playing next URL from playlist: %s", next_url)
+            # Try aplay playback first
+            if play_with_aplay(next_url):
+                if self._done_callback:
+                    try:
+                        self._done_callback()
+                    except Exception:
+                        pass
+                return
             self._player.play(next_url, done_callback=self._on_track_finished, stop_first=False)
         else:
             # Playlist finished
