@@ -91,7 +91,7 @@ class LibMpvPlayer(AudioPlayer):
 
     def resume(self) -> None:
         """Resume playback if paused."""
-        self._log.debug("unduck() called")
+        self._log.debug("resume() called")
         with self._state_lock:
             self._mpv.pause = False
             self._set_state(PlayerState.PLAYING)
@@ -103,11 +103,14 @@ class LibMpvPlayer(AudioPlayer):
         If called for track replacement, clears the callback to prevent
         it from being invoked during the transition.
         """
-        self._log.debug("unduck() called")
+        self._log.debug("stop() called")
         with self._state_lock:
             if for_replacement:
                 # Clear callback to prevent invocation during track transition
                 self._done_callback = None
+            else:
+                # mpv reports a stop as a non-eof end-file, which _on_end_file ignores
+                self._set_state(PlayerState.IDLE)
             self._mpv.stop()
 
     def state(self) -> PlayerState:
@@ -124,7 +127,7 @@ class LibMpvPlayer(AudioPlayer):
         Args:
             volume: Volume level (0.0–100.0).
         """
-        self._log.debug("unduck() called")
+        self._log.debug("set_volume() called")
         with self._state_lock:
             self._user_volume = max(0.0, min(100.0, float(volume)))
             self._apply_volume()
@@ -136,7 +139,7 @@ class LibMpvPlayer(AudioPlayer):
         Args:
             factor: Ducking factor (0.0–1.0).
         """
-        self._log.debug("unduck() called")
+        self._log.debug("duck() called")
         with self._state_lock:
             self._duck_factor = max(0.0, min(1.0, float(factor)))
             self._apply_volume()
@@ -152,7 +155,7 @@ class LibMpvPlayer(AudioPlayer):
 
     def _apply_volume(self) -> None:
         """Apply effective volume (user volume × duck factor) to mpv."""
-        self._log.debug("unduck() called")
+        self._log.debug("_apply_volume() called")
         effective = self._user_volume * self._duck_factor
         self._mpv.volume = max(0.0, min(100.0, effective))
 
@@ -197,7 +200,7 @@ class LibMpvPlayer(AudioPlayer):
 
     def _on_start_file(self, event) -> None:
         """Called when mpv starts playing a file."""
-        self._log.debug("unduck() called")
+        self._log.debug("_on_start_file() called")
         with self._state_lock:
             self._log.debug("_on_start_file: state=%s", self._state)
             self._set_state(PlayerState.PLAYING)
