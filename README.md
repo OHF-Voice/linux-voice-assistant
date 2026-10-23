@@ -89,7 +89,7 @@ usage: __main__.py [-h] [--name NAME] [--audio-input-device AUDIO_INPUT_DEVICE] 
 | `--mic-volume`                  | Control microphone volume                                     | 100                                  |
 | `--mic-auto-gain`               | Add WebRTC Gain to Mic                                        | 0                                    |
 | `--mic-noise-suppression`       | Add WebRTC Noise Suppression to Mic                           | 0                                    |
-| `--audio-input-channels`        | Number of microphone audio channels to stream                 | 2                                    |
+| `--audio-input-channels`        | Number of microphone audio channels to stream                 | 1                                    |
 | `--wake-word-dir`               | Directory with wake word models (.tflite) and configs (.json) | `wakewords/`                         |
 | `--wake-model`                  | ID of active wake word model                                  | `okay_nabu`                          |
 | `--stop-model`                  | ID of stop model                                              | `stop`                               |
@@ -167,7 +167,7 @@ VS Code development uses a local Python virtual environment (`.venv/`):
 
 The project uses the following tools to ensure code quality:
 
-- **Black**: Code formatting (88 characters per line, PEP 8 compliant)
+- **Black**: Code formatting (200 characters per line)
 - **isort**: Import sorting compatible with Black
 - **flake8**: Style and syntax checks
 - **pylint**: Code quality checks

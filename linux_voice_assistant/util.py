@@ -19,10 +19,7 @@ def get_version() -> str:
 
     This function reads the content safely without risk of code injection,
     as it only reads raw text and performs no evaluation.
-
-    Returns:
-        str:    The version from version.txt or 'unknown' if the file
-                does not exist or cannot be read.
+    :return: The version from version.txt or 'unknown' if the file does not exist or cannot be read.
     """
     global _version_cache
 
@@ -48,10 +45,7 @@ def get_esphome_version() -> str:
     This function uses importlib.metadata to safely retrieve the version
     of an installed Python package without executing any code from the
     package itself.
-
-    Returns:
-        str:    The version of aioesphomeapi (e.g., '42.7.0'), or 'unknown'
-                if the package is not installed or the version cannot be read.
+    :return: The version of aioesphomeapi (e.g., '42.7.0'), or 'unknown' if the package is not installed or the version cannot be read.
     """
     global _esphome_version_cache
 

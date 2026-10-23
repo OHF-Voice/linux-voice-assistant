@@ -57,9 +57,9 @@
 ## Code Quality Standards
 
 - **Python**: 3.11, 3.12, 3.13 supported
-- **Formatting**: Black (200 char line length, py312/py312 target)
+- **Formatting**: Black (200 char line length, py312/py313 target)
 - **Import Sorting**: isort with black profile
-- **Type Checking**: mypy with strict settings
+- **Type Checking**: mypy (non-strict, configured in `mypy.ini`, targets Python 3.11)
 - **Linting**: pylint (many checks disabled in pyproject.toml for practical reasons)
 
 ## Testing Strategy
