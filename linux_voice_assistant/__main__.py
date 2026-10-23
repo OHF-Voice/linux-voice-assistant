@@ -8,7 +8,6 @@ import sys
 import threading
 import time
 from pathlib import Path
-from queue import Queue
 from typing import List, Optional, Union
 
 import numpy as np
@@ -430,7 +429,6 @@ async def main() -> None:
         ip_address=host_ip_address,
         version=version,
         esphome_version=esphome_version,
-        audio_queue=Queue(),
         entities=[],
         available_wake_words=available_wake_words,
         wake_words=wake_models,
@@ -597,7 +595,6 @@ async def main() -> None:
     except KeyboardInterrupt:
         pass
     finally:
-        state.audio_queue.put_nowait(None)
         process_audio_thread.join()
         if peripheral_api is not None:
             await peripheral_api.stop()
