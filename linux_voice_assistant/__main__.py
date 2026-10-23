@@ -669,8 +669,7 @@ def process_audio(state: ServerState, mic, block_size: int):
                 channel_chunks: list[bytes] = []
                 for ch in range(n_channels):
                     col = raw[:, ch] if n_channels > 1 else raw.reshape(-1)
-                    chunk = (np.clip(col * mic_vol_scalar, -1.0, 1.0) * 32767.0).astype("<i2").tobytes()
-                    channel_chunks.append(chunk)
+                    channel_chunks.append(_float_to_pcm16(col, mic_vol_scalar))
 
                 # Primary channel drives WebRTC and wake-word detection.
                 audio_chunk = channel_chunks[0]
@@ -860,6 +859,18 @@ def process_audio(state: ServerState, mic, block_size: int):
 
 
 # -----------------------------------------------------------------------------
+
+
+def _float_to_pcm16(samples: np.ndarray, scalar: float) -> bytes:
+    """
+    Scale float samples in [-1, 1] and convert them to little-endian 16-bit PCM bytes.
+    :param samples: Float32 samples of a single channel.
+    :param scalar: Gain applied before clipping.
+    """
+    scaled = samples * scalar
+    np.clip(scaled, -1.0, 1.0, out=scaled)
+    scaled *= 32767.0
+    return scaled.astype("<i2").tobytes()
 
 
 def run():
