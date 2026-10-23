@@ -286,7 +286,7 @@ The following variables can be configured in the `.env` or in the service file:
 | `WAKE_WORD_DIR` | `app/wakewords` | Path to the wake word directory |
 | `WAKE_MODEL` | `okay_nabu` | Wake word model to use |
 | `STOP_MODEL` | `stop` | Stop model to use |
-| `DOWNLOAD_DIR` | `local/` | Directory to download custom wake word models to |
+| `DOWNLOAD_DIR` | `/app/local` | Directory to download custom wake word models to |
 | `TIMER_MAX_RING_SECONDS` | `900` | Seconds after which the timer stops ringing |
 | `REFACTORY_SECONDS` | `2` | Refractory period in seconds after wake word |
 | `CONTINUE_CONVERSATION_DELAY` | `0.5` | Delay before mic opens for continued conversation |
