@@ -20,6 +20,7 @@ from pyopen_wakeword import OpenWakeWord, OpenWakeWordFeatures
 
 from .models import Preferences, ServerState, WakeWordType, initial_stop_word_threshold
 from .mpv_player import MpvMediaPlayer
+from .network_supervisor import close_client_transports, next_backoff_seconds, wait_for_bind_address, watch_until_rebind
 from .peripheral_api import LVAEvent, PeripheralAPIServer
 from .satellite import VoiceSatelliteProtocol
 from .util import (
@@ -497,9 +498,6 @@ async def main() -> None:
     # ESPHome TCP server (with retry on EADDRINUSE)
     # ------------------------------------------------------------------
     loop = asyncio.get_running_loop()
-    max_attempts = 15
-    attempt = 1
-    server = None
 
     # Validate VoiceSatelliteProtocol initialization BEFORE starting server
     # This catches errors like missing imports or broken initialization immediately
@@ -517,38 +515,7 @@ async def main() -> None:
         _LOGGER.critical("Program will exit immediately - fix the error above first!")
         sys.exit(1)
 
-    while attempt <= max_attempts:
-        try:
-            server = await loop.create_server(
-                lambda: VoiceSatelliteProtocol(state),
-                host=host_ip_address,
-                port=args.port,
-            )
-            break  # connection successful, exit the loop
-        except OSError as err:
-            message = err.strerror or str(err)
-            if err.errno == errno.EADDRINUSE:
-                message = "address already in use"
-            if attempt < max_attempts:
-                _LOGGER.warning(
-                    "Attempt %d/%d failed to bind on address (%s, %s): %s. Retrying in 1 second...",
-                    attempt,
-                    max_attempts,
-                    host_ip_address,
-                    args.port,
-                    message,
-                )
-                await asyncio.sleep(1)
-                attempt += 1
-            else:
-                _LOGGER.exception(
-                    "All %d attempts failed to bind on address (%s, %s): %s",
-                    max_attempts,
-                    host_ip_address,
-                    args.port,
-                    message,
-                )
-                sys.exit(1)
+    server = await _bind_esphome_server(loop, state, host_ip_address, args.port, exit_on_failure=True)
 
     # ------------------------------------------------------------------
     # Audio processing thread
@@ -561,48 +528,185 @@ async def main() -> None:
     process_audio_thread.start()
 
     # Auto discovery (zeroconf, mDNS)
-    discovery = HomeAssistantZeroconf(
-        port=args.port,
-        name=state.name,
-        mac_address=state.mac_address,
-        host_ip_address=host_ip_address,
-    )
-    await discovery.register_server()
-
-    # ------------------------------------------------------------------
-    # Start peripheral API and signal "getting started" to peripherals
-    # ------------------------------------------------------------------
-    if peripheral_api is not None:
-        await peripheral_api.start()
-        await peripheral_api.emit_event(LVAEvent.ZEROCONF, {"status": "getting_started"})
-
-        # Give peripherals a window to connect and register their Light
-        # entities before HA enumerates over the ESPHome native API. The
-        # ESPHome server is bound but not yet serving (serve_forever runs
-        # below), so any HA connection sits queued in the kernel for the
-        # duration of this wait. Peripherals that register later still
-        # work, but the new entities only show up in HA after the
-        # integration reconnects.
-        if args.peripheral_startup_wait > 0:
-            _LOGGER.info(
-                "Waiting %.1fs for peripherals to register entities…",
-                args.peripheral_startup_wait,
-            )
-            await asyncio.sleep(args.peripheral_startup_wait)
-
+    discovery_slot: Optional[_DiscoverySlot] = None
+    mdns_refresh_task: Optional[asyncio.Task[None]] = None
+    fixed_host = args.host or None
     try:
-        async with server:  # type: ignore[union-attr]
+        discovery_slot = _DiscoverySlot(_make_discovery(args.port, state, host_ip_address))
+        await discovery_slot.discovery.register_server()
+        mdns_refresh_task = asyncio.create_task(_refresh_mdns_when_disconnected(state, discovery_slot, args.port))
+
+        # ------------------------------------------------------------------
+        # Start peripheral API and signal "getting started" to peripherals
+        # ------------------------------------------------------------------
+        if peripheral_api is not None:
+            await peripheral_api.start()
+            await peripheral_api.emit_event(LVAEvent.ZEROCONF, {"status": "getting_started"})
+
+            # Give peripherals a window to connect and register their Light
+            # entities before HA enumerates over the ESPHome native API. The
+            # ESPHome server is bound but not yet serving (serve_forever runs
+            # below), so any HA connection sits queued in the kernel for the
+            # duration of this wait. Peripherals that register later still
+            # work, but the new entities only show up in HA after the
+            # integration reconnects.
+            if args.peripheral_startup_wait > 0:
+                _LOGGER.info(
+                    "Waiting %.1fs for peripherals to register entities…",
+                    args.peripheral_startup_wait,
+                )
+                await asyncio.sleep(args.peripheral_startup_wait)
+
+        while True:
             _LOGGER.info("Server started (host=%s, port=%s)", host_ip_address, args.port)
-            await server.serve_forever()  # type: ignore[union-attr]
+            if not network_interface:
+                await server.serve_forever()
+                break
+            still_serving = await _serve_until_rebind(server, state, network_interface, host_ip_address)
+            if not still_serving:
+                break
+            discovery_slot.rebinding = True
+            async with discovery_slot.lock:
+                await discovery_slot.discovery.stop()
+            host_ip_address = await wait_for_bind_address(network_interface, fixed_host)
+            state.ip_address = host_ip_address
+            server = await _bind_esphome_server(loop, state, host_ip_address, args.port, exit_on_failure=False)
+            async with discovery_slot.lock:
+                discovery_slot.discovery = _make_discovery(args.port, state, host_ip_address)
+                await discovery_slot.discovery.register_server()
+                discovery_slot.rebinding = False
     except KeyboardInterrupt:
         pass
     finally:
+        if mdns_refresh_task is not None:
+            mdns_refresh_task.cancel()
+            await asyncio.gather(mdns_refresh_task, return_exceptions=True)
+        server.close()
+        await server.wait_closed()
+        if discovery_slot is not None:
+            await discovery_slot.discovery.stop()
         state.audio_queue.put_nowait(None)
         process_audio_thread.join()
         if peripheral_api is not None:
             await peripheral_api.stop()
 
     _LOGGER.debug("Server stopped")
+
+
+class _DiscoverySlot:
+    def __init__(self, discovery: HomeAssistantZeroconf) -> None:
+        self.discovery = discovery
+        self.lock = asyncio.Lock()
+        self.rebinding = False
+
+
+def _make_discovery(port: int, state: ServerState, host_ip_address: str) -> HomeAssistantZeroconf:
+    return HomeAssistantZeroconf(
+        port=port,
+        name=state.name,
+        mac_address=state.mac_address,
+        host_ip_address=host_ip_address,
+    )
+
+
+async def _bind_esphome_server(loop: asyncio.AbstractEventLoop, state: ServerState, host: str, port: int, *, exit_on_failure: bool) -> asyncio.Server:
+    """
+    Bind the ESPHome TCP server, retrying until it succeeds.
+
+    :param loop: Running event loop.
+    :param state: Shared satellite state passed to each connection.
+    :param host: IPv4 address to bind.
+    :param port: TCP port to bind.
+    :param exit_on_failure: Exit the process after the startup retry budget. Later binds keep waiting.
+    """
+    attempt = 1
+    max_attempts = 15
+    delay = 0.0
+    while True:
+        try:
+            return await loop.create_server(
+                lambda: VoiceSatelliteProtocol(state),
+                host=host,
+                port=port,
+            )
+        except OSError as err:
+            message = err.strerror or str(err)
+            if err.errno == errno.EADDRINUSE:
+                message = "address already in use"
+            if exit_on_failure and attempt >= max_attempts:
+                _LOGGER.exception(
+                    "All %d attempts failed to bind on address (%s, %s): %s",
+                    max_attempts,
+                    host,
+                    port,
+                    message,
+                )
+                sys.exit(1)
+            if exit_on_failure:
+                _LOGGER.warning(
+                    "Attempt %d/%d failed to bind on address (%s, %s): %s. Retrying in 1 second...",
+                    attempt,
+                    max_attempts,
+                    host,
+                    port,
+                    message,
+                )
+                await asyncio.sleep(1)
+                attempt += 1
+                continue
+            delay = next_backoff_seconds(delay)
+            _LOGGER.warning(
+                "Failed to bind on address (%s, %s): %s. Retrying in %.0fs...",
+                host,
+                port,
+                message,
+                delay,
+            )
+            await asyncio.sleep(delay)
+
+
+async def _refresh_mdns_when_disconnected(state: ServerState, slot: _DiscoverySlot, port: int) -> None:
+    """Re-announce mDNS after the last Home Assistant connection closes."""
+    while True:
+        await state.mdns_refresh.wait()
+        async with slot.lock:
+            state.mdns_refresh.clear()
+            if state.connections or slot.rebinding:
+                continue
+            _LOGGER.info("Re-announcing mDNS after Home Assistant disconnect")
+            await slot.discovery.stop()
+            slot.discovery = _make_discovery(port, state, state.ip_address)
+            await slot.discovery.register_server()
+
+
+async def _serve_until_rebind(server: asyncio.Server, state: ServerState, interface: str, bound_ip: str) -> bool:
+    """
+    Serve until the interface address is lost or changes.
+
+    :param server: Listening ESPHome server.
+    :param state: Shared satellite state, used to close live Home Assistant connections.
+    :param interface: Interface the bind address was taken from.
+    :param bound_ip: Address the listener is bound to.
+    :return: True when the caller should bind again, False when serving stopped.
+    """
+    serve_task = asyncio.create_task(server.serve_forever())
+    watch_task = asyncio.create_task(watch_until_rebind(interface, bound_ip))
+    try:
+        done, _pending = await asyncio.wait({serve_task, watch_task}, return_when=asyncio.FIRST_COMPLETED)
+        rebind = watch_task in done
+        if rebind:
+            close_client_transports(state.connections)
+            server.close()
+            await server.wait_closed()
+        else:
+            watch_task.cancel()
+        await asyncio.gather(serve_task, watch_task, return_exceptions=True)
+        return rebind
+    except BaseException:
+        serve_task.cancel()
+        watch_task.cancel()
+        await asyncio.gather(serve_task, watch_task, return_exceptions=True)
+        raise
 
 
 # -----------------------------------------------------------------------------

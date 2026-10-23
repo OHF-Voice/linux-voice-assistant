@@ -73,7 +73,8 @@ class TestInit:
                 mac_address="aa:bb:cc:dd:ee:ff",
                 host_ip_address="192.168.1.1",
             )
-            mock_cls.assert_called_once()
+            mock_cls.assert_called_once_with()
+            assert "interfaces" not in mock_cls.call_args.kwargs
 
 
 # ---------------------------------------------------------------------------
@@ -176,3 +177,37 @@ class TestRegisterServer:
 
         addresses = captured["kwargs"].get("addresses", [])
         assert socket.inet_aton("10.0.0.5") in addresses
+
+
+# ---------------------------------------------------------------------------
+# stop()
+# ---------------------------------------------------------------------------
+
+
+class TestStop:
+    @pytest.mark.asyncio
+    async def test_stop_unregisters_and_closes(self):
+        zc = make_zeroconf()
+        zc._mock_zc.async_register_service = AsyncMock(return_value=None)
+        pending = AsyncMock()
+        zc._mock_zc.async_unregister_service = AsyncMock(return_value=pending())
+        zc._mock_zc.async_close = AsyncMock()
+
+        with patch("linux_voice_assistant.zeroconf.AsyncServiceInfo", return_value=MagicMock()):
+            await zc.register_server()
+        await zc.stop()
+
+        zc._mock_zc.async_unregister_service.assert_awaited_once()
+        zc._mock_zc.async_close.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_stop_is_idempotent(self):
+        zc = make_zeroconf()
+        zc._mock_zc.async_close = AsyncMock()
+        zc._mock_zc.async_unregister_service = AsyncMock()
+
+        await zc.stop()
+        await zc.stop()
+
+        zc._mock_zc.async_unregister_service.assert_not_called()
+        zc._mock_zc.async_close.assert_awaited_once()

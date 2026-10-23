@@ -29,6 +29,8 @@ class HomeAssistantZeroconf:
         self.host_ip_address = host_ip_address
 
         self._aiozc = AsyncZeroconf()
+        self._service_info: Optional[AsyncServiceInfo] = None
+        self._stopped = False
 
     async def register_server(self) -> None:
 
@@ -47,4 +49,24 @@ class HomeAssistantZeroconf:
             server=f"{self.name}.local.",
         )
         await self._aiozc.async_register_service(service_info)
+        self._service_info = service_info
+        self._stopped = False
         _LOGGER.debug("Zeroconf discovery enabled: %s", service_info)
+
+    async def stop(self) -> None:
+        """Unregister the advertised service and close mDNS sockets."""
+        if self._stopped:
+            return
+        self._stopped = True
+        if self._service_info is not None:
+            try:
+                pending = await self._aiozc.async_unregister_service(self._service_info)
+                if pending is not None:
+                    await pending
+            except Exception:  # pylint: disable=broad-except
+                _LOGGER.exception("Failed to unregister zeroconf service")
+            self._service_info = None
+        try:
+            await self._aiozc.async_close()
+        except Exception:  # pylint: disable=broad-except
+            _LOGGER.exception("Failed to close zeroconf")
