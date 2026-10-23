@@ -33,7 +33,7 @@ class LibMpvPlayer(AudioPlayer):
             log_handler=self._on_mpv_log,
             loglevel="error",
             cache="yes",
-            demuxer_max_bytes="32MiB",
+            demuxer_max_bytes="16MiB",
             cache_secs="20",
         )
 
