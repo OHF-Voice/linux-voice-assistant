@@ -57,6 +57,9 @@ class AvailableWakeWord:
             from pyopen_wakeword import OpenWakeWord
 
             oww_model = OpenWakeWord.from_model(model_path=self.wake_word_path)
+            # pyopen_wakeword derives .id from the model filename, but callers
+            # match against the manifest id this was loaded under.
+            setattr(oww_model, "id", self.id)
             setattr(oww_model, "wake_word", self.wake_word)
 
             return oww_model
