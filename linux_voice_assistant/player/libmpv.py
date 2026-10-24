@@ -27,6 +27,7 @@ class LibMpvPlayer(AudioPlayer):
         self._log = logging.getLogger(self.__class__.__name__)
         self._state: PlayerState = PlayerState.IDLE
         self._state_lock = threading.Lock()
+        self._last_error: Optional[str] = None
 
         # Volume handling
         self._user_volume: float = 100.0  # 0.0 – 100.0
@@ -86,6 +87,7 @@ class LibMpvPlayer(AudioPlayer):
             self._log.debug("play: current_state=%s", self._state)
             self._cancel_eof_timer()
             self._done_callback = done_callback
+            self._last_error = None
             self._set_state(PlayerState.LOADING)
         self._mpv.pause = stop_first
         self._mpv.play(url)
@@ -202,6 +204,7 @@ class LibMpvPlayer(AudioPlayer):
             # A failed or empty file never reached the audio output, so there is nothing to drain.
             # Without the callback the pipeline would stay in "responding" and block the wake word.
             if is_error:
+                self._log.error("Playback failed: %s", self._last_error or "unknown mpv error")
                 self._log.warning("_on_end_file: playback ended with error; invoking done_callback")
 
             self._cancel_eof_timer()
@@ -243,6 +246,7 @@ class LibMpvPlayer(AudioPlayer):
         """
         if level in ("error", "fatal"):
             with self._state_lock:
+                self._last_error = f"[{prefix}] {text.strip()}"
                 self._set_state(PlayerState.ERROR)
 
     def _set_state(self, new_state: PlayerState) -> None:
