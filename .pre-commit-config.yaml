@@ -1,0 +1,16 @@
+repos:
+  - repo: local
+    hooks:
+      - id: lint
+        name: Lint (script/lint)
+        entry: ./script/lint
+        language: system
+        pass_filenames: false
+        types: [python]
+
+      - id: tests
+        name: Tests (script/tests)
+        entry: ./script/tests
+        language: system
+        pass_filenames: false
+        always_run: true

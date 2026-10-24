@@ -1,0 +1,28 @@
+#!/usr/bin/env python3
+import subprocess
+import sys
+import venv
+from pathlib import Path
+
+_DIR = Path(__file__).parent
+_PROGRAM_DIR = _DIR.parent
+_VENV_DIR = _PROGRAM_DIR / ".venv"
+_MODULE_DIR = _PROGRAM_DIR / "linux_voice_assistant"
+_TEST_DIRS = _PROGRAM_DIR / "tests"
+
+_LINT_DIRS = [str(_MODULE_DIR), str(_TEST_DIRS)]
+
+if _VENV_DIR.exists():
+    context = venv.EnvBuilder().ensure_directories(_VENV_DIR)
+    python_exe = context.env_exe
+else:
+    python_exe = "python3"
+
+no_auto = "--no-auto" in sys.argv
+
+if no_auto:
+    subprocess.check_call([python_exe, "-m", "ruff", "check"] + _LINT_DIRS)
+    subprocess.check_call([python_exe, "-m", "ruff", "format", "--check", "--diff"] + _LINT_DIRS)
+else:
+    subprocess.check_call([python_exe, "-m", "ruff", "check", "--fix"] + _LINT_DIRS)
+    subprocess.check_call([python_exe, "-m", "ruff", "format"] + _LINT_DIRS)
