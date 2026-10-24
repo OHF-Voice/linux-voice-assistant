@@ -558,6 +558,12 @@ async def main() -> None:
     )
     process_audio_thread.start()
 
+    # ------------------------------------------------------------------
+    # Local timer watchdog (rings timers locally even if Home Assistant
+    # is unreachable when the countdown reaches zero)
+    # ------------------------------------------------------------------
+    timer_watchdog_task = asyncio.create_task(timer_watchdog(state))
+
     # Auto discovery (zeroconf, mDNS)
     discovery = HomeAssistantZeroconf(
         port=args.port,
@@ -596,6 +602,7 @@ async def main() -> None:
         pass
     finally:
         process_audio_thread.join()
+        timer_watchdog_task.cancel()
         if peripheral_api is not None:
             await peripheral_api.stop()
 
@@ -854,6 +861,16 @@ def process_audio(state: ServerState, mic, block_size: int):
     except Exception:  # pylint: disable=broad-except
         _LOGGER.exception("Unexpected error processing audio")
         sys.exit(1)
+
+
+async def timer_watchdog(state: ServerState, interval: float = 1.0) -> None:
+    """Poll local timer countdowns so timers can still ring if HA is unreachable."""
+    while True:
+        try:
+            state.check_local_timers()
+        except Exception:  # pylint: disable=broad-except
+            _LOGGER.exception("Unexpected error while checking local timers")
+        await asyncio.sleep(interval)
 
 
 # -----------------------------------------------------------------------------
