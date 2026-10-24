@@ -110,7 +110,16 @@ class MediaPlayerEntity(ESPHomeEntity):
     ) -> Iterable[message.Message]:
         if announcement:
             self._log.debug("PLAY: announcement true")
-            if self.music_player.is_playing:
+            if self.music_player.is_paused:
+                # Announce, keep music paused
+                self.announce_player.play(
+                    url,
+                    done_callback=lambda: call_all(
+                        lambda: self._broadcast_state([self._update_state(MediaPlayerState.PAUSED)]),
+                        done_callback,
+                    ),
+                )
+            elif self.music_player.is_playing:
                 # Announce, resume music
                 self.music_player.pause()
                 self.announce_player.play(

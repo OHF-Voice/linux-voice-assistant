@@ -6,7 +6,6 @@ from collections.abc import Iterable
 from dataclasses import asdict, dataclass, field
 from enum import Enum
 from pathlib import Path
-from queue import Queue
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Union
 
 if TYPE_CHECKING:
@@ -105,7 +104,6 @@ class ServerState:
     network_interface: str
     version: str
     esphome_version: str
-    audio_queue: "Queue[Optional[bytes]]"
     entities: "List[ESPHomeEntity]"
     available_wake_words: "Dict[str, AvailableWakeWord]"
     wake_words: "Dict[str, Union[MicroWakeWord, OpenWakeWord]]"
