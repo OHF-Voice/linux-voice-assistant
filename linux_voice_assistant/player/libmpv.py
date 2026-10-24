@@ -7,6 +7,11 @@ import mpv
 from linux_voice_assistant.player.base import AudioPlayer
 from linux_voice_assistant.player.state import PlayerState
 
+_AUDIO_BUFFER_SECS = 0.8
+# mpv reports eof once the last samples are handed to the audio output, so the
+# end of the file is audible about this long after the event arrives.
+_EOF_DRAIN_DELAY_SECS = _AUDIO_BUFFER_SECS + 0.1
+
 
 class LibMpvPlayer(AudioPlayer):
     """
@@ -47,7 +52,7 @@ class LibMpvPlayer(AudioPlayer):
         # short files (<1 s) appear to start mid-way through.
         # 0.8 s gives the output pipeline enough headroom without adding any
         # noticeable latency for a user-facing notification sound.
-        self._mpv["audio-buffer"] = 0.8
+        self._mpv["audio-buffer"] = _AUDIO_BUFFER_SECS
 
         # Keep the PulseAudio/PipeWire stream open between files by outputting
         # silence when idle.  This eliminates the per-play sink re-initialisation
@@ -57,6 +62,7 @@ class LibMpvPlayer(AudioPlayer):
 
         # Callback Handling
         self._done_callback: Optional[Callable[[], None]] = None
+        self._eof_timer: Optional[threading.Timer] = None
         self._mpv.event_callback("end-file")(self._on_end_file)
         self._mpv.event_callback("start-file")(self._on_start_file)
 
@@ -78,6 +84,7 @@ class LibMpvPlayer(AudioPlayer):
         """
         with self._state_lock:
             self._log.debug("play: current_state=%s", self._state)
+            self._cancel_eof_timer()
             self._done_callback = done_callback
             self._set_state(PlayerState.LOADING)
         self._mpv.pause = stop_first
@@ -105,6 +112,7 @@ class LibMpvPlayer(AudioPlayer):
         """
         self._log.debug("stop() called")
         with self._state_lock:
+            self._cancel_eof_timer()
             if for_replacement:
                 # Clear callback to prevent invocation during track transition
                 self._done_callback = None
@@ -159,9 +167,13 @@ class LibMpvPlayer(AudioPlayer):
         effective = self._user_volume * self._duck_factor
         self._mpv.volume = max(0.0, min(100.0, effective))
 
-    def _on_end_file(self, event) -> None:
-        callback: Optional[Callable[[], None]] = None
+    def _cancel_eof_timer(self) -> None:
+        """Cancel a pending end-of-playback timer. Must be called with the state lock held."""
+        if self._eof_timer is not None:
+            self._eof_timer.cancel()
+            self._eof_timer = None
 
+    def _on_end_file(self, event) -> None:
         with self._state_lock:
             # mpv events: event.data is a MpvEventEndFile object with a 'reason' attribute
             # The reason is an integer constant (see mpv.END_FILE_REASON_*)
@@ -186,12 +198,24 @@ class LibMpvPlayer(AudioPlayer):
                 self._log.debug("_on_end_file: ignoring non-eof event (reason=%s)", reason)
                 return
 
+            self._cancel_eof_timer()
+            timer = threading.Timer(_EOF_DRAIN_DELAY_SECS, self._finish_playback)
+            timer.daemon = True
+            self._eof_timer = timer
+            timer.start()
+
+    def _finish_playback(self) -> None:
+        """Mark playback as finished and invoke the done callback once the audio has been played out."""
+        with self._state_lock:
+            if self._eof_timer is not threading.current_thread():
+                return
+            self._eof_timer = None
             self._set_state(PlayerState.IDLE)
             callback = self._done_callback
             self._done_callback = None
 
         if callback is not None:
-            self._log.debug("_on_end_file: invoking callback")
+            self._log.debug("_finish_playback: invoking callback")
             try:
                 callback()
             except RuntimeError:
