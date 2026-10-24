@@ -853,6 +853,10 @@ class VoiceSatelliteProtocol(APIServer):
             # If only one wake word is left and it was at position 1, position 0 remains None
             # Position 2 automatically stays None if not occupied
 
+            if active_wake_words:
+                # Replace the dict instead of deleting keys so the audio thread never iterates a dict that changes size.
+                self.state.wake_words = {ww_id: model for ww_id, model in self.state.wake_words.items() if ww_id in active_wake_words}
+
             self.state.active_wake_words = active_wake_words
             _LOGGER.debug("Active wake words: %s", active_wake_words)
             _LOGGER.debug("Wake word positions: [0]=%s, [1]=%s", new_wake_words[0], new_wake_words[1])
