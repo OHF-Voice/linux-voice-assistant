@@ -183,6 +183,7 @@ class LibMpvPlayer(AudioPlayer):
             # mpv END_FILE_REASON constants:
             # 0 = eof (end of file), 1 = stop, 2 = abort, 3 = quit, 4 = error
             is_eof = reason == 0
+            is_error = reason == 4
 
             self._log.debug(
                 "_on_end_file: reason=%s (is_eof=%s), state=%s, has_callback=%s",
@@ -192,14 +193,19 @@ class LibMpvPlayer(AudioPlayer):
                 self._done_callback is not None,
             )
 
-            # Only process "eof" (reason=0) events as actual track completion.
-            # Other reasons are from track changes, stops, or errors.
-            if not is_eof:
-                self._log.debug("_on_end_file: ignoring non-eof event (reason=%s)", reason)
+            # Only process "eof" (reason=0) and "error" (reason=4) events as track completion.
+            # Other reasons are from track changes or stops, which stop() handles itself.
+            if not (is_eof or is_error):
+                self._log.debug("_on_end_file: ignoring non-completion event (reason=%s)", reason)
                 return
 
+            # A failed or empty file never reached the audio output, so there is nothing to drain.
+            # Without the callback the pipeline would stay in "responding" and block the wake word.
+            if is_error:
+                self._log.warning("_on_end_file: playback ended with error; invoking done_callback")
+
             self._cancel_eof_timer()
-            timer = threading.Timer(_EOF_DRAIN_DELAY_SECS, self._finish_playback)
+            timer = threading.Timer(0 if is_error else _EOF_DRAIN_DELAY_SECS, self._finish_playback)
             timer.daemon = True
             self._eof_timer = timer
             timer.start()
