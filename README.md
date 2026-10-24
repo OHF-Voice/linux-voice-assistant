@@ -167,7 +167,7 @@ VS Code development uses a local Python virtual environment (`.venv/`):
 
 The project uses the following tools to ensure code quality:
 
-- **Black**: Code formatting (88 characters per line, PEP 8 compliant)
+- **Black**: Code formatting (200 characters per line)
 - **isort**: Import sorting compatible with Black
 - **flake8**: Style and syntax checks
 - **pylint**: Code quality checks

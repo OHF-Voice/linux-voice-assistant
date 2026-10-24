@@ -76,11 +76,9 @@ class LibMpvPlayer(AudioPlayer):
     ) -> None:
         """
         Start playback of a media URL.
-
-        Args:
-            url: Media URL or local file path.
-            done_callback: Optional callback invoked when playback finishes.
-            stop_first: If True, start playback in paused state.
+        :param url: Media URL or local file path.
+        :param done_callback: Optional callback invoked when playback finishes.
+        :param stop_first: If True, start playback in paused state.
         """
         with self._state_lock:
             self._log.debug("play: current_state=%s", self._state)
@@ -131,9 +129,7 @@ class LibMpvPlayer(AudioPlayer):
     def set_volume(self, volume: float) -> None:
         """
         Set user volume.
-
-        Args:
-            volume: Volume level (0.0–100.0).
+        :param volume: Volume level (0.0–100.0).
         """
         self._log.debug("set_volume() called")
         with self._state_lock:
@@ -143,9 +139,7 @@ class LibMpvPlayer(AudioPlayer):
     def duck(self, factor: float = 0.5) -> None:
         """
         Reduce volume temporarily by a ducking factor.
-
-        Args:
-            factor: Ducking factor (0.0–1.0).
+        :param factor: Ducking factor (0.0–1.0).
         """
         self._log.debug("duck() called")
         with self._state_lock:
