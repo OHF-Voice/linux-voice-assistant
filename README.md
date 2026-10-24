@@ -123,6 +123,8 @@ usage: __main__.py [-h] [--name NAME] [--audio-input-device AUDIO_INPUT_DEVICE] 
 
 💡 **Note:** There are detailed explanations on the controlled entities from device page in the [configuration](docs/configuration.md) file.
 
+💡 **Note:** How the assistant behaves in everyday situations (music ducking during conversations, announcements, timers, stop word, mute, volume) is described in the [behavior guide](docs/behavior.md).
+
 ## Build Information
 
 Image builds can be tracked in this repository's `Actions` tab, and utilize [artifact attestation](https://docs.github.com/en/actions/security-guides/using-artifact-attestations-to-establish-provenance-for-builds) to certify provenance.
