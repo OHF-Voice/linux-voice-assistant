@@ -8,7 +8,6 @@ import sys
 import threading
 import time
 from pathlib import Path
-from queue import Queue
 from typing import List, Optional, Union
 
 import numpy as np
@@ -33,6 +32,8 @@ from .webrtc import WebRTCProcessor
 from .zeroconf import HomeAssistantZeroconf
 
 _LOGGER = logging.getLogger(__name__)
+_LOG_FORMAT = "%(asctime)s.%(msecs)03d %(levelname)s:%(name)s:%(message)s"
+_LOG_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 _MODULE_DIR = Path(__file__).parent
 _REPO_DIR = _MODULE_DIR.parent
 _WAKEWORDS_DIR = _REPO_DIR / "wakewords"
@@ -81,7 +82,7 @@ async def main() -> None:
     parser.add_argument(
         "--audio-input-channels",
         type=int,
-        default=1,
+        default=2,
         choices=(1, 2),
         help="Number of mic channels to capture and stream (1=mono, 2=dual-channel voice)",
     )
@@ -254,9 +255,9 @@ async def main() -> None:
         args.debug = True
         _setup_logging(args)
     elif args.debug:
-        logging.basicConfig(level=logging.DEBUG)
+        logging.basicConfig(level=logging.DEBUG, format=_LOG_FORMAT, datefmt=_LOG_DATE_FORMAT)
     else:
-        logging.basicConfig(level=logging.INFO)
+        logging.basicConfig(level=logging.INFO, format=_LOG_FORMAT, datefmt=_LOG_DATE_FORMAT)
 
     _LOGGER.debug(args)
     if args.list_input_devices:
@@ -430,7 +431,6 @@ async def main() -> None:
         ip_address=host_ip_address,
         version=version,
         esphome_version=esphome_version,
-        audio_queue=Queue(),
         entities=[],
         available_wake_words=available_wake_words,
         wake_words=wake_models,
@@ -597,7 +597,6 @@ async def main() -> None:
     except KeyboardInterrupt:
         pass
     finally:
-        state.audio_queue.put_nowait(None)
         process_audio_thread.join()
         if peripheral_api is not None:
             await peripheral_api.stop()
@@ -627,7 +626,7 @@ def _setup_logging(args: argparse.Namespace) -> None:
     handler = logging.StreamHandler()
     handler.setFormatter(
         logging.Formatter(
-            fmt="%(asctime)s %(levelname)s %(name)s: %(message)s",
+            fmt="%(asctime)s.%(msecs)03d %(levelname)s %(name)s: %(message)s",
             datefmt="%H:%M:%S",
         )
     )
@@ -674,9 +673,11 @@ def process_audio(state: ServerState, mic, block_size: int):
 
                 # Primary channel drives WebRTC and wake-word detection.
                 audio_chunk = channel_chunks[0]
+                audio_chunk_unprocessed = channel_chunks[0]  # save raw before any processing
                 agc = state.preferences.mic_auto_gain or 0
                 ns = state.preferences.mic_noise_suppression or 0
 
+                webrtc_active = False
                 if agc > 0 or ns > 0:
                     if webrtc is None:
                         webrtc = WebRTCProcessor(agc_level=agc, ns_level=ns)
@@ -685,6 +686,7 @@ def process_audio(state: ServerState, mic, block_size: int):
                     audio_chunk = webrtc.process(audio_chunk)
                     if not audio_chunk:
                         continue
+                    webrtc_active = True
 
                 if state.satellite is None or not hasattr(state.satellite, "_is_streaming_audio"):
                     continue
@@ -773,8 +775,15 @@ def process_audio(state: ServerState, mic, block_size: int):
                         oww_features = OpenWakeWordFeatures.from_builtin()
 
                 try:
-                    # Both channels travel in one message: data=ch0 (enhanced), data2=ch1 (raw reference)
-                    audio_chunk_2 = channel_chunks[1] if n_channels >= 2 else None
+                    # When WebRTC is active, send the pre-processing audio as data2 so HA
+                    # can pick the best stream for STT. Otherwise fall back to the
+                    # hardware echo-reference channel if one was recorded.
+                    if webrtc_active:
+                        audio_chunk_2 = audio_chunk_unprocessed
+                    elif n_channels >= 2:
+                        audio_chunk_2 = channel_chunks[1]
+                    else:
+                        audio_chunk_2 = None
                     state.satellite.handle_audio(audio_chunk, audio_chunk_2)
 
                     assert micro_features is not None
