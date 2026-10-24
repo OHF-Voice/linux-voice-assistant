@@ -32,6 +32,8 @@ from .webrtc import WebRTCProcessor
 from .zeroconf import HomeAssistantZeroconf
 
 _LOGGER = logging.getLogger(__name__)
+_LOG_FORMAT = "%(asctime)s.%(msecs)03d %(levelname)s:%(name)s:%(message)s"
+_LOG_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 _MODULE_DIR = Path(__file__).parent
 _REPO_DIR = _MODULE_DIR.parent
 _WAKEWORDS_DIR = _REPO_DIR / "wakewords"
@@ -253,9 +255,9 @@ async def main() -> None:
         args.debug = True
         _setup_logging(args)
     elif args.debug:
-        logging.basicConfig(level=logging.DEBUG)
+        logging.basicConfig(level=logging.DEBUG, format=_LOG_FORMAT, datefmt=_LOG_DATE_FORMAT)
     else:
-        logging.basicConfig(level=logging.INFO)
+        logging.basicConfig(level=logging.INFO, format=_LOG_FORMAT, datefmt=_LOG_DATE_FORMAT)
 
     _LOGGER.debug(args)
     if args.list_input_devices:
@@ -624,7 +626,7 @@ def _setup_logging(args: argparse.Namespace) -> None:
     handler = logging.StreamHandler()
     handler.setFormatter(
         logging.Formatter(
-            fmt="%(asctime)s %(levelname)s %(name)s: %(message)s",
+            fmt="%(asctime)s.%(msecs)03d %(levelname)s %(name)s: %(message)s",
             datefmt="%H:%M:%S",
         )
     )
