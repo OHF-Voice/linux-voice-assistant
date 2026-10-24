@@ -40,6 +40,10 @@ if [ -n "${AUDIO_INPUT_DEVICE}" ]; then
   EXTRA_ARGS+=( "--audio-input-device" "$AUDIO_INPUT_DEVICE" )
 fi
 
+if [ -n "${AUDIO_INPUT_BLOCK_SIZE}" ]; then
+  EXTRA_ARGS+=( "--audio-input-block-size" "$AUDIO_INPUT_BLOCK_SIZE" )
+fi
+
 if [ -n "${AUDIO_OUTPUT_DEVICE}" ]; then
   EXTRA_ARGS+=( "--audio-output-device" "$AUDIO_OUTPUT_DEVICE" )
 fi
@@ -84,6 +88,10 @@ if [ -n "${STOP_MODEL}" ]; then
   EXTRA_ARGS+=( "--stop-model" "$STOP_MODEL" )
 fi
 
+if [ -n "${DOWNLOAD_DIR}" ]; then
+  EXTRA_ARGS+=( "--download-dir" "$DOWNLOAD_DIR" )
+fi
+
 if [ -n "${REFACTORY_SECONDS}" ]; then
   EXTRA_ARGS+=( "--refractory-seconds" "$REFACTORY_SECONDS" )
 fi
@@ -116,6 +124,18 @@ if [ -n "${UNMUTE_SOUND}" ]; then
   EXTRA_ARGS+=( "--unmute-sound" "$UNMUTE_SOUND" )
 fi
 
+if [ -n "${BUTTON_DOUBLE_PRESS_SOUND}" ]; then
+  EXTRA_ARGS+=( "--button-double-press-sound" "$BUTTON_DOUBLE_PRESS_SOUND" )
+fi
+
+if [ -n "${BUTTON_TRIPLE_PRESS_SOUND}" ]; then
+  EXTRA_ARGS+=( "--button-triple-press-sound" "$BUTTON_TRIPLE_PRESS_SOUND" )
+fi
+
+if [ -n "${BUTTON_LONG_PRESS_SOUND}" ]; then
+  EXTRA_ARGS+=( "--button-long-press-sound" "$BUTTON_LONG_PRESS_SOUND" )
+fi
+
 if [ -n "${TIMER_MAX_RING_SECONDS}" ]; then
   EXTRA_ARGS+=( "--timer-max-ring-seconds" "$TIMER_MAX_RING_SECONDS" )
 fi
@@ -130,6 +150,10 @@ fi
 
 if [ -n "${PERIPHERAL_VOLUME_STEP}" ]; then
   EXTRA_ARGS+=( "--peripheral-volume-step" "$PERIPHERAL_VOLUME_STEP" )
+fi
+
+if [ -n "${PERIPHERAL_STARTUP_WAIT}" ]; then
+  EXTRA_ARGS+=( "--peripheral-startup-wait" "$PERIPHERAL_STARTUP_WAIT" )
 fi
 
 if [ "$DISABLE_PERIPHERAL_API" = "1" ]; then
