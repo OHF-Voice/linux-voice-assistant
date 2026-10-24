@@ -233,3 +233,32 @@ class TestPreferencesFromArgs:
         if enable_thinking_sound:
             prefs.thinking_sound = 1
         assert prefs.thinking_sound == 1
+
+
+# ---------------------------------------------------------------------------
+# _float_to_pcm16
+# ---------------------------------------------------------------------------
+
+
+class TestFloatToPcm16:
+    @pytest.mark.parametrize("scalar", [0.1, 0.5, 1.0])
+    def test_matches_reference_conversion(self, scalar):
+        from linux_voice_assistant.__main__ import _float_to_pcm16
+
+        rng = np.random.default_rng(0)
+        samples = rng.uniform(-1.5, 1.5, size=(1024, 2)).astype(np.float32)
+        column = samples[:, 1]
+
+        expected = (np.clip(column * scalar, -1.0, 1.0) * 32767.0).astype("<i2").tobytes()
+
+        assert _float_to_pcm16(column, scalar) == expected
+
+    def test_does_not_modify_input(self):
+        from linux_voice_assistant.__main__ import _float_to_pcm16
+
+        samples = np.array([0.5, -0.5, 1.0], dtype=np.float32)
+        original = samples.copy()
+
+        _float_to_pcm16(samples, 1.0)
+
+        assert np.array_equal(samples, original)
