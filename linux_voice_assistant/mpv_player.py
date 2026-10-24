@@ -109,6 +109,11 @@ class MpvMediaPlayer:
         state = self._player.state()
         return state in (PlayerState.PLAYING, PlayerState.PAUSED, PlayerState.LOADING)
 
+    @property
+    def is_paused(self) -> bool:
+        """Check if the player is currently paused."""
+        return self._player.state() == PlayerState.PAUSED
+
     def set_volume(self, volume: float) -> None:
         """
         Set playback volume.
