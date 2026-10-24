@@ -82,7 +82,7 @@ async def main() -> None:
     parser.add_argument(
         "--audio-input-channels",
         type=int,
-        default=2,
+        default=1,
         choices=(1, 2),
         help="Number of mic channels to capture and stream (1=mono, 2=dual-channel voice)",
     )
@@ -673,11 +673,9 @@ def process_audio(state: ServerState, mic, block_size: int):
 
                 # Primary channel drives WebRTC and wake-word detection.
                 audio_chunk = channel_chunks[0]
-                audio_chunk_unprocessed = channel_chunks[0]  # save raw before any processing
                 agc = state.preferences.mic_auto_gain or 0
                 ns = state.preferences.mic_noise_suppression or 0
 
-                webrtc_active = False
                 if agc > 0 or ns > 0:
                     if webrtc is None:
                         webrtc = WebRTCProcessor(agc_level=agc, ns_level=ns)
@@ -686,7 +684,6 @@ def process_audio(state: ServerState, mic, block_size: int):
                     audio_chunk = webrtc.process(audio_chunk)
                     if not audio_chunk:
                         continue
-                    webrtc_active = True
 
                 if state.satellite is None or not hasattr(state.satellite, "_is_streaming_audio"):
                     continue
@@ -775,15 +772,8 @@ def process_audio(state: ServerState, mic, block_size: int):
                         oww_features = OpenWakeWordFeatures.from_builtin()
 
                 try:
-                    # When WebRTC is active, send the pre-processing audio as data2 so HA
-                    # can pick the best stream for STT. Otherwise fall back to the
-                    # hardware echo-reference channel if one was recorded.
-                    if webrtc_active:
-                        audio_chunk_2 = audio_chunk_unprocessed
-                    elif n_channels >= 2:
-                        audio_chunk_2 = channel_chunks[1]
-                    else:
-                        audio_chunk_2 = None
+                    # Both channels travel in one message: data=ch0 (enhanced), data2=ch1 (raw reference)
+                    audio_chunk_2 = channel_chunks[1] if n_channels >= 2 else None
                     state.satellite.handle_audio(audio_chunk, audio_chunk_2)
 
                     assert micro_features is not None
