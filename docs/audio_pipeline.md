@@ -109,9 +109,11 @@ Everything from capture to `send_messages()` runs on one thread, the audio threa
 | Sample rate | fixed 16 kHz |
 | Channels `N` | `--audio-input-channels` (1 or 2, default 2) |
 | Block size `B` | `--audio-input-block-size` (default 1024 samples, 64 ms at 16 kHz) |
-| Sample format | float32 in the range [-1, 1], shape `(B, N)` |
+| Sample format | float32 (32 bit) in the range [-1, 1], shape `(B, N)` |
 
 Channel 0 is the microphone. Channel 1, when present, is a reference signal (for example the speaker feed of a hardware echo canceller). The system capture level set in PulseAudio/PipeWire/ALSA is applied before LVA sees any sample. See [`enabling_aec.md`](enabling_aec.md) for system-level echo cancellation.
+
+The float32 format is fixed in `soundcard` (version 0.4.6, PulseAudio backend: `PA_SAMPLE_FLOAT32LE`) and cannot be configured. The audio server (PulseAudio or PipeWire) converts whatever the device delivers to 16 kHz, `N` channels and float32. The real bit depth of the sound card is therefore decided by the audio server and the hardware. A float32 stream does not add resolution if the source only has 16 bit.
 
 `record()` blocks until a full block is available, so the loop is paced by the sound card.
 
@@ -187,7 +189,7 @@ The wake word runs on the same audio as the stream. Attenuation from Mic Volume 
 
 ## How Home Assistant and aioesphomeapi treat `data2`
 
-Read from the `aioesphomeapi` repository (`origin/main`, 46.22.0) and Home Assistant Core (`homeassistant/components/esphome/assist_satellite.py`, `stt/models.py`, `wyoming/stt.py`, `cloud/stt.py`). Not tested against a running Home Assistant.
+**Status: derived from reading the code, not reproduced on a running system.** Sources: the `aioesphomeapi` repository (`origin/main`, 46.22.0; LVA pins 45.3.1, whose installed package also contains the `data2` field and the flag) and Home Assistant Core (`homeassistant/components/esphome/assist_satellite.py`, `stt/models.py`, `wyoming/stt.py`, `cloud/stt.py`; commit not recorded). Behavior may differ in other Home Assistant versions.
 
 **Protocol (aioesphomeapi)**
 
@@ -270,7 +272,7 @@ The Mic Volume scalar only lives in the same function by convenience. The conver
 
 ## Things to be aware of
 
-- With two channels and WebRTC off, `data2` carries channel 1. Home Assistant may forward `data2` to the STT engine (see above), which is only correct if channel 1 is a microphone signal.
+- With two channels and WebRTC off, `data2` carries the reference channel, which Home Assistant may forward to the STT engine (details and status in "How Home Assistant and aioesphomeapi treat `data2`").
 - With WebRTC active, `data` and `data2` come from the same microphone block but can have different lengths, because only `data` goes through the 10 ms framing buffer.
 - When WebRTC returns no data for a block, that block is skipped entirely, including wake word detection.
-- The audio loop has no hardware-verified latency numbers in this document. They depend on the sound card, the audio server and the network.
+- Latency: one block is 64 ms, and a block is only sent once it is complete. This is the lower bound for the delay until the first audio packet. Capture buffering in the audio server, WebRTC framing and the network add to it. No measured values exist for this document.
