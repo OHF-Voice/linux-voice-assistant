@@ -150,7 +150,7 @@ If no models are loaded, or `state.wake_words_changed` is set, the loop rebuilds
 | WebRTC off, 2 channels | channel 0 | channel 1 (reference) |
 | WebRTC off, 1 channel | channel 0 | none |
 
-`data2` is only sent if the installed `aioesphomeapi` knows the field (`_HAS_AUDIO_DATA2`). HA picks the stream it prefers for STT.
+`data2` is only sent if the installed `aioesphomeapi` knows the field (`_HAS_AUDIO_DATA2`). See "How Home Assistant and aioesphomeapi treat `data2`" below for what HA does with it.
 
 `handle_audio()` returns immediately unless `_is_streaming_audio` is true and the device is not muted. Otherwise it sends one `VoiceAssistantAudio` message through `send_messages()`.
 
@@ -170,6 +170,40 @@ After `handle_audio()`, the processed `audio_chunk` feeds the detectors:
 `wakeup()` returns early when muted or when a pipeline is already active. Otherwise it ducks music, plays the wake sound and sends `VoiceAssistantRequest(start=True)`. With `listen_during_wake_sound` the request is sent right away; otherwise after the wake sound has finished. This is what turns streaming on in step 6.
 
 The wake word runs on the same audio as the stream. Attenuation from Mic Volume and the WebRTC result therefore also change detection.
+
+## How Home Assistant and aioesphomeapi treat `data2`
+
+Read from the `aioesphomeapi` repository (`origin/main`, 46.22.0) and Home Assistant Core (`homeassistant/components/esphome/assist_satellite.py`, `stt/models.py`, `wyoming/stt.py`, `cloud/stt.py`). Not tested against a running Home Assistant.
+
+**Protocol (aioesphomeapi)**
+
+- `VoiceAssistantAudio` has the fields `data = 1`, `end = 2` and `data2 = 3`.
+- `VoiceAssistantFeature.MULTI_CHANNEL_AUDIO` is bit 6 (`1 << 6`). Older releases do not have the `data2` field or this flag, which is why LVA checks the protobuf descriptor (`_HAS_AUDIO_DATA2`). The `aioesphomeapi` version is pinned in `pyproject.toml`.
+
+**Audio format expected by Home Assistant**
+
+- The satellite pipeline is started with a fixed STT format: WAV/PCM, 16 bit, 16 kHz, mono. This matches what LVA sends in `data`.
+- The STT engine is chosen in the Home Assistant pipeline and is independent of LVA. Speech-to-Phrase and Whisper are Wyoming engines, the Home Assistant Cloud is a separate STT integration.
+
+**Channel selection**
+
+1. If the satellite advertises `MULTI_CHANNEL_AUDIO`, Home Assistant starts with channel 0 (`data`) for each pipeline run.
+2. At `STT_START` it looks at the engine's `audio_processing` information. If the engine reports `prefers_auto_gain_enabled = False` **and** `prefers_noise_reduction_enabled = False`, Home Assistant switches to channel 1 (`data2`) for the rest of that run.
+3. Home Assistant describes `data2` as "non-enhanced audio", so it treats it as the unprocessed microphone signal.
+
+The Home Assistant Cloud STT reports both preferences as `False`. Wyoming engines report what their `info` message contains. The Speech-to-Phrase source does not set these fields.
+
+**Consequence for LVA**
+
+LVA advertises `MULTI_CHANNEL_AUDIO` whenever `audio_input_channels >= 2`. What it puts into `data2` depends on WebRTC:
+
+| WebRTC | `data2` content | Matches what Home Assistant expects? |
+|--------|-----------------|--------------------------------------|
+| active | unprocessed channel 0 | Yes |
+| off, 2 channels | channel 1 (reference signal) | No, if Home Assistant switches to channel 1 it forwards the reference signal to the STT engine instead of the microphone |
+| off, 1 channel | none | Not applicable (flag not advertised) |
+
+This is derived from the code and has not been reproduced on a running system. Whether it triggers depends on the `prefers_*` values of the STT engine in use.
 
 ## `_float_to_pcm16`, AGC and `WebRTCProcessor`
 
@@ -222,6 +256,7 @@ The Mic Volume scalar only lives in the same function by convenience. The conver
 
 ## Things to be aware of
 
+- With two channels and WebRTC off, `data2` carries channel 1. Home Assistant may forward `data2` to the STT engine (see above), which is only correct if channel 1 is a microphone signal.
 - With WebRTC active, `data` and `data2` come from the same microphone block but can have different lengths, because only `data` goes through the 10 ms framing buffer.
 - When WebRTC returns no data for a block, that block is skipped entirely, including wake word detection.
 - The audio loop has no hardware-verified latency numbers in this document. They depend on the sound card, the audio server and the network.

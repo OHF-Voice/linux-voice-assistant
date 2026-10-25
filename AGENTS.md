@@ -10,6 +10,8 @@
 
 ## Project Overview
 
+LVA always means **Linux Voice Assistant**, this project.
+
 **Linux Voice Assistant (LVA)** - A Linux-based voice satellite software for Home Assistant using the ESPHome protocol.
 
 ### Purpose
