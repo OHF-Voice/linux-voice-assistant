@@ -171,6 +171,35 @@ After `handle_audio()`, the processed `audio_chunk` feeds the detectors:
 
 The wake word runs on the same audio as the stream. Attenuation from Mic Volume and the WebRTC result therefore also change detection.
 
+## `_float_to_pcm16`, AGC and `WebRTCProcessor`
+
+These are three different stages of the same chain. `_float_to_pcm16` is not an AGC.
+
+| | `_float_to_pcm16` | AGC | `WebRTCProcessor` |
+|---|---|---|---|
+| **What it is** | Helper function in `__main__.py` | One of two functions of the WebRTC audio processor | Class in `webrtc.py` wrapping the `AudioProcessor` from `webrtc_noise_gain` |
+| **Purpose** | Convert format: float32 (-1 to 1) to int16 PCM bytes | Adjust the level automatically so quiet speech gets louder and loud speech quieter | Frame wrapper: buffers input, calls `Process10ms` per 10 ms frame, joins the results |
+| **Level change** | Only through the scalar (0.1 to 1.0), so at most quieter, plus clipping | Dynamic, can amplify and attenuate | None itself, the effect comes from AGC and NS |
+| **Setting** | Mic Volume (`mic_volume`) | Mic Gain (`mic_auto_gain`), 0 to 31, 0 = off | AGC level and NS level (`mic_noise_suppression`, 0 to 4) |
+| **Runs** | Always, for every channel | Only if gain or NS is greater than 0 | Only if gain or NS is greater than 0, channel 0 only |
+
+Order in the code:
+
+1. `_float_to_pcm16` converts the samples and applies the fixed Mic Volume scalar.
+2. If enabled, `WebRTCProcessor` processes the result. AGC (level) and noise suppression (noise) work inside it.
+
+Mic Volume is a fixed control that only attenuates, the AGC keeps adjusting. Because the scalar is applied before WebRTC, the AGC already sees the attenuated signal. What the individual AGC levels do is defined in the `webrtc_noise_gain` library, not in LVA.
+
+### Why `_float_to_pcm16` is needed although an AGC exists
+
+The AGC does not replace it:
+
+1. **Format conversion:** `soundcard` delivers float32 in the range -1 to 1. Everything downstream expects int16 PCM bytes: WebRTC (`Process10ms` takes bytes), the wake word models and `VoiceAssistantAudio` sent to Home Assistant. The AGC only receives its input from this function.
+2. **The AGC is optional:** It only runs if gain or NS is greater than 0. With the default values (both 0) WebRTC is skipped entirely and `_float_to_pcm16` is the only stage.
+3. **The AGC only handles channel 0:** Channel 1 (the reference) never goes through WebRTC but needs the same conversion.
+
+The Mic Volume scalar only lives in the same function by convenience. The conversion would still be required with a scalar of 1.0. The scalar is merely a fixed, predictable control that can be set from Home Assistant. It only attenuates. For the basic input level, the system capture level (PulseAudio/PipeWire/ALSA) is usually the better place, because it acts before LVA reads the samples and can amplify.
+
 ## Timing summary
 
 | Quantity | Value |
