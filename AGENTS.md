@@ -10,6 +10,8 @@
 
 ## Project Overview
 
+LVA always means **Linux Voice Assistant**, this project.
+
 **Linux Voice Assistant (LVA)** - A Linux-based voice satellite software for Home Assistant using the ESPHome protocol.
 
 ### Purpose
@@ -92,6 +94,10 @@ When making code changes, run these commands in order:
 3. **Run tests**: `./script/tests`
 
 ## Code Style
+
+### Language
+
+All documentation (`docs/`, `README.md`, `*.md`), code comments, docstrings and commit/PR text are written in English, regardless of the language used in the conversation with the developer.
 
 ### Comments
 
