@@ -47,8 +47,8 @@ A normal voice interaction runs through these phases:
 | # | Phase | What you hear / what happens | Music |
 |---|-------|------------------------------|-------|
 | 1 | **Wake word** is detected | The wake sound plays (`--wakeup-sound`). | Ducked to 50 % immediately |
-| 2 | **Listening** | Your speech is streamed to Home Assistant. The stop word is active from now on and cancels the interaction. By default listening starts when the wake sound has finished playing. With `--listen-during-wake-sound` it starts right away, so you can talk over the chime. | Stays ducked |
-| 3 | **Thinking** | Home Assistant processes the request. If the *Thinking Sound* switch is on, a short sound plays. The stop word cancels the request. | Stays ducked |
+| 2 | **Listening** | Your speech is streamed to Home Assistant. By default listening starts when the wake sound has finished playing. With `--listen-during-wake-sound` it starts right away, so you can talk over the chime. | Stays ducked |
+| 3 | **Thinking** | Home Assistant processes the request. If the *Thinking Sound* switch is on, a short sound plays. | Stays ducked |
 | 4 | **Speaking** | The spoken reply (TTS) plays. The stop word is now active. | Stays ducked |
 | 5 | **Done** | The assistant returns to idle. | Restored to full volume after the reply has finished playing |
 
@@ -134,10 +134,11 @@ Notes:
 
 ## The stop word
 
-The stop word (default model `stop`, configurable with `--stop-model`) is a safety word that is **only listened for while an interaction is running or something is audible that you might want to cancel**:
+The stop word (default model `stop`, configurable with `--stop-model`) is a safety word that is **only listened for when something is audible that you might want to cancel**:
 
-- from the wake word until the interaction ends (wake sound, listening, thinking and the spoken reply),
+- while a spoken reply is playing,
 - while an announcement is playing,
+- while the thinking sound is playing,
 - while a timer is ringing.
 
 At all other times it is ignored, so saying "stop" in a normal conversation does nothing. This avoids accidental triggers.
@@ -147,7 +148,6 @@ What it does:
 | Situation | Effect |
 |-----------|--------|
 | Timer ringing | Timer silenced, music restored, idle. |
-| Listening or thinking | The request is cancelled in Home Assistant, nothing is spoken, music is restored and the assistant returns to idle. A follow-up question is not started. |
 | Spoken reply playing | Reply is cut off. The assistant then finishes as if the reply had ended: music is restored and it returns to idle. If the reply had asked a follow-up question, the assistant still starts listening for the answer. |
 | Announcement playing | Announcement is cut off, music is restored. |
 

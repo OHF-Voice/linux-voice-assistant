@@ -4,9 +4,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-# pylint: disable=no-name-in-module
-from aioesphomeapi.api_pb2 import VoiceAssistantAnnounceFinished, VoiceAssistantRequest  # type: ignore[attr-defined]
-
 from tests.unit.conftest import make_satellite, make_state
 
 # ---------------------------------------------------------------------------
@@ -313,74 +310,6 @@ class TestStop:
         sat._timer_finished = False
         sat.stop()
         sat.state.tts_player.stop.assert_called()
-
-    def test_stop_while_listening_aborts_pipeline(self, tmp_path):
-        sat = make_satellite(tmp_path)
-        sat._pipeline_active = True
-        sat._is_streaming_audio = True
-        sat._continue_conversation = True
-        sat.send_messages = MagicMock()
-        sat.stop()
-        sent = [m for call in sat.send_messages.call_args_list for m in call.args[0]]
-        assert any(isinstance(m, VoiceAssistantRequest) and not m.start for m in sent)
-        assert any(isinstance(m, VoiceAssistantAnnounceFinished) for m in sent)
-        assert sat._is_streaming_audio is False
-        assert sat._pipeline_active is False
-
-    def test_stop_while_listening_does_not_continue_conversation(self, tmp_path):
-        sat = make_satellite(tmp_path)
-        sat._pipeline_active = True
-        sat._continue_conversation = True
-        sat.stop()
-        assert sat._continue_conversation is False
-        assert sat._pipeline_active is False
-
-    def test_stop_while_response_playing_does_not_abort_pipeline(self, tmp_path):
-        sat = make_satellite(tmp_path)
-        sat._pipeline_active = True
-        sat._response_playing = True
-        sat.send_messages = MagicMock()
-        sat.stop()
-        sent = [m for call in sat.send_messages.call_args_list for m in call.args[0]]
-        assert not any(isinstance(m, VoiceAssistantRequest) for m in sent)
-
-    def test_tts_after_abort_is_not_played(self, tmp_path):
-        sat = make_satellite(tmp_path)
-        sat._pipeline_active = True
-        sat.stop()
-        sat._tts_url = "http://example.com/tts.mp3"
-        sat.play_tts()
-        sat.state.tts_player.play.assert_not_called()
-
-    def test_tts_plays_again_after_new_pipeline_started_without_wake_word(self, tmp_path):
-        sat = make_satellite(tmp_path)
-        sat._pipeline_active = True
-        sat.stop()
-        sat._pipeline_active = True
-        sat._on_start_listening_sound_finished()
-        sat._tts_url = "http://example.com/tts.mp3"
-        sat.play_tts()
-        sat.state.tts_player.play.assert_called()
-
-    def test_wakeup_sound_callback_does_nothing_after_stop(self, tmp_path):
-        sat = make_satellite(tmp_path)
-        sat._pipeline_active = False
-        sat.send_messages = MagicMock()
-        sat._on_wakeup_sound_finished("okay nabu")
-        sat.send_messages.assert_not_called()
-        assert sat._is_streaming_audio is False
-
-
-class TestStopWordActiveDuringPipeline:
-    def test_wakeup_activates_stop_word(self, tmp_path):
-        sat = make_satellite(tmp_path)
-        sat.wakeup(MagicMock())
-        assert sat.state.stop_word.id in sat.state.active_wake_words
-
-    def test_start_listening_activates_stop_word(self, tmp_path):
-        sat = make_satellite(tmp_path)
-        sat.start_listening()
-        assert sat.state.stop_word.id in sat.state.active_wake_words
 
 
 # ---------------------------------------------------------------------------
