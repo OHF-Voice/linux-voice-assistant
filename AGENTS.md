@@ -5,6 +5,9 @@
 - NEVER automatically reply on Github (PRs or Discussions) without explicit consent from the developer.
 - Always run `./script/lint` and `./script/tests` after code changes to ensure standards are met.
 
+- `docs/behavior.md` is the source of truth for user-visible behavior. Follow it when changing code. If the code contradicts it, ask which one is wrong instead of silently picking one.
+- When a change alters user-visible behavior, update `docs/behavior.md` in the same change and list every behavior change separately under "Behavior changes" in the PR description (see `.github/PULL_REQUEST_TEMPLATE.md`).
+
 ## Project Overview
 
 **Linux Voice Assistant (LVA)** - A Linux-based voice satellite software for Home Assistant using the ESPHome protocol.
@@ -122,6 +125,7 @@ Before claiming completion:
 - [ ] For audio-related changes: Note that hardware testing (microphone/speaker) was NOT performed
 - [ ] Did NOT claim hardware behavior is verified unless actually exercised
 - [ ] Changes are focused on one feature or fix per change
+- [ ] `docs/behavior.md` still matches the code, and behavior changes are listed separately in the PR description
 
 ## Areas Requiring Extra Care
 

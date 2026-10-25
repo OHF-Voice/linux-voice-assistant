@@ -55,10 +55,10 @@ class LibMpvPlayer(AudioPlayer):
         # noticeable latency for a user-facing notification sound.
         self._mpv["audio-buffer"] = _AUDIO_BUFFER_SECS
 
-        # Keep the PulseAudio/PipeWire stream open between files by outputting
-        # silence when idle.  This eliminates the per-play sink re-initialisation
-        # penalty entirely, so back-to-back short sounds (wakeup → TTS, mute →
-        # unmute) never lose their first samples regardless of system load.
+        # Feed silence instead of stopping the audio output on pause and seeks.
+        # mpv only does this while a file is loaded: once playback ends the
+        # audio device is closed, so this does NOT keep the PulseAudio/PipeWire
+        # stream open between files.
         self._mpv["audio-stream-silence"] = True
 
         # Callback Handling

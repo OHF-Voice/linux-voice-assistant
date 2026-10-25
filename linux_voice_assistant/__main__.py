@@ -371,7 +371,7 @@ async def main() -> None:
         _LOGGER.debug("Loading preferences: %s", preferences_path)
         with open(preferences_path, "r", encoding="utf-8") as preferences_file:
             preferences_dict = json.load(preferences_file)
-            preferences = Preferences(**preferences_dict)
+            preferences = Preferences.from_dict(preferences_dict)
     else:
         preferences = Preferences()
 
@@ -692,7 +692,7 @@ def process_audio(state: ServerState, mic, block_size: int):
                 if (not wake_words) or (state.wake_words_changed and state.wake_words):
                     # Update list of wake word models to process
                     state.wake_words_changed = False
-                    wake_words = [ww for ww in state.wake_words.values() if ww.id in state.active_wake_words]
+                    wake_words = [ww for ww_id, ww in state.wake_words.items() if ww_id in state.active_wake_words]
 
                     # TODO: Load default stop word value from json into state and preferences missing.
 
@@ -700,7 +700,7 @@ def process_audio(state: ServerState, mic, block_size: int):
                     for idx, wake_word in enumerate(wake_words):
 
                         # Load default threshold from model json
-                        wake_word_id = wake_word.id if hasattr(wake_word, "id") else next(iter(state.wake_words.keys()))
+                        wake_word_id = next((ww_id for ww_id, ww in state.wake_words.items() if ww is wake_word), "")
                         available_word = state.available_wake_words.get(wake_word_id)
                         # _LOGGER.debug("word= %s", state.available_wake_words.get(wake_word_id))
                         default_threshold = available_word.probability_cutoff if available_word else 0.7

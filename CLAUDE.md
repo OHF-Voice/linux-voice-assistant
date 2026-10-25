@@ -146,6 +146,7 @@ Existing env quirk: `REFACTORY_SECONDS` is misspelled on purpose (it's the publi
 |-----|----------|
 | `README.md` | Features, hardware, CLI parameter table, dev setup |
 | `docs/install.md` → `install_audioserver.md`, `install_application.md` | Install flow (PipeWire/PulseAudio, Docker Compose, systemd, env var reference, wake word lists) |
+| `docs/behavior.md` | User-visible behavior (phases, ducking, stop word, timers, announcements). Binding for code changes, see AGENTS.md |
 | `docs/configuration.md` | Every HA device-page entity, from the user's view |
 | `docs/peripheral_api.md` | Full WebSocket protocol for peripheral authors |
 | `docs/enabling_aec.md` | Echo cancellation via PulseAudio/PipeWire |
