@@ -1,5 +1,8 @@
 """Unit tests for __main__.py — process_audio logic and argument parsing helpers."""
 
+import sys
+from unittest.mock import MagicMock
+
 import numpy as np
 import pytest
 
@@ -241,6 +244,11 @@ class TestPreferencesFromArgs:
 
 
 class TestFloatToPcm16:
+    @pytest.fixture(autouse=True)
+    def _stub_soundcard(self, monkeypatch):
+        """Importing soundcard connects to PulseAudio, which is absent on CI runners."""
+        monkeypatch.setitem(sys.modules, "soundcard", MagicMock())
+
     @pytest.mark.parametrize("scalar", [0.1, 0.5, 1.0])
     def test_matches_reference_conversion(self, scalar):
         from linux_voice_assistant.__main__ import _float_to_pcm16
