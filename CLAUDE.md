@@ -134,7 +134,7 @@ Existing env quirk: `REFACTORY_SECONDS` is misspelled on purpose (it's the publi
 
 ## Gotchas
 
-- `ServerState.audio_input_channels` defaults to 2, but argparse (default **1**) always overrides it. The effective default is mono.
+- `ServerState.audio_input_channels` defaults to 2 and argparse (`--audio-input-channels`) also defaults to **2**, so the effective default is dual-channel. Audio flow: see `docs/audio_pipeline.md`.
 - In Docker the working directory is `/app`, so the default `--download-dir` is `/app/local` (a named volume in `docker-compose.yml`). Bare metal uses `local/` inside the repo.
 - Paths in `.env.example` and the docs are written for the container (`/app/...`). The systemd examples use `/home/pi/linux-voice-assistant/...`.
 - `mypy` runs non-strict with `python_version = 3.11` (`mypy.ini`). Don't use syntax newer than 3.11.
@@ -146,8 +146,10 @@ Existing env quirk: `REFACTORY_SECONDS` is misspelled on purpose (it's the publi
 |-----|----------|
 | `README.md` | Features, hardware, CLI parameter table, dev setup |
 | `docs/install.md` → `install_audioserver.md`, `install_application.md` | Install flow (PipeWire/PulseAudio, Docker Compose, systemd, env var reference, wake word lists) |
+| `docs/behavior.md` | User-visible behavior (phases, ducking, stop word, timers, announcements). Binding for code changes, see AGENTS.md |
 | `docs/configuration.md` | Every HA device-page entity, from the user's view |
 | `docs/peripheral_api.md` | Full WebSocket protocol for peripheral authors |
+| `docs/audio_pipeline.md` | Mic input to HA streaming: capture, Mic Volume scalar, WebRTC, wake/stop word, `VoiceAssistantAudio` data/data2 |
 | `docs/enabling_aec.md` | Echo cancellation via PulseAudio/PipeWire |
 | `docs/debugging.md` | Audio stack / container socket troubleshooting |
 | `examples/*/` | Peripheral containers (Satellite1, ReSpeaker 2/4-mic, USB array, Jabra, web console) using the WebSocket API |
