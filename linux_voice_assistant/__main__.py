@@ -371,7 +371,7 @@ async def main() -> None:
         _LOGGER.debug("Loading preferences: %s", preferences_path)
         with open(preferences_path, "r", encoding="utf-8") as preferences_file:
             preferences_dict = json.load(preferences_file)
-            preferences = Preferences(**preferences_dict)
+            preferences = Preferences.from_dict(preferences_dict)
     else:
         preferences = Preferences()
 
