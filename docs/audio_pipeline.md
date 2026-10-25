@@ -4,42 +4,54 @@ This document follows a microphone sample from the sound card to the Home Assist
 
 ## Overview
 
+Data formats are written on the arrows. "Audio thread" and "event loop" mark the thread boundary: everything up to `send_messages()` runs on the audio thread, only the final socket write is handed to the asyncio event loop.
+
 ```mermaid
 flowchart TD
-    A[Sound card / PulseAudio / PipeWire<br/>system capture level] --> B["soundcard recorder<br/>16 kHz, float32, block = 1024 samples"]
-    B --> C["Mic Volume scalar<br/>0.1 .. 1.0, clip, int16 PCM<br/>per channel"]
-    C --> D{AGC or NS > 0?}
-    D -- no --> F[audio_chunk = channel 0]
-    D -- yes --> E["WebRTC AudioProcessor<br/>10 ms frames, AGC + noise suppression"]
-    E -->|buffering: empty bytes| X[skip block]
-    E --> F
-    F --> G[handle_audio]
-    F --> H[Wake word / stop word detection]
-    G -->|only while streaming and not muted| I["VoiceAssistantAudio<br/>data + optional data2"]
-    I --> J[send_messages, thread-safe]
-    J --> K[ESPHome TCP connection to HA]
-    H -->|wake word| L[wakeup: VoiceAssistantRequest start=True]
-    L -.->|sets _is_streaming_audio| G
-    H -->|stop word, only while active| M[satellite.stop]
+    subgraph AT["Audio thread (process_audio)"]
+        A["Sound card / PulseAudio / PipeWire<br/>system capture level"] -->|"server converts to 16 kHz, N channels"| B["soundcard recorder<br/>fixed format: float32 (32 bit)"]
+        B -->|"float32 array, 1024 x N, range -1..1"| C["_float_to_pcm16 per channel<br/>Mic Volume scalar 0.1..1.0, clip"]
+        C -->|"int16 bytes, 2048 B per channel"| D{"AGC or NS > 0?"}
+        D -- no --> F["audio_chunk = channel 0"]
+        D -- yes --> E["WebRTCProcessor, channel 0 only<br/>10 ms frames, AGC + noise suppression"]
+        E -->|"empty while buffering"| X["skip block"]
+        E -->|"int16 bytes, variable length"| F
+        F --> G["handle_audio"]
+        F --> H["Wake word / stop word detection"]
+        G -->|"only if _is_streaming_audio and not muted"| I["VoiceAssistantAudio<br/>data + optional data2"]
+        H -->|"wake word fired"| L["wakeup: VoiceAssistantRequest start=True"]
+        L -.->|"sets _is_streaming_audio"| G
+        H -->|"stop word, only while active"| M["satellite.stop"]
+        I --> J["send_messages"]
+    end
+    subgraph EL["asyncio event loop"]
+        J -->|"call_soon_threadsafe"| K["ESPHome TCP connection to HA"]
+    end
 ```
+
+Nothing is buffered before the wake word: audio is only sent from the moment `_is_streaming_audio` is set (right after the wake word, or after the wake sound unless `listen_during_wake_sound` is enabled). HA events such as `STT_VAD_END` arrive on the event loop and clear the flag again.
 
 The same flow as plain text:
 
 ```
  Microphone / sound card
-        |  (system capture level: PulseAudio / PipeWire / ALSA)
+        |  system capture level (PulseAudio / PipeWire / ALSA)
+        |  audio server converts to 16 kHz, N channels
+ ===== AUDIO THREAD (process_audio) =================================
         v
  +--------------------------------------------+
  | soundcard recorder                         |
- | 16 kHz, float32, 1024 samples (64 ms)      |
- | shape (1024, N), N = 1 or 2 channels       |
+ | fixed format: float32 (32 bit)             |
+ | 16 kHz sample rate, block = 1024 samples   |
  +--------------------------------------------+
-        |
+        |  float32 array (1024 x N), range -1..1
+        |  N = 1 or 2 channels
         v
  +--------------------------------------------+
  | _float_to_pcm16 (per channel)              |
  | x mic_vol_scalar (0.1 .. 1.0), clip, int16 |
  +--------------------------------------------+
+        |  int16 bytes, 2048 B per channel
         |  channel_chunks[0] = mic
         |  channel_chunks[1] = reference (if N = 2)
         v
@@ -53,7 +65,7 @@ The same flow as plain text:
      |            +------------------------------+
      |                          |
      |                 empty (buffering)? --yes--> skip block
-     |                          |no
+     |                          |no  int16 bytes, variable length
      v                          v
  audio_chunk = channel 0 (processed if WebRTC active)
         |
@@ -66,18 +78,20 @@ The same flow as plain text:
  handle_audio()            wake word models              stop word model
         |                  (slot 0 / slot 1)             (only while active
         |                          |                      in active_wake_words)
- streaming and not muted?          | fired, not muted,            |
-        |yes                       | refractory passed            v
-        v                          v                       satellite.stop()
- VoiceAssistantAudio        satellite.wakeup()
- data  = audio_chunk               |
- data2 = unprocessed ch 0          v
-         or channel 1       VoiceAssistantRequest(start=True)
-         or none                   |
-        |                          +--> _is_streaming_audio = True
-        v
- send_messages()  (call_soon_threadsafe to the event loop)
+ _is_streaming_audio               | fired, not muted,            |
+ and not muted?                    | refractory passed            v
+        |yes                       v                       satellite.stop()
+        v                   satellite.wakeup()
+ VoiceAssistantAudio               |
+ data  = audio_chunk               v
+ data2 = unprocessed ch 0   VoiceAssistantRequest(start=True)
+         or channel 1              |
+         or none                   +--> _is_streaming_audio = True
         |
+        v
+ send_messages()
+        |  call_soon_threadsafe
+ ===== ASYNCIO EVENT LOOP ===========================================
         v
  ESPHome TCP connection --> Home Assistant (STT)
 ```
