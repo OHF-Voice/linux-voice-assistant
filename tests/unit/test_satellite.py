@@ -352,6 +352,16 @@ class TestStop:
         sat.play_tts()
         sat.state.tts_player.play.assert_not_called()
 
+    def test_tts_plays_again_after_new_pipeline_started_without_wake_word(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        sat._pipeline_active = True
+        sat.stop()
+        sat._pipeline_active = True
+        sat._on_start_listening_sound_finished()
+        sat._tts_url = "http://example.com/tts.mp3"
+        sat.play_tts()
+        sat.state.tts_player.play.assert_called()
+
     def test_wakeup_sound_callback_does_nothing_after_stop(self, tmp_path):
         sat = make_satellite(tmp_path)
         sat._pipeline_active = False

@@ -898,7 +898,6 @@ class VoiceSatelliteProtocol(APIServer):
         self._timer_ring_start = None
         _LOGGER.debug("Stopping timer finished sound")
         self._pipeline_active = True
-        self._pipeline_aborted = False
         self.state.active_wake_words.add(self.state.stop_word.id)
         self._emit(LVAEvent.WAKE_WORD_DETECTED)
         self.duck()
@@ -918,6 +917,7 @@ class VoiceSatelliteProtocol(APIServer):
             "Starting audio streaming for: %s",
             wake_word_phrase,
         )
+        self._pipeline_aborted = False
         self.send_messages([VoiceAssistantRequest(start=True, wake_word_phrase=wake_word_phrase)])
         self._is_streaming_audio = True
         self._emit(LVAEvent.LISTENING)
@@ -931,6 +931,7 @@ class VoiceSatelliteProtocol(APIServer):
         if not self._pipeline_active:
             _LOGGER.debug("Pipeline was stopped during the wakeup sound, not starting audio streaming")
             return
+        self._pipeline_aborted = False
         self.send_messages([VoiceAssistantRequest(start=True, wake_word_phrase=wake_word_phrase)])
         self._is_streaming_audio = True
         self._emit(LVAEvent.LISTENING)
@@ -956,7 +957,6 @@ class VoiceSatelliteProtocol(APIServer):
         self._timer_ring_start = None
         _LOGGER.debug("Stopping timer finished sound")
         self._pipeline_active = True
-        self._pipeline_aborted = False
         self.state.active_wake_words.add(self.state.stop_word.id)
         self.duck()
         self.state.tts_player.play(
@@ -970,6 +970,7 @@ class VoiceSatelliteProtocol(APIServer):
         if not self._pipeline_active:
             _LOGGER.debug("Pipeline was stopped during the start-listening sound, not starting audio streaming")
             return
+        self._pipeline_aborted = False
         self.send_messages([VoiceAssistantRequest(start=True, wake_word_phrase="")])
         self._is_streaming_audio = True
         self._emit(LVAEvent.LISTENING)
@@ -1037,6 +1038,7 @@ class VoiceSatelliteProtocol(APIServer):
                     self._pipeline_active = False
                     self.unduck()
                     return
+                self._pipeline_aborted = False
                 self.send_messages([VoiceAssistantRequest(start=True)])
                 self._is_streaming_audio = True
                 _LOGGER.debug("Continued conversation started")
