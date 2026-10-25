@@ -34,28 +34,34 @@ LABEL \
     org.opencontainers.image.url="https://github.com/OHF-Voice/linux-voice-assistant"
 
 ### Install packages:
-# - libmpv2:            Runtime library for python-mpv (no -dev package, no build tools)
-# - libasound2-plugins: Required by python-mpv for audio playback
+# - avahi-utils:        For zeroconf/mDNS discovery by Home Assistant
 # - pulseaudio-utils:   Required by soundcard library for audio I/O
+# - alsa-utils:         ALSA tools for audio device management
 # - pipewire-bin:       Required for pipewire support
 # - pipewire-alsa:      Required for pipewire support
 # - pipewire-pulse:     Required for pipewire support
+# - libmpv2:            Runtime library for python-mpv (no -dev package, no build tools)
+# - libasound2-plugins: Required by python-mpv for audio playback
 # - ca-certificates:    For encrypted connections
 # - iproute2:           For ss command in entrypoint (port check)
+# - vim:                Editor for debugging inside the container
 # - procps:             For pgrep in healthcheck
 #
 # libmpv2 depends on libegl1/libgbm1, which pull in Mesa and LLVM (~170 MB).
 # LVA only plays audio, so these are purged without their dependents.
 RUN apt-get update && \
     apt-get install --yes --no-install-recommends \
-    libmpv2 \
-    libasound2-plugins \
+    avahi-utils \
     pulseaudio-utils \
+    alsa-utils \
     pipewire-bin \
     pipewire-alsa \
     pipewire-pulse \
+    libmpv2 \
+    libasound2-plugins \
     ca-certificates \
     iproute2 \
+    vim \
     procps && \
     dpkg --purge --force-depends libllvm19 mesa-libgallium libgl1-mesa-dri libz3-4 && \
     apt-get clean && \
