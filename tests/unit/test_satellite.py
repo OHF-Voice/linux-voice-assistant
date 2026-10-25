@@ -469,3 +469,38 @@ class TestDownloadExternalWakeWord:
         mock_urlopen.assert_not_called()
         assert result is not None
         assert result.id == "custom"
+
+
+# ---------------------------------------------------------------------------
+# VoiceAssistantSetConfiguration
+# ---------------------------------------------------------------------------
+
+
+class TestSetConfiguration:
+    def _make_sat(self, tmp_path, loaded):
+        sat = make_satellite(tmp_path)
+        sat.state.wake_words = {ww_id: MagicMock() for ww_id in loaded}
+        sat.state.active_wake_words = set(loaded)
+        return sat
+
+    def test_deselected_wake_word_is_unloaded(self, tmp_path):
+        from aioesphomeapi.api_pb2 import VoiceAssistantSetConfiguration
+
+        sat = self._make_sat(tmp_path, ["okay_nabu", "hey_jarvis"])
+        kept = sat.state.wake_words["hey_jarvis"]
+
+        list(sat.handle_message(VoiceAssistantSetConfiguration(active_wake_words=["hey_jarvis"])))
+
+        assert sat.state.wake_words == {"hey_jarvis": kept}
+        assert sat.state.active_wake_words == {"hey_jarvis"}
+        assert sat.state.wake_words_changed is True
+
+    def test_unknown_only_selection_keeps_loaded_models(self, tmp_path):
+        from aioesphomeapi.api_pb2 import VoiceAssistantSetConfiguration
+
+        sat = self._make_sat(tmp_path, ["okay_nabu"])
+
+        list(sat.handle_message(VoiceAssistantSetConfiguration(active_wake_words=["does_not_exist"])))
+
+        assert list(sat.state.wake_words) == ["okay_nabu"]
+        assert sat.state.active_wake_words == set()
