@@ -783,7 +783,7 @@ class VoiceSatelliteProtocol(APIServer):
                 self._external_wake_words[eww.id] = eww
                 _LOGGER.debug("      → Stored in external wake words cache")
 
-            active_ww_ids = [ww.id for ww in self.state.wake_words.values() if ww.id in self.state.active_wake_words]
+            active_ww_ids = [ww_id for ww_id in self.state.wake_words if ww_id in self.state.active_wake_words]
             _LOGGER.debug("   -> Active wake word IDs: %s", active_ww_ids)
 
             yield VoiceAssistantConfigurationResponse(
