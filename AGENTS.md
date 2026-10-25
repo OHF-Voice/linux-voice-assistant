@@ -93,6 +93,10 @@ When making code changes, run these commands in order:
 
 ## Code Style
 
+### Language
+
+All documentation (`docs/`, `README.md`, `*.md`), code comments, docstrings and commit/PR text are written in English, regardless of the language used in the conversation with the developer.
+
 ### Comments
 
 Only use comments to explain complex, multi-line blocks of code. Do not comment obvious operations. Inline comments are there to explain code parts that need explaining - keep them when editing code.
