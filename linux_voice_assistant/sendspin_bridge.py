@@ -1221,7 +1221,6 @@ class SendspinBridge:
         if self._client and self._client.connected:
             await self._client.disconnect()
 
-
     def _create_player(self, fmt: "AudioFormat") -> None:
         """Create AudioPlayer for the given format."""
         self._stop_player()
