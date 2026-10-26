@@ -138,6 +138,8 @@ class ServerState:
     preferences_path: Path
     download_dir: Path
     continue_conversation_delay: float = 0.5  # seconds to wait after TTS before opening mic
+    # ESPHome API encryption key (32 bytes); None serves plaintext only.
+    noise_psk: Optional[bytes] = None
 
     media_player_entity: "Optional[MediaPlayerEntity]" = None
     satellite: "Optional[VoiceSatelliteProtocol]" = None

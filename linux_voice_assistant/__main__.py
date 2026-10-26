@@ -17,6 +17,7 @@ from getmac import get_mac_address  # type: ignore
 from pymicro_wakeword import MicroWakeWord, MicroWakeWordFeatures
 from pyopen_wakeword import OpenWakeWord, OpenWakeWordFeatures
 
+from .api_server import decode_encryption_key
 from .models import Preferences, ServerState, WakeWordType, initial_stop_word_threshold
 from .mpv_player import MpvMediaPlayer
 from .peripheral_api import LVAEvent, PeripheralAPIServer
@@ -190,6 +191,14 @@ async def main() -> None:
         help="Port the application is listening on (default: 6053)",
     )
     parser.add_argument(
+        "--encryption-key",
+        help="Encryption key for the ESPHome API (32 bytes, base64; for example from: openssl rand -base64 32). " "Home Assistant then needs the same key; clients without it are refused",
+    )
+    parser.add_argument(
+        "--encryption-key-file",
+        help="File holding the encryption key (keeps it off the command line)",
+    )
+    parser.add_argument(
         "--enable-thinking-sound",
         action="store_true",
         help="Enable thinking sound on startup",
@@ -321,6 +330,27 @@ async def main() -> None:
 
     device_name = f"lva-{mac_address_clean}"
 
+    # Resolve encryption key
+    noise_psk: Optional[bytes] = None
+    if args.encryption_key and args.encryption_key_file:
+        print("Use either --encryption-key or --encryption-key-file, not both.")
+        sys.exit(1)
+    if args.encryption_key_file:
+        try:
+            args.encryption_key = Path(args.encryption_key_file).read_text(encoding="utf-8")
+        except OSError as err:
+            print(f"Cannot read the encryption key file: {err}")
+            sys.exit(1)
+    if args.encryption_key:
+        try:
+            noise_psk = decode_encryption_key(args.encryption_key)
+        except ValueError as err:
+            print(err)
+            sys.exit(1)
+        print("API encryption: enabled")
+    else:
+        print("API encryption: disabled (plaintext)")
+
     print(f"Device name: {device_name}")
 
     # Resolve version
@@ -448,6 +478,7 @@ async def main() -> None:
         timer_finished_sound=args.timer_finished_sound,
         processing_sound=args.processing_sound,
         mute_sound=args.mute_sound,
+        noise_psk=noise_psk,
         unmute_sound=args.unmute_sound,
         pipeline_ended_sound=args.pipeline_ended_sound,
         button_double_press_sound=args.button_double_press_sound,
@@ -572,6 +603,7 @@ async def main() -> None:
         name=state.name,
         mac_address=state.mac_address,
         host_ip_address=host_ip_address,
+        encrypted=noise_psk is not None,
     )
     await discovery.register_server()
 
