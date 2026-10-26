@@ -83,6 +83,46 @@ class TestPreferences:
         assert p2.active_wake_words == []
 
 
+class TestPreferencesFromDict:
+    def test_known_keys_are_loaded(self):
+        from linux_voice_assistant.models import Preferences
+
+        p = Preferences.from_dict({"volume": 0.4, "active_wake_words": ["okay_nabu", None], "mic_volume": 80})
+        assert p.volume == 0.4
+        assert p.active_wake_words == ["okay_nabu", None]
+        assert p.mic_volume == 80
+
+    def test_empty_dict_gives_defaults(self):
+        from linux_voice_assistant.models import Preferences
+
+        assert Preferences.from_dict({}) == Preferences()
+
+    def test_unknown_keys_are_ignored(self):
+        """A preferences.json written by a newer or older version must not crash startup."""
+        from linux_voice_assistant.models import Preferences
+
+        p = Preferences.from_dict({"volume": 0.5, "removed_setting": 1, "future_setting": "x"})
+        assert p.volume == 0.5
+        assert not hasattr(p, "removed_setting")
+        assert not hasattr(p, "future_setting")
+
+    def test_unknown_keys_are_logged(self, caplog):
+        from linux_voice_assistant.models import Preferences
+
+        with caplog.at_level("WARNING", logger="linux_voice_assistant.models"):
+            Preferences.from_dict({"future_setting": 1, "another_one": 2})
+
+        assert "another_one, future_setting" in caplog.text
+
+    def test_no_warning_for_known_keys(self, caplog):
+        from linux_voice_assistant.models import Preferences
+
+        with caplog.at_level("WARNING", logger="linux_voice_assistant.models"):
+            Preferences.from_dict({"volume": 0.5})
+
+        assert caplog.text == ""
+
+
 # ---------------------------------------------------------------------------
 # ServerState.save_preferences()
 # ---------------------------------------------------------------------------
