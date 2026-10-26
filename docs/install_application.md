@@ -175,7 +175,9 @@ Environment=PREFERENCES_FILE="/home/pi/linux-voice-assistant/preferences.json"
 # Environment=HOST="0.0.0.0"
 # Environment=PORT="6053"
 # Environment=AUDIO_INPUT_DEVICE="default"
+# Environment=AUDIO_INPUT_BLOCK_SIZE="1024"
 # Environment=AUDIO_OUTPUT_DEVICE="default"
+# Environment=MUSIC_OUTPUT_DEVICE="default"
 # Environment=MIC_VOLUME="1.0"
 # Environment=MIC_AUTO_GAIN="0"
 # Environment=MIC_NOISE_SUPPRESSION="0"
@@ -184,6 +186,7 @@ Environment=PREFERENCES_FILE="/home/pi/linux-voice-assistant/preferences.json"
 # Environment=WAKE_WORD_DIR="app/wakewords"
 # Environment=WAKE-MODEL="okay_nabu"
 # Environment=STOP_MODEL="stop"
+# Environment=DOWNLOAD_DIR="/home/pi/linux-voice-assistant/local"
 # Environment=TIMER_MAX_RING_SECONDS="900"
 # Environment=REFACTORY_SECONDS="2"
 # Environment=CONTINUE_CONVERSATION_DELAY="0.5"
@@ -194,9 +197,14 @@ Environment=PREFERENCES_FILE="/home/pi/linux-voice-assistant/preferences.json"
 # Environment=LISTEN_DURING_WAKE_SOUND="0"
 # Environment=MUTE_SOUND="sounds/mute_switch_on.flac"
 # Environment=UNMUTE_SOUND="sounds/mute_switch_off.flac"
+# Environment=PIPELINE_ENDED_SOUND="sounds/pipeline_ended_low.flac"
+# Environment=BUTTON_DOUBLE_PRESS_SOUND="sounds/button_double_press.flac"
+# Environment=BUTTON_TRIPLE_PRESS_SOUND="sounds/button_triple_press.flac"
+# Environment=BUTTON_LONG_PRESS_SOUND="sounds/button_long_press.flac"
 # Environment=PERIPHERAL_HOST="0.0.0.0"
 # Environment=PERIPHERAL_PORT="6055"
 # Environment=PERIPHERAL_VOLUME_STEP="%(default)s"
+# Environment=PERIPHERAL_STARTUP_WAIT="2.0"
 # Environment=DISABLE_PERIPHERAL_API="1"
 # Environment=ENABLE_OUTPUT_ONLY="1"
 ExecStart=/home/pi/linux-voice-assistant/docker-entrypoint.sh
@@ -260,20 +268,26 @@ The following variables can be configured in the `.env` or in the service file:
 | `LVA_PULSE_SERVER` | `/run/user/${LVA_USER_ID}/pulse/native` | Path to the PulseAudio/PipeWire socket (In some cases a `:unix`infront of the path is needed) |
 | `LVA_XDG_RUNTIME_DIR` | `/run/user/${LVA_USER_ID}` | XDG runtime directory |
 | `LVA_PULSE_COOKIE` | `/app/configuration/tmp_pulse_cookie` | Cookie file for PulseAudio if you use encryption. By default disabled. We use a tmp file to avoid errors if the file is not found |
+| `ENABLE_DEBUG` | (optional) | Set to "1" to enable debug mode |
+| `ENABLE_COLORED_DEBUG` | (optional) | Set to "1" to enable colored debug mode |
+| `LIST_DEVICES` | (optional) | Set to "1" to list audio devices instead of starting |
 | `PREFERENCES_FILE` | (optional) | Path to a custom preferences JSON file |
 | `NETWORK_INTERFACE` | Autodetected | network card for server |
 | `HOST` | Autodetected | API server IP-Address, can be 0.0.0.0 for all interfaces, but only one network card works for MAC-ADDRESS and ESP protocol |
 | `PORT` | `6053` | API server port |
 | `AUDIO_INPUT_DEVICE` | Autodetected | Audio input device name |
+| `AUDIO_INPUT_BLOCK_SIZE` | `1024` | Audio input block size in samples |
 | `AUDIO_OUTPUT_DEVICE` | Autodetected | Audio output device name |
-| `MIC_VOLUME` | Control microphone volume | 100 |
-| `MIC_AUTO_GAIN` | Add WebRTC Gain to Mic | 0 |
-| `MIC_NOISE_SUPPRESSION` | Add WebRTC Noise Suppresion to Mic | 0 |
-| `AUDIO_INPUT_CHANNELS` | Number of audio input channels | 2 |
+| `MUSIC_OUTPUT_DEVICE` | `AUDIO_OUTPUT_DEVICE` | Music/media output device name (defaults to the voice output device) |
+| `MIC_VOLUME` | 100 | Control microphone volume |
+| `MIC_AUTO_GAIN` | 0 | Add WebRTC Gain to Mic |
+| `MIC_NOISE_SUPPRESSION` | 0 | Add WebRTC Noise Suppression to Mic |
+| `AUDIO_INPUT_CHANNELS` | 2 | Number of audio input channels |
 | `ENABLE_THINKING_SOUND` | false | Set to "1" to enable thinking sound |
 | `WAKE_WORD_DIR` | `app/wakewords` | Path to the wake word directory |
 | `WAKE_MODEL` | `okay_nabu` | Wake word model to use |
 | `STOP_MODEL` | `stop` | Stop model to use |
+| `DOWNLOAD_DIR` | `/app/local` | Directory to download custom wake word models to |
 | `TIMER_MAX_RING_SECONDS` | `900` | Seconds after which the timer stops ringing |
 | `REFACTORY_SECONDS` | `2` | Refractory period in seconds after wake word |
 | `CONTINUE_CONVERSATION_DELAY` | `0.5` | Delay before mic opens for continued conversation |
@@ -283,10 +297,15 @@ The following variables can be configured in the `.env` or in the service file:
 | `PROCESSING_SOUND` | `sounds/processing.wav` | Sound file for processing state |
 | `LISTEN_DURING_WAKE_SOUND` | false | Set to "1" to start listening immediately after wake word detection, without waiting for the wake sound to finish |
 | `MUTE_SOUND` | `sounds/mute_switch_on.flac` | Sound file for mute on |
-| `UNMUTE_SOUND` | `sounds/mute_switch_off.flac` | Sound file for Configure Audio Devices
+| `UNMUTE_SOUND` | `sounds/mute_switch_off.flac` | Sound file for mute off |
+| `PIPELINE_ENDED_SOUND` | `sounds/pipeline_ended_low.flac` | Sound file to play when the voice pipeline ends without a response (e.g. no speech detected) |
+| `BUTTON_DOUBLE_PRESS_SOUND` | `sounds/button_double_press.flac` | Sound file for button double press |
+| `BUTTON_TRIPLE_PRESS_SOUND` | `sounds/button_triple_press.flac` | Sound file for button triple press |
+| `BUTTON_LONG_PRESS_SOUND` | `sounds/button_long_press.flac` | Sound file for button long press |
 | `PERIPHERAL_HOST` | 0.0.0.0 | Host for the peripheral WebSocket API |
 | `PERIPHERAL_PORT` | 6055 | Port for the peripheral WebSocket API |
 | `PERIPHERAL_VOLUME_STEP` | %(default)s | Volume change per button press |
+| `PERIPHERAL_STARTUP_WAIT` | `2.0` | Seconds to wait for peripherals to register entities before Home Assistant enumerates them (0 to skip) |
 | `DISABLE_PERIPHERAL_API` | false | Disable the peripheral WebSocket API |
 | `ENABLE_OUTPUT_ONLY` | (optional) | Set to "1" to enable output-only mode |
 
@@ -311,6 +330,8 @@ If you want to use your own sounds, you can add them to the `sounds/custom` aka 
 
 ### Wake Word:
 
+💡 **Note:** The active wake word(s) can also be changed at runtime from the Home Assistant device page, without editing `.env` or restarting LVA — see [Wake Word](configuration.md#wake-word) in the dashboard documentation.
+
 #### Available Wake Word Models:
 
 The following wake word models are available:
@@ -323,7 +344,6 @@ The following wake word models are available:
 - `hey_morgan` - Morgan wake word
 - `hey_luna` - Luna wake word
 - `hey_home_assistant` - Home Assistant wake word
-- `stop` - Stop wake word
 - `okay_computer` - Okay Computer wake word
 - `choo_choo_homie` - Choo Choo Homie wake word
 
@@ -334,6 +354,9 @@ The following wake word models are available:
 - `hey_mycroft` - Mycroft wake word
 - `hey_rhasspy` - Rhasspy wake word
 
+### Stop Word:
+
+The `stop` wake word is used to stop the current process (response, announcement, or timer). It is available in the `wakewords` directory (using the microWakeWord engine) and can be referenced in the `.env` file with `STOP_MODEL=stop`.
 
 ### Custom Wake Word:
 

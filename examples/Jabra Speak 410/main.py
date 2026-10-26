@@ -200,6 +200,9 @@ class JabraSpeak:
                 if not vol_ctrl:
                     print("ignoring volume command, env not set")
                     continue
+                if buttons_locked:
+                    print("ignoring volume command, buttons locked")
+                    continue                    
                 if event & Volume.vol_up:
                     print("jabra to lva: volume up detected")
                     match vol_ctrl:
@@ -250,6 +253,9 @@ async def write_to_jabra(state: LEDs | LEDState):
 
 
 async def write_to_lva(command: LVACommand, data: dict = None):
+    if buttons_locked:
+        print(f"to lva: buttons locked, ignoring {command}")
+        return    
     if lva_sock:
         global last_lva_write
         last_lva_write = command
@@ -299,6 +305,8 @@ current_state: None | LVAEvent = None
 
 muted: bool = False
 
+buttons_locked: bool = False
+
 
 async def run_cmd(cmd: list[str]):
     print("run_cmd ", cmd)
@@ -342,12 +350,19 @@ async def wsloop():
             async with websockets.connect(LVA_WS_URL) as websocket:
                 print(f"Connected to LVA at {LVA_WS_URL}")
                 lva_sock = websocket
+                await websocket.send(json.dumps({"command": "register_button_lock"}))
                 while True:
                     data = await websocket.recv()
                     print(f"from lva: {data}")
                     json_data = json.loads(data)
                     if json_data["event"] == "snapshot":
                         await set_mute(json_data["data"]["muted"], write_lva=False)
+                        global buttons_locked
+                        buttons_locked = json_data["data"].get("button_controls_locked", False)
+                    elif json_data["event"] == "button_lock_changed":
+                        buttons_locked = json_data["data"].get("locked", False)
+                        print(f"Button controls {'locked' if buttons_locked else 'unlocked'}")
+                        continue                        
                     global current_state
                     try:
                         current_state = LVAEvent(json_data["event"])

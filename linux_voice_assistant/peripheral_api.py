@@ -54,6 +54,16 @@ Feedback events emitted by LVA
               effect names are those the peripheral declared at
               registration; e.g. "Voice Assistant" runs the pipeline
               animations.
+  button_lock_changed   data: {"locked": bool}
+              Fires when the user toggles the "Disable button controls"
+              switch on the Home Assistant device page for a peripheral
+              that registered it via register_button_lock. The current
+              value is also included as "button_controls_locked" in the
+              snapshot payload for newly-connecting/reconnecting clients.
+              A peripheral should stop executing button-triggered LVA
+              commands (start_listening, stop_pipeline, mute_mic/
+              unmute_mic, volume_up/down, button_*_press, etc.) while
+              locked is true.
 
 Commands accepted from the peripheral container
 ------------------------------------------------
@@ -92,6 +102,17 @@ Commands accepted from the peripheral container
               events to Home Assistant when the corresponding
               button_* commands are sent. Send once after connecting;
               duplicate registrations are ignored.
+  register_button_lock
+              The peripheral declares that it has on-board buttons whose
+              behavior can be toggled from Home Assistant. LVA creates a
+              "Disable button controls" switch entity (visible as
+              switch.<satellite>_disable_button_controls, disabled/off
+              by default) and routes HA changes back to the peripheral
+              as button_lock_changed events. The peripheral is
+              responsible for honoring the lock state — LVA does not
+              gate anything on its end. Send once after connecting;
+              duplicate registrations are ignored and preserve the
+              current lock state.
 """
 
 from __future__ import annotations
@@ -99,6 +120,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Dict, Optional, Set
 
@@ -138,6 +160,7 @@ class LVAEvent(str, Enum):
     VOLUME_MUTED = "volume_muted"
     ZEROCONF = "zeroconf"
     LIGHT_COMMAND = "light_command"
+    BUTTON_LOCK_CHANGED = "button_lock_changed"
 
 
 class LVACommand(str, Enum):
@@ -160,6 +183,7 @@ class LVACommand(str, Enum):
     BUTTON_LONG_PRESS = "button_long_press"
     REGISTER_LIGHT = "register_light"
     REGISTER_BUTTON = "register_button"
+    REGISTER_BUTTON_LOCK = "register_button_lock"
 
 
 # ---------------------------------------------------------------------------
@@ -180,6 +204,8 @@ class PeripheralAPIServer:
     """
 
     DEFAULT_VOLUME_STEP: float = 0.05
+    LATE_ENTITY_RECONNECT_DEBOUNCE_S: float = 1.5
+    LATE_ENTITY_RECONNECT_COOLDOWN_S: float = 60.0
 
     def __init__(
         self,
@@ -208,6 +234,10 @@ class PeripheralAPIServer:
         self._current_state: Optional[LVAEvent] = None
         self._current_state_data: Optional[Dict[str, Any]] = None
 
+        # Safeguarded HA reconnect trigger for late entity registrations.
+        self._pending_entity_reconnect_task: Optional[asyncio.Task] = None
+        self._last_ha_reconnect_at: float = 0.0
+
     # ------------------------------------------------------------------
     # Lifecycle
     # ------------------------------------------------------------------
@@ -230,6 +260,10 @@ class PeripheralAPIServer:
 
     async def stop(self) -> None:
         """Gracefully shut down the server and all client connections."""
+        if self._pending_entity_reconnect_task is not None:
+            self._pending_entity_reconnect_task.cancel()
+            self._pending_entity_reconnect_task = None
+
         if self._server is not None:
             self._server.close()
             await self._server.wait_closed()
@@ -267,7 +301,9 @@ class PeripheralAPIServer:
                 "data": {
                     "muted": state.muted,
                     "volume": round(state.volume, 3),
+                    "volume_muted": state.volume == 0.0,
                     "ha_connected": state.connected,
+                    "button_controls_locked": state.button_controls_locked,
                     "last_stt_text": self._last_stt_text,
                     "last_tts_text": self._last_tts_text,
                 },
@@ -281,14 +317,20 @@ class PeripheralAPIServer:
         # Replay the current event state so the client immediately shows the
         # right animation — e.g. a timer ticking animation when reconnecting
         # mid-timer, or the muted indicator when reconnecting while muted.
-        if self._current_state is not None:
-            state_payload: Dict[str, Any] = {"event": self._current_state.value}
-            if self._current_state_data:
-                state_payload["data"] = self._current_state_data
-            try:
-                await websocket.send(json.dumps(state_payload))
-            except Exception:  # pylint: disable=broad-except
-                pass
+        current_state = self._current_state
+        if current_state is None:
+            return
+
+        if current_state == LVAEvent.DISCONNECTED and state.connected:
+            return
+
+        state_payload: Dict[str, Any] = {"event": current_state.value}
+        if self._current_state_data:
+            state_payload["data"] = self._current_state_data
+        try:
+            await websocket.send(json.dumps(state_payload))
+        except Exception:  # pylint: disable=broad-except
+            pass
 
     # ------------------------------------------------------------------
     # Command dispatch
@@ -463,6 +505,9 @@ class PeripheralAPIServer:
         elif command == LVACommand.REGISTER_BUTTON:
             self._register_button(satellite)
 
+        elif command == LVACommand.REGISTER_BUTTON_LOCK:
+            self._register_button_lock(satellite)
+
     def _register_light(self, data: Dict[str, Any], satellite: Any) -> None:
         """Register a Light declared by a peripheral.
 
@@ -501,6 +546,8 @@ class PeripheralAPIServer:
         if satellite is not None:
             satellite.register_pending_lights()
 
+        self._schedule_ha_reconnect_for_late_entity("light", object_id)
+
     def _register_button(self, satellite: Any) -> None:
         """Register button press event support declared by a peripheral.
 
@@ -528,9 +575,94 @@ class PeripheralAPIServer:
         if satellite is not None:
             satellite.register_pending_button()
 
+        self._schedule_ha_reconnect_for_late_entity("button", "button_press_event")
+
+    def _register_button_lock(self, satellite: Any) -> None:
+        """Register the button-lock switch declared by a peripheral.
+
+        Idempotent: repeat registrations from a reconnecting peripheral
+        are a no-op — the existing entity and its current lock state
+        are preserved.
+
+        When the satellite is already running, the entity is materialised
+        immediately so a subsequent switch toggle routes correctly. HA
+        only sees the new entity after the integration is reloaded, but
+        the same startup-wait window that applies to register_light
+        applies here too (see --peripheral-startup-wait).
+        """
+        state = self._state
+        if state is None:
+            return
+
+        if state.pending_button_lock:
+            # Already registered; keep the existing entity and its state.
+            return
+
+        state.pending_button_lock = True
+        _LOGGER.info("Button lock switch registered by peripheral")
+
+        if satellite is not None:
+            satellite.register_pending_button_lock()
+
+        self._schedule_ha_reconnect_for_late_entity("button_lock", "disable_button_controls")
+
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+
+    def _schedule_ha_reconnect_for_late_entity(self, entity_kind: str, entity_id: str) -> None:
+        """Reconnect HA once for late peripheral entity registrations."""
+        state = self._state
+        if state is None or not state.connected or state.satellite is None:
+            return
+
+        if self._loop is None:
+            return
+
+        if self._pending_entity_reconnect_task is not None and not self._pending_entity_reconnect_task.done():
+            _LOGGER.debug(
+                "Coalescing late %s registration for '%s' into pending HA reconnect",
+                entity_kind,
+                entity_id,
+            )
+            return
+
+        async def _trigger() -> None:
+            try:
+                await asyncio.sleep(self.LATE_ENTITY_RECONNECT_DEBOUNCE_S)
+
+                state_now = self._state
+                if state_now is None or not state_now.connected:
+                    return
+
+                satellite_now = state_now.satellite
+                if satellite_now is None:
+                    return
+
+                now = time.monotonic()
+                if now - self._last_ha_reconnect_at < self.LATE_ENTITY_RECONNECT_COOLDOWN_S:
+                    _LOGGER.info(
+                        "Skipping HA reconnect after late %s '%s': cooldown active",
+                        entity_kind,
+                        entity_id,
+                    )
+                    return
+
+                transport = getattr(satellite_now, "_transport", None)
+                if transport is None:
+                    return
+
+                self._last_ha_reconnect_at = now
+                _LOGGER.info(
+                    "Late %s '%s' registered after HA handshake; forcing one HA reconnect",
+                    entity_kind,
+                    entity_id,
+                )
+                transport.close()
+            except asyncio.CancelledError:
+                return
+
+        self._pending_entity_reconnect_task = self._loop.create_task(_trigger())
 
     async def _push_mute_switch(self, satellite: Any, *, muted: bool) -> None:
         """Reflect a peripheral-triggered mute change to Home Assistant."""
@@ -584,6 +716,7 @@ class PeripheralAPIServer:
             LVAEvent.MEDIA_PLAYER_PLAYING,
             LVAEvent.DISCONNECTED,
             LVAEvent.PIPELINE_ERROR,
+            LVAEvent.VOLUME_MUTED,
         }
         if event in _STATE_EVENTS:
             self._current_state = event

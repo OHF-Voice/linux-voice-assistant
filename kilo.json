@@ -1,0 +1,5 @@
+{
+  "$schema": "https://app.kilo.ai/config.json",
+  "model": "kilo/codegemma-2b:free",
+  "instructions": ["AGENTS.md"]
+}
