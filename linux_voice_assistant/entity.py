@@ -123,6 +123,7 @@ class MediaPlayerEntity(ESPHomeEntity):
         """Resume SendSpin playback if it was paused."""
         if self.sendspin_bridge:
             self.sendspin_bridge.resume()
+
     def _broadcast_state(self, msgs: Iterable[message.Message]) -> None:
         """Push an asynchronous state change to all connected clients.
 
