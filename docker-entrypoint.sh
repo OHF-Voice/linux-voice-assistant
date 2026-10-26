@@ -124,6 +124,10 @@ if [ -n "${UNMUTE_SOUND}" ]; then
   EXTRA_ARGS+=( "--unmute-sound" "$UNMUTE_SOUND" )
 fi
 
+if [ -n "${PIPELINE_ENDED_SOUND}" ]; then
+  EXTRA_ARGS+=( "--pipeline-ended-sound" "$PIPELINE_ENDED_SOUND" )
+fi
+
 if [ -n "${BUTTON_DOUBLE_PRESS_SOUND}" ]; then
   EXTRA_ARGS+=( "--button-double-press-sound" "$BUTTON_DOUBLE_PRESS_SOUND" )
 fi

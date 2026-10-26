@@ -47,6 +47,27 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
+      - name: Extract metadata for Docker
+        id: meta
+        env:
+          DOCKER_METADATA_ANNOTATIONS_LEVELS: manifest,index
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ${{ env.REGISTRY_LOWER }}/${{ env.REPOSITORY_LOWER }}-pr
+          tags: |
+            type=raw,value=${{ env.PR_NUMBER }}
+          labels: |
+            org.opencontainers.image.authors="Open Home Foundation"
+            org.opencontainers.image.base.name="docker.io/library/python:3.13-slim-trixie"
+            org.opencontainers.image.description="Linux-Voice-Assistant for Home Assistant"
+            org.opencontainers.image.documentation="https://github.com/OHF-Voice/linux-voice-assistant/blob/main/README.md"
+            org.opencontainers.image.licenses="Apache-2.0"
+            org.opencontainers.image.source="https://github.com/OHF-Voice/linux-voice-assistant"
+            org.opencontainers.image.title="Linux-Voice-Assistant"
+            org.opencontainers.image.url="https://github.com/OHF-Voice/linux-voice-assistant"
+            org.opencontainers.image.vendor="Open Home Foundation"
+            org.opencontainers.image.revision=${{ github.event.pull_request.head.sha }}
+
       - name: Create version files
         run: |
           echo "${{ env.PR_NUMBER }}" > version.txt
@@ -55,13 +76,14 @@ jobs:
 
       - name: Build and push Docker image
         id: push
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           platforms: linux/amd64,linux/aarch64
           push: true
-          tags: "${{ env.REGISTRY_LOWER }}/${{ env.REPOSITORY_LOWER }}-pr:${{ env.PR_NUMBER }}"
-          labels: "${{ env.PR_NUMBER }}"
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          annotations: ${{ steps.meta.outputs.annotations }}
       - name: Generate artifact attestation
         uses: actions/attest-build-provenance@v4
         with:

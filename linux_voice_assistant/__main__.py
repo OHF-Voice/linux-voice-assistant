@@ -150,6 +150,11 @@ async def main() -> None:
         help="Sound to play when unmuting the assistant",
     )
     parser.add_argument(
+        "--pipeline-ended-sound",
+        default=str(_SOUNDS_DIR / "pipeline_ended_low.flac"),
+        help="Sound to play when the voice pipeline ends without a response (e.g. no speech detected)",
+    )
+    parser.add_argument(
         "--button-double-press-sound",
         default=str(_SOUNDS_DIR / "button_double_press.flac"),
         help="Sound to play for button double press",
@@ -371,7 +376,7 @@ async def main() -> None:
         _LOGGER.debug("Loading preferences: %s", preferences_path)
         with open(preferences_path, "r", encoding="utf-8") as preferences_file:
             preferences_dict = json.load(preferences_file)
-            preferences = Preferences(**preferences_dict)
+            preferences = Preferences.from_dict(preferences_dict)
     else:
         preferences = Preferences()
 
@@ -444,6 +449,7 @@ async def main() -> None:
         processing_sound=args.processing_sound,
         mute_sound=args.mute_sound,
         unmute_sound=args.unmute_sound,
+        pipeline_ended_sound=args.pipeline_ended_sound,
         button_double_press_sound=args.button_double_press_sound,
         button_triple_press_sound=args.button_triple_press_sound,
         button_long_press_sound=args.button_long_press_sound,
@@ -675,8 +681,7 @@ def process_audio(state: ServerState, mic, block_size: int):
                 channel_chunks: list[bytes] = []
                 for ch in range(n_channels):
                     col = raw[:, ch] if n_channels > 1 else raw.reshape(-1)
-                    chunk = (np.clip(col * mic_vol_scalar, -1.0, 1.0) * 32767.0).astype("<i2").tobytes()
-                    channel_chunks.append(chunk)
+                    channel_chunks.append(_float_to_pcm16(col, mic_vol_scalar))
 
                 # Primary channel drives WebRTC and wake-word detection.
                 audio_chunk = channel_chunks[0]
@@ -699,7 +704,7 @@ def process_audio(state: ServerState, mic, block_size: int):
                 if (not wake_words) or (state.wake_words_changed and state.wake_words):
                     # Update list of wake word models to process
                     state.wake_words_changed = False
-                    wake_words = [ww for ww in state.wake_words.values() if ww.id in state.active_wake_words]
+                    wake_words = [ww for ww_id, ww in state.wake_words.items() if ww_id in state.active_wake_words]
 
                     # TODO: Load default stop word value from json into state and preferences missing.
 
@@ -707,7 +712,7 @@ def process_audio(state: ServerState, mic, block_size: int):
                     for idx, wake_word in enumerate(wake_words):
 
                         # Load default threshold from model json
-                        wake_word_id = wake_word.id if hasattr(wake_word, "id") else next(iter(state.wake_words.keys()))
+                        wake_word_id = next((ww_id for ww_id, ww in state.wake_words.items() if ww is wake_word), "")
                         available_word = state.available_wake_words.get(wake_word_id)
                         # _LOGGER.debug("word= %s", state.available_wake_words.get(wake_word_id))
                         default_threshold = available_word.probability_cutoff if available_word else 0.7
@@ -866,6 +871,18 @@ async def timer_watchdog(state: ServerState, interval: float = 1.0) -> None:
 
 
 # -----------------------------------------------------------------------------
+
+
+def _float_to_pcm16(samples: np.ndarray, scalar: float) -> bytes:
+    """
+    Scale float samples in [-1, 1] and convert them to little-endian 16-bit PCM bytes.
+    :param samples: Float32 samples of a single channel.
+    :param scalar: Gain applied before clipping.
+    """
+    scaled = samples * scalar
+    np.clip(scaled, -1.0, 1.0, out=scaled)
+    scaled *= 32767.0
+    return scaled.astype("<i2").tobytes()
 
 
 def run():

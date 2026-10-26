@@ -53,6 +53,7 @@ services:
       - ${LVA_XDG_RUNTIME_DIR:-/run/user/1000}:${LVA_XDG_RUNTIME_DIR:-/run/user/1000}
       # Mount source code for development
       - ./linux_voice_assistant:/app/linux_voice_assistant
+      - ./sounds:/app/sounds
       - ./docker-entrypoint.sh:/app/docker-entrypoint.sh
       - ./script:/app/script
       - ./version.txt:/app/version.txt
