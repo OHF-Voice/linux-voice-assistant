@@ -346,8 +346,9 @@ class VoiceSatelliteProtocol(APIServer):
         self._tts_url: Optional[str] = None
         self._tts_played = False
         self._continue_conversation = False
-        # Phrase that started the conversation; HA picks the pipeline slot from it,
-        # so a follow-up without it would fall back to slot 1.
+        # Phrase that started the conversation. HA selects the pipeline from it, so a
+        # follow-up request without it would run the first pipeline instead of the one
+        # the user woke up. Empty after a button press or an HA announcement.
         self._wake_word_phrase = ""
         self._timer_finished = False
         self._timer_ring_start: Optional[float] = None
