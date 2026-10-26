@@ -244,8 +244,17 @@ async def main() -> None:
         action="store_true",
         help="Add this to enable debug logging",
     )
-    #
+    # ------------------------------------------------------------------
     # SendSpin client options
+    # ------------------------------------------------------------------
+    parser.add_argument(
+        "--enable-sendspin",
+        type=int,
+        choices=(0, 1),
+        default=1,
+        metavar="{0,1}",
+        help="Enable (1) or disable (0) the SendSpin client (default: enabled)",
+    )
     parser.add_argument(
         "--sendspin-url",
         help="SendSpin server WebSocket URL (e.g., ws://192.168.1.100:8928/sendspin)",
@@ -259,6 +268,7 @@ async def main() -> None:
         type=float,
         default=0.0,
         help="Static playback delay in milliseconds for SendSpin sync adjustment",
+    )
     parser.add_argument(
         "--colored-debug",
         action="store_true",
