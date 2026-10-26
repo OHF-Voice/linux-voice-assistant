@@ -36,6 +36,7 @@ class LibMpvPlayer(AudioPlayer):
         # mpv setup
         self._mpv = mpv.MPV(
             audio_display=False,
+            video=False,
             log_handler=self._on_mpv_log,
             loglevel="error",
             cache="yes",

@@ -313,6 +313,44 @@ class TestStop:
 
 
 # ---------------------------------------------------------------------------
+# Continued conversation
+# ---------------------------------------------------------------------------
+
+
+class TestContinueConversation:
+    def _follow_up_request(self, sat):
+        sat.send_messages = MagicMock()
+        sat._continue_conversation = True
+        with patch("linux_voice_assistant.satellite.threading.Timer") as timer_cls:
+            sat._tts_finished()
+        _delay, callback = timer_cls.call_args.args
+        callback()
+        return sat.send_messages.call_args.args[0][0]
+
+    def test_follow_up_resends_wake_word_phrase(self, tmp_path):
+        # HA picks the pipeline by wake word phrase; without it the follow-up
+        # runs the first pipeline instead of the one the user woke up.
+        sat = make_satellite(tmp_path)
+        sat.wakeup(MagicMock(wake_word="Hey Jarvis"))
+        sat._pipeline_active = False
+
+        request = self._follow_up_request(sat)
+
+        assert request.start
+        assert request.wake_word_phrase == "Hey Jarvis"
+
+    def test_follow_up_after_button_press_has_no_phrase(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        sat._wake_word_phrase = "Hey Jarvis"
+        sat.start_listening()
+        sat._pipeline_active = False
+
+        request = self._follow_up_request(sat)
+
+        assert request.wake_word_phrase == ""
+
+
+# ---------------------------------------------------------------------------
 # duck() / unduck()
 # ---------------------------------------------------------------------------
 
