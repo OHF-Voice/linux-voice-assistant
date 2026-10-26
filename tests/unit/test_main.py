@@ -338,23 +338,39 @@ class TestReconnectingRecorder:
 
         assert mic.recorder.call_count == 3
 
-    def test_raises_when_recovery_times_out(self, monkeypatch):
+    def test_first_retry_is_immediate_second_waits(self, monkeypatch):
         from linux_voice_assistant import __main__ as main_mod
 
-        clock = iter(range(0, 1000, 30))
-        monkeypatch.setattr(main_mod.time, "sleep", lambda _s: None)
-        monkeypatch.setattr(main_mod.time, "monotonic", lambda: next(clock))
+        sleeps = []
+        monkeypatch.setattr(main_mod.time, "sleep", sleeps.append)
+        monkeypatch.setattr(main_mod.sc, "get_microphone", lambda mic_id: mic)
+
+        block = make_audio_chunk()
+        failed = self._make_recorder(**{"record.side_effect": RuntimeError("FAILED")})
+        healthy = self._make_recorder(**{"record.return_value": block})
+        mic = self._make_mic(failed, OSError("device busy"), healthy)
+
+        with main_mod._ReconnectingRecorder(mic, 1, 1024) as rec:
+            assert rec.record(1024) is block
+
+        assert sleeps == [2.0]
+
+    def test_raises_after_two_failed_reconnects(self, monkeypatch):
+        from linux_voice_assistant import __main__ as main_mod
+
+        sleeps = []
+        monkeypatch.setattr(main_mod.time, "sleep", sleeps.append)
         monkeypatch.setattr(main_mod.sc, "get_microphone", lambda mic_id: mic)
 
         failed = self._make_recorder(**{"record.side_effect": RuntimeError("FAILED")})
-        mic = MagicMock()
-        mic.name = "Test Mic"
-        mic.id = "test-mic-id"
-        mic.recorder.side_effect = [failed] + [OSError("gone")] * 10
+        mic = self._make_mic(failed, OSError("gone"), OSError("still gone"))
 
         with main_mod._ReconnectingRecorder(mic, 1, 1024) as rec:
             with pytest.raises(RuntimeError, match="Test Mic.*did not recover"):
                 rec.record(1024)
+
+        assert sleeps == [2.0]
+        assert mic.recorder.call_count == 3
 
     def test_keeps_old_mic_object_without_id(self, monkeypatch):
         from linux_voice_assistant import __main__ as main_mod

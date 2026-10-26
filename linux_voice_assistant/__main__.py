@@ -34,8 +34,7 @@ from .zeroconf import HomeAssistantZeroconf
 
 _LOGGER = logging.getLogger(__name__)
 
-_MIC_RECOVERY_TIMEOUT_SECONDS = 60.0
-_MIC_RECOVERY_MAX_DELAY_SECONDS = 5.0
+_MIC_RETRY_DELAY_SECONDS = 2.0
 _LOG_FORMAT = "%(asctime)s.%(msecs)03d %(levelname)s:%(name)s:%(message)s"
 _LOG_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 _MODULE_DIR = Path(__file__).parent
@@ -914,7 +913,7 @@ class _ReconnectingRecorder:
 
     def _recover(self, err: Exception) -> None:
         """
-        Reopen the microphone stream until it works or the recovery timeout expires.
+        Reopen the microphone stream immediately and, if that fails, once more after a short delay.
         :param err: Error that interrupted recording.
         """
         name = getattr(self._mic, "name", self._mic)
@@ -923,26 +922,22 @@ class _ReconnectingRecorder:
             name,
             err,
         )
-        deadline = time.monotonic() + _MIC_RECOVERY_TIMEOUT_SECONDS
-        delay = 0.5
-        attempt = 0
         last_err: Exception = err
-        while time.monotonic() < deadline:
-            attempt += 1
+        for attempt in (1, 2):
+            if attempt == 2:
+                time.sleep(_MIC_RETRY_DELAY_SECONDS)
             self._close()
-            time.sleep(delay)
-            delay = min(delay * 2, _MIC_RECOVERY_MAX_DELAY_SECONDS)
             try:
                 self._refresh_mic()
                 self._open()
-                _LOGGER.info("Microphone '%s' reconnected after %d attempt(s)", name, attempt)
+                _LOGGER.info("Microphone '%s' reconnected (attempt %d)", name, attempt)
                 return
             except Exception as open_err:  # pylint: disable=broad-except
                 last_err = open_err
                 _LOGGER.warning("Reconnecting microphone '%s' failed (attempt %d): %s", name, attempt, open_err)
 
         self._close()
-        raise RuntimeError(f"Microphone '{name}' did not recover within {_MIC_RECOVERY_TIMEOUT_SECONDS:.0f} s: {last_err}") from last_err
+        raise RuntimeError(f"Microphone '{name}' did not recover after 2 reconnect attempts: {last_err}") from last_err
 
     def _refresh_mic(self) -> None:
         """Look up the microphone again, because the device object can be stale after a suspend or replug."""

@@ -187,9 +187,9 @@ Do not confuse this with the **media player mute**, which sets the shared volume
 
 ## Microphone failure
 
-If the audio server reports that the microphone stream failed (for example after the device was suspended, unplugged, or PipeWire/PulseAudio restarted), the assistant logs an error naming the microphone and tries to reopen it for up to 60 seconds. While it reconnects, the wake word and the stop word do not work. After a successful reconnect, listening continues without a restart.
+If the audio server reports that the microphone stream failed (for example after the device was suspended, unplugged, or PipeWire/PulseAudio restarted), the assistant logs an error naming the microphone and immediately tries to reopen it. If that fails, it waits 2 seconds and tries once more. After a successful reconnect, listening continues without a restart.
 
-If the microphone does not come back within 60 seconds, the assistant logs the error and exits with a non-zero status, so a supervisor such as Docker (`restart: unless-stopped`) or systemd (`Restart=on-failure`) can restart it. It never keeps running without a working microphone.
+If the second attempt also fails, the assistant logs the error and exits with a non-zero status, so a supervisor such as Docker (`restart: unless-stopped`) or systemd (`Restart=on-failure`) restarts it. It never keeps running without a working microphone.
 
 ---
 
