@@ -621,7 +621,7 @@ class VoiceSatelliteProtocol(APIServer):
             self._is_streaming_audio = False
             if not self._tts_played:
                 self._pipeline_active = False
-                self._tts_finished()
+                self._tts_finished(pipeline_ended=True)
             # When TTS is playing, keep _pipeline_active = True to block
             # false wake word detections from speaker audio feedback.
             # _tts_finished() callback will clear it when playback ends.
@@ -787,7 +787,7 @@ class VoiceSatelliteProtocol(APIServer):
                 self._external_wake_words[eww.id] = eww
                 _LOGGER.debug("      → Stored in external wake words cache")
 
-            active_ww_ids = [ww.id for ww in self.state.wake_words.values() if ww.id in self.state.active_wake_words]
+            active_ww_ids = [ww_id for ww_id in self.state.wake_words if ww_id in self.state.active_wake_words]
             _LOGGER.debug("   -> Active wake word IDs: %s", active_ww_ids)
 
             yield VoiceAssistantConfigurationResponse(
@@ -856,6 +856,10 @@ class VoiceSatelliteProtocol(APIServer):
 
             # If only one wake word is left and it was at position 1, position 0 remains None
             # Position 2 automatically stays None if not occupied
+
+            if active_wake_words:
+                # Replace the dict instead of deleting keys so the audio thread never iterates a dict that changes size.
+                self.state.wake_words = {ww_id: model for ww_id, model in self.state.wake_words.items() if ww_id in active_wake_words}
 
             self.state.active_wake_words = active_wake_words
             _LOGGER.debug("Active wake words: %s", active_wake_words)
@@ -999,7 +1003,11 @@ class VoiceSatelliteProtocol(APIServer):
         self._emit(LVAEvent.TTS_SPEAKING)
         self.state.tts_player.play(self._tts_url, done_callback=self._tts_finished)
 
-    def _tts_finished(self) -> None:
+    def _tts_finished(self, pipeline_ended: bool = False) -> None:
+        """
+        Clean up after playback ended or the pipeline finished, then continue the conversation or go idle.
+        :param pipeline_ended: True if the pipeline ended without a spoken reply, which plays the pipeline ended sound.
+        """
         self._pipeline_active = False
         self.state.active_wake_words.discard(self.state.stop_word.id)
         self.send_messages([VoiceAssistantAnnounceFinished()])
@@ -1024,12 +1032,22 @@ class VoiceSatelliteProtocol(APIServer):
                 _LOGGER.debug("Continued conversation started")
 
             threading.Timer(self.state.continue_conversation_delay, _start_continued_conversation).start()
+        elif pipeline_ended and self.state.pipeline_ended_sound:
+            _LOGGER.debug("Playing pipeline ended sound")
+            # Keep the pipeline active so the sound can't trigger the wake word.
+            self._pipeline_active = True
+            self.state.tts_player.play(self.state.pipeline_ended_sound, done_callback=self._pipeline_ended_sound_finished)
         else:
             self._continue_conversation = False
             self.unduck()
             self._emit(LVAEvent.IDLE)
 
         _LOGGER.debug("TTS response finished")
+
+    def _pipeline_ended_sound_finished(self) -> None:
+        self._pipeline_active = False
+        self.unduck()
+        self._emit(LVAEvent.IDLE)
 
     # ------------------------------------------------------------------
     # Ducking
@@ -1184,7 +1202,7 @@ class VoiceSatelliteProtocol(APIServer):
             model_size = model_path.stat().st_size
             if model_size == external_wake_word.model_size:
                 with open(model_path, "rb") as model_file:
-                    model_hash = hashlib.sha256(model_file.read()).hexdigest()
+                    model_hash = hashlib.file_digest(model_file, "sha256").hexdigest()
 
                 if model_hash == external_wake_word.model_hash:
                     should_download_model = False
