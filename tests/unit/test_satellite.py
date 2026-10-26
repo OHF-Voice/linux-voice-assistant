@@ -330,6 +330,53 @@ class TestDuckUnduck:
 
 
 # ---------------------------------------------------------------------------
+# pipeline ended sound
+# ---------------------------------------------------------------------------
+
+
+class TestPipelineEndedSound:
+    def test_run_end_without_tts_plays_sound(self, tmp_path):
+        from aioesphomeapi import VoiceAssistantEventType
+
+        sat = make_satellite(tmp_path)
+        sat.handle_voice_event(VoiceAssistantEventType.VOICE_ASSISTANT_RUN_END, {})
+        sat.state.tts_player.play.assert_called_once()
+        assert sat.state.tts_player.play.call_args.args[0] == sat.state.pipeline_ended_sound
+        sat.state.music_player.unduck.assert_not_called()
+
+    def test_sound_finished_goes_idle(self, tmp_path):
+        from aioesphomeapi import VoiceAssistantEventType
+
+        sat = make_satellite(tmp_path)
+        sat.handle_voice_event(VoiceAssistantEventType.VOICE_ASSISTANT_RUN_END, {})
+        sat.state.tts_player.play.call_args.kwargs["done_callback"]()
+        sat.state.music_player.unduck.assert_called_once()
+        assert sat._pipeline_active is False
+
+    def test_run_end_with_tts_does_not_play_sound(self, tmp_path):
+        from aioesphomeapi import VoiceAssistantEventType
+
+        sat = make_satellite(tmp_path)
+        sat._tts_played = True
+        sat.handle_voice_event(VoiceAssistantEventType.VOICE_ASSISTANT_RUN_END, {})
+        sat.state.tts_player.play.assert_not_called()
+
+    def test_tts_finished_callback_does_not_play_sound(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        sat._tts_finished()
+        sat.state.tts_player.play.assert_not_called()
+        sat.state.music_player.unduck.assert_called_once()
+
+    def test_empty_sound_path_disables_sound(self, tmp_path):
+        from aioesphomeapi import VoiceAssistantEventType
+
+        sat = make_satellite(tmp_path, {"pipeline_ended_sound": ""})
+        sat.handle_voice_event(VoiceAssistantEventType.VOICE_ASSISTANT_RUN_END, {})
+        sat.state.tts_player.play.assert_not_called()
+        sat.state.music_player.unduck.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
 # connection_lost()
 # ---------------------------------------------------------------------------
 

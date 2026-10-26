@@ -618,7 +618,7 @@ class VoiceSatelliteProtocol(APIServer):
             self._is_streaming_audio = False
             if not self._tts_played:
                 self._pipeline_active = False
-                self._tts_finished()
+                self._tts_finished(pipeline_ended=True)
             # When TTS is playing, keep _pipeline_active = True to block
             # false wake word detections from speaker audio feedback.
             # _tts_finished() callback will clear it when playback ends.
@@ -997,7 +997,11 @@ class VoiceSatelliteProtocol(APIServer):
         self._emit(LVAEvent.TTS_SPEAKING)
         self.state.tts_player.play(self._tts_url, done_callback=self._tts_finished)
 
-    def _tts_finished(self) -> None:
+    def _tts_finished(self, pipeline_ended: bool = False) -> None:
+        """
+        Clean up after playback ended or the pipeline finished, then continue the conversation or go idle.
+        :param pipeline_ended: True if the pipeline ended without a spoken reply, which plays the pipeline ended sound.
+        """
         self._pipeline_active = False
         self.state.active_wake_words.discard(self.state.stop_word.id)
         self.send_messages([VoiceAssistantAnnounceFinished()])
@@ -1022,18 +1026,22 @@ class VoiceSatelliteProtocol(APIServer):
                 _LOGGER.debug("Continued conversation started")
 
             threading.Timer(self.state.continue_conversation_delay, _start_continued_conversation).start()
-        elif self.state.pipeline_ended_sound and not self._tts_played:
+        elif pipeline_ended and self.state.pipeline_ended_sound:
             _LOGGER.debug("Playing pipeline ended sound")
-            self.state.tts_player.play(
-                self.state.pipeline_ended_sound,
-                done_callback=self.unduck,
-            )
+            # Keep the pipeline active so the sound can't trigger the wake word.
+            self._pipeline_active = True
+            self.state.tts_player.play(self.state.pipeline_ended_sound, done_callback=self._pipeline_ended_sound_finished)
         else:
             self._continue_conversation = False
             self.unduck()
             self._emit(LVAEvent.IDLE)
 
         _LOGGER.debug("TTS response finished")
+
+    def _pipeline_ended_sound_finished(self) -> None:
+        self._pipeline_active = False
+        self.unduck()
+        self._emit(LVAEvent.IDLE)
 
     # ------------------------------------------------------------------
     # Ducking
