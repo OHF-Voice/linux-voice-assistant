@@ -138,6 +138,7 @@ Existing env quirk: `REFACTORY_SECONDS` is misspelled on purpose (it's the publi
 - In Docker the working directory is `/app`, so the default `--download-dir` is `/app/local` (a named volume in `docker-compose.yml`). Bare metal uses `local/` inside the repo.
 - Paths in `.env.example` and the docs are written for the container (`/app/...`). The systemd examples use `/home/pi/linux-voice-assistant/...`.
 - `mypy` runs non-strict with `python_version = 3.11` (`mypy.ini`). Don't use syntax newer than 3.11.
+- The Docker image is **not** built locally by compose. `docker-compose.yml` pulls `ghcr.io/ohf-voice/linux-voice-assistant:${LVA_IMAGE_TAG:-latest}` (dev file: `-pr` image, tag `nightly`). The `Dockerfile` installs the pinned `aioesphomeapi` through `./script/setup`, so a fresh build always matches `pyproject.toml`. If a user reports an `AttributeError` on an aioesphomeapi symbol that exists in `.venv`, first suspect a stale or wrong image tag (check `LVA_IMAGE_TAG` in `.env`) before changing code. `satellite.py` guards `MULTI_CHANNEL_AUDIO` with `getattr` as a safety net only.
 - Some older docstrings in modules not touched recently may still be Google style. New code must use the Sphinx `:param:` style from AGENTS.md.
 
 ## Documentation map

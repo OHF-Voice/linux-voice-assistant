@@ -1182,7 +1182,7 @@ class VoiceSatelliteProtocol(APIServer):
             model_size = model_path.stat().st_size
             if model_size == external_wake_word.model_size:
                 with open(model_path, "rb") as model_file:
-                    model_hash = hashlib.sha256(model_file.read()).hexdigest()
+                    model_hash = hashlib.file_digest(model_file, "sha256").hexdigest()
 
                 if model_hash == external_wake_word.model_hash:
                     should_download_model = False

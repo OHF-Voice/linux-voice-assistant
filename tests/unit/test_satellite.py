@@ -436,6 +436,42 @@ class TestHandleTimerEvent:
 
 
 # ---------------------------------------------------------------------------
+# _download_external_wake_word
+# ---------------------------------------------------------------------------
+
+
+class TestDownloadExternalWakeWord:
+    def test_skips_download_when_size_and_hash_match(self, tmp_path):
+        import hashlib
+
+        from aioesphomeapi.model import VoiceAssistantExternalWakeWord
+
+        sat = make_satellite(tmp_path)
+        model_bytes = b"tflite-model"
+        eww_dir = sat.state.download_dir / "external_wake_words"
+        eww_dir.mkdir(parents=True)
+        (eww_dir / "custom.json").write_text("{}")
+        (eww_dir / "custom.tflite").write_bytes(model_bytes)
+
+        external = VoiceAssistantExternalWakeWord(
+            id="custom",
+            wake_word="Custom",
+            trained_languages=["en"],
+            model_type="micro",
+            model_size=len(model_bytes),
+            model_hash=hashlib.sha256(model_bytes).hexdigest(),
+            url="http://example.com/custom.json",
+        )
+
+        with patch("linux_voice_assistant.satellite.urlopen") as mock_urlopen:
+            result = sat._download_external_wake_word(external)
+
+        mock_urlopen.assert_not_called()
+        assert result is not None
+        assert result.id == "custom"
+
+
+# ---------------------------------------------------------------------------
 # VoiceAssistantSetConfiguration
 # ---------------------------------------------------------------------------
 
