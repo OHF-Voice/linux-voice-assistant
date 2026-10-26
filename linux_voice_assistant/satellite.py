@@ -76,7 +76,7 @@ _HAS_AUDIO_DATA2 = "data2" in {f.name for f in VoiceAssistantAudio.DESCRIPTOR.fi
 class VoiceSatelliteProtocol(APIServer):
 
     def __init__(self, state: ServerState) -> None:
-        super().__init__(state.name)
+        super().__init__(state.name, noise_psk=state.noise_psk, mac_address=state.mac_address)
 
         self.state = state
         self.state.satellite = self
@@ -725,6 +725,7 @@ class VoiceSatelliteProtocol(APIServer):
                 manufacturer="Open Home Foundation",
                 model="Linux Voice Assistant",
                 voice_assistant_feature_flags=self.supported_features,
+                api_encryption_supported=self.state.noise_psk is not None,
             )
         elif isinstance(msg, SubscribeStatesRequest):
             # Standard ESPHome state subscription. Replay current entity state to

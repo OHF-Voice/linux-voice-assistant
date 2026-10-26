@@ -36,6 +36,14 @@ if [ -n "${PORT}" ]; then
   EXTRA_ARGS+=( "--port" "$PORT" )
 fi
 
+if [ -n "${ENCRYPTION_KEY}" ]; then
+  EXTRA_ARGS+=( "--encryption-key" "$ENCRYPTION_KEY" )
+fi
+
+if [ -n "${ENCRYPTION_KEY_FILE}" ]; then
+  EXTRA_ARGS+=( "--encryption-key-file" "$ENCRYPTION_KEY_FILE" )
+fi
+
 if [ -n "${AUDIO_INPUT_DEVICE}" ]; then
   EXTRA_ARGS+=( "--audio-input-device" "$AUDIO_INPUT_DEVICE" )
 fi
