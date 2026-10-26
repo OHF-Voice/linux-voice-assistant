@@ -46,6 +46,8 @@ jobs:
 
       - name: Extract metadata for Docker
         id: meta
+        env:
+          DOCKER_METADATA_ANNOTATIONS_LEVELS: manifest,index
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ${{ env.REGISTRY_LOWER }}/${{ env.REPOSITORY_LOWER }}-pr
@@ -78,6 +80,7 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          annotations: ${{ steps.meta.outputs.annotations }}
       - name: Generate artifact attestation
         uses: actions/attest-build-provenance@v4
         with:
