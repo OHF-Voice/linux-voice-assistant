@@ -201,6 +201,7 @@ Environment=PREFERENCES_FILE="/home/pi/linux-voice-assistant/preferences.json"
 # Environment=BUTTON_DOUBLE_PRESS_SOUND="sounds/button_double_press.flac"
 # Environment=BUTTON_TRIPLE_PRESS_SOUND="sounds/button_triple_press.flac"
 # Environment=BUTTON_LONG_PRESS_SOUND="sounds/button_long_press.flac"
+# Environment=CONTINUE_CONVERSATION_SOUND="sounds/wake_word_triggered.flac"
 # Environment=PERIPHERAL_HOST="0.0.0.0"
 # Environment=PERIPHERAL_PORT="6055"
 # Environment=PERIPHERAL_VOLUME_STEP="%(default)s"
@@ -302,6 +303,7 @@ The following variables can be configured in the `.env` or in the service file:
 | `BUTTON_DOUBLE_PRESS_SOUND` | `sounds/button_double_press.flac` | Sound file for button double press |
 | `BUTTON_TRIPLE_PRESS_SOUND` | `sounds/button_triple_press.flac` | Sound file for button triple press |
 | `BUTTON_LONG_PRESS_SOUND` | `sounds/button_long_press.flac` | Sound file for button long press |
+| `CONTINUE_CONVERSATION_SOUND` | same as `WAKEUP_SOUND` | Sound file played when the mic re-opens for a follow-up question (off by default, enable with the "Follow-up Sound" switch in Home Assistant) |
 | `PERIPHERAL_HOST` | 0.0.0.0 | Host for the peripheral WebSocket API |
 | `PERIPHERAL_PORT` | 6055 | Port for the peripheral WebSocket API |
 | `PERIPHERAL_VOLUME_STEP` | %(default)s | Volume change per button press |
