@@ -1,6 +1,6 @@
 """Bridge between SendSpin client and MediaPlayer entity with time-synchronized playback.
 
-This module provides time-synchronized audio playback using sounddevice with
+This module provides time-synchronized audio playback using soundcard with
 DAC-level timing precision. It maintains sync with other SendSpin clients through
 continuous drift correction via sample drop/insert.
 """
@@ -10,20 +10,27 @@ from __future__ import annotations
 import asyncio
 import collections
 import logging
-import math
-import socket
+import threading
+import time
 from dataclasses import dataclass
 from enum import Enum, auto
 from typing import TYPE_CHECKING, Callable, Final, Protocol
 
+from linux_voice_assistant.player import state
 import numpy as np
-import sounddevice
+import soundcard as sc
 from aioesphomeapi.model import MediaPlayerState
 from aiosendspin.client import SendspinClient
+from aiosendspin.client.models import PairingSupport
 from aiosendspin.models.core import DeviceInfo, ServerCommandPayload, StreamStartMessage
 from aiosendspin.models.player import ClientHelloPlayerSupport, SupportedAudioFormat
-from aiosendspin.models.types import AudioCodec, PlayerCommand, PlayerStateType, Roles
-from sounddevice import CallbackFlags
+from pathlib import Path
+from aiosendspin.noise.keys import Identity
+import contextlib
+from aiosendspin.client import ClientListener
+from aiosendspin.noise.trust_store import ClientPairingStore, FileClientPairingStore
+from aiosendspin.models.controller import ControllerStatePayload
+from aiosendspin.models.types import AudioCodec, MediaCommand, PlayerCommand, PlaybackStateType, Roles
 
 if TYPE_CHECKING:
     from aiosendspin.client import AudioFormat, PCMFormat
@@ -34,10 +41,110 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class AudioTimeInfo(Protocol):
-    """Protocol for audio timing information from sounddevice callback."""
+    """Protocol for audio timing information from the soundcard callback."""
 
     outputBufferDacTime: float  # noqa: N815
     """DAC time when the output buffer will be played (in seconds)."""
+
+
+class _SoundCardOutputStream:
+    """Small soundcard-backed output stream compatible with the existing player API."""
+
+    def __init__(
+        self,
+        *,
+        samplerate: int,
+        channels: int,
+        dtype: str,
+        blocksize: int,
+        callback: Callable[[memoryview, int, AudioTimeInfo, object], None],
+        latency: str,
+        device: int | str | None,
+    ) -> None:
+        del latency
+        self._samplerate = samplerate
+        self._channels = channels
+        self._dtype = dtype
+        self._blocksize = blocksize
+        self._callback = callback
+        self._device = device
+        self._speaker = self._resolve_speaker(device)
+        self._thread: threading.Thread | None = None
+        self._running = False
+
+    def _resolve_speaker(self, device: int | str | None):
+        if isinstance(device, int):
+            try:
+                speakers = list(sc.all_speakers())
+                if 0 <= device < len(speakers):
+                    return speakers[device]
+            except Exception:
+                _LOGGER.debug("Failed to resolve soundcard speaker by index", exc_info=True)
+
+        if isinstance(device, str):
+            try:
+                return sc.get_speaker(device)
+            except Exception:
+                _LOGGER.debug("Failed to resolve soundcard speaker by name %s", device, exc_info=True)
+
+        default = getattr(sc, "default", None)
+        if default is not None:
+            try:
+                return default.speaker
+            except Exception:
+                pass
+
+        speakers = list(sc.all_speakers())
+        if speakers:
+            return speakers[0]
+
+        raise RuntimeError("No soundcard speaker available")
+
+    def start(self) -> None:
+        if self._running:
+            return
+        self._running = True
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def _run(self) -> None:
+        try:
+            with self._speaker.player(
+                samplerate=self._samplerate,
+                channels=self._channels,
+                blocksize=self._blocksize,
+            ) as player:
+                while self._running:
+                    frames = self._blocksize
+                    sample_bytes = np.dtype(self._dtype).itemsize * self._channels
+                    outdata = bytearray(frames * sample_bytes)
+                    time_info = type("_CallbackTimeInfo", (), {"outputBufferDacTime": time.monotonic()})()
+                    status = None
+                    try:
+                        self._callback(memoryview(outdata), frames, time_info, status)
+                    except Exception:
+                        _LOGGER.exception("Error in soundcard output callback")
+                        outdata = b"\x00" * len(outdata)
+                    try:
+                        pcm_int16 = np.frombuffer(outdata, dtype=np.int16)
+                        pcm_float = pcm_int16.astype(np.float32) / 32768.0
+                        if self._channels == 1:
+                            player.play(pcm_float)
+                        else:
+                            player.play(pcm_float.reshape(-1, self._channels))
+                    except Exception:
+                        _LOGGER.exception("Failed to play audio via soundcard")
+                        break
+        except Exception:
+            _LOGGER.exception("Failed to open soundcard player stream")
+
+    def stop(self) -> None:
+        self._running = False
+        if self._thread is not None and self._thread.is_alive():
+            self._thread.join(timeout=0.25)
+
+    def close(self) -> None:
+        self.stop()
 
 
 class PlaybackState(Enum):
@@ -147,7 +254,7 @@ class AudioPlayer:
         self._device = device
         self._format: PCMFormat | None = None
         self._queue: asyncio.Queue[_QueuedChunk] = asyncio.Queue()
-        self._stream: sounddevice.RawOutputStream | None = None
+        self._stream: _SoundCardOutputStream | None = None
         self._closed = False
         self._stream_started = False
 
@@ -216,8 +323,8 @@ class AudioPlayer:
         # Reset state on format change
         self._stream_started = False
 
-        # Create sounddevice output stream with callback
-        self._stream = sounddevice.RawOutputStream(
+        # Create a soundcard-backed output stream with the existing callback behavior.
+        self._stream = _SoundCardOutputStream(
             samplerate=pcm_format.sample_rate,
             channels=pcm_format.channels,
             dtype="int16",
@@ -299,118 +406,46 @@ class AudioPlayer:
         self._frames_inserted_since_log = 0
         self._frames_dropped_since_log = 0
 
-    def _audio_callback(
-        self,
-        outdata: memoryview,
-        frames: int,
-        time: AudioTimeInfo,
-        status: CallbackFlags,
-    ) -> None:
-        """Audio callback invoked by sounddevice when output buffer needs filling."""
+    def _audio_callback(self, outdata, frames, time, status):
         if self._format is None:
             return
 
         bytes_needed = frames * self._format.frame_size
         output_buffer = memoryview(outdata).cast("B")
 
-        if status:
-            if status.input_underflow or status.output_underflow:
-                _LOGGER.warning("Audio underflow detected; requesting re-anchor")
+        if status is not None:
+            input_underflow = bool(getattr(status, "input_underflow", False))
+            output_underflow = bool(getattr(status, "output_underflow", False))
+            if input_underflow or output_underflow:
+                _LOGGER.warning("Audio underflow detected; clearing current queue")
                 self._clear_requested = True
                 self._fill_silence(output_buffer, 0, bytes_needed)
                 return
-            _LOGGER.debug("Audio callback status: %s", status)
 
-        # Capture DAC output time and update playback position
         self._update_playback_position_from_dac(time)
+
         bytes_written = 0
+        if self._playback_state == PlaybackState.WAITING_FOR_START:
+            bytes_written = self._handle_start_gating(output_buffer, 0, frames, time)
 
-        try:
-            # Pre-start gating: fill silence until scheduled start time
-            if self._playback_state == PlaybackState.WAITING_FOR_START:
-                bytes_written = self._handle_start_gating(output_buffer, bytes_written, frames, time)
-
-            # If still waiting after gating, fill remaining buffer with silence
-            if self._playback_state == PlaybackState.WAITING_FOR_START:
-                if bytes_written < bytes_needed:
-                    silence_bytes = bytes_needed - bytes_written
-                    self._fill_silence(output_buffer, bytes_written, silence_bytes)
-                    bytes_written += silence_bytes
-            else:
-                frame_size = self._format.frame_size
-
-                # Snapshot correction schedule
-                insert_every_n = self._insert_every_n_frames
-                drop_every_n = self._drop_every_n_frames
-
-                # Fast path: no sync corrections needed
-                if insert_every_n == 0 and drop_every_n == 0:
-                    frames_data = self._read_input_frames_bulk(frames)
-                    frames_bytes = len(frames_data)
-                    output_buffer[bytes_written : bytes_written + frames_bytes] = frames_data
-                    bytes_written += frames_bytes
+        if self._playback_state == PlaybackState.PLAYING and bytes_written < bytes_needed:
+            try:
+                frames_remaining = (bytes_needed - bytes_written) // self._format.frame_size
+                pcm_data = self._read_input_frames_bulk(frames_remaining)
+                if len(pcm_data) < (bytes_needed - bytes_written):
+                    output_buffer[bytes_written : bytes_written + len(pcm_data)] = pcm_data
+                    self._fill_silence(output_buffer, bytes_written + len(pcm_data), bytes_needed - bytes_written - len(pcm_data))
                 else:
-                    # Slow path: sync corrections active
-                    if self._frames_until_next_insert <= 0 and insert_every_n > 0:
-                        self._frames_until_next_insert = insert_every_n
-                    if self._frames_until_next_drop <= 0 and drop_every_n > 0:
-                        self._frames_until_next_drop = drop_every_n
+                    output_buffer[bytes_written:bytes_needed] = pcm_data[: bytes_needed - bytes_written]
+            except Exception:
+                _LOGGER.exception("Error in audio callback")
+                self._fill_silence(output_buffer, bytes_written, bytes_needed - bytes_written)
+                self._current_chunk = None
+                self._current_chunk_offset = 0
+        elif bytes_written < bytes_needed:
+            # Still waiting for start and gating didn't fill the whole buffer
+            self._fill_silence(output_buffer, bytes_written, bytes_needed - bytes_written)
 
-                    if not self._last_output_frame:
-                        self._last_output_frame = b"\x00" * frame_size
-
-                    insert_counter = self._frames_until_next_insert
-                    drop_counter = self._frames_until_next_drop
-                    frames_remaining = frames
-
-                    while frames_remaining > 0:
-                        frames_until_insert = insert_counter if insert_every_n > 0 else frames_remaining + 1
-                        frames_until_drop = drop_counter if drop_every_n > 0 else frames_remaining + 1
-
-                        next_event_in = min(frames_until_insert, frames_until_drop, frames_remaining)
-
-                        if next_event_in > 0:
-                            segment_data = self._read_input_frames_bulk(next_event_in)
-                            segment_bytes = len(segment_data)
-                            output_buffer[bytes_written : bytes_written + segment_bytes] = segment_data
-                            bytes_written += segment_bytes
-                            frames_remaining -= next_event_in
-                            insert_counter -= next_event_in
-                            drop_counter -= next_event_in
-
-                        # Handle correction event
-                        if frames_remaining > 0:
-                            if drop_counter <= 0 and drop_every_n > 0:
-                                # Drop frame: read extra frame to advance cursor faster
-                                _ = self._read_one_input_frame()
-                                _ = self._read_one_input_frame()
-                                drop_counter = drop_every_n
-                                self._frames_dropped_since_log += 1
-                                output_buffer[bytes_written : bytes_written + frame_size] = self._last_output_frame
-                                bytes_written += frame_size
-                                frames_remaining -= 1
-                                insert_counter -= 1
-                            elif insert_counter <= 0 and insert_every_n > 0:
-                                # Insert frame: output duplicate without reading
-                                insert_counter = insert_every_n
-                                self._frames_inserted_since_log += 1
-                                output_buffer[bytes_written : bytes_written + frame_size] = self._last_output_frame
-                                bytes_written += frame_size
-                                frames_remaining -= 1
-                                drop_counter -= 1
-
-                    self._frames_until_next_insert = insert_counter
-                    self._frames_until_next_drop = drop_counter
-
-        except Exception:
-            _LOGGER.exception("Error in audio callback")
-            if bytes_written < bytes_needed:
-                silence_bytes = bytes_needed - bytes_written
-                output_buffer[bytes_written : bytes_written + silence_bytes] = b"\x00" * silence_bytes
-            self._current_chunk = None
-            self._current_chunk_offset = 0
-
-        # Apply volume scaling
         self._apply_volume(output_buffer, bytes_needed)
 
     def _update_playback_position_from_dac(self, time: AudioTimeInfo) -> None:
@@ -709,53 +744,22 @@ class AudioPlayer:
         return bytes_written
 
     def _update_correction_schedule(self, error_us: int) -> None:
-        """Plan sample drop/insert to correct sync error."""
+        """Keep the SendSpin output path stable by avoiding frame insertion/drop logic."""
         if self._format is None or self._format.sample_rate <= 0:
             return
 
-        self._smooth_sync_error(error_us)
-
-        abs_err = abs(self._sync_error_filtered_us)
-
-        # Do nothing within deadband
-        if abs_err <= self._CORRECTION_DEADBAND_US:
-            self._insert_every_n_frames = 0
-            self._drop_every_n_frames = 0
-            return
-
-        # Re-anchor if error is very large and cooldown has elapsed
-        now_loop_us = int(self._loop.time() * self._MICROSECONDS_PER_SECOND)
-        if abs_err > self._REANCHOR_THRESHOLD_US and self._playback_state == PlaybackState.PLAYING and now_loop_us - self._last_reanchor_loop_time_us > self._REANCHOR_COOLDOWN_US:
-            _LOGGER.info("Sync error %.1f ms too large; re-anchoring", abs_err / 1000.0)
-            self._insert_every_n_frames = 0
-            self._drop_every_n_frames = 0
-            self._frames_until_next_insert = 0
-            self._frames_until_next_drop = 0
-            self._last_reanchor_loop_time_us = now_loop_us
-            self.clear()
-            return
-
-        # Proportional control: correction rate proportional to error
-        frames_error = abs_err * self._format.sample_rate / self._MICROSECONDS_PER_SECOND
-        desired_corrections_per_sec = frames_error / self._CORRECTION_TARGET_SECONDS
-
-        max_corrections_per_sec = self._format.sample_rate * self._MAX_SPEED_CORRECTION
-        corrections_per_sec = min(desired_corrections_per_sec, max_corrections_per_sec)
-
-        if corrections_per_sec > 0:
-            interval_frames = int(self._format.sample_rate / corrections_per_sec)
-            interval_frames = max(interval_frames, 1)
-        else:
-            interval_frames = int(1.0 / max(self._MAX_SPEED_CORRECTION, 0.001))
-
-        if self._sync_error_filtered_us > 0:
-            # We are behind -> drop to catch up
-            self._drop_every_n_frames = interval_frames
-            self._insert_every_n_frames = 0
-        else:
-            # We are ahead -> insert to slow down
-            self._insert_every_n_frames = interval_frames
-            self._drop_every_n_frames = 0
+        # The custom sample drop/insert path is currently more harmful than helpful:
+        # tiny timestamp jitter and the synthetic callback timing create audible
+        # chopping, so keep the stream as a simple PCM pass-through.
+        self._insert_every_n_frames = 0
+        self._drop_every_n_frames = 0
+        self._frames_until_next_insert = 0
+        self._frames_until_next_drop = 0
+        self._last_output_frame = b""
+        self._sync_error_filtered_us = 0.0
+        self._sync_error_filter.reset()
+        del error_us
+        return
 
     def _log_sync_status(self) -> None:
         """Log sync error and buffer status periodically."""
@@ -810,16 +814,20 @@ class AudioPlayer:
 
         now_us = int(self._loop.time() * self._MICROSECONDS_PER_SECOND)
 
-        # On first chunk, schedule start time
+        # Anchor playback start to the server-scheduled time (computed via the
+        # clock-sync offset), so this client starts in sync with other Sendspin
+        # players instead of racing ahead by however long local buffering took.
         if self._scheduled_start_loop_time_us is None:
-            self._compute_and_set_loop_start(server_timestamp_us)
-            est_dac = self._estimate_dac_time_for_server_timestamp(server_timestamp_us)
-            self._scheduled_start_dac_time_us = est_dac if est_dac else None
+            try:
+                self._scheduled_start_loop_time_us = self._compute_client_time(server_timestamp_us)
+            except Exception:
+                _LOGGER.exception("Failed to compute client time for start; starting immediately")
+                self._scheduled_start_loop_time_us = int(self._loop.time() * self._MICROSECONDS_PER_SECOND)
+            self._scheduled_start_dac_time_us = None
             self._playback_state = PlaybackState.WAITING_FOR_START
             self._first_server_timestamp_us = server_timestamp_us
-            scheduled_start = self._scheduled_start_loop_time_us
-            if scheduled_start is not None and scheduled_start - now_us <= self._EARLY_START_THRESHOLD_US:
-                self._early_start_suspect = True
+            now_us = int(self._loop.time() * self._MICROSECONDS_PER_SECOND)
+            self._early_start_suspect = (self._scheduled_start_loop_time_us - now_us) < -self._EARLY_START_THRESHOLD_US
 
         # While waiting to start, update scheduled start as time sync improves
         elif self._playback_state == PlaybackState.WAITING_FOR_START and self._first_server_timestamp_us is not None:
@@ -842,22 +850,25 @@ class AudioPlayer:
         # Initialize expected timestamp on first chunk
         if self._expected_next_timestamp is None:
             self._expected_next_timestamp = server_timestamp_us
-        # Handle gap: insert silence
+        # Handle real gaps only; tiny timestamp jitter should not trigger silence insertion.
         elif server_timestamp_us > self._expected_next_timestamp:
             gap_us = server_timestamp_us - self._expected_next_timestamp
-            gap_frames = (gap_us * self._format.sample_rate) // self._MICROSECONDS_PER_SECOND
-            silence_bytes = gap_frames * self._format.frame_size
-            silence = b"\x00" * silence_bytes
-            self._queue.put_nowait(
-                _QueuedChunk(
-                    server_timestamp_us=self._expected_next_timestamp,
-                    audio_data=silence,
+            if gap_us <= 1000:
+                self._expected_next_timestamp = server_timestamp_us
+            else:
+                gap_frames = (gap_us * self._format.sample_rate) // self._MICROSECONDS_PER_SECOND
+                silence_bytes = gap_frames * self._format.frame_size
+                silence = b"\x00" * silence_bytes
+                self._queue.put_nowait(
+                    _QueuedChunk(
+                        server_timestamp_us=self._expected_next_timestamp,
+                        audio_data=silence,
+                    )
                 )
-            )
-            silence_duration_us = (gap_frames * self._MICROSECONDS_PER_SECOND) // self._format.sample_rate
-            self._queued_duration_us += silence_duration_us
-            _LOGGER.debug("Gap: %.1f ms filled with silence", gap_us / 1000.0)
-            self._expected_next_timestamp = server_timestamp_us
+                silence_duration_us = (gap_frames * self._MICROSECONDS_PER_SECOND) // self._format.sample_rate
+                self._queued_duration_us += silence_duration_us
+                _LOGGER.debug("Gap: %.1f ms filled with silence", gap_us / 1000.0)
+                self._expected_next_timestamp = server_timestamp_us
 
         # Handle overlap: trim the start
         elif server_timestamp_us < self._expected_next_timestamp:
@@ -926,17 +937,29 @@ class SendspinBridge:
             static_delay_ms: Static playback delay
             audio_device: Audio device index or name
         """
-        hostname = socket.gethostname()
         self.media_player = media_player_entity
-        self.client_id = client_id or f"linux-voice-assistant-{hostname}"
-        self.client_name = client_name or hostname
+
+        lva_name: str | None = None
+        state = getattr(media_player_entity.server, "state", None)
+        if state is not None:
+            lva_name = getattr(state, "friendly_name", None) or getattr(state, "name", None)
+
+        self.client_id = client_id or f"linux-voice-assistant-{lva_name}"
+        self.client_name = client_name
         self._audio_device = audio_device
         self._static_delay_ms = static_delay_ms
 
+        self._identity_file = Path(f"/app/configuration/sendspin_identity_{self.client_id}.key")
+        self._pairing_file = Path(f"/app/configuration/sendspin_pairing_{self.client_id}.json")
+        self._identity: Identity | None = None
+        self._pairing_store: ClientPairingStore | None = None
         self._client: SendspinClient | None = None
+        self._listener: ClientListener | None = None
+        self._controller_supported_commands: set[MediaCommand] = set()
         self._running = False
         self._stream_active = False
         self._paused = False  # Track if playback is paused (for announcements)
+        self._sendspin_owns_playback: bool = False  # True once Sendspin has played; cleared when HA takes over
 
         # AudioPlayer for time-synchronized playback
         self._player: AudioPlayer | None = None
@@ -946,46 +969,87 @@ class SendspinBridge:
         self._volume: int = 100
         self._muted: bool = False
         self._is_ducked: bool = False
+        self._pre_mute_volume: int = 100
 
         # Callback to notify when SendSpin starts playing
         self._on_sendspin_start: Callable[[], None] | None = None
 
-        # Create SendSpin client
-        self._client = SendspinClient(
-            client_id=self.client_id,
+    async def _ensure_identity_and_store(self) -> None:
+        if self._identity_file.exists():
+            self._identity = Identity.from_private_bytes(self._identity_file.read_bytes())
+        else:
+            self._identity = Identity.generate()
+            self._identity_file.parent.mkdir(parents=True, exist_ok=True)
+            self._identity_file.write_bytes(self._identity.private_bytes)
+        self._pairing_store = await FileClientPairingStore.open(self._pairing_file)
+
+    async def _on_pairing_pin_display(self, pin: str | None) -> None:
+        if pin is not None:
+            _LOGGER.info("=" * 60)
+            _LOGGER.info("SENDSPIN PAIRING REQUIRED — enter this PIN in Music Assistant: %s", pin)
+            _LOGGER.info("=" * 60)
+        else:
+            _LOGGER.info("SendSpin pairing window closed")
+
+    def _create_client(self) -> SendspinClient:
+        assert self._identity is not None and self._pairing_store is not None
+        return SendspinClient(
+            identity=self._identity,
             client_name=self.client_name,
-            roles=[Roles.PLAYER],
+            roles=[Roles.PLAYER, Roles.CONTROLLER],
+            pairing_store=self._pairing_store,
+            pairing_support=PairingSupport(
+                pin_display=self._on_pairing_pin_display,
+                offer_static_pin=True,
+            ),            
             device_info=DeviceInfo(
                 product_name="Linux Voice Assistant",
-                manufacturer="OHF-Voice",
-                software_version="1.0.0",
+                manufacturer="Open Home Foundation",
+                software_version="1.1.15",
             ),
             player_support=ClientHelloPlayerSupport(
                 supported_formats=[
-                    SupportedAudioFormat(
-                        codec=AudioCodec.PCM,
-                        channels=2,
-                        sample_rate=44_100,
-                        bit_depth=16,
-                    ),
-                    SupportedAudioFormat(
-                        codec=AudioCodec.PCM,
-                        channels=1,
-                        sample_rate=44_100,
-                        bit_depth=16,
-                    ),
+                    SupportedAudioFormat(codec=AudioCodec.PCM, channels=2, sample_rate=44_100, bit_depth=16),
+                    SupportedAudioFormat(codec=AudioCodec.PCM, channels=1, sample_rate=44_100, bit_depth=16),
                 ],
                 buffer_capacity=32_000_000,
                 supported_commands=[PlayerCommand.VOLUME, PlayerCommand.MUTE],
             ),
-            static_delay_ms=static_delay_ms,
+            static_delay_ms=self._static_delay_ms,
         )
 
-        # Register listeners
-        self._client.add_audio_chunk_listener(self._on_audio_chunk)
-        self._client.add_stream_start_listener(self._on_stream_start)
-        self._client.add_stream_end_listener(self._on_stream_end)
-        self._client.add_server_command_listener(self._on_server_command)
+    def _on_controller_state(self, payload) -> None:
+        # aiosendspin 9.x passes the full ServerStatePayload; the controller
+        # data lives under .controller (which can be None on unrelated updates).
+        controller = getattr(payload, "controller", None) or payload
+        commands = getattr(controller, "supported_commands", None)
+        if commands is None:
+            return
+        self._controller_supported_commands = set(commands)
+        _LOGGER.info(
+            "Sendspin controller state received: supported=%s",
+            sorted(str(c) for c in self._controller_supported_commands),
+        )
+
+    async def _send_group_command(self, command: MediaCommand) -> None:
+        if not self._client or not self._client.connected:
+            _LOGGER.warning("Sendspin group command %s skipped: not connected", command)
+            return
+        if command not in self._controller_supported_commands:
+            _LOGGER.warning(
+                "Sendspin group command %s skipped: not in supported set %s",
+                command, sorted(str(c) for c in self._controller_supported_commands),
+            )
+            return
+        try:
+            await self._client.send_group_command(command)
+            _LOGGER.info("Sendspin group command %s sent", command)
+        except ValueError:
+            _LOGGER.warning("Sendspin group command %s rejected", command, exc_info=True)
+
+    def release_playback(self) -> None:
+        self._sendspin_owns_playback = False
+        self._paused = False
 
     def set_on_sendspin_start(self, callback: Callable[[], None]) -> None:
         """Set callback to be called when SendSpin starts playing."""
@@ -1002,7 +1066,7 @@ class SendspinBridge:
             asyncio.get_event_loop().call_soon(
                 lambda v=self._volume: asyncio.create_task(
                     self._client.send_player_state(
-                        state=PlayerStateType.SYNCHRONIZED,
+                        available=True,
                         volume=v,
                         muted=self._muted,
                     )
@@ -1033,19 +1097,30 @@ class SendspinBridge:
             self._player.set_volume(vol, muted=self._muted)
 
     def pause(self) -> None:
-        """Pause SendSpin playback (for announcements)."""
         if self._stream_active and not self._paused:
             self._paused = True
             if self._player:
-                self._player.set_volume(0, muted=True)  # Mute instead of stopping
+                self._player.set_volume(0, muted=True)
+            if self._client and self._client.connected:
+                asyncio.get_event_loop().call_soon(
+                    lambda: asyncio.create_task(self._send_group_command(MediaCommand.PAUSE))
+                )
             _LOGGER.info("SendSpin playback paused")
 
     def resume(self) -> None:
-        """Resume SendSpin playback after pause."""
-        if self._stream_active and self._paused:
-            self._paused = False
-            self._update_player_volume()
-            _LOGGER.info("SendSpin playback resumed")
+        _LOGGER.info(
+            "resume() called: stream_active=%s paused=%s owns=%s",
+            self._stream_active, self._paused, self._sendspin_owns_playback,
+        )
+        if not (self._paused or self._sendspin_owns_playback):
+            return
+        self._paused = False
+        self._update_player_volume()
+        if self._client and self._client.connected:
+            asyncio.get_event_loop().call_soon(
+                lambda: asyncio.create_task(self._send_group_command(MediaCommand.PLAY))
+            )
+        _LOGGER.info("SendSpin playback resumed")
 
     @property
     def is_playing(self) -> bool:
@@ -1060,31 +1135,27 @@ class SendspinBridge:
             self._stream_active = False
             self._paused = False
 
-            # Report state to SendSpin server (SYNCHRONIZED is the only valid state)
-            # SendSpin protocol doesn't have PAUSED - it uses SYNCHRONIZED/ERROR only
+            # Report the current playback state using the enum supported by the installed aiosendspin version.
             if self._client and self._client.connected:
                 asyncio.get_event_loop().call_soon(
-                    lambda: asyncio.create_task(
-                        self._client.send_player_state(
-                            state=PlayerStateType.SYNCHRONIZED,
-                            volume=self._volume,
-                            muted=self._muted,
-                        )
-                    )
+                    lambda: asyncio.create_task(self._send_group_command(MediaCommand.STOP))
                 )
 
     async def start(self, server_url: str | None = None) -> None:
-        """Start the SendSpin client.
-
-        Args:
-            server_url: Optional server URL to connect to
-        """
-        if self._running or not self._client:
+        if self._running:
             return
+
+        await self._ensure_identity_and_store()
+        self._client = self._create_client()
+
+        self._client.add_audio_chunk_listener(self._on_audio_chunk)
+        self._client.add_stream_start_listener(self._on_stream_start)
+        self._client.add_stream_end_listener(self._on_stream_end)
+        self._client.add_server_command_listener(self._on_server_command)
+        self._client.add_controller_state_listener(self._on_controller_state)
 
         self._running = True
 
-        # Sync volume with MediaPlayerEntity
         if self.media_player:
             self._volume = int(self.media_player.volume * 100)
             self._muted = self.media_player.muted
@@ -1092,22 +1163,67 @@ class SendspinBridge:
         _LOGGER.info("Starting SendSpin bridge: %s", self.client_id)
 
         if server_url:
+            # Explicit URL: dial out directly (manual/advanced override).
             asyncio.create_task(self._connection_loop(server_url))
         else:
-            _LOGGER.info("SendSpin bridge started (no server URL - waiting for connections)")
+            # Default: advertise via mDNS and accept inbound connections,
+            # matching `sendspin daemon`'s zero-configuration behavior.
+            asyncio.create_task(self._listener_loop())
+
+    async def _listener_loop(self) -> None:
+        """Advertise via mDNS and accept inbound connections from a Sendspin server."""
+        self._listener = ClientListener(
+            client_id=self.client_id,
+            on_connection=self._handle_server_connection,
+            path="/sendspin",
+            host="0.0.0.0",
+            advertise_mdns=True,
+            client_name=self.client_name,
+        )
+        await self._listener.start()
+        _LOGGER.info("SendSpin bridge advertising via mDNS as '%s'", self.client_id)
+
+    async def _handle_server_connection(self, ws) -> None:
+        """Handle an inbound connection from a Sendspin server (e.g. Music Assistant)."""
+        if self._client is None:
+            return
+        attach_task = asyncio.create_task(self._client.attach_websocket(ws))
+        try:
+            for _ in range(100):  # ~10s handshake timeout
+                if self._client.connected:
+                    break
+                if attach_task.done():
+                    attach_task.result()
+                    return
+                await asyncio.sleep(0.1)
+            else:
+                _LOGGER.warning("SendSpin handshake did not complete in time")
+                attach_task.cancel()
+                return
+
+            _LOGGER.info("SendSpin handshake complete with server")
+            disconnect_event = asyncio.Event()
+            unsubscribe = self._client.add_disconnect_listener(disconnect_event.set)
+            await disconnect_event.wait()
+            unsubscribe()
+            _LOGGER.info("Disconnected from SendSpin server")
+        finally:
+            attach_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await attach_task
 
     async def disconnect(self) -> None:
-        """Stop the SendSpin client."""
         if not self._running:
             return
-
         _LOGGER.info("Stopping SendSpin bridge")
         self._running = False
-
         self._stop_playback()
-
+        if self._listener is not None:
+            await self._listener.stop()
+            self._listener = None
         if self._client and self._client.connected:
             await self._client.disconnect()
+
 
     def _create_player(self, fmt: "AudioFormat") -> None:
         """Create AudioPlayer for the given format."""
@@ -1206,6 +1322,7 @@ class SendspinBridge:
         _LOGGER.info("SendSpin stream started")
         self._stream_active = True
         self._paused = False
+        self._sendspin_owns_playback = True
 
         # Notify MediaPlayerEntity (it will handle pausing HA music and updating state)
         if self._on_sendspin_start:
@@ -1216,11 +1333,18 @@ class SendspinBridge:
         _LOGGER.info("SendSpin stream ended")
         self._stream_active = False
         self._paused = False
+        self._stop_playback()
+
+        if self._paused:
+            # Stream ended because of our pause. Keep _paused so resume() works
+            # and keep the entity showing PAUSED.
+            return
 
         # Stop playback
         self._stop_playback()
 
         # Update MediaPlayerEntity state to idle
+        self._paused = False
         if self.media_player:
             self.media_player.server.send_messages([self.media_player._update_state(MediaPlayerState.IDLE)])
 
@@ -1243,11 +1367,27 @@ class SendspinBridge:
                 self.media_player.server.send_messages([self.media_player._update_state(self.media_player.state)])
 
         elif player_cmd.command == PlayerCommand.MUTE and player_cmd.mute is not None:
+            was_muted = self._muted
             self._muted = player_cmd.mute
+
+            # Capture the volume to restore only at the moment mute first turns on,
+            # so a later (or interleaved) VOLUME=0 push can't destroy the real value.
+            if self._muted and not was_muted:
+                self._pre_mute_volume = self._volume
+
             self._update_player_volume()
-            # Sync with MediaPlayerEntity
+
             if self.media_player:
                 self.media_player.muted = self._muted
+                if self._muted:
+                    effective_volume = 0
+                else:
+                    effective_volume = self._pre_mute_volume
+                    self._volume = self._pre_mute_volume  # restore the bridge's own record too
+
+                self.media_player.volume = effective_volume / 100.0
+                self.media_player.music_player.set_volume(effective_volume)
+                self.media_player.announce_player.set_volume(effective_volume)
                 self.media_player.server.send_messages([self.media_player._update_state(self.media_player.state)])
             _LOGGER.info("SendSpin server %s player", "muted" if player_cmd.mute else "unmuted")
 
@@ -1255,7 +1395,7 @@ class SendspinBridge:
         asyncio.get_event_loop().call_soon(
             lambda v=self._volume: asyncio.create_task(
                 self._client.send_player_state(
-                    state=PlayerStateType.SYNCHRONIZED,
+                    available=True,
                     volume=v,
                     muted=self._muted,
                 )
