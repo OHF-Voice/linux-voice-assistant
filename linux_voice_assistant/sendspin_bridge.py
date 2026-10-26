@@ -16,7 +16,6 @@ import time
 from dataclasses import dataclass
 from enum import Enum, auto
 from pathlib import Path
-from aiosendspin.models.types import AudioCodec, MediaCommand, PlayerCommand, PlaybackStateType, Roles
 from typing import TYPE_CHECKING, Callable, Final, Protocol
 
 import numpy as np
@@ -27,8 +26,8 @@ from aiosendspin.client.models import PairingSupport
 from aiosendspin.models.controller import ControllerStatePayload
 from aiosendspin.models.core import DeviceInfo, ServerCommandPayload, StreamStartMessage
 from aiosendspin.models.player import ClientHelloPlayerSupport, SupportedAudioFormat
+from aiosendspin.models.types import AudioCodec, MediaCommand, PlayerCommand, PlaybackStateType, Roles
 from aiosendspin.noise.keys import Identity
-from aiosendspin.client import ClientListener
 from aiosendspin.noise.trust_store import ClientPairingStore, FileClientPairingStore
 
 from linux_voice_assistant.player import state
