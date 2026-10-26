@@ -1,7 +1,7 @@
 """Unit tests for shared models."""
 
 import json
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import pytest
 
@@ -80,6 +80,46 @@ class TestPreferences:
         p2 = make_preferences()
         p1.active_wake_words.append("okay_nabu")
         assert p2.active_wake_words == []
+
+
+class TestPreferencesFromDict:
+    def test_known_keys_are_loaded(self):
+        from linux_voice_assistant.models import Preferences
+
+        p = Preferences.from_dict({"volume": 0.4, "active_wake_words": ["okay_nabu", None], "mic_volume": 80})
+        assert p.volume == 0.4
+        assert p.active_wake_words == ["okay_nabu", None]
+        assert p.mic_volume == 80
+
+    def test_empty_dict_gives_defaults(self):
+        from linux_voice_assistant.models import Preferences
+
+        assert Preferences.from_dict({}) == Preferences()
+
+    def test_unknown_keys_are_ignored(self):
+        """A preferences.json written by a newer or older version must not crash startup."""
+        from linux_voice_assistant.models import Preferences
+
+        p = Preferences.from_dict({"volume": 0.5, "removed_setting": 1, "future_setting": "x"})
+        assert p.volume == 0.5
+        assert not hasattr(p, "removed_setting")
+        assert not hasattr(p, "future_setting")
+
+    def test_unknown_keys_are_logged(self, caplog):
+        from linux_voice_assistant.models import Preferences
+
+        with caplog.at_level("WARNING", logger="linux_voice_assistant.models"):
+            Preferences.from_dict({"future_setting": 1, "another_one": 2})
+
+        assert "another_one, future_setting" in caplog.text
+
+    def test_no_warning_for_known_keys(self, caplog):
+        from linux_voice_assistant.models import Preferences
+
+        with caplog.at_level("WARNING", logger="linux_voice_assistant.models"):
+            Preferences.from_dict({"volume": 0.5})
+
+        assert caplog.text == ""
 
 
 # ---------------------------------------------------------------------------
@@ -192,6 +232,17 @@ class TestPersistVolume:
         state.persist_volume(1.0)
         assert state.volume == 1.0
 
+    def test_emits_volume_muted_event_when_volume_zero(self, tmp_path):
+        from linux_voice_assistant.peripheral_api import LVAEvent
+
+        state = make_server_state(tmp_path)
+        state.peripheral_api = Mock()
+
+        state.persist_volume(0.0)
+
+        state.peripheral_api.emit_event_sync.assert_any_call(LVAEvent.VOLUME_CHANGED, {"volume": 0.0})
+        state.peripheral_api.emit_event_sync.assert_any_call(LVAEvent.VOLUME_MUTED, {"muted": True})
+
 
 # ---------------------------------------------------------------------------
 # ServerState.persist_mic_gain()
@@ -271,3 +322,30 @@ class TestPersistMicNoise:
         with patch.object(state, "save_preferences") as mock_save:
             state.persist_mic_noise(4.0)
             mock_save.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# initial_stop_word_threshold()
+# ---------------------------------------------------------------------------
+
+
+class TestInitialStopWordThreshold:
+    def test_saved_sensitivity_is_restored(self):
+        from linux_voice_assistant.models import initial_stop_word_threshold
+
+        assert initial_stop_word_threshold(0.9) == pytest.approx(0.9)
+
+    def test_falls_back_to_server_state_default_when_never_set(self):
+        from linux_voice_assistant.models import ServerState, initial_stop_word_threshold
+
+        assert initial_stop_word_threshold(None) == pytest.approx(ServerState.stop_word_threshold)
+
+    def test_clamped_to_one_when_above(self):
+        from linux_voice_assistant.models import initial_stop_word_threshold
+
+        assert initial_stop_word_threshold(1.5) == pytest.approx(1.0)
+
+    def test_clamped_to_zero_when_below(self):
+        from linux_voice_assistant.models import initial_stop_word_threshold
+
+        assert initial_stop_word_threshold(-0.5) == pytest.approx(0.0)

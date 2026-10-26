@@ -7,7 +7,7 @@ hardware buttons to LVA peripheral API commands.
 
 Hardware layout (Satellite 1 HAT on Raspberry Pi)
 --------------------------------------------------
-  LED ring   : 12 × SK6812 RGBW NeoPixels  →  GPIO 12 (PWM0)
+  LED ring   : 24 x WS2812 RGBW NeoPixels  →  GPIO 12 (PWM0)
   Right btn  : Volume Up                    →  GPIO 17
   Left btn   : Volume Down                  →  GPIO 27
   Top btn    : Mute / Unmute mic            →  GPIO 22
@@ -47,7 +47,7 @@ import sys
 import threading
 import time
 from enum import Enum
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 # ---------------------------------------------------------------------------
 # Hardware dependencies (gracefully stubbed when not on real Pi hardware so
@@ -90,13 +90,42 @@ BTN_ACTION     = 23   # Bottom button
 
 BTN_DEBOUNCE_MS = 30  # Milliseconds
 
+# Continuous hold-repeat behaviour for the volume buttons (and, while the
+# action button is held at the same time, the color wheel rotation). Once a
+# volume button has been held past VOLUME_HOLD_THRESHOLD_MS, the associated
+# step (volume up/down, or hue up/down when in color change mode) repeats
+# every VOLUME_HOLD_REPEAT_S seconds until the button is released.
+VOLUME_HOLD_THRESHOLD_MS = 1000  # Milliseconds before continuous repeat starts
+VOLUME_HOLD_REPEAT_S = 0.15  # Seconds between repeated steps while held
+
 # LED ring
-LED_COUNT      = 12
+LED_COUNT      = 24
 LED_FREQ_HZ    = 800_000
 LED_DMA        = 10
 LED_BRIGHTNESS = 168   # 66 % of 255 – matches ESPHome default
 LED_INVERT     = False
 LED_CHANNEL    = 0
+
+# Four mic positions at the cardinal points (top, right, bottom, left),
+# spaced LED_COUNT/4 apart. On the 24-LED ring: LEDs 0, 6, 12, 18.
+MIC_LED_POSITIONS = tuple(i * (LED_COUNT // 4) for i in range(4))
+
+# LEDs physically sitting in the AUX (3.5 mm) audio jack corner of the board,
+# identified by their silkscreen designators on the Satellite1 HAT (D35, D1,
+# D2). These three ring positions light up solid red whenever the media
+# player volume is at zero (the `volume_muted` peripheral event), independent
+# of whatever pipeline animation is currently running. Scaled to the 24-LED
+# ring to cover the same angular span as the original 12-LED mapping —
+# verify against your board revision and adjust if it differs.
+AUX_JACK_LED_INDICES = (22, 23, 0, 1, 2)
+
+# Volume Display effect
+# Mirrors the ESPHome Voice PE "Volume Display" addressable_lambda, but
+# rotated so the arc originates at the AUX jack corner LED (D1, index 0)
+# instead of Voice PE's origin — matching this board's physical AUX jack
+# placement. Shown as a temporary overlay for this many seconds after
+# volume_changed.
+VOLUME_DISPLAY_SECONDS = 2.5
 
 # Default ring color  (ESPHome default: 9.4 % R, 73.3 % G, 94.9 % B)
 DEFAULT_R, DEFAULT_G, DEFAULT_B = 24, 187, 242
@@ -223,6 +252,7 @@ class AssistState(str, Enum):
     TIMER_TICKING = "timer_ticking"
     TIMER_RINGING = "timer_ringing"
     MEDIA_PLAYING = "media_player_playing"
+    VOLUME_MUTED  = "volume_muted"
 
 
 # ---------------------------------------------------------------------------
@@ -234,8 +264,13 @@ class SharedState:
         self._lock = threading.Lock()
         self.assist_state: AssistState = AssistState.NOT_READY
         self.ha_connected: bool = False
-        self.muted: bool = False
+        self.muted: bool = False  # mic mute
         self.volume: float = 1.0
+        # Monotonic deadline until which the Volume Display arc takes over
+        # the ring, set on each volume_changed event. 0 (or in the past)
+        # means the arc is not showing.
+        self.volume_display_until: float = 0.0        
+        self.volume_muted: bool = False  # media player volume zero
         self.timer_total_seconds: int = 0
         self.timer_seconds_left: int = 0
         # Light entity state, driven by HA via light_command events.
@@ -251,6 +286,12 @@ class SharedState:
         self.hsv_hue: int = DEFAULT_HUE
         self.hsv_saturation: float = DEFAULT_SATURATION
         self.hsv_value: float = DEFAULT_VALUE
+        # True for as long as the action (bottom) button is physically held
+        # down, regardless of press duration. Drives the "light up while
+        # pressed" tactile feedback in LEDRing (only applied when the HA
+        # Light entity is off — see LEDRing._anim_action_held).
+        self.action_button_down: bool = False
+        self.buttons_locked: bool = False
 
     def update(self, **kwargs) -> None:
         with self._lock:
@@ -265,6 +306,8 @@ class SharedState:
                 "ha_connected":         self.ha_connected,
                 "muted":                self.muted,
                 "volume":               self.volume,
+                "volume_display_until": self.volume_display_until,
+                "volume_muted":         self.volume_muted,
                 "timer_total_seconds":  self.timer_total_seconds,
                 "timer_seconds_left":   self.timer_seconds_left,
                 "light_is_on":          self.light_is_on,
@@ -275,6 +318,8 @@ class SharedState:
                 "hsv_hue":              self.hsv_hue,
                 "hsv_saturation":       self.hsv_saturation,
                 "hsv_value":            self.hsv_value,
+                "action_button_down":   self.action_button_down,
+                "buttons_locked":       self.buttons_locked,
             }
 
 
@@ -425,6 +470,25 @@ class LEDRing:
             self._all_off()
         return 0.1
 
+    def _anim_action_held(self, color: RGB, brightness: float) -> float:
+        """
+        Force the ring fully on at the current (or default, if none has been
+        chosen yet) light color while the action button is physically held
+        down and the HA Light entity is off.
+
+        Only takes over when the Light entity is off — if it's already on,
+        the idle animation is already showing the color and the ring is
+        left alone. Gives instant visual feedback for every press,
+        including a very short tap (turns off the moment the button is
+        released), and refreshes quickly so that rotating the color wheel
+        (holding action + a volume button) shows up on the ring in real
+        time.
+        """
+        for i in range(LED_COUNT):
+            self._set(i, _scale(color, brightness))
+        self._write()
+        return 0.05
+
     def _anim_off(self) -> float:
         self._all_off()
         return 0.1
@@ -487,18 +551,12 @@ class LEDRing:
     def _anim_muted(self, color: RGB, muted: bool) -> float:
         """
         Solid ring with red indicators at all 4 mic positions when muted.
-        Satellite 1 HAT has mics at 12, 3, 6 and 9 o'clock → LEDs 0, 3, 6, 9.
         """
         for i in range(LED_COUNT):
             self._set(i, color)
 
         if muted:
-            # 4 mic positions: top (0), right (3), bottom (6), left (9)
-            # Blank the immediate neighbours so the red indicators stand out
-            self._set(11, BLACK); self._set(0, RED);  self._set(1, BLACK)
-            self._set(2,  BLACK); self._set(3, RED);  self._set(4, BLACK)
-            self._set(5,  BLACK); self._set(6, RED);  self._set(7, BLACK)
-            self._set(8,  BLACK); self._set(9, RED);  self._set(10, BLACK)
+            self._apply_mic_indicators()
 
         self._write()
         return 0.016
@@ -555,15 +613,68 @@ class LEDRing:
                 self._set(i, BLACK)
 
         if muted:
-            # 4 mic positions: LEDs 0, 3, 6, 9
-            self._set(11, BLACK); self._set(0, RED);  self._set(1, BLACK)
-            self._set(2,  BLACK); self._set(3, RED);  self._set(4, BLACK)
-            self._set(5,  BLACK); self._set(6, RED);  self._set(7, BLACK)
-            self._set(8,  BLACK); self._set(9, RED);  self._set(10, BLACK)
+            self._apply_mic_indicators()
 
         self._index = (LED_COUNT + self._index - 1) % LED_COUNT
         self._write()
         return 0.1
+
+    def _anim_volume_display(self, color: RGB, volume: float) -> float:
+        """
+        Arc showing the current volume level, originating at the AUX jack
+        corner LED (D1, index 0) and sweeping clockwise around the ring.
+
+        Mirrors the ESPHome Voice PE "Volume Display" addressable_lambda
+        exactly, except the arc's origin is rotated from LED 6 to LED 0 to
+        match this board's AUX jack corner LED placement.
+        """
+        silenced_color = RED
+        volume_ratio = LED_COUNT * max(0.0, min(1.0, volume))
+
+        for i in range(LED_COUNT):
+            if i <= volume_ratio:
+                brightness = min(volume_ratio - i, 1.0)
+                self._set(i, _scale(color, brightness))
+            else:
+                self._set(i, BLACK)
+
+        if volume <= 0.0:
+            self._set(0, silenced_color)
+
+        self._write()
+        return 0.05  # matches the 50ms update_interval of the ESPHome effect
+
+    def _apply_mic_indicators(self) -> None:
+        """
+        Mark all 4 mic positions (cardinal points) red on the already
+        rendered frame, blanking immediate neighbours so each indicator
+        reads as a distinct dot. Positions are LED_COUNT/4 apart —
+        LEDs 0, 6, 12, 18 on the 24-LED ring.
+        """
+        for pos in MIC_LED_POSITIONS:
+            self._set((pos - 1) % LED_COUNT, BLACK)
+            self._set(pos, RED)
+            self._set((pos + 1) % LED_COUNT, BLACK)
+
+    def _apply_mic_indicators_pulsed(self, factor: float) -> None:
+        """Pulsed version for timer_ring — keeps indicators in sync with ring brightness."""
+        for pos in MIC_LED_POSITIONS:
+            self._set(pos, _scale(RED, factor))
+
+    def _apply_volume_muted_indicator(self) -> None:
+        """
+        Overlay a solid red indicator on the AUX jack corner LEDs
+        (designators D35, D1, D2 — see ``AUX_JACK_LED_INDICES``) when the
+        media player output is muted.
+
+        Applied as a post-render overlay after the current pipeline
+        animation has already written its frame, so the indicator shows up
+        consistently no matter which animation is active, without having to
+        thread the flag through every individual ``_anim_*`` method.
+        """
+        for i in AUX_JACK_LED_INDICES:
+            self._set(i, RED)
+        self._write()
 
     # ------------------------------------------------------------------
     # Animation loop
@@ -577,11 +688,29 @@ class LEDRing:
             snap = self._state.snapshot
             color        = self._color()
             muted        = snap["muted"]
+            volume_muted = snap["volume_muted"]
             t_total      = snap["timer_total_seconds"]
             t_left       = snap["timer_seconds_left"]
             ha_connected = snap["ha_connected"]
+            action_button_down = snap["action_button_down"]
 
-            if anim == self.ANIM_IDLE:
+            # Volume Display takes over the ring temporarily, regardless of
+            # the current pipeline state, then falls back to the normal
+            # animation once its deadline passes.
+            if snap["volume_display_until"] > time.monotonic():
+                sleep = self._anim_volume_display(color, snap["volume"])
+
+            # The action button forces the ring on at the current (or
+            # default) color while physically held down — but only when the
+            # HA Light entity is off; if it's already on, the idle animation
+            # is already showing the color and there's nothing extra to do.
+            # This also carries live updates while the color wheel is being
+            # rotated (holding action + a volume button), since that
+            # rotation writes the new color straight into shared state.
+            elif action_button_down and not snap["light_is_on"]:
+                sleep = self._anim_action_held(color, snap["light_brightness"])
+
+            elif anim == self.ANIM_IDLE:
                 sleep = self._anim_idle()
 
             elif anim == self.ANIM_OFF:
@@ -619,6 +748,9 @@ class LEDRing:
 
             else:
                 sleep = self._anim_off()
+
+            if volume_muted:
+                self._apply_volume_muted_indicator()
 
             time.sleep(sleep)
 
@@ -678,11 +810,24 @@ class ButtonHandler:
     coroutines onto the asyncio event loop thread-safely.
     
     Supports:
-    - Volume +/- for volume control
-    - Mute button for microphone toggle
+    - Volume +/- for volume control. A short press sends a single step;
+      holding the button past VOLUME_HOLD_THRESHOLD_MS repeats that step
+      every VOLUME_HOLD_REPEAT_S seconds until released, so volume moves
+      gradually while held instead of one step per press.
+    - Mute button for microphone toggle.
     - Action button for context-aware commands or color changing:
       * Hold + Volume +: Increase hue by 10°
       * Hold + Volume -: Decrease hue by 10°
+      Holding the volume button past VOLUME_HOLD_THRESHOLD_MS while the
+      action button is held rotates continuously through the color wheel
+      using the same repeat mechanism, until the volume button is released.
+      Color changes are applied to the LED ring immediately so the wheel
+      rotation previews in real time.
+    - The action button also lights up the LED ring at the chosen (or
+      default) color for as long as it's physically held down — even for a
+      quick tap — turning off again on release. This only happens when the
+      HA Light entity is off; if it's already on, the idle animation is
+      already showing the color.
     """
 
     def __init__(
@@ -699,6 +844,15 @@ class ButtonHandler:
         self._action_button_held = False
         self._action_button_obj = None
 
+        # Continuous hold-repeat state for the volume buttons, keyed by
+        # "up" / "down". `_volume_hold_timers` fires once the button has
+        # been held past VOLUME_HOLD_THRESHOLD_MS to kick off the repeat
+        # loop; `_volume_repeat_stop` / `_volume_repeat_threads` drive that
+        # loop until the button is released.
+        self._volume_hold_timers: Dict[str, Optional[threading.Timer]] = {"up": None, "down": None}
+        self._volume_repeat_stop: Dict[str, Optional[threading.Event]] = {"up": None, "down": None}
+        self._volume_repeat_threads: Dict[str, Optional[threading.Thread]] = {"up": None, "down": None}
+
     def setup(self) -> None:
         if not _HAS_GPIO:
             _LOGGER.warning("GPIO unavailable – buttons not configured")
@@ -711,12 +865,14 @@ class ButtonHandler:
         btn_mute = Button(BTN_MUTE,        pull_up=True, bounce_time=debounce)
         btn_act  = Button(BTN_ACTION,      pull_up=True, bounce_time=debounce)
 
-        btn_up.when_pressed   = self._on_volume_up
-        btn_down.when_pressed = self._on_volume_down
+        btn_up.when_pressed    = lambda: self._on_volume_button_pressed("up")
+        btn_up.when_released   = lambda: self._on_volume_button_released("up")
+        btn_down.when_pressed  = lambda: self._on_volume_button_pressed("down")
+        btn_down.when_released = lambda: self._on_volume_button_released("down")
         btn_mute.when_pressed = self._on_mute
-        btn_act.when_pressed  = self._on_action
+        btn_act.when_pressed  = self._on_action_pressed
         btn_act.when_held     = self._on_action_held
-        btn_act.when_released = self._on_action_released
+        btn_act.when_released = self._on_action_button_released
         btn_act.hold_time     = 0.1  # 100ms to detect hold
 
         # Keep references — gpiozero Buttons are released when garbage-collected
@@ -728,6 +884,9 @@ class ButtonHandler:
         )
 
     def cleanup(self) -> None:
+        for which in ("up", "down"):
+            self._cancel_volume_hold_timer(which)
+            self._stop_volume_repeat(which)
         for btn in self._buttons:
             btn.close()
         self._buttons.clear()
@@ -749,7 +908,95 @@ class ButtonHandler:
             self._on_color_hue_decrease()
         else:
             self._send("volume_down")
-    
+
+    def _on_volume_button_pressed(self, which: str) -> None:
+        """
+        Handle a Volume Up/Down press: fire the immediate single step (volume,
+        or hue when the action button is held for color changing), then arm a
+        timer that starts continuous repeat if the button is still held past
+        VOLUME_HOLD_THRESHOLD_MS.
+        """
+        if which == "up":
+            self._on_volume_up()
+        else:
+            self._on_volume_down()
+
+        self._cancel_volume_hold_timer(which)
+        timer = threading.Timer(
+            VOLUME_HOLD_THRESHOLD_MS / 1000.0, self._start_volume_repeat, args=(which,)
+        )
+        timer.daemon = True
+        self._volume_hold_timers[which] = timer
+        timer.start()
+
+    def _on_volume_button_released(self, which: str) -> None:
+        """Stop any pending hold detection and any active continuous repeat."""
+        self._cancel_volume_hold_timer(which)
+        self._stop_volume_repeat(which)
+
+    def _cancel_volume_hold_timer(self, which: str) -> None:
+        timer = self._volume_hold_timers.get(which)
+        if timer is not None:
+            timer.cancel()
+            self._volume_hold_timers[which] = None
+
+    def _start_volume_repeat(self, which: str) -> None:
+        """
+        Begin repeating the volume/hue step every VOLUME_HOLD_REPEAT_S while
+        the button stays held. Runs in its own daemon thread so the GPIO
+        event-detection thread is never blocked; stopped via a threading.Event
+        set from `_on_volume_button_released`.
+        """
+        self._stop_volume_repeat(which)  # Safety: never overlap two loops
+
+        stop_event = threading.Event()
+        self._volume_repeat_stop[which] = stop_event
+
+        def _repeat_loop() -> None:
+            while not stop_event.wait(VOLUME_HOLD_REPEAT_S):
+                if which == "up":
+                    self._on_volume_up()
+                else:
+                    self._on_volume_down()
+
+        thread = threading.Thread(
+            target=_repeat_loop, daemon=True, name=f"volume-hold-repeat-{which}"
+        )
+        self._volume_repeat_threads[which] = thread
+        thread.start()
+
+    def _stop_volume_repeat(self, which: str) -> None:
+        stop_event = self._volume_repeat_stop.get(which)
+        if stop_event is not None:
+            stop_event.set()
+
+        thread = self._volume_repeat_threads.get(which)
+        if thread is not None and thread.is_alive():
+            thread.join(timeout=0.5)
+
+        self._volume_repeat_stop[which] = None
+        self._volume_repeat_threads[which] = None
+
+    def _on_action_pressed(self) -> None:
+        """
+        Action button physically pressed down.
+
+        Fires the usual context-sensitive command immediately (unchanged
+        behaviour), and also marks the button as held down so the LED ring
+        can react instantly — even for a very short tap. The ring itself
+        only lights up in response to this when the HA Light entity is off
+        (see LEDRing._anim_action_held); if it's already on, the idle
+        animation is already showing the color and there's nothing extra
+        to do.
+        """
+        self._state.update(action_button_down=True)
+        self._on_action()
+
+    def _on_action_button_released(self) -> None:
+        """Action button released – exit color-change mode and stop forcing the ring on."""
+        self._on_action_released()
+        self._state.update(action_button_down=False)
+
     def _on_action_held(self) -> None:
         """Action button held – enter color change mode."""
         self._action_button_held = True
@@ -772,13 +1019,26 @@ class ButtonHandler:
         self._send_color_command(new_hue, snap["hsv_saturation"], snap["hsv_value"])
     
     def _send_color_command(self, hue: int, saturation: float, value: float) -> None:
-        """Convert HSV to RGB and send light_command to LVA."""
-        # Update local HSV state
-        self._state.update(hsv_hue=hue, hsv_saturation=saturation, hsv_value=value)
-        
-        # Convert HSV to RGB for light command
+        """
+        Convert HSV to RGB, apply it to shared state immediately for a
+        real-time preview on the LED ring, and notify LVA/Home Assistant.
+        """
         r, g, b = hsv_to_rgb(hue, saturation, value)
-        
+
+        # Update local state right away so the ring reflects the new color
+        # as it's being picked, without waiting on a light_command
+        # round-trip through LVA/Home Assistant. This also turns the light
+        # "on" — picking a color is an explicit, deliberate action.
+        self._state.update(
+            hsv_hue=hue,
+            hsv_saturation=saturation,
+            hsv_value=value,
+            light_is_on=True,
+            light_red=r / 255.0,
+            light_green=g / 255.0,
+            light_blue=b / 255.0,
+        )
+
         # Normalize RGB to 0-1 range
         light_cmd = {
             "command": "light_command",
@@ -832,8 +1092,12 @@ class ButtonMultipressHandler:
         self.button_pin = BTN_ACTION
         self.last_press_time = 0
         self.press_count = 0
+        self._state = state
 
     def _send(self, command: str) -> None:
+        if self._state.snapshot["buttons_locked"]:
+            _LOGGER.debug("Button controls locked — ignoring %s", command)
+            return
         _LOGGER.info("Button → %s", command)
         asyncio.run_coroutine_threadsafe(
             self._queue.put(command), self._loop
@@ -931,7 +1195,8 @@ class LVAClient:
             # Declare that this peripheral has physical buttons so LVA
             # creates a Button Press event entity in Home Assistant.
             # Idempotent: safe to send on every reconnect.
-            await ws.send(json.dumps({"command": "register_button"}))            
+            await ws.send(json.dumps({"command": "register_button"}))
+            await ws.send(json.dumps({"command": "register_button_lock"}))
             recv_task = asyncio.create_task(self._recv_loop(ws))
             send_task = asyncio.create_task(self._send_loop(ws))
             done, pending = await asyncio.wait(
@@ -986,7 +1251,11 @@ class LVAClient:
             self._state.update(
                 muted=data.get("muted", False),
                 volume=data.get("volume", 1.0),
+                # Not currently sent by LVA's snapshot payload, but read it
+                # defensively in case a future LVA version adds it.
+                volume_muted=data.get("volume_muted", False),
                 ha_connected=data.get("ha_connected", False),
+                buttons_locked=data.get("button_controls_locked", False),
             )
             snap = self._state.snapshot
             anim = state_to_animation(
@@ -995,6 +1264,12 @@ class LVAClient:
             self._leds.set_animation(anim)
             return
 
+        elif event == "button_lock_changed":
+            locked = data.get("locked", False)
+            self._state.update(buttons_locked=locked)
+            _LOGGER.info("Button controls %s", "locked" if locked else "unlocked")
+            return
+      
         # --- Voice pipeline events -----------------------------------------
         elif event == "wake_word_detected":
             self._state.update(assist_state=AssistState.WAKE_WORD)
@@ -1069,10 +1344,23 @@ class LVAClient:
             self._state.update(assist_state=AssistState.MEDIA_PLAYING)
 
         elif event == "volume_changed":
-            self._state.update(volume=data.get("volume", 1.0))
+            self._state.update(
+                volume=data.get("volume", 1.0),
+                volume_display_until=time.monotonic() + VOLUME_DISPLAY_SECONDS,
+            )
 
         elif event == "volume_muted":
-            self._state.update(muted=data.get("muted", False))
+            # Media player (speaker) mute state, distinct from the
+            # microphone `muted` event above. Drives the red indicator on
+            # the AUX jack corner LEDs (see AUX_JACK_LED_INDICES) rather
+            # than swapping the whole ring animation, since the assist
+            # pipeline can still be doing something else at the same time.
+            volume_muted = data.get("muted", True)
+            self._state.update(volume_muted=volume_muted)
+            if volume_muted:
+                self._state.update(assist_state=AssistState.VOLUME_MUTED)
+            elif self._state.assist_state == AssistState.VOLUME_MUTED:
+                self._state.update(assist_state=AssistState.IDLE)
 
         # --- Zeroconf / connection events ----------------------------------
         elif event == "zeroconf":

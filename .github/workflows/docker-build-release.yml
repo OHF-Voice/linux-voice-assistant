@@ -35,6 +35,8 @@ jobs:
         uses: docker/setup-buildx-action@v4
       - name: Extract metadata for Docker
         id: meta
+        env:
+          DOCKER_METADATA_ANNOTATIONS_LEVELS: manifest,index
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ${{ env.REGISTRY }}/${{ github.repository }}
@@ -44,7 +46,16 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
-            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+          labels: |
+            org.opencontainers.image.authors="Open Home Foundation"
+            org.opencontainers.image.base.name="docker.io/library/python:3.13-slim-trixie"
+            org.opencontainers.image.description="Linux-Voice-Assistant for Home Assistant"
+            org.opencontainers.image.documentation="https://github.com/OHF-Voice/linux-voice-assistant/blob/main/README.md"
+            org.opencontainers.image.licenses="Apache-2.0"
+            org.opencontainers.image.source="https://github.com/OHF-Voice/linux-voice-assistant"
+            org.opencontainers.image.title="Linux-Voice-Assistant"
+            org.opencontainers.image.url="https://github.com/OHF-Voice/linux-voice-assistant"
+            org.opencontainers.image.vendor="Open Home Foundation"
 
       - name: Create version files
         run: |
@@ -54,13 +65,14 @@ jobs:
 
       - name: Build and push Docker image
         id: push
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           platforms: linux/amd64,linux/aarch64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          annotations: ${{ steps.meta.outputs.annotations }}
       - name: Generate artifact attestation
         uses: actions/attest-build-provenance@v4
         with:
