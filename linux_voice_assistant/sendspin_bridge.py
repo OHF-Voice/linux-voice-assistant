@@ -26,7 +26,7 @@ from aiosendspin.client.models import PairingSupport
 from aiosendspin.models.controller import ControllerStatePayload
 from aiosendspin.models.core import DeviceInfo, ServerCommandPayload, StreamStartMessage
 from aiosendspin.models.player import ClientHelloPlayerSupport, SupportedAudioFormat
-from aiosendspin.models.types import AudioCodec, MediaCommand, PlayerCommand, PlaybackStateType, Roles
+from aiosendspin.models.types import AudioCodec, MediaCommand, PlaybackStateType, PlayerCommand, Roles
 from aiosendspin.noise.keys import Identity
 from aiosendspin.noise.trust_store import ClientPairingStore, FileClientPairingStore
 
