@@ -170,6 +170,8 @@ class LVACommand(str, Enum):
     STOP_PIPELINE = "stop_pipeline"
     MUTE_MIC = "mute_mic"
     UNMUTE_MIC = "unmute_mic"
+    LOCK_MUTE = "lock_mute"
+    UNLOCK_MUTE = "unlock_mute"
     VOLUME_UP = "volume_up"
     VOLUME_DOWN = "volume_down"
     SET_VOLUME = "set_volume"
@@ -300,6 +302,7 @@ class PeripheralAPIServer:
                 "event": "snapshot",
                 "data": {
                     "muted": state.muted,
+                    "mute_locked": state.mute_locked,
                     "volume": round(state.volume, 3),
                     "volume_muted": state.volume == 0.0,
                     "ha_connected": state.connected,
@@ -373,9 +376,21 @@ class PeripheralAPIServer:
                 await self._push_mute_switch(satellite, muted=True)
 
         elif command == LVACommand.UNMUTE_MIC:
-            if satellite is not None and state.muted:
+            if satellite is not None and state.muted and not state.mute_locked:
                 satellite._set_muted(False)  # pylint: disable=protected-access
                 await self._push_mute_switch(satellite, muted=False)
+
+        elif command == LVACommand.LOCK_MUTE:
+            # A hardware-style mute switch: muted until unlock_mute, whatever Home Assistant or
+            # other peripherals ask. Works with or without Home Assistant connected.
+            if not state.mute_locked:
+                state.mute_locked = True
+                await self._set_locked_mute(satellite, muted=True)
+
+        elif command == LVACommand.UNLOCK_MUTE:
+            if state.mute_locked:
+                state.mute_locked = False
+                await self._set_locked_mute(satellite, muted=False)
 
         elif command in (LVACommand.VOLUME_UP, LVACommand.VOLUME_DOWN):
             delta = self._volume_step if command == LVACommand.VOLUME_UP else -self._volume_step
@@ -663,6 +678,22 @@ class PeripheralAPIServer:
                 return
 
         self._pending_entity_reconnect_task = self._loop.create_task(_trigger())
+
+    async def _set_locked_mute(self, satellite: Any, *, muted: bool) -> None:
+        """Mute or unmute after a lock change, telling Home Assistant and every peripheral."""
+        state = self._state
+        if state is None:
+            return
+        if satellite is not None:
+            if state.muted != muted:
+                satellite._set_muted(muted)  # pylint: disable=protected-access
+            else:
+                await self.emit_event(LVAEvent.MUTED, {"muted": state.muted, "locked": state.mute_locked})
+            await self._push_mute_switch(satellite, muted=muted)
+        else:
+            # No Home Assistant connected: the state is what it will find when it connects.
+            state.muted = muted
+            await self.emit_event(LVAEvent.MUTED, {"muted": state.muted, "locked": state.mute_locked})
 
     async def _push_mute_switch(self, satellite: Any, *, muted: bool) -> None:
         """Reflect a peripheral-triggered mute change to Home Assistant."""

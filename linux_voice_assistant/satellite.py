@@ -546,8 +546,12 @@ class VoiceSatelliteProtocol(APIServer):
             self.state.stop_sensitivity_number_entity.sync_with_state()
 
     def _set_muted(self, new_state: bool) -> None:
+        if self.state.mute_locked and not new_state:
+            # A peripheral's mute lock (lock_mute) is on: only unlock_mute unmutes.
+            _LOGGER.info("Unmute refused: the mute is locked by a peripheral")
+            return
         self.state.muted = bool(new_state)
-        self._emit(LVAEvent.MUTED, {"muted": self.state.muted})
+        self._emit(LVAEvent.MUTED, {"muted": self.state.muted, "locked": self.state.mute_locked})
 
         if self.state.muted:
             # voice_assistant.stop behavior

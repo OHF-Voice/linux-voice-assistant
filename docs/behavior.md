@@ -171,6 +171,8 @@ When muted:
 
 When unmuted, the unmute sound (`--unmute-sound`) plays and the assistant returns to idle.
 
+**Mute lock.** A peripheral with a hardware-style mute switch can lock the mute (`lock_mute`, see [peripheral_api.md](peripheral_api.md)): the assistant is muted until the same peripheral unlocks it (`unlock_mute`, which also unmutes). While locked, turning the **Mute** switch off in Home Assistant is refused (it stays on), and so is `unmute_mic` from any peripheral. The lock also applies while Home Assistant is not connected, and Home Assistant finds the assistant muted when it connects.
+
 Do not confuse this with the **media player mute**, which sets the shared volume to 0, see below.
 
 ---

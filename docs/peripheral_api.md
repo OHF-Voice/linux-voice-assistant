@@ -63,6 +63,7 @@ Immediately after connecting, LVA sends a snapshot so your client can synchronis
   "event": "snapshot",
   "data": {
     "muted": false,
+    "mute_locked": false,
     "volume": 0.8,
     "ha_connected": true,
     "button_controls_disabled": false,
@@ -123,7 +124,7 @@ These are all the events LVA emits. Your peripheral script receives them and rea
 |-------|------|-------------|
 | `pipeline_error` | `{"reason": str}` | The voice pipeline failed — for example STT failure or an intent error. Show a brief red error animation (3 flashes, then off). NOT emitted when HA disconnects; see `disconnected` below. |
 | `disconnected` | — | The TCP connection to Home Assistant was lost. Show a "no connection" animation and keep it until you see `zeroconf` with `status: connected`. Note: if LVA itself is not running, your client will see a WebSocket connection failure instead — treat that the same way. |
-| `muted` | `{"muted": bool}` | The microphone mute state changed. `true` = muted (show a muted indicator on your LEDs, e.g. red at mic positions), `false` = unmuted. Emitted on every transition in both directions, so peripherals can track mute state without inferring it from `idle`. |
+| `muted` | `{"muted": bool, "locked": bool}` | The microphone mute state changed (`locked`: by `lock_mute`). `true` = muted (show a muted indicator on your LEDs, e.g. red at mic positions), `false` = unmuted. Emitted on every transition in both directions, so peripherals can track mute state without inferring it from `idle`. |
 | `zeroconf` | `{"status": "getting_started" \| "connected"}` | Reports LVA's connection lifecycle. `getting_started` is emitted at startup before HA connects; `connected` is emitted once the HA TCP handshake completes. Use `connected` to clear a "no connection" animation. |
 | `button_controls_disabled` | `{"disabled": bool}` | Reflects the "Disable button controls" switch on the Home Assistant device page. `true` = on-board buttons should be ignored by the peripheral; `false` = normal button behaviour. Off by default. Also included directly in the `snapshot` payload for newly-connecting clients. |
 
@@ -181,7 +182,9 @@ For HA to see your entity, your peripheral must register before HA enumerates th
 | Command | Data | Description |
 |---------|------|-------------|
 | `mute_mic` | — | Mute the microphone. Stops any active pipeline, plays the mute sound, and emits `muted` with `{"muted": true}` to all clients. No-op if already muted. |
-| `unmute_mic` | — | Unmute the microphone. Plays the unmute sound and emits `muted` with `{"muted": false}` followed by `idle`. No-op if already unmuted. |
+| `unmute_mic` | — | Unmute the microphone. Plays the unmute sound and emits `muted` with `{"muted": false}` followed by `idle`. No-op if already unmuted, or while the mute is locked. |
+| `lock_mute` | — | A hardware-style mute switch turned on: mute the microphone and keep it muted until `unlock_mute`. While locked, Home Assistant's **Mute** switch cannot be turned off (it stays on) and `unmute_mic` is refused. Works whether or not Home Assistant is connected. Emits `muted` with `{"muted": true, "locked": true}`. No-op if already locked. |
+| `unlock_mute` | — | The switch turned off: remove the lock and unmute. Emits `muted` with `{"muted": false, "locked": false}`. No-op if not locked. |
 
 ### Volume
 

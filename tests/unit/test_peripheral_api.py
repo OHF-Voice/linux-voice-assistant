@@ -385,6 +385,47 @@ class TestDispatchMute:
 
         satellite.send_messages.assert_called_once()
 
+    @pytest.mark.asyncio
+    async def test_lock_mute_without_home_assistant(self, tmp_path):
+        state = make_state(tmp_path, muted=False)
+        state.satellite = None
+        server = make_server(state)
+
+        await dispatch(server, LVACommand.LOCK_MUTE.value)
+
+        assert (state.muted, state.mute_locked) == (True, True)
+
+    @pytest.mark.asyncio
+    async def test_lock_mute_tells_home_assistant(self, tmp_path):
+        state = make_state(tmp_path, muted=False)
+        state.mute_switch_entity = MagicMock(key=1)
+        state.satellite = MagicMock()
+        server = make_server(state)
+
+        await dispatch(server, LVACommand.LOCK_MUTE.value)
+
+        assert state.mute_locked is True
+        state.satellite._set_muted.assert_called_once_with(True)  # pylint: disable=protected-access
+        state.satellite.send_messages.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_unmute_mic_refused_while_locked(self, tmp_path):
+        state = make_state(tmp_path, muted=True, mute_locked=True)
+        state.satellite = MagicMock()
+
+        await dispatch(make_server(state), LVACommand.UNMUTE_MIC.value)
+
+        state.satellite._set_muted.assert_not_called()  # pylint: disable=protected-access
+
+    @pytest.mark.asyncio
+    async def test_unlock_mute_unmutes(self, tmp_path):
+        state = make_state(tmp_path, muted=True, mute_locked=True)
+        state.satellite = None
+
+        await dispatch(make_server(state), LVACommand.UNLOCK_MUTE.value)
+
+        assert (state.muted, state.mute_locked) == (False, False)
+
 
 # ---------------------------------------------------------------------------
 # _dispatch_command() — volume

@@ -339,6 +339,12 @@ class TestMuteSwitchEntity:
         msgs = list(entity.handle_message(msg))
         assert any(isinstance(m, SwitchStateResponse) for m in msgs)
 
+    def test_switch_command_snaps_back_while_mute_locked(self):
+        # The satellite refused the unmute (mute locked): the switch stays on.
+        entity = make_mute_switch(key=2, initial_muted=True)
+        msgs = list(entity.handle_message(SwitchCommandRequest(key=2, state=False)))
+        assert [m.state for m in msgs if isinstance(m, SwitchStateResponse)] == [True]
+
     def test_switch_command_wrong_key_ignored(self):
         entity = make_mute_switch(key=2)
         msg = SwitchCommandRequest(key=99, state=True)

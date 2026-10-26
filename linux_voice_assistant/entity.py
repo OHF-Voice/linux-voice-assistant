@@ -323,6 +323,9 @@ class MuteSwitchEntity(ESPHomeEntity):
             new_state = bool(msg.state)
             self._switch_state = new_state
             self._set_muted(new_state)
+            if not new_state and self._get_muted():
+                # Unmute refused (the mute is locked by a peripheral): the switch stays on
+                self._switch_state = True
             # Return the new state immediately
             yield SwitchStateResponse(key=self.key, state=self._switch_state)
         elif isinstance(msg, ListEntitiesRequest):

@@ -183,6 +183,8 @@ class ServerState:
     button_controls_locked: bool = False
     output_only: bool = False
     muted: bool = False
+    # Muted by a peripheral's hardware-style switch (lock_mute): nothing else can unmute.
+    mute_locked: bool = False
     connected: bool = False
     volume: float = 1.0
     oww_probability_cutoff: float = 0.7  # Dynamic threshold for OpenWakeWord

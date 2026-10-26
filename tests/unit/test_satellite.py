@@ -145,6 +145,13 @@ class TestSetMuted:
         sat._set_muted(True)
         assert sat._is_streaming_audio is False
 
+    def test_unmuting_refused_while_mute_locked(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        sat.state.muted = True
+        sat.state.mute_locked = True
+        sat._set_muted(False)
+        assert sat.state.muted is True
+
 
 # ---------------------------------------------------------------------------
 # _set_thinking_sound_enabled()
