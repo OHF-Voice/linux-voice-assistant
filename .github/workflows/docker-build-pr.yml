@@ -4,6 +4,9 @@ name: Build PR
 on:
   pull_request_target:
     types: [opened, synchronize, reopened]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
 
 env:
   REGISTRY: ghcr.io

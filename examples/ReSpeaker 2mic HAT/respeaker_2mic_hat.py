@@ -194,6 +194,7 @@ class SharedState:
         # Monotonic deadline used by _timer_tick to fade brightness
         # smoothly between sparse timer_updated events.
         self.timer_ends_at: float = 0.0
+        self.buttons_locked: bool = False
 
     def update(self, **kwargs) -> None:
         with self._lock:
@@ -224,6 +225,7 @@ class SharedState:
                 "light_green":         self.light_green,
                 "light_blue":          self.light_blue,
                 "timer_ends_at":       self.timer_ends_at,
+                "buttons_locked":       self.buttons_locked,
             }
 
 
@@ -601,6 +603,9 @@ class ButtonHandler:
             self._on_press()
 
     def _send(self, command: str) -> None:
+        if self._state.snapshot["buttons_locked"]:
+            _LOGGER.debug("Button controls locked — ignoring %s", command)
+            return
         _LOGGER.info("Button → %s", command)
         asyncio.run_coroutine_threadsafe(
             self._queue.put(command), self._loop
@@ -665,6 +670,9 @@ class ButtonMultipressHandler:
         self._single_click_action = action
 
     def _send(self, command: str) -> None:
+        if self._state.snapshot["buttons_locked"]:
+            _LOGGER.debug("Button controls locked — ignoring %s", command)
+            return
         _LOGGER.info("Button → %s", command)
         asyncio.run_coroutine_threadsafe(
             self._queue.put(command), self._loop
@@ -805,7 +813,8 @@ class LVAClient:
             # Declare that this peripheral has physical buttons so LVA
             # creates a Button Press event entity in Home Assistant.
             # Idempotent: safe to send on every reconnect.
-            await ws.send(json.dumps({"command": "register_button"}))            
+            await ws.send(json.dumps({"command": "register_button"}))
+            await ws.send(json.dumps({"command": "register_button_lock"}))
             recv_task = asyncio.create_task(self._recv_loop(ws))
             send_task = asyncio.create_task(self._send_loop(ws))
             done, pending = await asyncio.wait(
@@ -848,6 +857,7 @@ class LVAClient:
                 muted=muted,
                 volume=data.get("volume", 1.0),
                 ha_connected=data.get("ha_connected", False),
+                buttons_locked=data.get("button_controls_locked", False),
             )
             if muted:
                 self._animator.set_state(AssistState.MUTED)
@@ -855,6 +865,12 @@ class LVAClient:
                 self._animator.set_state(AssistState.NOT_READY)
             else:
                 self._animator.set_state(AssistState.IDLE)
+            return
+
+        elif event == "button_lock_changed":
+            locked = data.get("locked", False)
+            self._state.update(buttons_locked=locked)
+            _LOGGER.info("Button controls %s", "locked" if locked else "unlocked")
             return
 
         if event == "wake_word_detected":

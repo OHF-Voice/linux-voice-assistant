@@ -43,19 +43,20 @@ The controller runs as a separate Docker container on the same Raspberry Pi. It 
 
 All animations mirror the Home Assistant Voice PE ESPHome firmware exactly.
 
-| LVA state | Animation | Description |
-|---|---|---|
-| No HA connection / not ready | Red twinkle | Random red sparkle across all LEDs |
-| Idle | Off | All LEDs off |
-| Wake word detected | Slow clockwise spin | Two trailing arcs at opposing positions |
-| Listening | Fast clockwise spin | Same dual-arc pattern at 50 ms interval |
-| Thinking | Pulsing pair | Two opposing LEDs fade in and out |
-| TTS speaking | Anticlockwise spin | Dual-arc spin in reverse direction |
-| Muted | Solid ring + red indicators | Full ring on; red at LEDs 1, 4, 7, 10 (mic corners) |
-| Error | Red pulse | All LEDs red, pulsing |
-| Timer ticking | Countdown arc | Arc proportional to `seconds_left / total_seconds` |
-| Timer ringing | Pulse + optional red | Full ring pulsing; red at corners if muted |
-| Volume muted | Solid ring + red indicator | Red at the bottom-mid LED | 
+| LVA state                    | Animation                   | Description                                                                                       |
+| ---------------------------- | --------------------------- | ------------------------------------------------------------------------------------------------- |
+| No HA connection / not ready | Red twinkle                 | Random red sparkle across all LEDs                                                                |
+| Idle                         | Off                         | All LEDs off                                                                                      |
+| Wake word detected           | Slow clockwise spin         | Two trailing arcs at opposing positions                                                           |
+| Listening                    | Fast clockwise spin         | Same dual-arc pattern at 50 ms interval                                                           |
+| Thinking                     | Pulsing pair                | Two opposing LEDs fade in and out                                                                 |
+| TTS speaking                 | Anticlockwise spin          | Dual-arc spin in reverse direction                                                                |
+| Muted                        | Solid ring + red indicators | Full ring on; red at LEDs 1, 4, 7, 10 (mic corners)                                               |
+| Error                        | Red pulse                   | All LEDs red, pulsing                                                                             |
+| Timer ticking                | Countdown arc               | Arc proportional to `seconds_left / total_seconds`                                                |
+| Timer ringing                | Pulse + optional red        | Full ring pulsing; red at corners if muted                                                        |
+| Volume changed               | Volume Display arc          | Temporary arc (2.5s) showing the current volume level, starting from LED 0 and sweeping clockwise |
+| Volume muted                 | Solid ring + red indicator  | Red at the bottom-mid LED                                                                         |
 
 "User color" comes from the Home Assistant Light entity described below (default: HAVPE-style blue). HA brightness scales every animation in this table. Semantic colors (Waiting/Listening cyan spin, Thinking pulse, Replying anticlockwise, Muted solid + red, Timer pulse/arc, Error red pulse) are hardcoded so they remain recognisable across user customisation.
 

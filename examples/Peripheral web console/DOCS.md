@@ -126,6 +126,26 @@ Send commands to LVA by clicking buttons:
 - **Single press**, **Double press**, **Triple press**, **Long press** - Simulate physical button inputs
 - Useful for testing button-based interactions if LVA is connected to hardware buttons
 
+### Button Lock Testing
+
+The console registers a **Disable button controls** switch with LVA
+(`register_button_lock`) so it can be used to test and demonstrate the
+button-lock feature that hardware peripherals implement.
+
+- The **Buttons Locked** field in the status area reflects the current
+  switch state, sourced from the `snapshot` event and updated live on
+  `button_lock_changed` events.
+- When the switch is turned **on** from the Home Assistant device page,
+  every button in the **Commands** section is disabled (greyed out) and
+  clicking it is a no-op, mirroring how a real peripheral should ignore
+  its physical buttons while locked.
+- Turning the switch **off** re-enables the command buttons immediately.
+
+This is useful for verifying the lock behavior end-to-end without needing
+physical hardware: toggle the switch in Home Assistant and confirm the
+console's command grid disables/enables accordingly, and that no
+commands are sent to LVA while locked.
+
 ## Example Workflow
 
 1. **Start LVA server** with WebSocket peripheral API enabled
