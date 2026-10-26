@@ -313,6 +313,44 @@ class TestStop:
 
 
 # ---------------------------------------------------------------------------
+# Continued conversation
+# ---------------------------------------------------------------------------
+
+
+class TestContinueConversation:
+    def _follow_up_request(self, sat):
+        sat.send_messages = MagicMock()
+        sat._continue_conversation = True
+        with patch("linux_voice_assistant.satellite.threading.Timer") as timer_cls:
+            sat._tts_finished()
+        _delay, callback = timer_cls.call_args.args
+        callback()
+        return sat.send_messages.call_args.args[0][0]
+
+    def test_follow_up_resends_wake_word_phrase(self, tmp_path):
+        # HA picks the pipeline by wake word phrase; without it the follow-up
+        # runs the first pipeline instead of the one the user woke up.
+        sat = make_satellite(tmp_path)
+        sat.wakeup(MagicMock(wake_word="Hey Jarvis"))
+        sat._pipeline_active = False
+
+        request = self._follow_up_request(sat)
+
+        assert request.start
+        assert request.wake_word_phrase == "Hey Jarvis"
+
+    def test_follow_up_after_button_press_has_no_phrase(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        sat._wake_word_phrase = "Hey Jarvis"
+        sat.start_listening()
+        sat._pipeline_active = False
+
+        request = self._follow_up_request(sat)
+
+        assert request.wake_word_phrase == ""
+
+
+# ---------------------------------------------------------------------------
 # duck() / unduck()
 # ---------------------------------------------------------------------------
 
@@ -326,6 +364,53 @@ class TestDuckUnduck:
     def test_unduck_calls_music_player_unduck(self, tmp_path):
         sat = make_satellite(tmp_path)
         sat.unduck()
+        sat.state.music_player.unduck.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# pipeline ended sound
+# ---------------------------------------------------------------------------
+
+
+class TestPipelineEndedSound:
+    def test_run_end_without_tts_plays_sound(self, tmp_path):
+        from aioesphomeapi import VoiceAssistantEventType
+
+        sat = make_satellite(tmp_path)
+        sat.handle_voice_event(VoiceAssistantEventType.VOICE_ASSISTANT_RUN_END, {})
+        sat.state.tts_player.play.assert_called_once()
+        assert sat.state.tts_player.play.call_args.args[0] == sat.state.pipeline_ended_sound
+        sat.state.music_player.unduck.assert_not_called()
+
+    def test_sound_finished_goes_idle(self, tmp_path):
+        from aioesphomeapi import VoiceAssistantEventType
+
+        sat = make_satellite(tmp_path)
+        sat.handle_voice_event(VoiceAssistantEventType.VOICE_ASSISTANT_RUN_END, {})
+        sat.state.tts_player.play.call_args.kwargs["done_callback"]()
+        sat.state.music_player.unduck.assert_called_once()
+        assert sat._pipeline_active is False
+
+    def test_run_end_with_tts_does_not_play_sound(self, tmp_path):
+        from aioesphomeapi import VoiceAssistantEventType
+
+        sat = make_satellite(tmp_path)
+        sat._tts_played = True
+        sat.handle_voice_event(VoiceAssistantEventType.VOICE_ASSISTANT_RUN_END, {})
+        sat.state.tts_player.play.assert_not_called()
+
+    def test_tts_finished_callback_does_not_play_sound(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        sat._tts_finished()
+        sat.state.tts_player.play.assert_not_called()
+        sat.state.music_player.unduck.assert_called_once()
+
+    def test_empty_sound_path_disables_sound(self, tmp_path):
+        from aioesphomeapi import VoiceAssistantEventType
+
+        sat = make_satellite(tmp_path, {"pipeline_ended_sound": ""})
+        sat.handle_voice_event(VoiceAssistantEventType.VOICE_ASSISTANT_RUN_END, {})
+        sat.state.tts_player.play.assert_not_called()
         sat.state.music_player.unduck.assert_called_once()
 
 
