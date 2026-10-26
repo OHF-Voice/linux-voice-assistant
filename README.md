@@ -106,7 +106,7 @@ usage: __main__.py [-h] [--name NAME] [--audio-input-device AUDIO_INPUT_DEVICE] 
 | `--button-double-press-sound`   | Sound played on button double press                                                    | `sounds/button_double_press.flac`    |
 | `--button-triple-press-sound`   | Sound played on button triple press                                                    | `sounds/button_triple_press.flac`    |
 | `--button-long-press-sound`     | Sound played on button long press                                                      | `sounds/button_long_press.flac`      |
-| `--pipeline-ended-sound`        | Sound played when the voice pipeline ends without a response (e.g. no speech detected) | `sounds/pipeline_ended.wav`          |
+| `--pipeline-ended-sound`        | Sound played when the voice pipeline ends without a response (e.g. no speech detected) | `sounds/pipeline_ended_low.flac`     |
 | `--preferences-file`            | Path to preferences JSON file                                                          | `preferences.json`                   |
 | `--host`                        | IP-Address for ESPHome server, use 0.0.0.0 for all                                     | Autodetected                         |
 | `--network-interface`           | Network interface for ESPHome server                                                   | Autodetected                         |

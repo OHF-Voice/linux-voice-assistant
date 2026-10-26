@@ -64,7 +64,7 @@ def make_state(tmp_path=None, **overrides):
         "timer_finished_sound": "/sounds/timer.flac",
         "mute_sound": "/sounds/mute.flac",
         "unmute_sound": "/sounds/unmute.flac",
-        "pipeline_ended_sound": "/sounds/pipeline_ended.wav",
+        "pipeline_ended_sound": "/sounds/pipeline_ended_low.flac",
         "button_double_press_sound": "/sounds/double_press.flac",
         "button_triple_press_sound": "/sounds/triple_press.flac",
         "button_long_press_sound": "/sounds/long_press.flac",

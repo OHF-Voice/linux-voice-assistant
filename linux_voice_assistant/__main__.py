@@ -151,7 +151,7 @@ async def main() -> None:
     )
     parser.add_argument(
         "--pipeline-ended-sound",
-        default=str(_SOUNDS_DIR / "pipeline_ended.wav"),
+        default=str(_SOUNDS_DIR / "pipeline_ended_low.flac"),
         help="Sound to play when the voice pipeline ends without a response (e.g. no speech detected)",
     )
     parser.add_argument(

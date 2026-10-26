@@ -197,7 +197,7 @@ Environment=PREFERENCES_FILE="/home/pi/linux-voice-assistant/preferences.json"
 # Environment=LISTEN_DURING_WAKE_SOUND="0"
 # Environment=MUTE_SOUND="sounds/mute_switch_on.flac"
 # Environment=UNMUTE_SOUND="sounds/mute_switch_off.flac"
-# Environment=PIPELINE_ENDED_SOUND="sounds/pipeline_ended.wav"
+# Environment=PIPELINE_ENDED_SOUND="sounds/pipeline_ended_low.flac"
 # Environment=BUTTON_DOUBLE_PRESS_SOUND="sounds/button_double_press.flac"
 # Environment=BUTTON_TRIPLE_PRESS_SOUND="sounds/button_triple_press.flac"
 # Environment=BUTTON_LONG_PRESS_SOUND="sounds/button_long_press.flac"
@@ -298,7 +298,7 @@ The following variables can be configured in the `.env` or in the service file:
 | `LISTEN_DURING_WAKE_SOUND` | false | Set to "1" to start listening immediately after wake word detection, without waiting for the wake sound to finish |
 | `MUTE_SOUND` | `sounds/mute_switch_on.flac` | Sound file for mute on |
 | `UNMUTE_SOUND` | `sounds/mute_switch_off.flac` | Sound file for mute off |
-| `PIPELINE_ENDED_SOUND` | `sounds/pipeline_ended.wav` | Sound file to play when the voice pipeline ends without a response (e.g. no speech detected) |
+| `PIPELINE_ENDED_SOUND` | `sounds/pipeline_ended_low.flac` | Sound file to play when the voice pipeline ends without a response (e.g. no speech detected) |
 | `BUTTON_DOUBLE_PRESS_SOUND` | `sounds/button_double_press.flac` | Sound file for button double press |
 | `BUTTON_TRIPLE_PRESS_SOUND` | `sounds/button_triple_press.flac` | Sound file for button triple press |
 | `BUTTON_LONG_PRESS_SOUND` | `sounds/button_long_press.flac` | Sound file for button long press |
