@@ -299,6 +299,7 @@ async def main() -> None:
 
     if args.list_output_devices:
         from .audio_device_util import list_output_devices
+
         list_output_devices()
         from mpv import MPV
 
