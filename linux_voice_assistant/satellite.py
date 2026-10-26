@@ -369,6 +369,10 @@ class VoiceSatelliteProtocol(APIServer):
         self._tts_url: Optional[str] = None
         self._tts_played = False
         self._continue_conversation = False
+        # Phrase that started the conversation. HA selects the pipeline from it, so a
+        # follow-up request without it would run the first pipeline instead of the one
+        # the user woke up. Empty after a button press or an HA announcement.
+        self._wake_word_phrase = ""
         self._timer_finished = False
         self._timer_ring_start: Optional[float] = None
         self._processing = False
@@ -727,6 +731,7 @@ class VoiceSatelliteProtocol(APIServer):
 
             self.state.active_wake_words.add(self.state.stop_word.id)
             self._continue_conversation = msg.start_conversation
+            self._wake_word_phrase = ""
 
             self.duck()
             self._emit(LVAEvent.TTS_SPEAKING)
@@ -923,6 +928,7 @@ class VoiceSatelliteProtocol(APIServer):
 
         wake_word_phrase = wake_word.wake_word  # type: ignore[union-attr]
         _LOGGER.debug("Detected wake word: %s", wake_word_phrase)
+        self._wake_word_phrase = wake_word_phrase
 
         self._timer_finished = False
         self._timer_ring_start = None
@@ -977,6 +983,7 @@ class VoiceSatelliteProtocol(APIServer):
             return
 
         _LOGGER.debug("Button start_listening triggered")
+        self._wake_word_phrase = ""
         self._timer_finished = False
         self._timer_ring_start = None
         _LOGGER.debug("Stopping timer finished sound")
@@ -1045,7 +1052,7 @@ class VoiceSatelliteProtocol(APIServer):
             _LOGGER.debug("Continuing conversation after %.2fs settle delay", self.state.continue_conversation_delay)
 
             def _open_mic() -> None:
-                self.send_messages([VoiceAssistantRequest(start=True)])
+                self.send_messages([VoiceAssistantRequest(start=True, wake_word_phrase=self._wake_word_phrase)])
                 self._is_streaming_audio = True
                 _LOGGER.debug("Continued conversation started")
 
