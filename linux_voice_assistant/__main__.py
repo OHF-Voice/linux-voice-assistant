@@ -8,7 +8,6 @@ import sys
 import threading
 import time
 from pathlib import Path
-from queue import Queue
 from typing import List, Optional, Union
 
 import numpy as np
@@ -33,6 +32,8 @@ from .webrtc import WebRTCProcessor
 from .zeroconf import HomeAssistantZeroconf
 
 _LOGGER = logging.getLogger(__name__)
+_LOG_FORMAT = "%(asctime)s.%(msecs)03d %(levelname)s:%(name)s:%(message)s"
+_LOG_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 _MODULE_DIR = Path(__file__).parent
 _REPO_DIR = _MODULE_DIR.parent
 _WAKEWORDS_DIR = _REPO_DIR / "wakewords"
@@ -149,6 +150,11 @@ async def main() -> None:
         help="Sound to play when unmuting the assistant",
     )
     parser.add_argument(
+        "--pipeline-ended-sound",
+        default=str(_SOUNDS_DIR / "pipeline_ended_low.flac"),
+        help="Sound to play when the voice pipeline ends without a response (e.g. no speech detected)",
+    )
+    parser.add_argument(
         "--button-double-press-sound",
         default=str(_SOUNDS_DIR / "button_double_press.flac"),
         help="Sound to play for button double press",
@@ -254,9 +260,9 @@ async def main() -> None:
         args.debug = True
         _setup_logging(args)
     elif args.debug:
-        logging.basicConfig(level=logging.DEBUG)
+        logging.basicConfig(level=logging.DEBUG, format=_LOG_FORMAT, datefmt=_LOG_DATE_FORMAT)
     else:
-        logging.basicConfig(level=logging.INFO)
+        logging.basicConfig(level=logging.INFO, format=_LOG_FORMAT, datefmt=_LOG_DATE_FORMAT)
 
     _LOGGER.debug(args)
     if args.list_input_devices:
@@ -370,7 +376,7 @@ async def main() -> None:
         _LOGGER.debug("Loading preferences: %s", preferences_path)
         with open(preferences_path, "r", encoding="utf-8") as preferences_file:
             preferences_dict = json.load(preferences_file)
-            preferences = Preferences(**preferences_dict)
+            preferences = Preferences.from_dict(preferences_dict)
     else:
         preferences = Preferences()
 
@@ -382,6 +388,15 @@ async def main() -> None:
     # Load stop word sensitivity from preferences on startup, and ensure it's between 0.0 and 1.0
     initial_threshold = initial_stop_word_threshold(preferences.stop_word_sensitivity)
     preferences.stop_word_sensitivity = initial_threshold
+
+    # Load button-lock state from preferences on startup. This must happen
+    # before ServerState is constructed (and therefore before the peripheral
+    # WebSocket server can accept any connection), because the very first
+    # snapshot sent to a (re)connecting peripheral must already reflect the
+    # persisted value — peripherals only learn the lock state from that
+    # snapshot or a later button_lock_changed event, and nothing re-sends
+    # a corrected snapshot after the fact.
+    initial_button_controls_locked = bool(preferences.button_controls_locked)
 
     if args.enable_thinking_sound:
         preferences.thinking_sound = 1
@@ -421,7 +436,6 @@ async def main() -> None:
         ip_address=host_ip_address,
         version=version,
         esphome_version=esphome_version,
-        audio_queue=Queue(),
         entities=[],
         available_wake_words=available_wake_words,
         wake_words=wake_models,
@@ -435,6 +449,7 @@ async def main() -> None:
         processing_sound=args.processing_sound,
         mute_sound=args.mute_sound,
         unmute_sound=args.unmute_sound,
+        pipeline_ended_sound=args.pipeline_ended_sound,
         button_double_press_sound=args.button_double_press_sound,
         button_triple_press_sound=args.button_triple_press_sound,
         button_long_press_sound=args.button_long_press_sound,
@@ -446,6 +461,7 @@ async def main() -> None:
         download_dir=args.download_dir,
         volume=initial_volume,
         stop_word_threshold=initial_threshold,
+        button_controls_locked=initial_button_controls_locked,
         mic_volume=preferences.mic_volume,
         mic_auto_gain=preferences.mic_auto_gain,
         mic_noise_suppression=preferences.mic_noise_suppression,
@@ -587,7 +603,6 @@ async def main() -> None:
     except KeyboardInterrupt:
         pass
     finally:
-        state.audio_queue.put_nowait(None)
         process_audio_thread.join()
         if peripheral_api is not None:
             await peripheral_api.stop()
@@ -617,7 +632,7 @@ def _setup_logging(args: argparse.Namespace) -> None:
     handler = logging.StreamHandler()
     handler.setFormatter(
         logging.Formatter(
-            fmt="%(asctime)s %(levelname)s %(name)s: %(message)s",
+            fmt="%(asctime)s.%(msecs)03d %(levelname)s %(name)s: %(message)s",
             datefmt="%H:%M:%S",
         )
     )
@@ -659,8 +674,7 @@ def process_audio(state: ServerState, mic, block_size: int):
                 channel_chunks: list[bytes] = []
                 for ch in range(n_channels):
                     col = raw[:, ch] if n_channels > 1 else raw.reshape(-1)
-                    chunk = (np.clip(col * mic_vol_scalar, -1.0, 1.0) * 32767.0).astype("<i2").tobytes()
-                    channel_chunks.append(chunk)
+                    channel_chunks.append(_float_to_pcm16(col, mic_vol_scalar))
 
                 # Primary channel drives WebRTC and wake-word detection.
                 audio_chunk = channel_chunks[0]
@@ -683,7 +697,7 @@ def process_audio(state: ServerState, mic, block_size: int):
                 if (not wake_words) or (state.wake_words_changed and state.wake_words):
                     # Update list of wake word models to process
                     state.wake_words_changed = False
-                    wake_words = [ww for ww in state.wake_words.values() if ww.id in state.active_wake_words]
+                    wake_words = [ww for ww_id, ww in state.wake_words.items() if ww_id in state.active_wake_words]
 
                     # TODO: Load default stop word value from json into state and preferences missing.
 
@@ -691,7 +705,7 @@ def process_audio(state: ServerState, mic, block_size: int):
                     for idx, wake_word in enumerate(wake_words):
 
                         # Load default threshold from model json
-                        wake_word_id = wake_word.id if hasattr(wake_word, "id") else next(iter(state.wake_words.keys()))
+                        wake_word_id = next((ww_id for ww_id, ww in state.wake_words.items() if ww is wake_word), "")
                         available_word = state.available_wake_words.get(wake_word_id)
                         # _LOGGER.debug("word= %s", state.available_wake_words.get(wake_word_id))
                         default_threshold = available_word.probability_cutoff if available_word else 0.7
@@ -840,6 +854,18 @@ def process_audio(state: ServerState, mic, block_size: int):
 
 
 # -----------------------------------------------------------------------------
+
+
+def _float_to_pcm16(samples: np.ndarray, scalar: float) -> bytes:
+    """
+    Scale float samples in [-1, 1] and convert them to little-endian 16-bit PCM bytes.
+    :param samples: Float32 samples of a single channel.
+    :param scalar: Gain applied before clipping.
+    """
+    scaled = samples * scalar
+    np.clip(scaled, -1.0, 1.0, out=scaled)
+    scaled *= 32767.0
+    return scaled.astype("<i2").tobytes()
 
 
 def run():

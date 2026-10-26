@@ -52,6 +52,7 @@ from pyopen_wakeword import OpenWakeWord
 from .api_server import APIServer
 from .entity import (
     ButtonEventSensorEntity,
+    ButtonLockEntity,
     LEDLightEntity,
     MediaPlayerEntity,
     MicSettingEntity,
@@ -335,6 +336,9 @@ class VoiceSatelliteProtocol(APIServer):
         # button support before this satellite was constructed (e.g. on an HA
         # reconnect while the peripheral container stayed connected to LVA).
         self.register_pending_button()
+        # Materialise ButtonLockEntity if a peripheral already registered
+        # the button-lock switch before this satellite was constructed.
+        self.register_pending_button_lock()
 
         # ---- Instance variables ----
 
@@ -431,6 +435,40 @@ class VoiceSatelliteProtocol(APIServer):
         self.state.button_event_sensor_entity = entity
         _LOGGER.info("Button event sensor entity materialised")
 
+    def register_pending_button_lock(self) -> None:
+        """Materialise the button-lock switch once a peripheral has registered it.
+
+        Called from __init__ (handles HA reconnects where the peripheral
+        container stayed connected to LVA and pending_button_lock is already
+        True) and from PeripheralAPIServer._register_button_lock() when the
+        command arrives at runtime.
+
+        Safe to call multiple times: idempotent — if the entity already
+        exists it is only reattached to the current satellite server
+        instance, preserving its current lock state.
+        """
+        if not self.state.pending_button_lock:
+            return
+
+        if self.state.button_lock_entity is not None:
+            self.state.button_lock_entity.server = self
+            if self.state.button_lock_entity not in self.state.entities:
+                self.state.entities.append(self.state.button_lock_entity)
+            return
+
+        entity = ButtonLockEntity(
+            server=self,
+            key=len(self.state.entities),
+            name="Disable button controls",
+            object_id="disable_button_controls",
+            get_locked=lambda: self.state.button_controls_locked,
+            set_locked=self._set_button_controls_locked,
+        )
+        self.state.entities.append(entity)
+        self.state.button_lock_entity = entity
+        entity.sync_with_state()
+        _LOGGER.info("Button lock switch entity materialised")
+
     def _on_led_light_changed(self, object_id: str) -> None:
         """Forward an HA Light entity change to peripherals as light_command.
 
@@ -441,6 +479,10 @@ class VoiceSatelliteProtocol(APIServer):
         if entity is None:
             return
         self._emit(LVAEvent.LIGHT_COMMAND, entity.state_dict())
+
+    def _on_button_lock_changed(self, is_locked: bool) -> None:
+        """Forward a button-lock switch change to peripherals as button_lock_changed."""
+        self._emit(LVAEvent.BUTTON_LOCK_CHANGED, {"locked": is_locked})
 
     # ------------------------------------------------------------------
     # Mute / thinking sound
@@ -456,6 +498,21 @@ class VoiceSatelliteProtocol(APIServer):
             _LOGGER.debug("Thinking sound disabled")
             pass
         self.state.save_preferences()
+
+    def _set_button_controls_locked(self, new_state: bool) -> None:
+        self.state.button_controls_locked = bool(new_state)
+        self.state.preferences.button_controls_locked = 1 if self.state.button_controls_locked else 0
+        self.state.save_preferences()
+
+        if self.state.button_controls_locked:
+            _LOGGER.debug("On-board button controls locked")
+        else:
+            _LOGGER.debug("On-board button controls unlocked")
+
+        if self.state.button_lock_entity is not None:
+            self.state.button_lock_entity.sync_with_state()
+
+        self._emit(LVAEvent.BUTTON_LOCK_CHANGED, {"locked": self.state.button_controls_locked})
 
     def _set_sensitivity_1(self, new_value: float) -> None:
         self.state.wake_word_1_threshold = float(new_value)
@@ -561,7 +618,7 @@ class VoiceSatelliteProtocol(APIServer):
             self._is_streaming_audio = False
             if not self._tts_played:
                 self._pipeline_active = False
-                self._tts_finished()
+                self._tts_finished(pipeline_ended=True)
             # When TTS is playing, keep _pipeline_active = True to block
             # false wake word detections from speaker audio feedback.
             # _tts_finished() callback will clear it when playback ends.
@@ -599,6 +656,12 @@ class VoiceSatelliteProtocol(APIServer):
             self._emit(LVAEvent.TIMER_UPDATED, timer_data)
 
         elif event_type == VoiceAssistantTimerEventType.VOICE_ASSISTANT_TIMER_CANCELLED:
+            # Report the cancel as a zeroed update before going idle. Every
+            # shipped peripheral already reads `seconds_left` from
+            # `timer_updated`, and none of them treats zero as "ringing",
+            # that is `timer_ringing`, so the countdown clears without any
+            # peripheral having to learn a new event.
+            self._emit(LVAEvent.TIMER_UPDATED, {**timer_data, "seconds_left": 0})
             self._emit(LVAEvent.IDLE)
 
         elif event_type == VoiceAssistantTimerEventType.VOICE_ASSISTANT_TIMER_FINISHED:
@@ -720,7 +783,7 @@ class VoiceSatelliteProtocol(APIServer):
                 self._external_wake_words[eww.id] = eww
                 _LOGGER.debug("      → Stored in external wake words cache")
 
-            active_ww_ids = [ww.id for ww in self.state.wake_words.values() if ww.id in self.state.active_wake_words]
+            active_ww_ids = [ww_id for ww_id in self.state.wake_words if ww_id in self.state.active_wake_words]
             _LOGGER.debug("   -> Active wake word IDs: %s", active_ww_ids)
 
             yield VoiceAssistantConfigurationResponse(
@@ -789,6 +852,10 @@ class VoiceSatelliteProtocol(APIServer):
 
             # If only one wake word is left and it was at position 1, position 0 remains None
             # Position 2 automatically stays None if not occupied
+
+            if active_wake_words:
+                # Replace the dict instead of deleting keys so the audio thread never iterates a dict that changes size.
+                self.state.wake_words = {ww_id: model for ww_id, model in self.state.wake_words.items() if ww_id in active_wake_words}
 
             self.state.active_wake_words = active_wake_words
             _LOGGER.debug("Active wake words: %s", active_wake_words)
@@ -930,7 +997,11 @@ class VoiceSatelliteProtocol(APIServer):
         self._emit(LVAEvent.TTS_SPEAKING)
         self.state.tts_player.play(self._tts_url, done_callback=self._tts_finished)
 
-    def _tts_finished(self) -> None:
+    def _tts_finished(self, pipeline_ended: bool = False) -> None:
+        """
+        Clean up after playback ended or the pipeline finished, then continue the conversation or go idle.
+        :param pipeline_ended: True if the pipeline ended without a spoken reply, which plays the pipeline ended sound.
+        """
         self._pipeline_active = False
         self.state.active_wake_words.discard(self.state.stop_word.id)
         self.send_messages([VoiceAssistantAnnounceFinished()])
@@ -955,12 +1026,22 @@ class VoiceSatelliteProtocol(APIServer):
                 _LOGGER.debug("Continued conversation started")
 
             threading.Timer(self.state.continue_conversation_delay, _start_continued_conversation).start()
+        elif pipeline_ended and self.state.pipeline_ended_sound:
+            _LOGGER.debug("Playing pipeline ended sound")
+            # Keep the pipeline active so the sound can't trigger the wake word.
+            self._pipeline_active = True
+            self.state.tts_player.play(self.state.pipeline_ended_sound, done_callback=self._pipeline_ended_sound_finished)
         else:
             self._continue_conversation = False
             self.unduck()
             self._emit(LVAEvent.IDLE)
 
         _LOGGER.debug("TTS response finished")
+
+    def _pipeline_ended_sound_finished(self) -> None:
+        self._pipeline_active = False
+        self.unduck()
+        self._emit(LVAEvent.IDLE)
 
     # ------------------------------------------------------------------
     # Ducking
@@ -1115,7 +1196,7 @@ class VoiceSatelliteProtocol(APIServer):
             model_size = model_path.stat().st_size
             if model_size == external_wake_word.model_size:
                 with open(model_path, "rb") as model_file:
-                    model_hash = hashlib.sha256(model_file.read()).hexdigest()
+                    model_hash = hashlib.file_digest(model_file, "sha256").hexdigest()
 
                 if model_hash == external_wake_word.model_hash:
                     should_download_model = False

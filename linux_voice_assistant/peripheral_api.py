@@ -54,6 +54,16 @@ Feedback events emitted by LVA
               effect names are those the peripheral declared at
               registration; e.g. "Voice Assistant" runs the pipeline
               animations.
+  button_lock_changed   data: {"locked": bool}
+              Fires when the user toggles the "Disable button controls"
+              switch on the Home Assistant device page for a peripheral
+              that registered it via register_button_lock. The current
+              value is also included as "button_controls_locked" in the
+              snapshot payload for newly-connecting/reconnecting clients.
+              A peripheral should stop executing button-triggered LVA
+              commands (start_listening, stop_pipeline, mute_mic/
+              unmute_mic, volume_up/down, button_*_press, etc.) while
+              locked is true.
 
 Commands accepted from the peripheral container
 ------------------------------------------------
@@ -92,6 +102,17 @@ Commands accepted from the peripheral container
               events to Home Assistant when the corresponding
               button_* commands are sent. Send once after connecting;
               duplicate registrations are ignored.
+  register_button_lock
+              The peripheral declares that it has on-board buttons whose
+              behavior can be toggled from Home Assistant. LVA creates a
+              "Disable button controls" switch entity (visible as
+              switch.<satellite>_disable_button_controls, disabled/off
+              by default) and routes HA changes back to the peripheral
+              as button_lock_changed events. The peripheral is
+              responsible for honoring the lock state — LVA does not
+              gate anything on its end. Send once after connecting;
+              duplicate registrations are ignored and preserve the
+              current lock state.
 """
 
 from __future__ import annotations
@@ -139,6 +160,7 @@ class LVAEvent(str, Enum):
     VOLUME_MUTED = "volume_muted"
     ZEROCONF = "zeroconf"
     LIGHT_COMMAND = "light_command"
+    BUTTON_LOCK_CHANGED = "button_lock_changed"
 
 
 class LVACommand(str, Enum):
@@ -161,6 +183,7 @@ class LVACommand(str, Enum):
     BUTTON_LONG_PRESS = "button_long_press"
     REGISTER_LIGHT = "register_light"
     REGISTER_BUTTON = "register_button"
+    REGISTER_BUTTON_LOCK = "register_button_lock"
 
 
 # ---------------------------------------------------------------------------
@@ -280,6 +303,7 @@ class PeripheralAPIServer:
                     "volume": round(state.volume, 3),
                     "volume_muted": state.volume == 0.0,
                     "ha_connected": state.connected,
+                    "button_controls_locked": state.button_controls_locked,
                     "last_stt_text": self._last_stt_text,
                     "last_tts_text": self._last_tts_text,
                 },
@@ -481,6 +505,9 @@ class PeripheralAPIServer:
         elif command == LVACommand.REGISTER_BUTTON:
             self._register_button(satellite)
 
+        elif command == LVACommand.REGISTER_BUTTON_LOCK:
+            self._register_button_lock(satellite)
+
     def _register_light(self, data: Dict[str, Any], satellite: Any) -> None:
         """Register a Light declared by a peripheral.
 
@@ -549,6 +576,35 @@ class PeripheralAPIServer:
             satellite.register_pending_button()
 
         self._schedule_ha_reconnect_for_late_entity("button", "button_press_event")
+
+    def _register_button_lock(self, satellite: Any) -> None:
+        """Register the button-lock switch declared by a peripheral.
+
+        Idempotent: repeat registrations from a reconnecting peripheral
+        are a no-op — the existing entity and its current lock state
+        are preserved.
+
+        When the satellite is already running, the entity is materialised
+        immediately so a subsequent switch toggle routes correctly. HA
+        only sees the new entity after the integration is reloaded, but
+        the same startup-wait window that applies to register_light
+        applies here too (see --peripheral-startup-wait).
+        """
+        state = self._state
+        if state is None:
+            return
+
+        if state.pending_button_lock:
+            # Already registered; keep the existing entity and its state.
+            return
+
+        state.pending_button_lock = True
+        _LOGGER.info("Button lock switch registered by peripheral")
+
+        if satellite is not None:
+            satellite.register_pending_button_lock()
+
+        self._schedule_ha_reconnect_for_late_entity("button_lock", "disable_button_controls")
 
     # ------------------------------------------------------------------
     # Helpers
