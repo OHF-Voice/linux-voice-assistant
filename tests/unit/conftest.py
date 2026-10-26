@@ -3,7 +3,6 @@
 import tempfile
 from dataclasses import MISSING, fields
 from pathlib import Path
-from queue import Queue
 from unittest.mock import MagicMock, patch
 
 
@@ -52,7 +51,6 @@ def make_state(tmp_path=None, **overrides):
         "network_interface": "eth0",
         "version": "1.0.0",
         "esphome_version": "42.0.0",
-        "audio_queue": Queue(),
         "entities": [],
         "available_wake_words": {},
         "wake_words": {},

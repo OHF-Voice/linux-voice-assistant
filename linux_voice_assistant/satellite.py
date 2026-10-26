@@ -783,7 +783,7 @@ class VoiceSatelliteProtocol(APIServer):
                 self._external_wake_words[eww.id] = eww
                 _LOGGER.debug("      → Stored in external wake words cache")
 
-            active_ww_ids = [ww.id for ww in self.state.wake_words.values() if ww.id in self.state.active_wake_words]
+            active_ww_ids = [ww_id for ww_id in self.state.wake_words if ww_id in self.state.active_wake_words]
             _LOGGER.debug("   -> Active wake word IDs: %s", active_ww_ids)
 
             yield VoiceAssistantConfigurationResponse(
@@ -852,6 +852,10 @@ class VoiceSatelliteProtocol(APIServer):
 
             # If only one wake word is left and it was at position 1, position 0 remains None
             # Position 2 automatically stays None if not occupied
+
+            if active_wake_words:
+                # Replace the dict instead of deleting keys so the audio thread never iterates a dict that changes size.
+                self.state.wake_words = {ww_id: model for ww_id, model in self.state.wake_words.items() if ww_id in active_wake_words}
 
             self.state.active_wake_words = active_wake_words
             _LOGGER.debug("Active wake words: %s", active_wake_words)
@@ -1184,7 +1188,7 @@ class VoiceSatelliteProtocol(APIServer):
             model_size = model_path.stat().st_size
             if model_size == external_wake_word.model_size:
                 with open(model_path, "rb") as model_file:
-                    model_hash = hashlib.sha256(model_file.read()).hexdigest()
+                    model_hash = hashlib.file_digest(model_file, "sha256").hexdigest()
 
                 if model_hash == external_wake_word.model_hash:
                     should_download_model = False
