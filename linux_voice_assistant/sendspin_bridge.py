@@ -9,28 +9,29 @@ from __future__ import annotations
 
 import asyncio
 import collections
+import contextlib
 import logging
 import threading
 import time
 from dataclasses import dataclass
 from enum import Enum, auto
+from pathlib import Path
+from aiosendspin.models.types import AudioCodec, MediaCommand, PlayerCommand, PlaybackStateType, Roles
 from typing import TYPE_CHECKING, Callable, Final, Protocol
 
-from linux_voice_assistant.player import state
 import numpy as np
 import soundcard as sc
 from aioesphomeapi.model import MediaPlayerState
-from aiosendspin.client import SendspinClient
+from aiosendspin.client import ClientListener, SendspinClient
 from aiosendspin.client.models import PairingSupport
+from aiosendspin.models.controller import ControllerStatePayload
 from aiosendspin.models.core import DeviceInfo, ServerCommandPayload, StreamStartMessage
 from aiosendspin.models.player import ClientHelloPlayerSupport, SupportedAudioFormat
-from pathlib import Path
 from aiosendspin.noise.keys import Identity
-import contextlib
 from aiosendspin.client import ClientListener
 from aiosendspin.noise.trust_store import ClientPairingStore, FileClientPairingStore
-from aiosendspin.models.controller import ControllerStatePayload
-from aiosendspin.models.types import AudioCodec, MediaCommand, PlayerCommand, PlaybackStateType, Roles
+
+from linux_voice_assistant.player import state
 
 if TYPE_CHECKING:
     from aiosendspin.client import AudioFormat, PCMFormat
