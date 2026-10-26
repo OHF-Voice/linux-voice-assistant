@@ -133,6 +133,22 @@ Multi-press commands are useful for triggering custom Home Assistant automations
 
 These commands are exposed as button press events to Home Assistant (via the registered button sensor), allowing you to create custom automations via `button_press_event` triggers.
 
+### Disabling button controls from Home Assistant
+
+On connect, the controller registers a **Disable button controls** switch
+with LVA, which appears on the device page as
+`switch.<satellite>_disable_button_controls` (off by default).
+
+When turned **on** in Home Assistant, the onboard button's single-press
+context action and all multi-press gestures (double, triple, long press)
+stop sending commands to LVA. When turned **off**, normal behavior
+resumes immediately.
+
+The lock state is persisted by LVA across restarts. On (re)connect, the
+controller reads the current value from the `snapshot` event's
+`button_controls_locked` field, so it never has a stale/unknown lock
+state after a reconnect.
+
 ---
 
 ## Installation
