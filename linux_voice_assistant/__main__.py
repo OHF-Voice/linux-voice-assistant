@@ -4,11 +4,12 @@ import asyncio
 import errno
 import json
 import logging
+import os
 import sys
 import threading
 import time
 from pathlib import Path
-from typing import List, Optional, Union
+from typing import Any, List, Optional, Union
 
 import numpy as np
 import soundcard as sc
@@ -32,6 +33,9 @@ from .webrtc import WebRTCProcessor
 from .zeroconf import HomeAssistantZeroconf
 
 _LOGGER = logging.getLogger(__name__)
+
+_MIC_RECOVERY_TIMEOUT_SECONDS = 60.0
+_MIC_RECOVERY_MAX_DELAY_SECONDS = 5.0
 _LOG_FORMAT = "%(asctime)s.%(msecs)03d %(levelname)s:%(name)s:%(message)s"
 _LOG_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 _MODULE_DIR = Path(__file__).parent
@@ -656,7 +660,7 @@ def process_audio(state: ServerState, mic, block_size: int):
 
     try:
         _LOGGER.debug("Opening audio input device: %s", mic.name)
-        with mic.recorder(samplerate=16000, channels=n_channels, blocksize=block_size) as mic_in:
+        with _ReconnectingRecorder(mic, n_channels, block_size) as mic_in:
             while True:
                 # Shape: (block_size, n_channels) for stereo, (block_size, 1) for mono.
                 raw = mic_in.record(block_size)  # float32, range [-1, 1]
@@ -843,8 +847,10 @@ def process_audio(state: ServerState, mic, block_size: int):
                 except Exception:  # pylint: disable=broad-except
                     _LOGGER.exception("Unexpected error handling audio")
     except Exception:  # pylint: disable=broad-except
-        _LOGGER.exception("Unexpected error processing audio")
-        sys.exit(1)
+        _LOGGER.exception("Unexpected error processing audio, stopping because no audio can be recorded anymore")
+        # sys.exit() would only end this thread and leave a deaf satellite running.
+        logging.shutdown()
+        os._exit(1)  # pylint: disable=protected-access
 
 
 # -----------------------------------------------------------------------------
@@ -860,6 +866,89 @@ def _float_to_pcm16(samples: np.ndarray, scalar: float) -> bytes:
     np.clip(scaled, -1.0, 1.0, out=scaled)
     scaled *= 32767.0
     return scaled.astype("<i2").tobytes()
+
+
+class _ReconnectingRecorder:
+    """Microphone recorder that reopens its stream when the audio server reports a failure."""
+
+    def __init__(self, mic, n_channels: int, block_size: int) -> None:
+        """
+        :param mic: soundcard microphone to record from.
+        :param n_channels: Number of channels to record.
+        :param block_size: Frames per recorded block.
+        """
+        self._mic = mic
+        self._n_channels = n_channels
+        self._block_size = block_size
+        self._recorder: Any = None
+
+    def __enter__(self) -> "_ReconnectingRecorder":
+        self._open()
+        return self
+
+    def __exit__(self, *exc_info) -> None:
+        self._close()
+
+    def record(self, frames: int) -> np.ndarray:
+        """
+        Record a block, reopening the microphone stream if it failed.
+        :param frames: Number of frames to record.
+        """
+        try:
+            return self._recorder.record(frames)  # type: ignore[no-any-return]
+        except RuntimeError as err:
+            self._recover(err)
+            return self._recorder.record(frames)  # type: ignore[no-any-return]
+
+    def _open(self) -> None:
+        self._recorder = self._mic.recorder(samplerate=16000, channels=self._n_channels, blocksize=self._block_size)
+        self._recorder.__enter__()  # pylint: disable=unnecessary-dunder-call
+
+    def _close(self) -> None:
+        recorder, self._recorder = self._recorder, None
+        if recorder is not None:
+            try:
+                recorder.__exit__(None, None, None)
+            except Exception:  # pylint: disable=broad-except
+                _LOGGER.debug("Ignoring error while closing failed microphone stream", exc_info=True)
+
+    def _recover(self, err: Exception) -> None:
+        """
+        Reopen the microphone stream until it works or the recovery timeout expires.
+        :param err: Error that interrupted recording.
+        """
+        name = getattr(self._mic, "name", self._mic)
+        _LOGGER.error(
+            "Recording from microphone '%s' failed: %s. The device may have been suspended, unplugged or the audio server restarted. Trying to reconnect...",
+            name,
+            err,
+        )
+        deadline = time.monotonic() + _MIC_RECOVERY_TIMEOUT_SECONDS
+        delay = 0.5
+        attempt = 0
+        last_err: Exception = err
+        while time.monotonic() < deadline:
+            attempt += 1
+            self._close()
+            time.sleep(delay)
+            delay = min(delay * 2, _MIC_RECOVERY_MAX_DELAY_SECONDS)
+            try:
+                self._refresh_mic()
+                self._open()
+                _LOGGER.info("Microphone '%s' reconnected after %d attempt(s)", name, attempt)
+                return
+            except Exception as open_err:  # pylint: disable=broad-except
+                last_err = open_err
+                _LOGGER.warning("Reconnecting microphone '%s' failed (attempt %d): %s", name, attempt, open_err)
+
+        self._close()
+        raise RuntimeError(f"Microphone '{name}' did not recover within {_MIC_RECOVERY_TIMEOUT_SECONDS:.0f} s: {last_err}") from last_err
+
+    def _refresh_mic(self) -> None:
+        """Look up the microphone again, because the device object can be stale after a suspend or replug."""
+        mic_id = getattr(self._mic, "id", None)
+        if mic_id is not None:
+            self._mic = sc.get_microphone(mic_id)
 
 
 def run():

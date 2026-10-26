@@ -270,3 +270,102 @@ class TestFloatToPcm16:
         _float_to_pcm16(samples, 1.0)
 
         assert np.array_equal(samples, original)
+
+
+# ---------------------------------------------------------------------------
+# _ReconnectingRecorder — recovery from a failed microphone stream
+# ---------------------------------------------------------------------------
+
+
+class TestReconnectingRecorder:
+    @staticmethod
+    def _make_mic(*recorders):
+        mic = MagicMock()
+        mic.name = "Test Mic"
+        mic.id = "test-mic-id"
+        mic.recorder.side_effect = list(recorders)
+        return mic
+
+    @staticmethod
+    def _make_recorder(**kwargs):
+        recorder = MagicMock()
+        recorder.configure_mock(**kwargs)
+        return recorder
+
+    def test_record_passes_through_when_healthy(self):
+        from linux_voice_assistant import __main__ as main_mod
+
+        block = make_audio_chunk()
+        recorder = self._make_recorder(**{"record.return_value": block})
+        mic = self._make_mic(recorder)
+
+        with main_mod._ReconnectingRecorder(mic, 1, 1024) as rec:
+            assert rec.record(1024) is block
+
+        mic.recorder.assert_called_once_with(samplerate=16000, channels=1, blocksize=1024)
+        recorder.__exit__.assert_called_once()
+
+    def test_reopens_stream_after_failure(self, monkeypatch):
+        from linux_voice_assistant import __main__ as main_mod
+
+        monkeypatch.setattr(main_mod.time, "sleep", lambda _s: None)
+        monkeypatch.setattr(main_mod.sc, "get_microphone", lambda mic_id: mic)
+
+        block = make_audio_chunk()
+        failed = self._make_recorder(**{"record.side_effect": RuntimeError("Recording failed, stream is in status FAILED")})
+        healthy = self._make_recorder(**{"record.return_value": block})
+        mic = self._make_mic(failed, healthy)
+
+        with main_mod._ReconnectingRecorder(mic, 1, 1024) as rec:
+            assert rec.record(1024) is block
+
+        failed.__exit__.assert_called_once()
+        assert mic.recorder.call_count == 2
+
+    def test_retries_until_open_succeeds(self, monkeypatch):
+        from linux_voice_assistant import __main__ as main_mod
+
+        monkeypatch.setattr(main_mod.time, "sleep", lambda _s: None)
+        monkeypatch.setattr(main_mod.sc, "get_microphone", lambda mic_id: mic)
+
+        block = make_audio_chunk()
+        failed = self._make_recorder(**{"record.side_effect": RuntimeError("FAILED")})
+        healthy = self._make_recorder(**{"record.return_value": block})
+        mic = self._make_mic(failed, OSError("device busy"), healthy)
+
+        with main_mod._ReconnectingRecorder(mic, 1, 1024) as rec:
+            assert rec.record(1024) is block
+
+        assert mic.recorder.call_count == 3
+
+    def test_raises_when_recovery_times_out(self, monkeypatch):
+        from linux_voice_assistant import __main__ as main_mod
+
+        clock = iter(range(0, 1000, 30))
+        monkeypatch.setattr(main_mod.time, "sleep", lambda _s: None)
+        monkeypatch.setattr(main_mod.time, "monotonic", lambda: next(clock))
+        monkeypatch.setattr(main_mod.sc, "get_microphone", lambda mic_id: mic)
+
+        failed = self._make_recorder(**{"record.side_effect": RuntimeError("FAILED")})
+        mic = MagicMock()
+        mic.name = "Test Mic"
+        mic.id = "test-mic-id"
+        mic.recorder.side_effect = [failed] + [OSError("gone")] * 10
+
+        with main_mod._ReconnectingRecorder(mic, 1, 1024) as rec:
+            with pytest.raises(RuntimeError, match="Test Mic.*did not recover"):
+                rec.record(1024)
+
+    def test_keeps_old_mic_object_without_id(self, monkeypatch):
+        from linux_voice_assistant import __main__ as main_mod
+
+        get_mic = MagicMock()
+        monkeypatch.setattr(main_mod.sc, "get_microphone", get_mic)
+
+        mic = MagicMock(spec=["name", "recorder"])
+        mic.name = "Test Mic"
+        mic.recorder.return_value = self._make_recorder()
+
+        main_mod._ReconnectingRecorder(mic, 1, 1024)._refresh_mic()
+
+        get_mic.assert_not_called()
