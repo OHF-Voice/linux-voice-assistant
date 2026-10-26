@@ -13,7 +13,6 @@ from typing import List, Optional, Union
 import numpy as np
 import soundcard as sc
 from aioesphomeapi.api_pb2 import NumberStateResponse  # type: ignore  # pylint: disable=no-name-in-module
-from getmac import get_mac_address  # type: ignore
 from pymicro_wakeword import MicroWakeWord, MicroWakeWordFeatures
 from pyopen_wakeword import OpenWakeWord, OpenWakeWordFeatures
 
@@ -26,6 +25,7 @@ from .util import (
     get_default_ipv4,
     get_esphome_version,
     get_version,
+    resolve_mac_address,
 )
 from .wake_word import find_available_wake_words, load_stop_model, load_wake_models
 from .webrtc import WebRTCProcessor
@@ -182,6 +182,12 @@ async def main() -> None:
         "--network-interface",
         help="Network interface the application listens on (default: auto-detected by gateway)",
     )
+    parser.add_argument(
+        "--mac-address",
+        help="MAC address the device is known by in Home Assistant, e.g. 02:00:00:00:00:01 "
+        "(default: the network interface's). Set it to keep one identity across interfaces, "
+        "or to run several instances on one machine",
+    )
     # Note that default port is also set in docker-entrypoint.sh
     parser.add_argument(
         "--port",
@@ -304,9 +310,13 @@ async def main() -> None:
         host_ip_address = args.host
 
     # Resolve mac
-    if not (mac_address := get_mac_address(interface=network_interface)):
-        print("No Mac address was found, app stopped.")
+    try:
+        mac_address = resolve_mac_address(args.mac_address, network_interface)
+    except ValueError as err:
+        print(f"{err}, app stopped.")
         sys.exit(1)
+    if args.mac_address:
+        print(f"Using MAC address: {mac_address}")
     mac_address_clean = mac_address.replace(":", "").lower()
 
     # Resolve name
