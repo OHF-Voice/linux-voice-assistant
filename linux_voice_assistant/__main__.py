@@ -65,7 +65,7 @@ async def main() -> None:
     )
     parser.add_argument(
         "--audio-output-device",
-        help=""Name for the audio output device (see --list-output-devices)",
+        help="Name for the audio output device (see --list-output-devices)",
     )
     parser.add_argument(
         "--music-output-device",
