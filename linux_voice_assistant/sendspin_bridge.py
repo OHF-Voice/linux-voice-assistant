@@ -1001,7 +1001,7 @@ class SendspinBridge:
             pairing_support=PairingSupport(
                 pin_display=self._on_pairing_pin_display,
                 offer_static_pin=True,
-            ),            
+            ),
             device_info=DeviceInfo(
                 product_name="Linux Voice Assistant",
                 manufacturer="Open Home Foundation",
@@ -1038,7 +1038,8 @@ class SendspinBridge:
         if command not in self._controller_supported_commands:
             _LOGGER.warning(
                 "Sendspin group command %s skipped: not in supported set %s",
-                command, sorted(str(c) for c in self._controller_supported_commands),
+                command,
+                sorted(str(c) for c in self._controller_supported_commands),
             )
             return
         try:
@@ -1102,24 +1103,22 @@ class SendspinBridge:
             if self._player:
                 self._player.set_volume(0, muted=True)
             if self._client and self._client.connected:
-                asyncio.get_event_loop().call_soon(
-                    lambda: asyncio.create_task(self._send_group_command(MediaCommand.PAUSE))
-                )
+                asyncio.get_event_loop().call_soon(lambda: asyncio.create_task(self._send_group_command(MediaCommand.PAUSE)))
             _LOGGER.info("SendSpin playback paused")
 
     def resume(self) -> None:
         _LOGGER.info(
             "resume() called: stream_active=%s paused=%s owns=%s",
-            self._stream_active, self._paused, self._sendspin_owns_playback,
+            self._stream_active,
+            self._paused,
+            self._sendspin_owns_playback,
         )
         if not (self._paused or self._sendspin_owns_playback):
             return
         self._paused = False
         self._update_player_volume()
         if self._client and self._client.connected:
-            asyncio.get_event_loop().call_soon(
-                lambda: asyncio.create_task(self._send_group_command(MediaCommand.PLAY))
-            )
+            asyncio.get_event_loop().call_soon(lambda: asyncio.create_task(self._send_group_command(MediaCommand.PLAY)))
         _LOGGER.info("SendSpin playback resumed")
 
     @property
@@ -1137,9 +1136,7 @@ class SendspinBridge:
 
             # Report the current playback state using the enum supported by the installed aiosendspin version.
             if self._client and self._client.connected:
-                asyncio.get_event_loop().call_soon(
-                    lambda: asyncio.create_task(self._send_group_command(MediaCommand.STOP))
-                )
+                asyncio.get_event_loop().call_soon(lambda: asyncio.create_task(self._send_group_command(MediaCommand.STOP)))
 
     async def start(self, server_url: str | None = None) -> None:
         if self._running:
