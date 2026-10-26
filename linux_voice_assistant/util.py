@@ -113,9 +113,9 @@ def resolve_mac_address(given: Optional[str], interface: Optional[str]) -> str:
     """
     The MAC address the device is known by: the one given (--mac-address), or the network
     interface's.
-
-    Raises:
-        ValueError: if the given one is not a MAC address, or the interface has none.
+    :param given: MAC address from --mac-address (colon separated), or None to use the interface's.
+    :param interface: Network interface to take the MAC address from when none is given.
+    :raises ValueError: if the given one is not a MAC address, or the interface has none.
     """
     if given:
         if not _MAC_ADDRESS.fullmatch(given):

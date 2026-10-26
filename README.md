@@ -76,7 +76,7 @@ For all other users, we have different installation methods available (Docker, s
 ```sh
 usage: __main__.py [-h] [--name NAME] [--audio-input-device AUDIO_INPUT_DEVICE] [--list-input-devices] [--audio-input-block-size AUDIO_INPUT_BLOCK_SIZE] [--audio-output-device AUDIO_OUTPUT_DEVICE] [--music-output-device MUSIC_OUTPUT_DEVICE] [--list-output-devices] [--wake-word-dir WAKE_WORD_DIR]  [--mic-auto-gain] [--mic-noise-suppression]
                    [--wake-model WAKE_MODEL] [--stop-model STOP_MODEL] [--download-dir DOWNLOAD_DIR] [--refractory-seconds REFRACTORY_SECONDS] [--wakeup-sound WAKEUP_SOUND] [--timer-finished-sound TIMER_FINISHED_SOUND] [--processing-sound PROCESSING_SOUND]
-                   [--mute-sound MUTE_SOUND] [--unmute-sound UNMUTE_SOUND] [--preferences-file PREFERENCES_FILE] [--host HOST] [--network-interface NETWORK_INTERFACE] [--port PORT] [--enable-thinking-sound] [--listen-during-wake-sound] [--debug]
+                   [--mute-sound MUTE_SOUND] [--unmute-sound UNMUTE_SOUND] [--preferences-file PREFERENCES_FILE] [--host HOST] [--network-interface NETWORK_INTERFACE] [--mac-address MAC_ADDRESS] [--port PORT] [--enable-thinking-sound] [--listen-during-wake-sound] [--debug]
 ```
 
 | Parameter                       | Description                                                                            | Default                              |
@@ -110,6 +110,7 @@ usage: __main__.py [-h] [--name NAME] [--audio-input-device AUDIO_INPUT_DEVICE] 
 | `--preferences-file`            | Path to preferences JSON file                                                          | `preferences.json`                   |
 | `--host`                        | IP-Address for ESPHome server, use 0.0.0.0 for all                                     | Autodetected                         |
 | `--network-interface`           | Network interface for ESPHome server                                                   | Autodetected                         |
+| `--mac-address`                 | MAC address the device is known by in Home Assistant (e.g. `02:00:00:00:00:01`)        | The network interface's              |
 | `--port`                        | Port for ESPHome server                                                                | 6053                                 |
 | `--enable-thinking-sound`       | Enable thinking sound on startup                                                       | False                                |
 | `--listen-during-wake-sound`    | Start listening while the wake sound is still playing                                  | False                                |
@@ -179,6 +180,17 @@ The project uses the following tools to ensure code quality:
 - **flake8**: Style and syntax checks
 - **pylint**: Code quality checks
 - **mypy**: Static type analysis
+
+Docstrings are mandatory in Sphinx style with `:param:` (and `:raises:` where relevant). Google-style (`Args:`) and bullet-style docstrings are not accepted:
+
+```python
+def my_function(param1: str, param2: int) -> str:
+    """
+    Brief one-line description of the function.
+    :param param1: Description of what param1 is used for.
+    :param param2: Description of what param2 is used for.
+    """
+```
 
 ### Setup
 
