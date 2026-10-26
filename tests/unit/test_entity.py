@@ -268,6 +268,49 @@ class TestMediaPlayerEntityPlayback:
         entity.music_player.resume.assert_called_once()
 
 
+class TestMediaPlayerEntityAnnouncement:
+    @staticmethod
+    def _announce(entity):
+        msgs = list(entity.play("http://example.com/tts.mp3", announcement=True))
+        done_callback = entity.announce_player.play.call_args.kwargs["done_callback"]
+        return msgs, done_callback
+
+    def test_playing_music_is_paused_and_resumed(self):
+        entity = make_media_player()
+        entity.music_player.is_paused = False
+        entity.music_player.is_playing = True
+
+        _, done_callback = self._announce(entity)
+        entity.music_player.pause.assert_called_once()
+        entity.music_player.resume.assert_not_called()
+
+        done_callback()
+        entity.music_player.resume.assert_called_once()
+
+    def test_paused_music_stays_paused(self):
+        entity = make_media_player()
+        entity.music_player.is_paused = True
+        entity.music_player.is_playing = True
+
+        _, done_callback = self._announce(entity)
+        done_callback()
+
+        entity.music_player.pause.assert_not_called()
+        entity.music_player.resume.assert_not_called()
+        assert entity.state == MediaPlayerState.PAUSED
+
+    def test_idle_music_reports_idle_after_announcement(self):
+        entity = make_media_player()
+        entity.music_player.is_paused = False
+        entity.music_player.is_playing = False
+
+        _, done_callback = self._announce(entity)
+        done_callback()
+
+        entity.music_player.resume.assert_not_called()
+        assert entity.state == MediaPlayerState.IDLE
+
+
 # ---------------------------------------------------------------------------
 # MuteSwitchEntity
 # ---------------------------------------------------------------------------

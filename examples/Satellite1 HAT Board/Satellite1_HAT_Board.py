@@ -291,6 +291,7 @@ class SharedState:
         # pressed" tactile feedback in LEDRing (only applied when the HA
         # Light entity is off — see LEDRing._anim_action_held).
         self.action_button_down: bool = False
+        self.buttons_locked: bool = False
 
     def update(self, **kwargs) -> None:
         with self._lock:
@@ -318,6 +319,7 @@ class SharedState:
                 "hsv_saturation":       self.hsv_saturation,
                 "hsv_value":            self.hsv_value,
                 "action_button_down":   self.action_button_down,
+                "buttons_locked":       self.buttons_locked,
             }
 
 
@@ -1090,8 +1092,12 @@ class ButtonMultipressHandler:
         self.button_pin = BTN_ACTION
         self.last_press_time = 0
         self.press_count = 0
+        self._state = state
 
     def _send(self, command: str) -> None:
+        if self._state.snapshot["buttons_locked"]:
+            _LOGGER.debug("Button controls locked — ignoring %s", command)
+            return
         _LOGGER.info("Button → %s", command)
         asyncio.run_coroutine_threadsafe(
             self._queue.put(command), self._loop
@@ -1189,7 +1195,8 @@ class LVAClient:
             # Declare that this peripheral has physical buttons so LVA
             # creates a Button Press event entity in Home Assistant.
             # Idempotent: safe to send on every reconnect.
-            await ws.send(json.dumps({"command": "register_button"}))            
+            await ws.send(json.dumps({"command": "register_button"}))
+            await ws.send(json.dumps({"command": "register_button_lock"}))
             recv_task = asyncio.create_task(self._recv_loop(ws))
             send_task = asyncio.create_task(self._send_loop(ws))
             done, pending = await asyncio.wait(
@@ -1248,6 +1255,7 @@ class LVAClient:
                 # defensively in case a future LVA version adds it.
                 volume_muted=data.get("volume_muted", False),
                 ha_connected=data.get("ha_connected", False),
+                buttons_locked=data.get("button_controls_locked", False),
             )
             snap = self._state.snapshot
             anim = state_to_animation(
@@ -1256,6 +1264,12 @@ class LVAClient:
             self._leds.set_animation(anim)
             return
 
+        elif event == "button_lock_changed":
+            locked = data.get("locked", False)
+            self._state.update(buttons_locked=locked)
+            _LOGGER.info("Button controls %s", "locked" if locked else "unlocked")
+            return
+      
         # --- Voice pipeline events -----------------------------------------
         elif event == "wake_word_detected":
             self._state.update(assist_state=AssistState.WAKE_WORD)
