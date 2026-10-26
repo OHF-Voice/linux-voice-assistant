@@ -657,7 +657,6 @@ async def main() -> None:
         if state.sendspin_bridge:
             await state.sendspin_bridge.disconnect()
 
-        state.audio_queue.put_nowait(None)
         process_audio_thread.join()
         if peripheral_api is not None:
             await peripheral_api.stop()
