@@ -164,7 +164,7 @@ class MediaPlayerEntity(ESPHomeEntity):
         else:
             self._log.debug("PLAY: announcement false")
             if self.sendspin_bridge:
-                self.sendspin_bridge.release_playback()            
+                self.sendspin_bridge.release_playback()
             # Music
             self.music_player.play(
                 url,
@@ -252,7 +252,7 @@ class MediaPlayerEntity(ESPHomeEntity):
                 # Sync volume with SendSpin bridge
                 if self.sendspin_bridge:
                     self.sendspin_bridge.set_volume(volume, self.muted)
-                self.volume = msg.volume                
+                self.volume = msg.volume
                 self._apply_volume(msg.volume, persist=True)
                 if hasattr(self.server, "state") and getattr(self.server, "state", None) is not None:
                     self._log.debug("Persisting volume to preferences")
