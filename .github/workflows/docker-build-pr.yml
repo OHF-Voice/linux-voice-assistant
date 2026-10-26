@@ -46,7 +46,7 @@ jobs:
 
       - name: Extract metadata for Docker
         id: meta
-        uses: docker/metadata-action@8e5442c4ef9f78752691e2d8f8d19755c6f78e81 # v5.5.1
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ${{ env.REGISTRY_LOWER }}/${{ env.REPOSITORY_LOWER }}-pr
           tags: |
@@ -61,6 +61,7 @@ jobs:
             org.opencontainers.image.title="Linux-Voice-Assistant"
             org.opencontainers.image.url="https://github.com/OHF-Voice/linux-voice-assistant"
             org.opencontainers.image.vendor="Open Home Foundation"
+            org.opencontainers.image.revision=${{ github.event.pull_request.head.sha }}
 
       - name: Create version files
         run: |
