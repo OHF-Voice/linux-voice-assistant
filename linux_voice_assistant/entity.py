@@ -124,6 +124,31 @@ class MediaPlayerEntity(ESPHomeEntity):
         if self.sendspin_bridge:
             self.sendspin_bridge.resume()
 
+    def _sendspin_has_playback(self) -> bool:
+        bridge = self.sendspin_bridge
+        return bridge is not None and bridge.owns_playback
+
+    def pause_media(self) -> MediaPlayerStateResponse:
+        self._log.debug("Executing PAUSE")
+        self.music_player.pause()
+        if self.sendspin_bridge:
+            self.sendspin_bridge.pause()
+        return self._update_state(MediaPlayerState.PAUSED)
+
+    def resume_media(self) -> MediaPlayerStateResponse:
+        self._log.debug("Executing PLAY / RESUME")
+        self.music_player.resume()
+        if self.sendspin_bridge:
+            self.sendspin_bridge.resume()
+
+    def stop_media(self) -> MediaPlayerStateResponse:
+        # Stop both so nothing is left half-playing.
+        self._log.debug("Executing STOP")
+        self.music_player.stop()
+        if self.sendspin_bridge:
+            self.sendspin_bridge.stop()
+        return self._update_state(MediaPlayerState.IDLE)
+
     def _broadcast_state(self, msgs: Iterable[message.Message]) -> None:
         """Push an asynchronous state change to all connected clients.
 
@@ -143,6 +168,7 @@ class MediaPlayerEntity(ESPHomeEntity):
         announcement: bool = False,
         done_callback: Optional[Callable[[], None]] = None,
     ) -> Iterable[message.Message]:
+        sendspin_was_playing = False
         if announcement:
             self._log.debug("PLAY: announcement true")
             if self.music_player.is_playing:
@@ -164,7 +190,7 @@ class MediaPlayerEntity(ESPHomeEntity):
         else:
             self._log.debug("PLAY: announcement false")
             if self.sendspin_bridge:
-                self.sendspin_bridge.release_playback()
+                self.sendspin_bridge.release_playback()            
             # Music
             self.music_player.play(
                 url,
@@ -197,25 +223,13 @@ class MediaPlayerEntity(ESPHomeEntity):
                 command = MediaPlayerCommand(msg.command)
 
                 if msg.command == MediaPlayerCommand.PAUSE:
-                    self._log.debug("Executing PAUSE")
-                    self.music_player.pause()
-                    if self.sendspin_bridge:
-                        self.sendspin_bridge.pause()
-                    yield self._update_state(MediaPlayerState.PAUSED)
+                    yield self.pause_media()
 
                 elif msg.command == MediaPlayerCommand.PLAY:
-                    self._log.debug("Executing PLAY / RESUME")
-                    self.music_player.resume()
-                    if self.sendspin_bridge:
-                        self.sendspin_bridge.resume()
-                    yield self._update_state(MediaPlayerState.PLAYING)
+                    yield self.resume_media()
 
                 elif command == MediaPlayerCommand.STOP:
-                    self._log.debug("Executing STOP")
-                    self.music_player.stop()
-                    if self.sendspin_bridge:
-                        self.sendspin_bridge.stop()
-                    yield self._update_state(MediaPlayerState.IDLE)
+                    yield self.stop_media()
 
                 elif command == MediaPlayerCommand.MUTE:
                     self._log.debug("Executing MUTE")
@@ -252,7 +266,7 @@ class MediaPlayerEntity(ESPHomeEntity):
                 # Sync volume with SendSpin bridge
                 if self.sendspin_bridge:
                     self.sendspin_bridge.set_volume(volume, self.muted)
-                self.volume = msg.volume
+                self.volume = msg.volume                
                 self._apply_volume(msg.volume, persist=True)
                 if hasattr(self.server, "state") and getattr(self.server, "state", None) is not None:
                     self._log.debug("Persisting volume to preferences")
