@@ -168,7 +168,6 @@ class MediaPlayerEntity(ESPHomeEntity):
         announcement: bool = False,
         done_callback: Optional[Callable[[], None]] = None,
     ) -> Iterable[message.Message]:
-        sendspin_was_playing = False
         if announcement:
             self._log.debug("PLAY: announcement true")
             if self.music_player.is_playing:
