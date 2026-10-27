@@ -853,7 +853,6 @@ def process_audio(state: ServerState, mic, block_size: int):
                     _LOGGER.exception("Unexpected error handling audio")
     except Exception:  # pylint: disable=broad-except
         _LOGGER.exception("Unexpected error processing audio, stopping because no audio can be recorded anymore")
-        # sys.exit() would only end this thread and leave a deaf satellite running.
         logging.shutdown()
         os._exit(1)  # pylint: disable=protected-access
 

@@ -329,7 +329,7 @@ class TestReconnectingRecorder:
         monkeypatch.setattr(main_mod.sc, "get_microphone", lambda mic_id: mic)
 
         block = make_audio_chunk()
-        failed = self._make_recorder(**{"record.side_effect": RuntimeError("FAILED")})
+        failed = self._make_recorder(**{"record.side_effect": RuntimeError("Recording failed, stream is in status FAILED")})
         healthy = self._make_recorder(**{"record.return_value": block})
         mic = self._make_mic(failed, OSError("device busy"), healthy)
 
@@ -346,7 +346,7 @@ class TestReconnectingRecorder:
         monkeypatch.setattr(main_mod.sc, "get_microphone", lambda mic_id: mic)
 
         block = make_audio_chunk()
-        failed = self._make_recorder(**{"record.side_effect": RuntimeError("FAILED")})
+        failed = self._make_recorder(**{"record.side_effect": RuntimeError("Recording failed, stream is in status FAILED")})
         healthy = self._make_recorder(**{"record.return_value": block})
         mic = self._make_mic(failed, OSError("device busy"), healthy)
 
@@ -362,7 +362,7 @@ class TestReconnectingRecorder:
         monkeypatch.setattr(main_mod.time, "sleep", sleeps.append)
         monkeypatch.setattr(main_mod.sc, "get_microphone", lambda mic_id: mic)
 
-        failed = self._make_recorder(**{"record.side_effect": RuntimeError("FAILED")})
+        failed = self._make_recorder(**{"record.side_effect": RuntimeError("Recording failed, stream is in status FAILED")})
         mic = self._make_mic(failed, OSError("gone"), OSError("still gone"))
 
         with main_mod._ReconnectingRecorder(mic, 1, 1024) as rec:
