@@ -1119,21 +1119,26 @@ class SendspinBridge:
         _LOGGER.info("SendSpin playback resumed")
 
     @property
+    def owns_playback(self) -> bool:
+        return self._sendspin_owns_playback or self._stream_active or self._paused
+
+    @property
     def is_playing(self) -> bool:
         """Check if SendSpin is currently playing (not paused)."""
         return self._stream_active and not self._paused
 
     def stop(self) -> None:
         """Stop SendSpin playback (called when HA wants to play)."""
-        if self._stream_active:
-            _LOGGER.info("Stopping SendSpin playback (HA taking over)")
-            self._stop_playback()
-            self._stream_active = False
-            self._paused = False
+        if not (self._stream_active or self._paused or self._sendspin_owns_playback):
+            return
+        _LOGGER.info("Stopping SendSpin playback")
+        self._stop_playback()
+        self._stream_active = False
+        self._paused = False
 
-            # Report the current playback state using the enum supported by the installed aiosendspin version.
-            if self._client and self._client.connected:
-                asyncio.get_event_loop().call_soon(lambda: asyncio.create_task(self._send_group_command(MediaCommand.STOP)))
+        # Report the current playback state using the enum supported by the installed aiosendspin version.
+        if self._client and self._client.connected:
+            asyncio.get_event_loop().call_soon(lambda: asyncio.create_task(self._send_group_command(MediaCommand.STOP)))
 
     async def start(self, server_url: str | None = None) -> None:
         if self._running:
@@ -1325,7 +1330,6 @@ class SendspinBridge:
         """Handle stream end from SendSpin server."""
         _LOGGER.info("SendSpin stream ended")
         self._stream_active = False
-        self._paused = False
         self._stop_playback()
 
         if self._paused:
@@ -1337,7 +1341,6 @@ class SendspinBridge:
         self._stop_playback()
 
         # Update MediaPlayerEntity state to idle
-        self._paused = False
         if self.media_player:
             self.media_player.server.send_messages([self.media_player._update_state(MediaPlayerState.IDLE)])
 
