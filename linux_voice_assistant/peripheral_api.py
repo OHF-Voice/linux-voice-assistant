@@ -450,27 +450,28 @@ class PeripheralAPIServer:
                 satellite.unduck()
                 await self.emit_event(LVAEvent.IDLE)
 
-        elif command == LVACommand.STOP_MEDIA_PLAYER:
-            state.music_player.stop()
-            if state.media_player_entity is not None:
-
-                state.media_player_entity.state = MediaPlayerState.IDLE
-                if satellite is not None:
-                    satellite.send_messages([self._create_media_player_response(MediaPlayerState.IDLE)])
-
-        elif command == LVACommand.PAUSE_MEDIA_PLAYER:
-            state.music_player.pause()
-            if state.media_player_entity is not None:
-                state.media_player_entity.state = MediaPlayerState.PAUSED
-                if satellite is not None:
-                    satellite.send_messages([self._create_media_player_response(MediaPlayerState.PAUSED)])
-
-        elif command == LVACommand.RESUME_MEDIA_PLAYER:
-            state.music_player.resume()
-            if state.media_player_entity is not None:
-                state.media_player_entity.state = MediaPlayerState.PLAYING
-                if satellite is not None:
-                    satellite.send_messages([self._create_media_player_response(MediaPlayerState.PLAYING)])
+        elif command in (
+            LVACommand.PAUSE_MEDIA_PLAYER,
+            LVACommand.RESUME_MEDIA_PLAYER,
+            LVACommand.STOP_MEDIA_PLAYER,
+        ):
+            entity = state.media_player_entity
+            if entity is None:
+                # No entity yet: fall back to the plain MPV player.
+                {
+                    LVACommand.PAUSE_MEDIA_PLAYER: state.music_player.pause,
+                    LVACommand.RESUME_MEDIA_PLAYER: state.music_player.resume,
+                    LVACommand.STOP_MEDIA_PLAYER: state.music_player.stop,
+                }[LVACommand(command)]()
+                return
+            action = {
+                LVACommand.PAUSE_MEDIA_PLAYER: entity.pause_media,
+                LVACommand.RESUME_MEDIA_PLAYER: entity.resume_media,
+                LVACommand.STOP_MEDIA_PLAYER: entity.stop_media,
+            }[LVACommand(command)]
+            response = action()
+            if satellite is not None:
+                satellite.send_messages([response])
 
         elif command == LVACommand.BUTTON_SINGLE_PRESS:
             if state.button_event_sensor_entity is not None:
