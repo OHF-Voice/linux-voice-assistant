@@ -57,6 +57,7 @@ from .entity import (
     MediaPlayerEntity,
     MicSettingEntity,
     MuteSwitchEntity,
+    RemoteMuteSensorEntity,
     StopWordSensitivityNumberEntity,
     ThinkingSoundEntity,
     WakeWord1SensitivityNumberEntity,
@@ -324,6 +325,23 @@ class VoiceSatelliteProtocol(APIServer):
         self.state.mic_volume_entity.update_get_value(lambda: float(self.state.mic_volume))
         self.state.mic_volume_entity.update_set_value(lambda val: self.state.persist_mic_volume(float(val)))
 
+        # Remote mute sensor, only with --allow-remote-mute
+        if self.state.remote_mute_allowed:
+            if self.state.remote_mute_sensor_entity is None:
+                self.state.remote_mute_sensor_entity = RemoteMuteSensorEntity(
+                    server=self,
+                    key=len(self.state.entities),
+                    name="Remote mute",
+                    object_id="remote_mute",
+                    get_remote_muted=lambda: self.state.remote_muted,
+                )
+                self.state.entities.append(self.state.remote_mute_sensor_entity)
+            elif self.state.remote_mute_sensor_entity not in self.state.entities:
+                self.state.entities.append(self.state.remote_mute_sensor_entity)
+
+            self.state.remote_mute_sensor_entity.server = self
+            self.state.remote_mute_sensor_entity.update_get_remote_muted(lambda: self.state.remote_muted)
+
         # NOTE: ButtonEventSensorEntity is NOT created here unconditionally.
         # It is only materialised when a peripheral sends the register_button
         # command (see register_pending_button below), mirroring the same
@@ -546,12 +564,11 @@ class VoiceSatelliteProtocol(APIServer):
             self.state.stop_sensitivity_number_entity.sync_with_state()
 
     def _set_muted(self, new_state: bool) -> None:
-        if self.state.mute_locked and not new_state:
-            # A peripheral's mute lock (lock_mute) is on: only unlock_mute unmutes.
-            _LOGGER.info("Unmute refused: the mute is locked by a peripheral")
+        if self.state.remote_muted and not new_state:
+            _LOGGER.info("Unmute refused: muted by a peripheral's remote_mute")
             return
         self.state.muted = bool(new_state)
-        self._emit(LVAEvent.MUTED, {"muted": self.state.muted, "locked": self.state.mute_locked})
+        self._emit(LVAEvent.MUTED, {"muted": self.state.muted, "remote_muted": self.state.remote_muted})
 
         if self.state.muted:
             # voice_assistant.stop behavior

@@ -225,6 +225,11 @@ async def main() -> None:
         help="Volume change per button press, 0.0–1.0 (default: %(default)s)",
     )
     parser.add_argument(
+        "--allow-remote-mute",
+        action="store_true",
+        help="Let peripherals mute the microphone with remote_mute so that Home Assistant cannot unmute it until remote_unmute",
+    )
+    parser.add_argument(
         "--disable-peripheral-api",
         action="store_true",
         help="Disable the peripheral WebSocket API entirely",
@@ -411,6 +416,14 @@ async def main() -> None:
     # a corrected snapshot after the fact.
     initial_button_controls_locked = bool(preferences.button_controls_locked)
 
+    # A remote mute is kept across restarts: the microphone is muted from startup, before
+    # any peripheral reconnects, until remote_unmute. Without --allow-remote-mute it is dropped.
+    initial_remote_muted = args.allow_remote_mute and bool(preferences.remote_muted)
+    remote_mute_dropped = bool(preferences.remote_muted) and not args.allow_remote_mute
+    if remote_mute_dropped:
+        _LOGGER.warning("Dropping the saved remote mute: LVA was started without --allow-remote-mute")
+        preferences.remote_muted = 0
+
     if args.enable_thinking_sound:
         preferences.thinking_sound = 1
 
@@ -475,6 +488,9 @@ async def main() -> None:
         volume=initial_volume,
         stop_word_threshold=initial_threshold,
         button_controls_locked=initial_button_controls_locked,
+        remote_mute_allowed=args.allow_remote_mute,
+        remote_muted=initial_remote_muted,
+        muted=initial_remote_muted,
         mic_volume=preferences.mic_volume,
         mic_auto_gain=preferences.mic_auto_gain,
         mic_noise_suppression=preferences.mic_noise_suppression,
@@ -492,7 +508,7 @@ async def main() -> None:
         state.save_preferences()
         state.wake_words_changed = True
 
-    if args.enable_thinking_sound or args.mic_auto_gain or args.mic_noise_suppression:
+    if args.enable_thinking_sound or args.mic_auto_gain or args.mic_noise_suppression or remote_mute_dropped:
         state.save_preferences()
 
     initial_volume_percent = int(round(initial_volume * 100))
