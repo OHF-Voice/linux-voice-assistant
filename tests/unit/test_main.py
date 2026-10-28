@@ -278,6 +278,14 @@ class TestFloatToPcm16:
 
 
 class TestReconnectingRecorder:
+    @pytest.fixture(autouse=True)
+    def _fresh_soundcard(self, monkeypatch):
+        """Give every test its own soundcard module so patches on it cannot leak between tests."""
+        monkeypatch.setitem(sys.modules, "soundcard", MagicMock())
+        from linux_voice_assistant import __main__ as main_mod
+
+        monkeypatch.setattr(main_mod, "sc", MagicMock())
+
     @staticmethod
     def _make_mic(*recorders):
         mic = MagicMock()
