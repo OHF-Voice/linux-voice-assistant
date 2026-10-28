@@ -30,11 +30,9 @@ class MpvMediaPlayer:
     ) -> None:
         """
         Play a media URL.
-
-        Args:
-            url: Media URL or list of URLs for sequential playback.
-            done_callback: Optional callback invoked when playback finishes.
-            stop_first: Kept for API compatibility.
+        :param url: Media URL or list of URLs for sequential playback.
+        :param done_callback: Optional callback invoked when playback finishes.
+        :param stop_first: Kept for API compatibility.
         """
         # Handle single URL vs list
         if isinstance(url, str):
@@ -119,9 +117,7 @@ class MpvMediaPlayer:
     def set_volume(self, volume: float) -> None:
         """
         Set playback volume.
-
-        Args:
-            volume: Volume in percent (0.0-100.0).
+        :param volume: Volume in percent (0.0-100.0).
         """
         self._log.debug("set_volume(volume=%.2f)", volume)
         self._player.set_volume(volume)
@@ -129,9 +125,7 @@ class MpvMediaPlayer:
     def duck(self, factor: float = 0.5) -> None:
         """
         Temporarily reduce volume.
-
-        Args:
-            factor: Volume multiplier (0.0-1.0).
+        :param factor: Volume multiplier (0.0-1.0).
         """
         self._log.debug("duck(factor=%.2f)", factor)
         self._player.duck(factor)

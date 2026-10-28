@@ -413,6 +413,30 @@ class TestPipelineEndedSound:
         sat.state.tts_player.play.assert_not_called()
         sat.state.music_player.unduck.assert_called_once()
 
+    def test_duplicate_wake_up_does_not_play_sound(self, tmp_path):
+        # Another satellite heard the same wake word and HA gave the run to it.
+        from aioesphomeapi import VoiceAssistantEventType
+
+        sat = make_satellite(tmp_path)
+        sat.handle_voice_event(VoiceAssistantEventType.VOICE_ASSISTANT_RUN_START, {})
+        sat.handle_voice_event(VoiceAssistantEventType.VOICE_ASSISTANT_ERROR, {"code": "duplicate_wake_up_detected"})
+        sat.handle_voice_event(VoiceAssistantEventType.VOICE_ASSISTANT_RUN_END, {})
+        sat.state.tts_player.play.assert_not_called()
+        sat.state.music_player.unduck.assert_called_once()
+        assert sat._pipeline_active is False
+
+    def test_sound_plays_again_after_a_duplicate_wake_up(self, tmp_path):
+        from aioesphomeapi import VoiceAssistantEventType
+
+        sat = make_satellite(tmp_path)
+        sat.handle_voice_event(VoiceAssistantEventType.VOICE_ASSISTANT_ERROR, {"code": "duplicate_wake_up_detected"})
+        sat.handle_voice_event(VoiceAssistantEventType.VOICE_ASSISTANT_RUN_END, {})
+        sat.handle_voice_event(VoiceAssistantEventType.VOICE_ASSISTANT_RUN_START, {})
+        sat.handle_voice_event(VoiceAssistantEventType.VOICE_ASSISTANT_ERROR, {"code": "stt-no-text-recognized"})
+        sat.handle_voice_event(VoiceAssistantEventType.VOICE_ASSISTANT_RUN_END, {})
+        sat.state.tts_player.play.assert_called_once()
+        assert sat.state.tts_player.play.call_args.args[0] == sat.state.pipeline_ended_sound
+
 
 # ---------------------------------------------------------------------------
 # connection_lost()
