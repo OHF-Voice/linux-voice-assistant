@@ -56,7 +56,7 @@ The Linux audio stack consists of multiple layers working together:
 │  │                                                     │    │
 │  │  Environment Variables:                             │    │
 │  │  - LVA_XDG_RUNTIME_DIR=/run/user/1000 (host path)       │    │
-│  │  - AUDIO_INPUT_DEVICE="default"                     │    │
+│  │  - AUDIO_INPUT_DEVICE="<specific audio input device name>" │    │
 │  │  - AUDIO_OUTPUT_DEVICE="pulse"                      │    │
 │  └─────────────────────────────────────────────────────┘    │
 │                                                             │
@@ -90,6 +90,7 @@ The Linux audio stack consists of multiple layers working together:
 
 4. **Key Configuration Points**:
    - `LVA_XDG_RUNTIME_DIR` must point to host's runtime directory
+   - Microphone and the default `pulse` output only use the socket `pulse/native`. The socket `pipewire-0` is only needed for `pipewire/...` output devices.
    - Container user UID/GID should match host user
 
 ### Docker Compose Example:
@@ -100,7 +101,7 @@ services:
     image: ghcr.io/ohf-voice/linux-voice-assistant:latest
     environment:
       - LVA_XDG_RUNTIME_DIR=/run/user/1000
-      - AUDIO_INPUT_DEVICE=default
+      - AUDIO_INPUT_DEVICE=<specific audio input device name>
       - AUDIO_OUTPUT_DEVICE=pulse
     volumes:
       - /run/user/1000:/run/user/1000:rw
@@ -123,9 +124,11 @@ docker run --rm -it -e LIST_DEVICES="1" ghcr.io/florian-asche/linux-voice-assist
 Update the `.env` file with your device names:
 
 ``` ini
-AUDIO_INPUT_DEVICE="default"
+AUDIO_INPUT_DEVICE="Built-in Audio"
 AUDIO_OUTPUT_DEVICE="pulse"
 ```
+
+`AUDIO_INPUT_DEVICE` takes part of the device name from the input device list. Leave it unset to use the default source of the audio server.
 
 The output list contains the same device several times, once per mpv audio driver (`pipewire/...`, `pulse/...`, `alsa/...`). Use the `pulse/...` entry, for example `AUDIO_OUTPUT_DEVICE="pulse/alsa_output.usb-Example.analog-stereo"`. `AUDIO_OUTPUT_DEVICE="pulse"` selects the default PulseAudio output without a device name.
 

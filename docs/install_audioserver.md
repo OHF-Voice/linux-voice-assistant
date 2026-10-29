@@ -6,6 +6,19 @@ For Linux-Voice-Assistant a Pulseaudio connection to the soundcard is required. 
 
 The Linux-Voice-Assistant container connects to the PulseAudio(PipeWire-Pulse) server running on the host system. The container does not have direct access to the sound card hardware. Instead, it communicates with the PulseAudio running on the host system, which then handles the actual audio processing and output.
 
+**How do input and output use it?**
+
+Both directions use the same PulseAudio connection (`PULSE_SERVER`, by default the socket `pulse/native` inside `LVA_XDG_RUNTIME_DIR`):
+
+| Direction | Library | Device setting |
+|-----------|---------|----------------|
+| Microphone (input) | `soundcard`, which only supports PulseAudio on Linux | `--audio-input-device` / `AUDIO_INPUT_DEVICE`. Unset uses the default source of the audio server. To pick a specific microphone, set part of the device name printed by `--list-input-devices`. A driver name such as `pulse` or `default` is not a valid input device. |
+| Speaker (output) | mpv through `python-mpv` | `--audio-output-device` / `AUDIO_OUTPUT_DEVICE`. The default `pulse` uses the default PulseAudio output. To select a device, use a `pulse/...` name from `--list-output-devices`. |
+
+On the host, the PulseAudio server is either PulseAudio itself (variant B) or `pipewire-pulse`, the PulseAudio server of PipeWire (variant A). LVA only speaks the PulseAudio protocol, so it works the same with both. The `pulse/...` device names are the ones printed by `--list-output-devices`.
+
+mpv can also open PipeWire directly with `pipewire/...` device names. That needs the PipeWire socket `pipewire-0` and is not the default, because opening it loads the PipeWire client libraries on every playback, which can be noticeably slower on small boards such as a Raspberry Pi Zero 2 W.
+
 ## A) Pipewire (recommended):
 
 PipeWire is a multimedia server that provides low-latency audio/video handling. Install it with the following commands:
