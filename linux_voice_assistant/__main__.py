@@ -358,7 +358,7 @@ async def main() -> None:
         try:
             mic = sc.get_microphone(args.audio_input_device)
         except IndexError:
-            _LOGGER.error("Audio input device %r not found. Use --list-input-devices to list them.", args.audio_input_device)
+            _LOGGER.error("Audio input device %r not found.", args.audio_input_device)
             _LOGGER.error("Available input devices:")
             for idx, available_mic in enumerate(sc.all_microphones()):
                 _LOGGER.error("  [%d] %s", idx, available_mic.name)
