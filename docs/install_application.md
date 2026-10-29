@@ -277,9 +277,9 @@ The following variables can be configured in the `.env` or in the service file:
 | `MAC_ADDRESS` | The network interface's | MAC address the device is known by in Home Assistant (colon separated, e.g. `02:00:00:00:00:01`). Keeps one identity across interfaces, or gives several instances on one machine each their own |
 | `HOST` | Autodetected | API server IP-Address, can be 0.0.0.0 for all interfaces, but only one network card works for MAC-ADDRESS and ESP protocol |
 | `PORT` | `6053` | API server port |
-| `AUDIO_INPUT_DEVICE` | unset | Part of the audio input device name from the device list |
+| `AUDIO_INPUT_DEVICE` | unset | Microphone input device, part of the name from the device list |
 | `AUDIO_INPUT_BLOCK_SIZE` | `1024` | Audio input block size in samples |
-| `AUDIO_OUTPUT_DEVICE` | `pulse` | Audio output device name, use a `pulse/...` name from the device list (see `LIST_DEVICES`) |
+| `AUDIO_OUTPUT_DEVICE` | `pulse` | Speaker output device, use a `pulse/...` name from the device list (see `LIST_DEVICES`) |
 | `MUSIC_OUTPUT_DEVICE` | `AUDIO_OUTPUT_DEVICE` | Music/media output device name (defaults to the voice output device) |
 | `MIC_VOLUME` | 100 | Control microphone volume |
 | `MIC_AUTO_GAIN` | 0 | Add WebRTC Gain to Mic |
