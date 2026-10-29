@@ -21,6 +21,7 @@ if TYPE_CHECKING:
         MediaPlayerEntity,
         MicSettingEntity,
         MuteSwitchEntity,
+        RemoteMuteSensorEntity,
         StopWordSensitivityNumberEntity,
         ThinkingSoundEntity,
         WakeWord1SensitivityNumberEntity,
@@ -86,6 +87,7 @@ class Preferences:
     volume: Optional[float] = None
     thinking_sound: int = 0  # 0 = disabled, 1 = enabled
     button_controls_locked: int = 0  # 0 = buttons enabled (default), 1 = buttons locked
+    remote_muted: int = 0  # 1 = muted by remote_mute, kept across restarts until remote_unmute
     wake_word_1_sensitivity: Optional[float] = None
     wake_word_2_sensitivity: Optional[float] = None
     stop_word_sensitivity: Optional[float] = None
@@ -143,6 +145,7 @@ class ServerState:
     satellite: "Optional[VoiceSatelliteProtocol]" = None
     connections: "List[VoiceSatelliteProtocol]" = field(default_factory=list)
     mute_switch_entity: "Optional[MuteSwitchEntity]" = None
+    remote_mute_sensor_entity: "Optional[RemoteMuteSensorEntity]" = None
     thinking_sound_entity: "Optional[ThinkingSoundEntity]" = None
     button_event_sensor_entity: "Optional[ButtonEventSensorEntity]" = None
 
@@ -183,6 +186,10 @@ class ServerState:
     button_controls_locked: bool = False
     output_only: bool = False
     muted: bool = False
+    # --allow-remote-mute: peripherals may use remote_mute / remote_unmute.
+    remote_mute_allowed: bool = False
+    # Muted by remote_mute: nothing but remote_unmute can unmute.
+    remote_muted: bool = False
     connected: bool = False
     volume: float = 1.0
     oww_probability_cutoff: float = 0.7  # Dynamic threshold for OpenWakeWord
@@ -224,6 +231,17 @@ class ServerState:
                 ensure_ascii=False,
                 indent=4,
             )
+
+    def persist_remote_muted(self, remote_muted: bool) -> None:
+        """
+        Set and save the remote mute, and show it on the Remote mute sensor in Home Assistant.
+        :param remote_muted: Whether the microphone is muted by remote_mute.
+        """
+        self.remote_muted = remote_muted
+        self.preferences.remote_muted = 1 if remote_muted else 0
+        self.save_preferences()
+        if self.remote_mute_sensor_entity is not None:
+            self.broadcast([self.remote_mute_sensor_entity.state_message()])
 
     def persist_volume(self, volume: float) -> None:
         """Persist the normalized media volume (0.0 - 1.0)."""

@@ -118,6 +118,7 @@ usage: __main__.py [-h] [--name NAME] [--audio-input-device AUDIO_INPUT_DEVICE] 
 | `--peripheral-port`             | Port for the peripheral WebSocket API                                                  | 6055                                 |
 | `--peripheral-volume-step`      | Volume change per button press, 0.0–1.0                                                | %(default)s                          |
 | `--peripheral-startup-wait`     | Seconds to wait for peripherals to register entities                                   | 2.0                                  |
+| `--allow-remote-mute`           | Let peripherals mute so Home Assistant cannot unmute (`remote_mute`)                   | False                                |
 | `--disable-peripheral-api`      | Disable the peripheral WebSocket API entirely                                          | False                                |
 | `--debug`                       | Print DEBUG messages to console                                                        | False                                |
 | `--colored-debug`               | Print colored DEBUG messages to console                                                | False                                |

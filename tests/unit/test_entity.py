@@ -3,6 +3,8 @@
 from unittest.mock import MagicMock
 
 from aioesphomeapi.api_pb2 import (  # type: ignore[attr-defined]
+    BinarySensorStateResponse,
+    ListEntitiesBinarySensorResponse,
     ListEntitiesMediaPlayerResponse,
     ListEntitiesNumberResponse,
     ListEntitiesRequest,
@@ -339,6 +341,12 @@ class TestMuteSwitchEntity:
         msgs = list(entity.handle_message(msg))
         assert any(isinstance(m, SwitchStateResponse) for m in msgs)
 
+    def test_switch_command_snaps_back_while_remote_muted(self):
+        # The satellite refused the unmute (remote mute): the switch stays on.
+        entity = make_mute_switch(key=2, initial_muted=True)
+        msgs = list(entity.handle_message(SwitchCommandRequest(key=2, state=False)))
+        assert [m.state for m in msgs if isinstance(m, SwitchStateResponse)] == [True]
+
     def test_switch_command_wrong_key_ignored(self):
         entity = make_mute_switch(key=2)
         msg = SwitchCommandRequest(key=99, state=True)
@@ -375,6 +383,32 @@ class TestMuteSwitchEntity:
         entity.update_get_muted(new_get_muted)
         entity.sync_with_state()
         assert entity._switch_state is True
+
+
+# ---------------------------------------------------------------------------
+# RemoteMuteSensorEntity
+# ---------------------------------------------------------------------------
+
+
+class TestRemoteMuteSensorEntity:
+    def make_sensor(self, remote_muted=False):
+        from linux_voice_assistant.entity import RemoteMuteSensorEntity
+
+        return RemoteMuteSensorEntity(
+            server=make_server(),
+            key=7,
+            name="Remote mute",
+            object_id="remote_mute",
+            get_remote_muted=lambda: remote_muted,
+        )
+
+    def test_list_entities_yields_binary_sensor_response(self):
+        msgs = list(self.make_sensor().handle_message(ListEntitiesRequest()))
+        assert [(type(m), m.object_id) for m in msgs] == [(ListEntitiesBinarySensorResponse, "remote_mute")]
+
+    def test_subscribe_states_yields_current_state(self):
+        msgs = list(self.make_sensor(remote_muted=True).handle_message(SubscribeHomeAssistantStatesRequest()))
+        assert [(type(m), m.key, m.state) for m in msgs] == [(BinarySensorStateResponse, 7, True)]
 
 
 # ---------------------------------------------------------------------------

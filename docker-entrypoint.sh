@@ -164,6 +164,10 @@ if [ -n "${PERIPHERAL_STARTUP_WAIT}" ]; then
   EXTRA_ARGS+=( "--peripheral-startup-wait" "$PERIPHERAL_STARTUP_WAIT" )
 fi
 
+if [ "$ALLOW_REMOTE_MUTE" = "1" ]; then
+  EXTRA_ARGS+=( "--allow-remote-mute" )
+fi
+
 if [ "$DISABLE_PERIPHERAL_API" = "1" ]; then
   EXTRA_ARGS+=( "--disable-peripheral-api" )
 fi

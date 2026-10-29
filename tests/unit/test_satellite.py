@@ -34,6 +34,11 @@ class TestInit:
         assert sat.state.mute_switch_entity is not None
         assert isinstance(sat.state.mute_switch_entity, MuteSwitchEntity)
 
+    def test_remote_mute_sensor_only_with_allow_flag(self, tmp_path):
+        assert make_satellite(tmp_path).state.remote_mute_sensor_entity is None
+        sat = make_satellite(tmp_path, {"remote_mute_allowed": True})
+        assert sat.state.remote_mute_sensor_entity in sat.state.entities
+
     def test_thinking_sound_entity_created(self, tmp_path):
         from linux_voice_assistant.entity import ThinkingSoundEntity
 
@@ -144,6 +149,13 @@ class TestSetMuted:
         sat._is_streaming_audio = True
         sat._set_muted(True)
         assert sat._is_streaming_audio is False
+
+    def test_unmuting_refused_while_remote_muted(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        sat.state.muted = True
+        sat.state.remote_muted = True
+        sat._set_muted(False)
+        assert sat.state.muted is True
 
 
 # ---------------------------------------------------------------------------
