@@ -876,15 +876,11 @@ def process_audio(state: ServerState, mic, block_size: int):
                     # Always process to keep state correct
                     stopped = False
 
-                    # No debugging when no detection
-                    state.stop_word.debug_probabilities = False
-
                     # Apply stop word sensitivity threshold
                     state.stop_word.probability_cutoff = state.stop_word_threshold
                     # _LOGGER.debug("Set stop word probability cutoff to %.3f", state.stop_word_threshold)
                     for micro_input in micro_inputs:
                         if state.stop_word.process_streaming(micro_input):
-                            state.stop_word.debug_probabilities = True
                             stopped = True
 
                     if stopped and (state.stop_word.id in state.active_wake_words) and not state.muted:
