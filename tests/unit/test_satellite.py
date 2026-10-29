@@ -4,6 +4,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from linux_voice_assistant.models import DetectionResult
+from linux_voice_assistant.peripheral_api import LVAEvent
 from tests.unit.conftest import make_satellite, make_state
 
 # ---------------------------------------------------------------------------
@@ -315,6 +317,24 @@ class TestStop:
 # ---------------------------------------------------------------------------
 # Continued conversation
 # ---------------------------------------------------------------------------
+
+
+class TestWakeWordDetectionEvent:
+    def test_wakeup_emits_slot_and_score(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        sat._emit = MagicMock()
+
+        sat.wakeup(MagicMock(wake_word="Hey Jarvis"), DetectionResult("hey_jarvis", 1, 0.93))
+
+        sat._emit.assert_called_once_with(LVAEvent.WAKE_WORD_DETECTED, {"wake_word_id": "hey_jarvis", "slot": 1, "score": 0.93})
+
+    def test_wakeup_without_detection_has_no_data(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        sat._emit = MagicMock()
+
+        sat.wakeup(MagicMock(wake_word="Hey Jarvis"))
+
+        sat._emit.assert_called_once_with(LVAEvent.WAKE_WORD_DETECTED, None)
 
 
 class TestContinueConversation:
