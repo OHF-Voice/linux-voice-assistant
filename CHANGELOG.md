@@ -1,3 +1,24 @@
+<a id="v1.1.18"></a>
+# [v1.1.18](https://github.com/OHF-Voice/linux-voice-assistant/releases/tag/v1.1.18) - 2026-10-29
+
+<!-- Release notes generated using configuration in .github/release.yml at main -->
+
+## What's Changed
+### Exciting New Features 🎉
+* Link the feature planning discussion in the README by [@florian-asche](https://github.com/florian-asche) in [#503](https://github.com/OHF-Voice/linux-voice-assistant/pull/503)
+### Other Changes
+* Default the audio output device to pulse by [@florian-asche](https://github.com/florian-asche) in [#496](https://github.com/OHF-Voice/linux-voice-assistant/pull/496)
+* Log a clear error when the configured audio input device is not found by [@florian-asche](https://github.com/florian-asche) in [#497](https://github.com/OHF-Voice/linux-voice-assistant/pull/497)
+* Log a clear error when the configured audio output device is not found by [@florian-asche](https://github.com/florian-asche) in [#498](https://github.com/OHF-Voice/linux-voice-assistant/pull/498)
+* Log startup information through the logger instead of print by [@florian-asche](https://github.com/florian-asche) in [#500](https://github.com/OHF-Voice/linux-voice-assistant/pull/500)
+* Don't play the pipeline ended sound after a run that stopped following speech recognition by [@florian-asche](https://github.com/florian-asche) in [#502](https://github.com/OHF-Voice/linux-voice-assistant/pull/502)
+
+
+**Full Changelog**: https://github.com/OHF-Voice/linux-voice-assistant/compare/v1.1.17...v1.1.18
+
+[Changes][v1.1.18]
+
+
 <a id="v1.1.17"></a>
 # [v1.1.17](https://github.com/OHF-Voice/linux-voice-assistant/releases/tag/v1.1.17) - 2026-10-28
 
@@ -473,6 +494,7 @@ Initial release
 [Changes][v1.0.0]
 
 
+[v1.1.18]: https://github.com/OHF-Voice/linux-voice-assistant/compare/v1.1.17...v1.1.18
 [v1.1.17]: https://github.com/OHF-Voice/linux-voice-assistant/compare/v1.1.16...v1.1.17
 [v1.1.16]: https://github.com/OHF-Voice/linux-voice-assistant/compare/v1.1.15...v1.1.16
 [v1.1.15]: https://github.com/OHF-Voice/linux-voice-assistant/compare/v1.1.14...v1.1.15
