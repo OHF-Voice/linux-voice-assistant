@@ -851,16 +851,12 @@ def process_audio(state: ServerState, mic, block_size: int):
                             # _LOGGER.debug("Set wake word %d probability cutoff to fallback value 0.7", wake_word_index+1)
 
                         if isinstance(wake_word, MicroWakeWord):
-                            # No debugging when no detection
-                            wake_word.debug_probabilities = False
-
                             # set microWakeWord cutoff
                             wake_word.probability_cutoff = threshold
 
                             for micro_input in micro_inputs:
                                 prob = wake_word.process_streaming_prob(micro_input)
                                 if prob is not None and prob > threshold:
-                                    wake_word.debug_probabilities = True
                                     _LOGGER.debug("Wake word '%s' activated (probability %.3f exceeded threshold %.3f)", wake_word.wake_word, prob, threshold)
                                     best_score = prob if best_score is None else max(best_score, prob)
                         elif isinstance(wake_word, OpenWakeWord):
