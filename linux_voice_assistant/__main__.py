@@ -366,6 +366,15 @@ async def main() -> None:
     else:
         mic = sc.default_microphone()
 
+    # Validate output devices, mpv silently accepts unknown names
+    for output_device in (args.audio_output_device, args.music_output_device):
+        if output_device and not _output_device_exists(output_device):
+            _LOGGER.error("Audio output device %r not found.", output_device)
+            _LOGGER.error("Available output devices:")
+            for idx, speaker in enumerate(_list_output_devices()):
+                _LOGGER.error("  [%d] %s: %s", idx, speaker["name"], speaker["description"])
+            sys.exit(1)
+
     # Load available wake words
     wake_word_dirs = [Path(ww_dir) for ww_dir in args.wake_word_dir]
 
@@ -631,6 +640,22 @@ async def main() -> None:
 
 
 # -----------------------------------------------------------------------------
+def _list_output_devices() -> list:
+    """Return the audio output devices reported by mpv."""
+    from mpv import MPV
+
+    return list(MPV().audio_device_list)  # type: ignore
+
+
+def _output_device_exists(device: str) -> bool:
+    """
+    Check whether mpv knows the given output device.
+    :param device: Device name as passed to --audio-output-device, a bare driver name like "pulse" matches any "pulse/..." device.
+    """
+    names = [speaker["name"] for speaker in _list_output_devices()]
+    return device in names or any(name.startswith(f"{device}/") for name in names)
+
+
 def _setup_logging(args: argparse.Namespace) -> None:
     COLORS = {
         logging.DEBUG: "\033[36m",
