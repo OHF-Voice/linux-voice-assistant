@@ -175,7 +175,7 @@ Environment=PREFERENCES_FILE="/home/pi/linux-voice-assistant/preferences.json"
 # Environment=MAC_ADDRESS="02:00:00:00:00:01"
 # Environment=HOST="0.0.0.0"
 # Environment=PORT="6053"
-# Environment=AUDIO_INPUT_DEVICE="default"
+# Environment=AUDIO_INPUT_DEVICE="<specific audio input device name>"
 # Environment=AUDIO_INPUT_BLOCK_SIZE="1024"
 # Environment=AUDIO_OUTPUT_DEVICE="pulse"
 # Environment=MUSIC_OUTPUT_DEVICE="pulse"
@@ -277,7 +277,7 @@ The following variables can be configured in the `.env` or in the service file:
 | `MAC_ADDRESS` | The network interface's | MAC address the device is known by in Home Assistant (colon separated, e.g. `02:00:00:00:00:01`). Keeps one identity across interfaces, or gives several instances on one machine each their own |
 | `HOST` | Autodetected | API server IP-Address, can be 0.0.0.0 for all interfaces, but only one network card works for MAC-ADDRESS and ESP protocol |
 | `PORT` | `6053` | API server port |
-| `AUDIO_INPUT_DEVICE` | Autodetected | Audio input device name |
+| `AUDIO_INPUT_DEVICE` | Default PulseAudio source | Part of the audio input device name from the device list |
 | `AUDIO_INPUT_BLOCK_SIZE` | `1024` | Audio input block size in samples |
 | `AUDIO_OUTPUT_DEVICE` | `pulse` | Audio output device name, use a `pulse/...` name from the device list (see `LIST_DEVICES`) |
 | `MUSIC_OUTPUT_DEVICE` | `AUDIO_OUTPUT_DEVICE` | Music/media output device name (defaults to the voice output device) |
