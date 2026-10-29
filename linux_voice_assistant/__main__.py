@@ -355,7 +355,16 @@ async def main() -> None:
         except ValueError:
             pass
 
-        mic = sc.get_microphone(args.audio_input_device)
+        try:
+            mic = sc.get_microphone(args.audio_input_device)
+        except IndexError:
+            available = [m.name for m in sc.all_microphones()]
+            _LOGGER.error(
+                "Audio input device %r not found. Available input devices: %s. Use --list-input-devices to list them.",
+                args.audio_input_device,
+                ", ".join(available) if available else "none",
+            )
+            sys.exit(1)
     else:
         mic = sc.default_microphone()
 
