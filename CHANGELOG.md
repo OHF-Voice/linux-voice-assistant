@@ -1,3 +1,44 @@
+<a id="v1.1.17"></a>
+# [v1.1.17](https://github.com/OHF-Voice/linux-voice-assistant/releases/tag/v1.1.17) - 2026-10-28
+
+<!-- Release notes generated using configuration in .github/release.yml at main -->
+
+## What's Changed
+### Exciting New Features 🎉
+* Make docs/behavior.md binding for contributors and agents by [@florian-asche](https://github.com/florian-asche) in [#480](https://github.com/OHF-Voice/linux-voice-assistant/pull/480)
+* feat: add pipeline ended sound by [@dmarkey](https://github.com/dmarkey) in [#267](https://github.com/OHF-Voice/linux-voice-assistant/pull/267)
+* build(docker): add standard oci image labels by [@florian-asche](https://github.com/florian-asche) in [#307](https://github.com/OHF-Voice/linux-voice-assistant/pull/307)
+* Mount the sounds directory in the dev docker-compose by [@florian-asche](https://github.com/florian-asche) in [#485](https://github.com/OHF-Voice/linux-voice-assistant/pull/485)
+* Add `--mac-address` by [@miguelangel-nubla](https://github.com/miguelangel-nubla) in [#490](https://github.com/OHF-Voice/linux-voice-assistant/pull/490)
+### Other Changes
+* Resolve active wake word ids from model dict keys by [@florian-asche](https://github.com/florian-asche) in [#470](https://github.com/OHF-Voice/linux-voice-assistant/pull/470)
+* Build slimmer Docker image with multi-stage build by [@florian-asche](https://github.com/florian-asche) in [#472](https://github.com/OHF-Voice/linux-voice-assistant/pull/472)
+* perf(satellite): unload wake word models that are no longer active by [@florian-asche](https://github.com/florian-asche) in [#454](https://github.com/OHF-Voice/linux-voice-assistant/pull/454)
+* Disable video in LibMpvPlayer by [@florian-asche](https://github.com/florian-asche) in [#486](https://github.com/OHF-Voice/linux-voice-assistant/pull/486)
+* Ignore unknown keys when loading preferences.json by [@florian-asche](https://github.com/florian-asche) in [#448](https://github.com/OHF-Voice/linux-voice-assistant/pull/448)
+* Correct misleading audio-stream-silence comment in LibMpvPlayer by [@florian-asche](https://github.com/florian-asche) in [#471](https://github.com/OHF-Voice/linux-voice-assistant/pull/471)
+* Document the audio input pipeline and require English documentation by [@florian-asche](https://github.com/florian-asche) in [#482](https://github.com/OHF-Voice/linux-voice-assistant/pull/482)
+* perf(audio): convert mic samples to PCM16 with fewer temporaries by [@florian-asche](https://github.com/florian-asche) in [#456](https://github.com/OHF-Voice/linux-voice-assistant/pull/456)
+* Document stale Docker image pitfall in CLAUDE.md by [@florian-asche](https://github.com/florian-asche) in [#481](https://github.com/OHF-Voice/linux-voice-assistant/pull/481)
+* perf(satellite): hash external wake word models in chunks by [@florian-asche](https://github.com/florian-asche) in [#455](https://github.com/OHF-Voice/linux-voice-assistant/pull/455)
+* Bump docker/build-push-action from 7.3.0 to 7.4.0 by [@dependabot](https://github.com/dependabot)[bot] in [#424](https://github.com/OHF-Voice/linux-voice-assistant/pull/424)
+* Keep wake word phrase on continued conversation by [@ChrisB85](https://github.com/ChrisB85) in [#430](https://github.com/OHF-Voice/linux-voice-assistant/pull/430)
+* Bump actions/setup-python from 5 to 7 by [@dependabot](https://github.com/dependabot)[bot] in [#369](https://github.com/OHF-Voice/linux-voice-assistant/pull/369)
+* Bump docker/login-action from 4.6.0 to 4.7.0 by [@dependabot](https://github.com/dependabot)[bot] in [#487](https://github.com/OHF-Voice/linux-voice-assistant/pull/487)
+* Reconnect the microphone after a failed stream and exit if it does not recover by [@florian-asche](https://github.com/florian-asche) in [#491](https://github.com/OHF-Voice/linux-voice-assistant/pull/491)
+* Fix outdated tooling docs and unify docstring style by [@florian-asche](https://github.com/florian-asche) in [#445](https://github.com/OHF-Voice/linux-voice-assistant/pull/445)
+* Don't play the pipeline ended sound on a satellite that lost the wake word by [@ChrisB85](https://github.com/ChrisB85) in [#492](https://github.com/OHF-Voice/linux-voice-assistant/pull/492)
+
+## New Contributors
+* [@dmarkey](https://github.com/dmarkey) made their first contribution in [#267](https://github.com/OHF-Voice/linux-voice-assistant/pull/267)
+* [@ChrisB85](https://github.com/ChrisB85) made their first contribution in [#430](https://github.com/OHF-Voice/linux-voice-assistant/pull/430)
+* [@miguelangel-nubla](https://github.com/miguelangel-nubla) made their first contribution in [#490](https://github.com/OHF-Voice/linux-voice-assistant/pull/490)
+
+**Full Changelog**: https://github.com/OHF-Voice/linux-voice-assistant/compare/v1.1.16...v1.1.17
+
+[Changes][v1.1.17]
+
+
 <a id="v1.1.16"></a>
 # [v1.1.16](https://github.com/OHF-Voice/linux-voice-assistant/releases/tag/v1.1.16) - 2026-10-24
 
@@ -432,6 +473,7 @@ Initial release
 [Changes][v1.0.0]
 
 
+[v1.1.17]: https://github.com/OHF-Voice/linux-voice-assistant/compare/v1.1.16...v1.1.17
 [v1.1.16]: https://github.com/OHF-Voice/linux-voice-assistant/compare/v1.1.15...v1.1.16
 [v1.1.15]: https://github.com/OHF-Voice/linux-voice-assistant/compare/v1.1.14...v1.1.15
 [v1.1.14]: https://github.com/OHF-Voice/linux-voice-assistant/compare/v1.1.13...v1.1.14

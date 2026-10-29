@@ -57,7 +57,7 @@ The Linux audio stack consists of multiple layers working together:
 │  │  Environment Variables:                             │    │
 │  │  - LVA_XDG_RUNTIME_DIR=/run/user/1000 (host path)       │    │
 │  │  - AUDIO_INPUT_DEVICE="default"                     │    │
-│  │  - AUDIO_OUTPUT_DEVICE="default"                    │    │
+│  │  - AUDIO_OUTPUT_DEVICE="pulse"                      │    │
 │  └─────────────────────────────────────────────────────┘    │
 │                                                             │
 │  Device Access:                                             │
@@ -101,7 +101,7 @@ services:
     environment:
       - LVA_XDG_RUNTIME_DIR=/run/user/1000
       - AUDIO_INPUT_DEVICE=default
-      - AUDIO_OUTPUT_DEVICE=default
+      - AUDIO_OUTPUT_DEVICE=pulse
     volumes:
       - /run/user/1000:/run/user/1000:rw
     devices:
@@ -124,8 +124,10 @@ Update the `.env` file with your device names:
 
 ``` ini
 AUDIO_INPUT_DEVICE="default"
-AUDIO_OUTPUT_DEVICE="default"
+AUDIO_OUTPUT_DEVICE="pulse"
 ```
+
+The output list contains the same device several times, once per mpv audio driver (`pipewire/...`, `pulse/...`, `alsa/...`). Use the `pulse/...` entry, for example `AUDIO_OUTPUT_DEVICE="pulse/alsa_output.usb-Example.analog-stereo"`. `AUDIO_OUTPUT_DEVICE="pulse"` selects the default PulseAudio output without a device name.
 
 
 ## Pipewire runtime directory (Optional):
