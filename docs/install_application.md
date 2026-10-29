@@ -177,8 +177,8 @@ Environment=PREFERENCES_FILE="/home/pi/linux-voice-assistant/preferences.json"
 # Environment=PORT="6053"
 # Environment=AUDIO_INPUT_DEVICE="default"
 # Environment=AUDIO_INPUT_BLOCK_SIZE="1024"
-# Environment=AUDIO_OUTPUT_DEVICE="default"
-# Environment=MUSIC_OUTPUT_DEVICE="default"
+# Environment=AUDIO_OUTPUT_DEVICE="pulse"
+# Environment=MUSIC_OUTPUT_DEVICE="pulse"
 # Environment=MIC_VOLUME="1.0"
 # Environment=MIC_AUTO_GAIN="0"
 # Environment=MIC_NOISE_SUPPRESSION="0"
@@ -279,7 +279,7 @@ The following variables can be configured in the `.env` or in the service file:
 | `PORT` | `6053` | API server port |
 | `AUDIO_INPUT_DEVICE` | Autodetected | Audio input device name |
 | `AUDIO_INPUT_BLOCK_SIZE` | `1024` | Audio input block size in samples |
-| `AUDIO_OUTPUT_DEVICE` | Autodetected | Audio output device name |
+| `AUDIO_OUTPUT_DEVICE` | `pulse` | Audio output device name, use a `pulse/...` name from the device list (see `LIST_DEVICES`) |
 | `MUSIC_OUTPUT_DEVICE` | `AUDIO_OUTPUT_DEVICE` | Music/media output device name (defaults to the voice output device) |
 | `MIC_VOLUME` | 100 | Control microphone volume |
 | `MIC_AUTO_GAIN` | 0 | Add WebRTC Gain to Mic |

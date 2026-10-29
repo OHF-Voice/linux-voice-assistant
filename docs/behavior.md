@@ -31,7 +31,7 @@ LVA has two independent audio players that share one volume setting:
 | **Music player** | Media sent from Home Assistant (music, radio, `media_player.play_media` without `announce`) |
 | **Assistant player** | Wake / mute / unmute chimes, the thinking sound, spoken replies (TTS), announcements, timer ringing, button sounds |
 
-The music player can be sent to a different sound card with `--music-output-device`. By default both use `--audio-output-device`.
+The music player can be sent to a different sound card with `--music-output-device`. By default both use `--audio-output-device`. `--audio-output-device` defaults to `pulse`, the default PulseAudio output (PulseAudio itself, or PipeWire through `pipewire-pulse`). A device name carries its mpv driver as a prefix (for example `pulse/...`) and that driver is used.
 
 Two rules apply everywhere:
 
