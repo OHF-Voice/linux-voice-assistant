@@ -172,12 +172,13 @@ Environment=XDG_RUNTIME_DIR="/run/user/<replace_with_your_user_id>"
 Environment=PULSE_COOKIE="/home/pi/linux-voice-assistant/tmp_pulse_cookie"
 Environment=PREFERENCES_FILE="/home/pi/linux-voice-assistant/preferences.json"
 # Environment=NETWORK_INTERFACE="eth0"
+# Environment=MAC_ADDRESS="02:00:00:00:00:01"
 # Environment=HOST="0.0.0.0"
 # Environment=PORT="6053"
 # Environment=AUDIO_INPUT_DEVICE="default"
 # Environment=AUDIO_INPUT_BLOCK_SIZE="1024"
-# Environment=AUDIO_OUTPUT_DEVICE="default"
-# Environment=MUSIC_OUTPUT_DEVICE="default"
+# Environment=AUDIO_OUTPUT_DEVICE="pulse"
+# Environment=MUSIC_OUTPUT_DEVICE="pulse"
 # Environment=MIC_VOLUME="1.0"
 # Environment=MIC_AUTO_GAIN="0"
 # Environment=MIC_NOISE_SUPPRESSION="0"
@@ -209,7 +210,7 @@ Environment=PREFERENCES_FILE="/home/pi/linux-voice-assistant/preferences.json"
 # Environment=ENABLE_OUTPUT_ONLY="1"
 ExecStart=/home/pi/linux-voice-assistant/docker-entrypoint.sh
 # ExecStart=/home/pi/linux-voice-assistant/docker-entrypoint.sh --additional-parameter-if-you-want
-Restart=always
+Restart=on-failure
 RestartSec=5
 
 [Install]
@@ -273,11 +274,12 @@ The following variables can be configured in the `.env` or in the service file:
 | `LIST_DEVICES` | (optional) | Set to "1" to list audio devices instead of starting |
 | `PREFERENCES_FILE` | (optional) | Path to a custom preferences JSON file |
 | `NETWORK_INTERFACE` | Autodetected | network card for server |
+| `MAC_ADDRESS` | The network interface's | MAC address the device is known by in Home Assistant (colon separated, e.g. `02:00:00:00:00:01`). Keeps one identity across interfaces, or gives several instances on one machine each their own |
 | `HOST` | Autodetected | API server IP-Address, can be 0.0.0.0 for all interfaces, but only one network card works for MAC-ADDRESS and ESP protocol |
 | `PORT` | `6053` | API server port |
 | `AUDIO_INPUT_DEVICE` | Autodetected | Audio input device name |
 | `AUDIO_INPUT_BLOCK_SIZE` | `1024` | Audio input block size in samples |
-| `AUDIO_OUTPUT_DEVICE` | Autodetected | Audio output device name |
+| `AUDIO_OUTPUT_DEVICE` | `pulse` | Audio output device name, use a `pulse/...` name from the device list (see `LIST_DEVICES`) |
 | `MUSIC_OUTPUT_DEVICE` | `AUDIO_OUTPUT_DEVICE` | Music/media output device name (defaults to the voice output device) |
 | `MIC_VOLUME` | 100 | Control microphone volume |
 | `MIC_AUTO_GAIN` | 0 | Add WebRTC Gain to Mic |

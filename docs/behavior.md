@@ -31,7 +31,7 @@ LVA has two independent audio players that share one volume setting:
 | **Music player** | Media sent from Home Assistant (music, radio, `media_player.play_media` without `announce`) |
 | **Assistant player** | Wake / mute / unmute chimes, the thinking sound, spoken replies (TTS), announcements, timer ringing, button sounds |
 
-The music player can be sent to a different sound card with `--music-output-device`. By default both use `--audio-output-device`.
+The music player can be sent to a different sound card with `--music-output-device`. By default both use `--audio-output-device`. `--audio-output-device` defaults to `pulse`, the default PulseAudio output (PulseAudio itself, or PipeWire through `pipewire-pulse`). A device name carries its mpv driver as a prefix (for example `pulse/...`) and that driver is used.
 
 Two rules apply everywhere:
 
@@ -56,7 +56,7 @@ Details:
 
 - **Ignored wake words.** While a conversation is running (phases 1–4) further wake words are ignored. This prevents the assistant from triggering itself on its own voice. After a detection the same wake word cannot trigger again for `--refractory-seconds` (default 2 s).
 - **Early speech.** If Home Assistant streams the reply (the response starts before it is complete), playback starts as soon as the first part is available.
-- **No spoken reply.** If the pipeline finishes without any speech (for example no speech was detected, an error, or a command with no reply), the pipeline ended sound (`--pipeline-ended-sound`) plays. Afterwards the assistant goes back to idle and music is restored. The sound is not played after announcements or when the reply is stopped with the stop word.
+- **No spoken reply.** If the pipeline finishes without any speech (for example no speech was detected, an error, or a command with no reply), the pipeline ended sound (`--pipeline-ended-sound`) plays. Afterwards the assistant goes back to idle and music is restored. The sound is not played after announcements, when the reply is stopped with the stop word, when another satellite heard the same wake word and Home Assistant gave the run to it (`duplicate_wake_up_detected`), or when Home Assistant ends the run right after speech recognition because something else handles the transcript (for example the answer to a question asked by an automation).
 - **Continued conversation.** If Home Assistant asks a follow-up question, the assistant listens again after the reply, without a wake word. It waits `--continue-conversation-delay` (default 0.5 s) after the reply so the microphone does not record the tail of its own voice. Music stays ducked through the whole conversation and is restored only when the conversation ends. The follow-up runs on the same pipeline as the wake word that started the conversation. After a button press or an announcement from Home Assistant there is no wake word, so the first pipeline is used. If you mute the assistant during that delay, the follow-up is skipped and music is restored.
 - **Wake word while a timer rings.** Saying the wake word silences the ringing timer and starts a normal interaction.
 - **Starting by button.** A peripheral button can start listening without a wake word. Instead of the wake sound, the start-listening sound (`--start-listening-sound`) plays; everything else is identical. This also silences a ringing timer.
@@ -185,6 +185,14 @@ Do not confuse this with the **media player mute**, which sets the shared volume
 
 ---
 
+## Microphone failure
+
+If the audio server reports that the microphone stream failed (for example after the device was suspended, unplugged, or PipeWire/PulseAudio restarted), the assistant logs an error naming the microphone and immediately tries to reopen it. If that fails, it waits 2 seconds and tries once more. After a successful reconnect, listening continues without a restart.
+
+If the second attempt also fails, the assistant logs the error and exits with a non-zero status, so a supervisor such as Docker (`restart: unless-stopped`) or systemd (`Restart=on-failure`) restarts it. It never keeps running without a working microphone.
+
+---
+
 ## Buttons (peripherals)
 
 If a peripheral (such as a HAT with buttons) is connected through the [peripheral API](peripheral_api.md), it can trigger the following. What a physical button does is defined by the peripheral, not by LVA.
@@ -206,6 +214,7 @@ The *Disable button controls* switch (if the peripheral provides it) lets you lo
 ## Connection to Home Assistant
 
 - LVA is discovered by Home Assistant via mDNS (ESPHome integration). Several clients can be connected at the same time.
+- **Identity.** Home Assistant knows the device by its MAC address, which is also in its name (`lva-<mac>`): by default the network interface's. With `--mac-address` it is that one instead, so the device stays the same in Home Assistant when the machine uses another interface, and several instances on one machine get one identity each.
 - When Home Assistant **reconnects** (for example after a restart), settings and entities are kept. Playback is not interrupted as long as at least one client is still connected.
 - When the **last** client disconnects, LVA **stops music and assistant playback** and goes idle. It keeps waiting for Home Assistant to reconnect.
 - Peripherals are told when Home Assistant is connected (`zeroconf` event with status `connected`) and when it is lost (`disconnected`).
