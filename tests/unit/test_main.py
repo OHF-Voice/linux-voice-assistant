@@ -1,5 +1,8 @@
 """Unit tests for __main__.py — process_audio logic and argument parsing helpers."""
 
+import sys
+from unittest.mock import MagicMock
+
 import numpy as np
 import pytest
 
@@ -233,3 +236,160 @@ class TestPreferencesFromArgs:
         if enable_thinking_sound:
             prefs.thinking_sound = 1
         assert prefs.thinking_sound == 1
+
+
+# ---------------------------------------------------------------------------
+# _float_to_pcm16
+# ---------------------------------------------------------------------------
+
+
+class TestFloatToPcm16:
+    @pytest.fixture(autouse=True)
+    def _stub_soundcard(self, monkeypatch):
+        """Importing soundcard connects to PulseAudio, which is absent on CI runners."""
+        monkeypatch.setitem(sys.modules, "soundcard", MagicMock())
+
+    @pytest.mark.parametrize("scalar", [0.1, 0.5, 1.0])
+    def test_matches_reference_conversion(self, scalar):
+        from linux_voice_assistant.__main__ import _float_to_pcm16
+
+        rng = np.random.default_rng(0)
+        samples = rng.uniform(-1.5, 1.5, size=(1024, 2)).astype(np.float32)
+        column = samples[:, 1]
+
+        expected = (np.clip(column * scalar, -1.0, 1.0) * 32767.0).astype("<i2").tobytes()
+
+        assert _float_to_pcm16(column, scalar) == expected
+
+    def test_does_not_modify_input(self):
+        from linux_voice_assistant.__main__ import _float_to_pcm16
+
+        samples = np.array([0.5, -0.5, 1.0], dtype=np.float32)
+        original = samples.copy()
+
+        _float_to_pcm16(samples, 1.0)
+
+        assert np.array_equal(samples, original)
+
+
+# ---------------------------------------------------------------------------
+# _ReconnectingRecorder — recovery from a failed microphone stream
+# ---------------------------------------------------------------------------
+
+
+class TestReconnectingRecorder:
+    @pytest.fixture(autouse=True)
+    def _fresh_soundcard(self, monkeypatch):
+        """Give every test its own soundcard module so patches on it cannot leak between tests."""
+        monkeypatch.setitem(sys.modules, "soundcard", MagicMock())
+        from linux_voice_assistant import __main__ as main_mod
+
+        monkeypatch.setattr(main_mod, "sc", MagicMock())
+
+    @staticmethod
+    def _make_mic(*recorders):
+        mic = MagicMock()
+        mic.name = "Test Mic"
+        mic.id = "test-mic-id"
+        mic.recorder.side_effect = list(recorders)
+        return mic
+
+    @staticmethod
+    def _make_recorder(**kwargs):
+        recorder = MagicMock()
+        recorder.configure_mock(**kwargs)
+        return recorder
+
+    def test_record_passes_through_when_healthy(self):
+        from linux_voice_assistant import __main__ as main_mod
+
+        block = make_audio_chunk()
+        recorder = self._make_recorder(**{"record.return_value": block})
+        mic = self._make_mic(recorder)
+
+        with main_mod._ReconnectingRecorder(mic, 1, 1024) as rec:
+            assert rec.record(1024) is block
+
+        mic.recorder.assert_called_once_with(samplerate=16000, channels=1, blocksize=1024)
+        recorder.__exit__.assert_called_once()
+
+    def test_reopens_stream_after_failure(self, monkeypatch):
+        from linux_voice_assistant import __main__ as main_mod
+
+        monkeypatch.setattr(main_mod.time, "sleep", lambda _s: None)
+        monkeypatch.setattr(main_mod.sc, "get_microphone", lambda mic_id: mic)
+
+        block = make_audio_chunk()
+        failed = self._make_recorder(**{"record.side_effect": RuntimeError("Recording failed, stream is in status FAILED")})
+        healthy = self._make_recorder(**{"record.return_value": block})
+        mic = self._make_mic(failed, healthy)
+
+        with main_mod._ReconnectingRecorder(mic, 1, 1024) as rec:
+            assert rec.record(1024) is block
+
+        failed.__exit__.assert_called_once()
+        assert mic.recorder.call_count == 2
+
+    def test_retries_until_open_succeeds(self, monkeypatch):
+        from linux_voice_assistant import __main__ as main_mod
+
+        monkeypatch.setattr(main_mod.time, "sleep", lambda _s: None)
+        monkeypatch.setattr(main_mod.sc, "get_microphone", lambda mic_id: mic)
+
+        block = make_audio_chunk()
+        failed = self._make_recorder(**{"record.side_effect": RuntimeError("Recording failed, stream is in status FAILED")})
+        healthy = self._make_recorder(**{"record.return_value": block})
+        mic = self._make_mic(failed, OSError("device busy"), healthy)
+
+        with main_mod._ReconnectingRecorder(mic, 1, 1024) as rec:
+            assert rec.record(1024) is block
+
+        assert mic.recorder.call_count == 3
+
+    def test_first_retry_is_immediate_second_waits(self, monkeypatch):
+        from linux_voice_assistant import __main__ as main_mod
+
+        sleeps = []
+        monkeypatch.setattr(main_mod.time, "sleep", sleeps.append)
+        monkeypatch.setattr(main_mod.sc, "get_microphone", lambda mic_id: mic)
+
+        block = make_audio_chunk()
+        failed = self._make_recorder(**{"record.side_effect": RuntimeError("Recording failed, stream is in status FAILED")})
+        healthy = self._make_recorder(**{"record.return_value": block})
+        mic = self._make_mic(failed, OSError("device busy"), healthy)
+
+        with main_mod._ReconnectingRecorder(mic, 1, 1024) as rec:
+            assert rec.record(1024) is block
+
+        assert sleeps == [2.0]
+
+    def test_raises_after_two_failed_reconnects(self, monkeypatch):
+        from linux_voice_assistant import __main__ as main_mod
+
+        sleeps = []
+        monkeypatch.setattr(main_mod.time, "sleep", sleeps.append)
+        monkeypatch.setattr(main_mod.sc, "get_microphone", lambda mic_id: mic)
+
+        failed = self._make_recorder(**{"record.side_effect": RuntimeError("Recording failed, stream is in status FAILED")})
+        mic = self._make_mic(failed, OSError("gone"), OSError("still gone"))
+
+        with main_mod._ReconnectingRecorder(mic, 1, 1024) as rec:
+            with pytest.raises(RuntimeError, match="Test Mic.*did not recover"):
+                rec.record(1024)
+
+        assert sleeps == [2.0]
+        assert mic.recorder.call_count == 3
+
+    def test_keeps_old_mic_object_without_id(self, monkeypatch):
+        from linux_voice_assistant import __main__ as main_mod
+
+        get_mic = MagicMock()
+        monkeypatch.setattr(main_mod.sc, "get_microphone", get_mic)
+
+        mic = MagicMock(spec=["name", "recorder"])
+        mic.name = "Test Mic"
+        mic.recorder.return_value = self._make_recorder()
+
+        main_mod._ReconnectingRecorder(mic, 1, 1024)._refresh_mic()
+
+        get_mic.assert_not_called()

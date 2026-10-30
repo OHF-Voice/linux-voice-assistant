@@ -16,13 +16,9 @@ def find_available_wake_words(wake_word_dirs: List[Path], stop_model_id: str) ->
     """
     Searches all available wake words in the specified directories.
     Loads configurations and creates AvailableWakeWord objects.
-
-    Args:
-        wake_word_dirs: List of directories to search for wake words
-        stop_model_id: ID of the stop model which will not be listed as available wake word
-
-    Returns:
-        Dictionary with wake word ID as key and AvailableWakeWord object as value
+    :param wake_word_dirs: List of directories to search for wake words.
+    :param stop_model_id: ID of the stop model which will not be listed as available wake word.
+    :return: Dictionary with wake word ID as key and AvailableWakeWord object as value.
     """
     available_wake_words: Dict[str, AvailableWakeWord] = {}
 
@@ -88,14 +84,10 @@ def _find_matching_wake_word_id(
         1. An exact id match.
         2. An id that starts with "{requested_id}_", which covers openWakeWord's
            versioned filenames (e.g. "hey_jarvis" -> "hey_jarvis_v0.1").
-
-    Args:
-        available_wake_words: Dictionary with all available wake words
-        requested_id: ID (or base name) to look for
-        wake_word_type: If given, only consider wake words of this type
-
-    Returns:
-        The matching id, or None if no match was found
+    :param available_wake_words: Dictionary with all available wake words.
+    :param requested_id: ID (or base name) to look for.
+    :param wake_word_type: If given, only consider wake words of this type.
+    :return: The matching id, or None if no match was found.
     """
     prefix = f"{requested_id}_"
     for candidate_id, wake_word in available_wake_words.items():
@@ -118,20 +110,16 @@ def load_wake_models(
     Loads the specified wake word models.
 
     If no active wake words are provided, the default model will be loaded.
-
-    Args:
-        available_wake_words: Dictionary with all available wake words
-        active_wake_word_ids: List of IDs of wake words to load (may be None)
-        default_wake_word_id: ID of the default model which is loaded if no others are specified
-        preferred_type: If given, prefer resolving default_wake_word_id (and the
-            "okay_nabu" fallback) to a wake word of this type before falling back
-            to a type-agnostic match. Lets the operator's --wake-word-dir choice
-            (e.g. pointing at the openWakeWord subdirectory) decide which model
-            variant gets activated when the requested id exists for more than
-            one wake word engine.
-
-    Returns:
-        Tuple with (Dictionary of loaded models, Set of active wake word IDs)
+    :param available_wake_words: Dictionary with all available wake words.
+    :param active_wake_word_ids: List of IDs of wake words to load (may be None).
+    :param default_wake_word_id: ID of the default model which is loaded if no others are specified.
+    :param preferred_type: If given, prefer resolving default_wake_word_id (and the
+        "okay_nabu" fallback) to a wake word of this type before falling back
+        to a type-agnostic match. Lets the operator's --wake-word-dir choice
+        (e.g. pointing at the openWakeWord subdirectory) decide which model
+        variant gets activated when the requested id exists for more than
+        one wake word engine.
+    :return: Tuple with (dictionary of loaded models, set of active wake word IDs, whether the default fallback was used).
     """
     active_wake_words: Set[str] = set()
     wake_models: Dict[str, Union[MicroWakeWord, OpenWakeWord]] = {}
@@ -238,13 +226,9 @@ def load_wake_models(
 def load_stop_model(wake_word_dirs: List[Path], stop_model_id: str) -> Optional[MicroWakeWord]:
     """
     Loads the stop word model.
-
-    Args:
-        wake_word_dirs: List of directories to search for the stop model
-        stop_model_id: ID of the stop model
-
-    Returns:
-        Loaded MicroWakeWord object or None if not found
+    :param wake_word_dirs: List of directories to search for the stop model.
+    :param stop_model_id: ID of the stop model.
+    :return: Loaded MicroWakeWord object or None if not found.
     """
     _LOGGER.debug("Searching for stop model '%s' in directories: %s", stop_model_id, [str(d) for d in wake_word_dirs])
 

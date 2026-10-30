@@ -36,6 +36,7 @@ class LibMpvPlayer(AudioPlayer):
         # mpv setup
         self._mpv = mpv.MPV(
             audio_display=False,
+            video=False,
             log_handler=self._on_mpv_log,
             loglevel="error",
             cache="yes",
@@ -55,10 +56,10 @@ class LibMpvPlayer(AudioPlayer):
         # noticeable latency for a user-facing notification sound.
         self._mpv["audio-buffer"] = _AUDIO_BUFFER_SECS
 
-        # Keep the PulseAudio/PipeWire stream open between files by outputting
-        # silence when idle.  This eliminates the per-play sink re-initialisation
-        # penalty entirely, so back-to-back short sounds (wakeup → TTS, mute →
-        # unmute) never lose their first samples regardless of system load.
+        # Feed silence instead of stopping the audio output on pause and seeks.
+        # mpv only does this while a file is loaded: once playback ends the
+        # audio device is closed, so this does NOT keep the PulseAudio/PipeWire
+        # stream open between files.
         self._mpv["audio-stream-silence"] = True
 
         # Callback Handling
@@ -77,11 +78,9 @@ class LibMpvPlayer(AudioPlayer):
     ) -> None:
         """
         Start playback of a media URL.
-
-        Args:
-            url: Media URL or local file path.
-            done_callback: Optional callback invoked when playback finishes.
-            stop_first: If True, start playback in paused state.
+        :param url: Media URL or local file path.
+        :param done_callback: Optional callback invoked when playback finishes.
+        :param stop_first: If True, start playback in paused state.
         """
         with self._state_lock:
             self._log.debug("play: current_state=%s", self._state)
@@ -133,9 +132,7 @@ class LibMpvPlayer(AudioPlayer):
     def set_volume(self, volume: float) -> None:
         """
         Set user volume.
-
-        Args:
-            volume: Volume level (0.0–100.0).
+        :param volume: Volume level (0.0–100.0).
         """
         self._log.debug("set_volume() called")
         with self._state_lock:
@@ -145,9 +142,7 @@ class LibMpvPlayer(AudioPlayer):
     def duck(self, factor: float = 0.5) -> None:
         """
         Reduce volume temporarily by a ducking factor.
-
-        Args:
-            factor: Ducking factor (0.0–1.0).
+        :param factor: Ducking factor (0.0–1.0).
         """
         self._log.debug("duck() called")
         with self._state_lock:

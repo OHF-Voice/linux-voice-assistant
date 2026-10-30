@@ -5,7 +5,12 @@
 - NEVER automatically reply on Github (PRs or Discussions) without explicit consent from the developer.
 - Always run `./script/lint` and `./script/tests` after code changes to ensure standards are met.
 
+- `docs/behavior.md` is the source of truth for user-visible behavior. Follow it when changing code. If the code contradicts it, ask which one is wrong instead of silently picking one.
+- When a change alters user-visible behavior, update `docs/behavior.md` in the same change and list every behavior change separately under "Behavior changes" in the PR description (see `.github/PULL_REQUEST_TEMPLATE.md`).
+
 ## Project Overview
+
+LVA always means **Linux Voice Assistant**, this project.
 
 **Linux Voice Assistant (LVA)** - A Linux-based voice satellite software for Home Assistant using the ESPHome protocol.
 
@@ -58,9 +63,9 @@
 ## Code Quality Standards
 
 - **Python**: 3.11, 3.12, 3.13 supported
-- **Formatting**: Black (200 char line length, py312/py312 target)
+- **Formatting**: Black (200 char line length, py312/py313 target)
 - **Import Sorting**: isort with black profile
-- **Type Checking**: mypy with strict settings
+- **Type Checking**: mypy (non-strict, configured in `mypy.ini`, targets Python 3.11)
 - **Linting**: pylint (many checks disabled in pyproject.toml for practical reasons)
 
 ## Testing Strategy
@@ -89,6 +94,10 @@ When making code changes, run these commands in order:
 3. **Run tests**: `./script/tests`
 
 ## Code Style
+
+### Language
+
+All documentation (`docs/`, `README.md`, `*.md`), code comments, docstrings and commit/PR text are written in English, regardless of the language used in the conversation with the developer.
 
 ### Comments
 
@@ -122,6 +131,7 @@ Before claiming completion:
 - [ ] For audio-related changes: Note that hardware testing (microphone/speaker) was NOT performed
 - [ ] Did NOT claim hardware behavior is verified unless actually exercised
 - [ ] Changes are focused on one feature or fix per change
+- [ ] `docs/behavior.md` still matches the code, and behavior changes are listed separately in the PR description
 
 ## Areas Requiring Extra Care
 
