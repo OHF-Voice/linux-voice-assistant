@@ -28,6 +28,7 @@ if TYPE_CHECKING:
     )
     from .mpv_player import MpvMediaPlayer
     from .satellite import VoiceSatelliteProtocol
+    from .sendspin_bridge import SendspinBridge
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -180,6 +181,7 @@ class ServerState:
     wake_words_changed: bool = False
     refractory_seconds: float = 2.0
     thinking_sound_enabled: bool = False
+    sendspin_bridge: "Optional[SendspinBridge]" = None
     button_controls_locked: bool = False
     output_only: bool = False
     muted: bool = False
