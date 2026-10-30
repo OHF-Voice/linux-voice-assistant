@@ -1161,13 +1161,18 @@ class SendspinBridge:
 
         _LOGGER.info("Starting SendSpin bridge: %s", self.client_id)
 
+        def _log_task_failure(task: asyncio.Task) -> None:
+            if not task.cancelled() and task.exception() is not None:
+                _LOGGER.error("SendSpin background task failed", exc_info=task.exception())
+
         if server_url:
             # Explicit URL: dial out directly (manual/advanced override).
-            asyncio.create_task(self._connection_loop(server_url))
+            task = asyncio.create_task(self._connection_loop(server_url))
         else:
             # Default: advertise via mDNS and accept inbound connections,
             # matching `sendspin daemon`'s zero-configuration behavior.
-            asyncio.create_task(self._listener_loop())
+            task = asyncio.create_task(self._listener_loop())
+        task.add_done_callback(_log_task_failure)
 
     async def _listener_loop(self) -> None:
         """Advertise via mDNS and accept inbound connections from a Sendspin server."""
