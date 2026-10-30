@@ -7,26 +7,45 @@ hardware buttons to LVA peripheral API commands.
 
 Hardware layout (Satellite 1 HAT on Raspberry Pi)
 --------------------------------------------------
-  LED ring   : 24 x WS2812 RGBW NeoPixels  →  GPIO 12 (PWM0)
-  Right btn  : Volume Up                    →  GPIO 17
-  Left btn   : Volume Down                  →  GPIO 27
-  Top btn    : Mute / Unmute mic            →  GPIO 22
-  Bottom btn : Context action               →  GPIO 23
-                Single press:
+  LED ring   : 24 x WS2812 RGBW NeoPixels  →  GPIO 12 (PWM0), see the note below
+  Buttons    : read from the XMOS XVF3800 over SPI (/dev/spidev0.0), NOT from
+               Raspberry Pi GPIOs. They are bits of the XMOS status register:
+                 bit 0  Right btn  : Volume Up      (momentary, active low)
+                 bit 1  Bottom btn : Context action (momentary, active low)
+                 bit 2  Left btn   : Volume Down    (momentary, active low)
+                 bit 3  Top btn    : Mute / Unmute  (latching switch, 1 = muted)
+                Bottom button, single press:
                     idle            → start_listening
                     listening       → stop_pipeline
                     thinking        → stop_pipeline
                     tts_speaking    → stop_pipeline
                     timer_ringing   → stop_timer_ringing
                     media_playing   → stop_media_player
-                Multi-press (detected via timing):
+                Bottom button, gestures (detected via timing):
                     double press (< 250ms between releases)  → button_double_press
                     triple press (< 250ms between releases)  → button_triple_press
                     long press (held > 1000ms)               → button_long_press
 
+LED ring wiring note (Raspberry Pi)
+-----------------------------------
+  The HAT routes the ring's data line to header pin 15 (BCM GPIO 22), which has
+  no PWM/PCM/SPI function, so rpi_ws281x cannot drive it directly. Fit a jumper
+  from header pin 15 to header pin 32 (BCM GPIO 12, PWM0) and leave GPIO 22 as
+  an input. GPIO 22 must not be claimed by any other software.
+
+  rpi_ws281x also needs a DMA channel that the kernel is not using. On the
+  Raspberry Pi Zero 2 W the kernel dmaengine already uses channel 10, which
+  freezes the ring under audio load, so the default is channel 14. List the
+  channels the kernel manages with:
+    od -An -tx1 /proc/device-tree/soc/dma-controller@7e007000/brcm,dma-channel-mask
+  and pick a channel that is rarely allocated (e.g. the highest one) with
+  --led-dma.
+
 Install dependencies
 ---------------------
-  pip install websockets rpi-ws281x gpiozero lgpio
+  pip install websockets rpi-ws281x spidev
+
+  Also enable SPI on the host (dtparam=spi=on in config.txt).
 
 Run
 ---
@@ -55,11 +74,11 @@ from typing import Dict, List, Optional, Tuple
 # ---------------------------------------------------------------------------
 
 try:
-    from gpiozero import Button  # type: ignore[import]
-    _HAS_GPIO = True
+    import spidev  # type: ignore[import]
+    _HAS_SPI = True
 except ImportError:
-    _HAS_GPIO = False
-    logging.warning("gpiozero not found – button input disabled")
+    _HAS_SPI = False
+    logging.warning("spidev not found – button input disabled")
 
 try:
     from rpi_ws281x import PixelStrip, Color as _NeoColor  # type: ignore[import]
@@ -81,14 +100,36 @@ except ImportError:
 DEFAULT_LVA_HOST = "localhost"
 DEFAULT_LVA_PORT = 6055
 
-# GPIO (BCM numbering)
+# GPIO (BCM numbering). The LED ring data line reaches the Pi on GPIO 22 and
+# must be jumpered to GPIO 12 (PWM0) — see the module docstring.
 LED_GPIO_PIN   = 12
-BTN_VOLUME_UP  = 17   # Right button
-BTN_VOLUME_DOWN = 27  # Left button
-BTN_MUTE       = 22   # Top button
-BTN_ACTION     = 23   # Bottom button
 
-BTN_DEBOUNCE_MS = 30  # Milliseconds
+# Buttons are read from the XMOS XVF3800 over SPI, not from Pi GPIOs. A NO-OP
+# control frame makes the XMOS return its 4-byte status register in the same
+# transfer; the buttons are bits of its gpio_port_a byte.
+SPI_BUS         = 0
+SPI_DEVICE      = 0
+SPI_MODE        = 3
+SPI_SPEED_HZ    = 500_000    # The XMOS supports up to 1 MHz
+XMOS_NOOP_FRAME = (0x00, 0x00, 0x00, 0x00, 0x00, 0x00)  # 3 header + 3 dummy bytes
+XMOS_RESPONSE_ID = 0x01      # CNTRL_RES_ID in rx[0] of a valid response
+XMOS_RESPONSE_BUSY = 0x17    # rx[1] value meaning no status is returned
+XMOS_PORT_A_INDEX = 3        # gpio_port_a = rx[3]
+
+# Bit numbers inside gpio_port_a. Idle reads 0b0111: bits 0-2 are active low
+# (0 = pressed); bit 3 is a latching switch (1 = muted).
+BTN_BIT_VOLUME_UP   = 0   # Right button
+BTN_BIT_ACTION      = 1   # Bottom button
+BTN_BIT_VOLUME_DOWN = 2   # Left button
+BTN_BIT_MUTE        = 3   # Top button
+
+BTN_POLL_INTERVAL_S = 0.025   # ~40 Hz; a change must be read twice in a row
+                              # to count, which debounces the contacts
+
+# Action button gestures
+MULTIPRESS_WINDOW_MS = 250    # Max time between releases of a multi-press
+LONG_PRESS_MS        = 1000   # Hold time that counts as a long press
+ACTION_HOLD_MS       = 100    # Hold time that enters color change mode
 
 # Continuous hold-repeat behaviour for the volume buttons (and, while the
 # action button is held at the same time, the color wheel rotation). Once a
@@ -101,7 +142,7 @@ VOLUME_HOLD_REPEAT_S = 0.15  # Seconds between repeated steps while held
 # LED ring
 LED_COUNT      = 24
 LED_FREQ_HZ    = 800_000
-LED_DMA        = 10
+LED_DMA        = 14    # Not 10: the kernel also uses channel 10 on the Pi Zero 2 W
 LED_BRIGHTNESS = 168   # 66 % of 255 – matches ESPHome default
 LED_INVERT     = False
 LED_CHANNEL    = 0
@@ -349,7 +390,7 @@ def _neo(color: RGB) -> int:
 
 class LEDRing:
     """
-    Manages the 12-LED NeoPixel ring.
+    Manages the 24-LED NeoPixel ring.
 
     All animations run in a dedicated daemon thread. Calling
     ``set_animation()`` switches cleanly to the new pattern.
@@ -369,7 +410,12 @@ class LEDRing:
     ANIM_TIMER_TICK      = "timer_tick"       # Countdown arc
     ANIM_TIMER_RING      = "timer_ring"       # Ringing pulse
 
-    def __init__(self, state: SharedState) -> None:
+    def __init__(self, state: SharedState, dma: int = LED_DMA) -> None:
+        """
+        :param state: Shared assistant state.
+        :param dma: DMA channel used by rpi_ws281x; must not be one the kernel
+            is using (see the module docstring).
+        """
         self._state = state
         self._pixels: List[RGB] = [BLACK] * LED_COUNT
         self._strip = None
@@ -389,10 +435,13 @@ class LEDRing:
         if _HAS_NEOPIXEL:
             self._strip = PixelStrip(
                 LED_COUNT, LED_GPIO_PIN, LED_FREQ_HZ,
-                LED_DMA, LED_INVERT, LED_BRIGHTNESS, LED_CHANNEL,
+                dma, LED_INVERT, LED_BRIGHTNESS, LED_CHANNEL,
             )
             self._strip.begin()
-            _LOGGER.info("LED ring initialised (%d LEDs on GPIO %d)", LED_COUNT, LED_GPIO_PIN)
+            _LOGGER.info(
+                "LED ring initialised (%d LEDs on GPIO %d, DMA channel %d)",
+                LED_COUNT, LED_GPIO_PIN, dma,
+            )
 
     def start(self) -> None:
         self._thread.start()
@@ -513,14 +562,17 @@ class LEDRing:
         Mirrors the ESPHome "Waiting for Command", "Listening For Command"
         and "Replying" addressable_lambda effects.
         """
+        # The second arc sits on the opposite side of the ring (half the LED
+        # count away), as in the 12-LED Voice PE original.
+        half = LED_COUNT // 2
         if reverse:
             # Replying goes anticlockwise: index decrements
             self._index = (LED_COUNT + self._index - 1) % LED_COUNT
             offsets = [(0, 1.0), (1, 192/255), (2, 128/255),
-                       (6, 1.0), (7, 192/255), (8, 128/255)]
+                       (half, 1.0), (half + 1, 192/255), (half + 2, 128/255)]
         else:
-            offsets = [(0, 1.0), (11, 192/255), (10, 128/255),
-                       (6, 1.0), (5, 192/255),  (4, 128/255)]
+            offsets = [(0, 1.0), (LED_COUNT - 1, 192/255), (LED_COUNT - 2, 128/255),
+                       (half, 1.0), (half - 1, 192/255), (half - 2, 128/255)]
 
         for i in range(LED_COUNT):
             self._set(i, BLACK)
@@ -541,7 +593,7 @@ class LEDRing:
         """
         factor = self._pulse_step(10)
         for i in range(LED_COUNT):
-            if i == self._index % LED_COUNT or i == (self._index + 6) % LED_COUNT:
+            if i == self._index % LED_COUNT or i == (self._index + LED_COUNT // 2) % LED_COUNT:
                 self._set(i, _scale(color, factor))
             else:
                 self._set(i, BLACK)
@@ -580,11 +632,8 @@ class LEDRing:
         for i in range(LED_COUNT):
             self._set(i, _scale(color, factor))
         if muted:
-            # 4 mic positions: LEDs 0, 3, 6, 9
-            self._set(0, _scale(RED, factor))
-            self._set(3, _scale(RED, factor))
-            self._set(6, _scale(RED, factor))
-            self._set(9, _scale(RED, factor))
+            # Red at the 4 mic positions (LEDs 0, 6, 12, 18 on the 24-LED ring)
+            self._apply_mic_indicators_pulsed(factor)
         self._write()
         return 0.01
 
@@ -799,22 +848,41 @@ def state_to_animation(state: AssistState, ha_connected: bool, muted: bool) -> s
 
 
 # ===========================================================================
-# Button handler — uses gpiozero (works on Pi 3/4/5 without RPi.GPIO)
+# Button handler — reads the HAT buttons from the XMOS XVF3800 over SPI
 # ===========================================================================
+
+def parse_gpio_port_a(rx: List[int]) -> Optional[int]:
+    """
+    Extract the ``gpio_port_a`` byte from an XMOS control response.
+
+    A valid response starts with ``XMOS_RESPONSE_ID`` and does not carry
+    ``XMOS_RESPONSE_BUSY`` in its second byte; the 4-byte status register is
+    then ``rx[2:6]`` and ``gpio_port_a`` is ``rx[3]``.
+    :param rx: Bytes returned by the SPI transfer.
+    :return: The gpio_port_a byte, or None if the response is not a valid status.
+    """
+    if len(rx) < 6 or rx[0] != XMOS_RESPONSE_ID or rx[1] == XMOS_RESPONSE_BUSY:
+        return None
+    return rx[XMOS_PORT_A_INDEX]
+
 
 class ButtonHandler:
     """
-    Manages the four hardware buttons using gpiozero.
+    Reads the four hardware buttons from the XMOS chip over SPI.
 
-    All callbacks run in the GPIO event-detection thread and schedule
-    coroutines onto the asyncio event loop thread-safely.
-    
+    The buttons are not wired to Raspberry Pi GPIOs. A background thread polls
+    the XMOS status register at ~40 Hz and turns changes of its ``gpio_port_a``
+    byte into press/release events. Callbacks schedule coroutines onto the
+    asyncio event loop thread-safely.
+
     Supports:
     - Volume +/- for volume control. A short press sends a single step;
       holding the button past VOLUME_HOLD_THRESHOLD_MS repeats that step
       every VOLUME_HOLD_REPEAT_S seconds until released, so volume moves
       gradually while held instead of one step per press.
-    - Mute button for microphone toggle.
+    - Mute switch for microphone mute. The XMOS latches this switch itself, so
+      the handler follows its level: it sends ``mute_mic`` when the switch
+      turns on and ``unmute_mic`` when it turns off.
     - Action button for context-aware commands or color changing:
       * Hold + Volume +: Increase hue by 10°
       * Hold + Volume -: Decrease hue by 10°
@@ -823,11 +891,17 @@ class ButtonHandler:
       using the same repeat mechanism, until the volume button is released.
       Color changes are applied to the LED ring immediately so the wheel
       rotation previews in real time.
+    - Action button gestures: double press and triple press (releases less
+      than MULTIPRESS_WINDOW_MS apart) and long press (held for at least
+      LONG_PRESS_MS). The context command fires on the first press only.
     - The action button also lights up the LED ring at the chosen (or
       default) color for as long as it's physically held down — even for a
       quick tap — turning off again on release. This only happens when the
       HA Light entity is off; if it's already on, the idle animation is
       already showing the color.
+    - The "Disable button controls" lock from Home Assistant: while locked,
+      no command is sent and the LED ring is not affected. The mute switch
+      still latches in the XMOS hardware, which this handler cannot prevent.
     """
 
     def __init__(
@@ -839,10 +913,25 @@ class ButtonHandler:
         self._state = state
         self._loop = loop
         self._queue = command_queue
-        self._buttons: List = []
+
+        # SPI polling
+        self._spi = None
+        self._poll_thread: Optional[threading.Thread] = None
+        self._stop_event = threading.Event()
+        self._candidate: Optional[int] = None  # Last raw reading
+        self._stable: Optional[int] = None  # Last reading seen twice in a row
+
         # Track action button hold state for color changing
         self._action_button_held = False
-        self._action_button_obj = None
+        self._action_active = False  # Action press that was not ignored (lock)
+        self._action_pressed_at = 0.0
+        self._action_color_used = False
+        self._action_hold_timer: Optional[threading.Timer] = None
+
+        # Action button multi-press tracking
+        self._gesture_lock = threading.Lock()
+        self._tap_count = 0
+        self._tap_timer: Optional[threading.Timer] = None
 
         # Continuous hold-repeat state for the volume buttons, keyed by
         # "up" / "down". `_volume_hold_timers` fires once the button has
@@ -854,44 +943,156 @@ class ButtonHandler:
         self._volume_repeat_threads: Dict[str, Optional[threading.Thread]] = {"up": None, "down": None}
 
     def setup(self) -> None:
-        if not _HAS_GPIO:
-            _LOGGER.warning("GPIO unavailable – buttons not configured")
+        """Open the SPI device and start polling. Never raises: without SPI the
+        buttons are disabled but the LED ring keeps working."""
+        if not _HAS_SPI:
+            _LOGGER.warning("spidev unavailable – buttons not configured")
             return
 
-        debounce = BTN_DEBOUNCE_MS / 1000.0
+        try:
+            spi = spidev.SpiDev()
+            spi.open(SPI_BUS, SPI_DEVICE)
+            spi.mode = SPI_MODE
+            spi.max_speed_hz = SPI_SPEED_HZ
+        except Exception as exc:  # pylint: disable=broad-except
+            _LOGGER.error(
+                "Cannot open /dev/spidev%d.%d (%s) – buttons disabled. "
+                "Enable SPI (dtparam=spi=on) and make sure the device is available "
+                "to the container.",
+                SPI_BUS, SPI_DEVICE, exc,
+            )
+            return
 
-        btn_up   = Button(BTN_VOLUME_UP,   pull_up=True, bounce_time=debounce)
-        btn_down = Button(BTN_VOLUME_DOWN, pull_up=True, bounce_time=debounce)
-        btn_mute = Button(BTN_MUTE,        pull_up=True, bounce_time=debounce)
-        btn_act  = Button(BTN_ACTION,      pull_up=True, bounce_time=debounce)
-
-        btn_up.when_pressed    = lambda: self._on_volume_button_pressed("up")
-        btn_up.when_released   = lambda: self._on_volume_button_released("up")
-        btn_down.when_pressed  = lambda: self._on_volume_button_pressed("down")
-        btn_down.when_released = lambda: self._on_volume_button_released("down")
-        btn_mute.when_pressed = self._on_mute
-        btn_act.when_pressed  = self._on_action_pressed
-        btn_act.when_held     = self._on_action_held
-        btn_act.when_released = self._on_action_button_released
-        btn_act.hold_time     = 0.1  # 100ms to detect hold
-
-        # Keep references — gpiozero Buttons are released when garbage-collected
-        self._buttons = [btn_up, btn_down, btn_mute, btn_act]
-        self._action_button_obj = btn_act
+        self._spi = spi
+        self._stop_event.clear()
+        self._poll_thread = threading.Thread(
+            target=self._poll_loop, daemon=True, name="button-poll"
+        )
+        self._poll_thread.start()
         _LOGGER.info(
-            "Buttons configured (gpiozero BCM %d/%d/%d/%d)",
-            BTN_VOLUME_UP, BTN_VOLUME_DOWN, BTN_MUTE, BTN_ACTION,
+            "Buttons configured (XMOS over SPI /dev/spidev%d.%d, mode %d, %d Hz)",
+            SPI_BUS, SPI_DEVICE, SPI_MODE, SPI_SPEED_HZ,
         )
 
     def cleanup(self) -> None:
+        self._stop_event.set()
+        if self._poll_thread is not None and self._poll_thread.is_alive():
+            self._poll_thread.join(timeout=1)
+        self._poll_thread = None
+        if self._spi is not None:
+            try:
+                self._spi.close()
+            except Exception:  # pylint: disable=broad-except
+                pass
+            self._spi = None
         for which in ("up", "down"):
             self._cancel_volume_hold_timer(which)
             self._stop_volume_repeat(which)
-        for btn in self._buttons:
-            btn.close()
-        self._buttons.clear()
+        self._cancel_action_hold_timer()
+        with self._gesture_lock:
+            if self._tap_timer is not None:
+                self._tap_timer.cancel()
+                self._tap_timer = None
+            self._tap_count = 0
+
+    # ------------------------------------------------------------------
+    # SPI polling
+    # ------------------------------------------------------------------
+
+    def _read_port(self) -> Optional[int]:
+        """Send a NO-OP control frame and return gpio_port_a (None if invalid)."""
+        rx = self._spi.xfer2(list(XMOS_NOOP_FRAME))
+        return parse_gpio_port_a(rx)
+
+    def _poll_loop(self) -> None:
+        failures = 0
+        invalid = 0
+        while not self._stop_event.is_set():
+            try:
+                port = self._read_port()
+            except Exception as exc:  # pylint: disable=broad-except
+                failures += 1
+                if failures == 1 or failures % 400 == 0:
+                    _LOGGER.warning("SPI read failed (%s), retrying", exc)
+                self._stop_event.wait(min(1.0, BTN_POLL_INTERVAL_S * failures))
+                continue
+
+            if failures:
+                _LOGGER.info("SPI reads recovered after %d failures", failures)
+                failures = 0
+
+            if port is None:
+                invalid += 1
+                if invalid == 1 or invalid % 400 == 0:
+                    _LOGGER.debug("XMOS returned no status register (%d times)", invalid)
+            else:
+                invalid = 0
+                try:
+                    self._process_port(port)
+                except Exception:  # pylint: disable=broad-except
+                    _LOGGER.exception("Error handling button state 0x%02x", port)
+
+            self._stop_event.wait(BTN_POLL_INTERVAL_S)
+
+    def _process_port(self, port: int) -> None:
+        """
+        Debounce a gpio_port_a reading and dispatch any change.
+
+        A new value only counts once it has been read twice in a row.
+        """
+        if port != self._candidate:
+            self._candidate = port
+            return
+        if port == self._stable:
+            return
+        previous = self._stable
+        self._stable = port
+        self._dispatch(port, previous)
+
+    def _dispatch(self, port: int, previous: Optional[int]) -> None:
+        """
+        Turn a change of gpio_port_a into button events.
+
+        :param port: New debounced gpio_port_a value.
+        :param previous: Previous value, or None for the first valid reading.
+        """
+        _LOGGER.debug("gpio_port_a 0x%02x → 0x%02x", previous if previous is not None else 0xFF, port)
+
+        if previous is None:
+            # First reading: adopt the current levels without inventing presses
+            # for buttons that are already held. The mute switch is a latch,
+            # so a mic left muted must be reported to LVA.
+            if port & (1 << BTN_BIT_MUTE):
+                self._on_mute_level(True)
+            return
+
+        changed = port ^ previous
+
+        # Action first, so a simultaneous action + volume press enters color mode
+        if changed & (1 << BTN_BIT_ACTION):
+            if port & (1 << BTN_BIT_ACTION):
+                self._on_action_button_released()
+            else:
+                self._on_action_pressed()
+
+        for which, bit in (("up", BTN_BIT_VOLUME_UP), ("down", BTN_BIT_VOLUME_DOWN)):
+            if changed & (1 << bit):
+                if port & (1 << bit):
+                    self._on_volume_button_released(which)
+                else:
+                    self._on_volume_button_pressed(which)
+
+        if changed & (1 << BTN_BIT_MUTE):
+            self._on_mute_level(bool(port & (1 << BTN_BIT_MUTE)))
+
+    # ------------------------------------------------------------------
+    # Commands
+    # ------------------------------------------------------------------
 
     def _send(self, command: str) -> None:
+        if self._state.snapshot["buttons_locked"]:
+            _LOGGER.debug("Button controls locked — ignoring %s", command)
+            return
         _LOGGER.info("Button → %s", command)
         asyncio.run_coroutine_threadsafe(
             self._queue.put(command), self._loop
@@ -943,9 +1144,9 @@ class ButtonHandler:
     def _start_volume_repeat(self, which: str) -> None:
         """
         Begin repeating the volume/hue step every VOLUME_HOLD_REPEAT_S while
-        the button stays held. Runs in its own daemon thread so the GPIO
-        event-detection thread is never blocked; stopped via a threading.Event
-        set from `_on_volume_button_released`.
+        the button stays held. Runs in its own daemon thread so the polling
+        thread is never blocked; stopped via a threading.Event set from
+        `_on_volume_button_released`.
         """
         self._stop_volume_repeat(which)  # Safety: never overlap two loops
 
@@ -971,7 +1172,11 @@ class ButtonHandler:
             stop_event.set()
 
         thread = self._volume_repeat_threads.get(which)
-        if thread is not None and thread.is_alive():
+        if (
+            thread is not None
+            and thread.is_alive()
+            and thread is not threading.current_thread()
+        ):
             thread.join(timeout=0.5)
 
         self._volume_repeat_stop[which] = None
@@ -981,48 +1186,125 @@ class ButtonHandler:
         """
         Action button physically pressed down.
 
-        Fires the usual context-sensitive command immediately (unchanged
-        behaviour), and also marks the button as held down so the LED ring
-        can react instantly — even for a very short tap. The ring itself
-        only lights up in response to this when the HA Light entity is off
-        (see LEDRing._anim_action_held); if it's already on, the idle
-        animation is already showing the color and there's nothing extra
-        to do.
+        Fires the context-sensitive command immediately — but only for the
+        first press of a multi-press sequence — and marks the button as held
+        down so the LED ring can react instantly, even for a very short tap.
+        The ring itself only lights up in response to this when the HA Light
+        entity is off (see LEDRing._anim_action_held); if it's already on, the
+        idle animation is already showing the color and there's nothing extra
+        to do. Ignored entirely while button controls are locked.
         """
+        if self._state.snapshot["buttons_locked"]:
+            _LOGGER.debug("Button controls locked — ignoring action button")
+            return
+
+        self._action_active = True
+        self._action_pressed_at = time.monotonic()
+        self._action_color_used = False
         self._state.update(action_button_down=True)
-        self._on_action()
+
+        self._cancel_action_hold_timer()
+        timer = threading.Timer(ACTION_HOLD_MS / 1000.0, self._on_action_held)
+        timer.daemon = True
+        self._action_hold_timer = timer
+        timer.start()
+
+        with self._gesture_lock:
+            first_press = self._tap_count == 0
+        if first_press:
+            self._on_action()
 
     def _on_action_button_released(self) -> None:
-        """Action button released – exit color-change mode and stop forcing the ring on."""
+        """
+        Action button released – exit color-change mode, stop forcing the ring
+        on, and classify the press as a long press or count it as a tap for
+        double/triple press detection.
+        """
+        self._cancel_action_hold_timer()
+        if not self._action_active:
+            return
+        self._action_active = False
+
+        held_ms = (time.monotonic() - self._action_pressed_at) * 1000.0
+        color_used = self._action_color_used
+
         self._on_action_released()
         self._state.update(action_button_down=False)
+
+        if color_used:
+            # Color wheel use is not a gesture
+            self._reset_taps()
+        elif held_ms >= LONG_PRESS_MS:
+            self._reset_taps()
+            self._send("button_long_press")
+        else:
+            self._register_tap()
+
+    def _cancel_action_hold_timer(self) -> None:
+        timer = self._action_hold_timer
+        if timer is not None:
+            timer.cancel()
+            self._action_hold_timer = None
+
+    def _reset_taps(self) -> None:
+        with self._gesture_lock:
+            if self._tap_timer is not None:
+                self._tap_timer.cancel()
+                self._tap_timer = None
+            self._tap_count = 0
+
+    def _register_tap(self) -> None:
+        """Count a quick action press; the sequence ends MULTIPRESS_WINDOW_MS after the last release."""
+        with self._gesture_lock:
+            self._tap_count += 1
+            if self._tap_timer is not None:
+                self._tap_timer.cancel()
+            timer = threading.Timer(MULTIPRESS_WINDOW_MS / 1000.0, self._flush_taps)
+            timer.daemon = True
+            self._tap_timer = timer
+            timer.start()
+
+    def _flush_taps(self) -> None:
+        with self._gesture_lock:
+            count = self._tap_count
+            self._tap_count = 0
+            self._tap_timer = None
+        if count == 2:
+            self._send("button_double_press")
+        elif count >= 3:
+            self._send("button_triple_press")
 
     def _on_action_held(self) -> None:
         """Action button held – enter color change mode."""
         self._action_button_held = True
         _LOGGER.info("Color change mode active (hold action + use volume buttons)")
-    
+
     def _on_action_released(self) -> None:
         """Action button released – exit color change mode."""
         self._action_button_held = False
-    
+
     def _on_color_hue_increase(self) -> None:
         """Increase hue by 10° (volume up while action held)."""
         snap = self._state.snapshot
         new_hue = (snap["hsv_hue"] + HUE_INCREMENT) % 360
         self._send_color_command(new_hue, snap["hsv_saturation"], snap["hsv_value"])
-    
+
     def _on_color_hue_decrease(self) -> None:
         """Decrease hue by 10° (volume down while action held)."""
         snap = self._state.snapshot
         new_hue = (snap["hsv_hue"] - HUE_INCREMENT) % 360
         self._send_color_command(new_hue, snap["hsv_saturation"], snap["hsv_value"])
-    
+
     def _send_color_command(self, hue: int, saturation: float, value: float) -> None:
         """
         Convert HSV to RGB, apply it to shared state immediately for a
         real-time preview on the LED ring, and notify LVA/Home Assistant.
         """
+        if self._state.snapshot["buttons_locked"]:
+            _LOGGER.debug("Button controls locked — ignoring color change")
+            return
+
+        self._action_color_used = True
         r, g, b = hsv_to_rgb(hue, saturation, value)
 
         # Update local state right away so the ring reflects the new color
@@ -1051,20 +1333,22 @@ class ButtonHandler:
                 "blue": b / 255.0,
             },
         }
-        
+
         _LOGGER.info("Color change: Hue=%d° → RGB(%d, %d, %d)", hue, r, g, b)
-        
+
         # Send command to LVA via command queue
         asyncio.run_coroutine_threadsafe(
             self._queue.put(json.dumps(light_cmd)), self._loop
         )
 
-    def _on_mute(self) -> None:
-        """Toggle mute: sends mute_mic or unmute_mic based on current state."""
-        if self._state.muted:
-            self._send("unmute_mic")
-        else:
-            self._send("mute_mic")
+    def _on_mute_level(self, muted: bool) -> None:
+        """
+        The XMOS mute switch changed (or was found on at startup).
+
+        The switch latches in hardware, so its level — not a press — decides
+        the command: ``mute_mic`` when on, ``unmute_mic`` when off.
+        """
+        self._send("mute_mic" if muted else "unmute_mic")
 
     def _on_action(self) -> None:
         """
@@ -1086,52 +1370,6 @@ class ButtonHandler:
         else:
             self._send("start_listening")
 
-class ButtonMultipressHandler:
-    """Handles multiple presses of the action button (double, triple, and long press) to trigger different commands.   """
-    def __init__(self):
-        self.button_pin = BTN_ACTION
-        self.last_press_time = 0
-        self.press_count = 0
-        self._state = state
-
-    def _send(self, command: str) -> None:
-        if self._state.snapshot["buttons_locked"]:
-            _LOGGER.debug("Button controls locked — ignoring %s", command)
-            return
-        _LOGGER.info("Button → %s", command)
-        asyncio.run_coroutine_threadsafe(
-            self._queue.put(command), self._loop
-        )
-
-    def button_pressed(self):
-        current_time = time.time()
-        time_since_last_press = current_time - self.last_press_time
-
-        if time_since_last_press <= 0.25:
-            self.press_count += 1
-        else:
-            self.press_count = 1
-
-        self.last_press_time = current_time
-
-        if self.press_count == 2:
-            self.handle_double_press()
-        elif self.press_count == 3:
-            self.handle_triple_press()
-        elif time_since_last_press > 1:  # Long press considered after 1 second
-            self.handle_long_press()
-
-    def handle_double_press(self):
-        # Call LVA peripheral API for double press
-        self._send('button_double_press')
-
-    def handle_triple_press(self):
-        # Call LVA peripheral API for triple press
-        self._send('button_triple_press')
-
-    def handle_long_press(self):
-        # Call LVA peripheral API for long press
-        self._send('button_long_press')
 
 # ===========================================================================
 # WebSocket client
@@ -1420,12 +1658,12 @@ class LVAClient:
 # Main
 # ===========================================================================
 
-async def async_main(host: str, port: int) -> None:
+async def async_main(host: str, port: int, led_dma: int = LED_DMA) -> None:
     state         = SharedState()
     command_queue: asyncio.Queue = asyncio.Queue()
     loop          = asyncio.get_running_loop()
 
-    leds    = LEDRing(state)
+    leds    = LEDRing(state, dma=led_dma)
     buttons = ButtonHandler(state, loop, command_queue)
     client  = LVAClient(host, port, state, leds, command_queue)
 
@@ -1471,6 +1709,13 @@ def main() -> None:
         help=f"LVA peripheral API port (default: {DEFAULT_LVA_PORT})",
     )
     parser.add_argument(
+        "--led-dma", type=int, default=LED_DMA,
+        help=(
+            "DMA channel used to drive the LED ring "
+            f"(default: {LED_DMA}); must not be one the kernel uses"
+        ),
+    )
+    parser.add_argument(
         "--debug", action="store_true",
         help="Enable DEBUG logging",
     )
@@ -1481,7 +1726,7 @@ def main() -> None:
         format="%(asctime)s  %(levelname)-8s  %(name)s  %(message)s",
     )
 
-    asyncio.run(async_main(args.host, args.port))
+    asyncio.run(async_main(args.host, args.port, args.led_dma))
 
 
 if __name__ == "__main__":
