@@ -626,23 +626,34 @@ async def main() -> None:
 
     vsp = VoiceSatelliteProtocol(state)
     # Initialize SendSpin bridge; without a URL it advertises a listener for discovery.
+    # SendSpin is optional: any failure here must not stop the voice assistant.
     if args.enable_sendspin:
-        from .audio_device_util import find_soundcard_by_name
-        from .sendspin_bridge import SendspinBridge
+        try:
+            from .audio_device_util import find_soundcard_by_name
+            from .sendspin_bridge import SendspinBridge
 
-        # Resolve MPV device name to soundcard speaker index.
-        soundcard_index = find_soundcard_by_name(args.audio_output_device)
+            # Resolve MPV device name to soundcard speaker index.
+            soundcard_index = find_soundcard_by_name(args.audio_output_device)
 
-        vsp.state.sendspin_bridge = SendspinBridge(
-            media_player_entity=vsp.state.media_player_entity,
-            client_id=f"linux-voice-assistant-{device_name}",
-            client_name=device_name,
-            static_delay_ms=args.sendspin_static_delay_ms,
-            audio_device=soundcard_index,
-        )
-        # Wire up the bridge to the entity for coordinated playback
-        vsp.state.media_player_entity.set_sendspin_bridge(state.sendspin_bridge)
-        await vsp.state.sendspin_bridge.start(server_url=args.sendspin_url)
+            bridge = SendspinBridge(
+                media_player_entity=vsp.state.media_player_entity,
+                client_id=f"linux-voice-assistant-{device_name}",
+                client_name=device_name,
+                static_delay_ms=args.sendspin_static_delay_ms,
+                audio_device=soundcard_index,
+            )
+            # Wire up the bridge to the entity for coordinated playback
+            vsp.state.media_player_entity.set_sendspin_bridge(bridge)
+            await bridge.start(server_url=args.sendspin_url)
+            vsp.state.sendspin_bridge = bridge
+        except Exception:  # pylint: disable=broad-except
+            _LOGGER.exception("SendSpin failed to start; continuing without SendSpin support")
+            # Undo any partial wiring so nothing references a broken bridge.
+            vsp.state.sendspin_bridge = None
+            if vsp.state.media_player_entity is not None:
+                vsp.state.media_player_entity.sendspin_bridge = None
+
+    loop = asyncio.get_running_loop()
 
     loop = asyncio.get_running_loop()
 
