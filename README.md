@@ -25,6 +25,7 @@ Because it runs on a full Linux system and offers access significantly more loca
 - Prebuild [Raspberry Pi image](https://github.com/florian-asche/PiCompose)
 - Supports [Websocket API](./docs/peripheral_api.md) for peripherals (e.g. buttons, LEDs, etc.) to integrate with the voice assistant
 
+Planning for future features is discussed in [Discussion #495](https://github.com/OHF-Voice/linux-voice-assistant/discussions/495).
 ## Requirements
 
 - **Microphone:** Device must support 16kHz mono audio
