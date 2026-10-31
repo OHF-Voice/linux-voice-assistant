@@ -86,7 +86,12 @@ COPY docker-entrypoint.sh ./
 COPY version.txt ./
 COPY version_githash.txt ./
 
-RUN chmod +x docker-entrypoint.sh
+# script/run uses #!/usr/bin/env python3 as its shebang — a Python-calling-Python wrapper.
+# On armhf the kernel shebang chain can fail with "Permission denied" when env resolves
+# python3 to an ELF the 32-bit kernel can't launch through that path.
+# Use a plain sh wrapper that calls the venv interpreter directly.
+RUN printf '#!/bin/sh\nexec /app/.venv/bin/python -m linux_voice_assistant "$@"\n' > script/run && \
+    chmod +x docker-entrypoint.sh script/run
 
 ### Set ports for ESPHome API:
 EXPOSE 6053
