@@ -2,6 +2,18 @@
 
 [![CI](https://github.com/OHF-Voice/linux-voice-assistant/actions/workflows/docker-build-release.yml/badge.svg)](https://github.com/OHF-Voice/linux-voice-assistant/actions/workflows/docker-build-release.yml) [![GitHub Package Version](https://img.shields.io/github/v/tag/OHF-Voice/linux-voice-assistant?label=version)](https://github.com/OHF-Voice/linux-voice-assistant/pkgs/container/linux-voice-assistant) [![GitHub License](https://img.shields.io/github/license/OHF-Voice/linux-voice-assistant)](https://github.com/OHF-Voice/linux-voice-assistant/blob/main/LICENSE.md) [![GitHub last commit](https://img.shields.io/github/last-commit/OHF-Voice/linux-voice-assistant)](https://github.com/OHF-Voice/linux-voice-assistant/commits) [![GitHub Container Registry](https://img.shields.io/badge/Container%20Registry-GHCR-blue)](https://github.com/OHF-Voice/linux-voice-assistant/pkgs/container/linux-voice-assistant)
 
+> **arm32 branch — 32-bit ARM (armhf) only**
+>
+> This branch targets **32-bit ARM** hardware: Raspberry Pi 2/3 running a 32-bit OS,
+> Orange Pi / Allwinner H3/H5 boards, and any Armbian or Raspberry Pi OS device
+> reporting `armv7l` or `armhf`.
+>
+> **MicroWakeWord only.** OpenWakeWord requires TensorFlow, which has no 32-bit ARM
+> wheels. All wake word detection on this branch uses MicroWakeWord (TFLite).
+>
+> For x86-64 or 64-bit ARM hardware, use the
+> [main branch](https://github.com/OHF-Voice/linux-voice-assistant).
+
 An experimental voice satellite software for [Home Assistant](https://www.home-assistant.io/) remote voice control and interaction.
 
 This project enables you to build a Linux-based voice assistant designed to use [Assist](https://www.home-assistant.io/voice_control/) for Home Assistant. It allows you to create your own smart speaker that runs on any x86 or ARM32 hardware capable of handling local audio processing (using PulseAudio).
@@ -15,24 +27,22 @@ Because it runs on a full Linux system and offers access significantly more loca
 ## Features
 
 - Works with [Home Assistant](https://www.home-assistant.io/integrations/esphome/) using the [ESPHome](https://esphome.io/) protocol/API (via [aioesphomeapi](https://github.com/esphome/aioesphomeapi))
-- Feature local on-device wake word detection using integrated [MicroWakeWord](https://github.com/kahrendt/microWakeWord)
+- Local on-device wake word detection using [MicroWakeWord](https://github.com/kahrendt/microWakeWord) (TFLite-based, armhf wheels via piwheels)
 - Supports multiple wake words and languages
-- Supports multiple architectures (linux/386 and linux/aarch32)
-- Automated builds with artifact attestation for security
-- Supports [announcments](https://www.home-assistant.io/actions/assist_satellite.announce/), [start](https://www.home-assistant.io/actions/assist_satellite.start_conversation/)/continue conversation, and timers
-- Tested and works with Python 3.11 and Python 3.13.
-- Prebuild docker image available on [GitHub Container Registry](https://github.com/OHF-Voice/linux-voice-assistant/pkgs/container/linux-voice-assistant)
-- Prebuild [Raspberry Pi image](https://github.com/florian-asche/PiCompose)
+- Targets **linux/arm/v7 (armhf)** — Raspberry Pi 2/3, Orange Pi, Allwinner H3/H5 boards
+- Supports [announcements](https://www.home-assistant.io/actions/assist_satellite.announce/), [start](https://www.home-assistant.io/actions/assist_satellite.start_conversation/)/continue conversation, and timers
+- Tested and works with Python 3.11
+- Docker image built locally on-device from `Dockerfile.armhf` (no pre-built registry image for armhf)
 - Supports [Websocket API](./docs/peripheral_api.md) for peripherals (e.g. buttons, LEDs, etc.) to integrate with the voice assistant
 
 Planning for future features is discussed in [Discussion #495](https://github.com/OHF-Voice/linux-voice-assistant/discussions/495).
 ## Requirements
 
 - **Microphone:** Device must support 16kHz mono audio
-- **CPU:** 1Ghz
-- **Memory:** min. 512MB
-- **Storage:** The OS and software is around 4GB
-- **OS:** linux/386 or linux/aarch32
+- **CPU:** ARMv7 or later, 1 GHz+
+- **Memory:** min. 512 MB
+- **Storage:** The OS and software is around 4 GB
+- **OS:** 32-bit ARM Linux (linux/arm/v7 armhf) — Raspberry Pi OS Lite 32-bit, Armbian, Debian Bookworm armhf
 
 A more extensive list for possible compatible hardware can be found in the [PiCompose documentation](https://github.com/florian-asche/PiCompose) but basically any microphone that works with [PipeWire (multimedia framework for Linux)](https://pipewire.org/) can in theory be used for voice input with the prebuild image from there, you should however preferably use a far-field microphone-array solution if want better result.
 
@@ -44,13 +54,23 @@ Alternatively if on a lower budget then suggest could use other microphone-array
 
 ### Installation
 
-**Raspberry Pi prebuilt image**
+**Docker (recommended)**
 
-For Raspberry Pi users, we provide a prebuild image that can be flashed to a SD card. See [PiCompose](https://github.com/florian-asche/PiCompose).
+Build the armhf image locally on the device, then run with Docker Compose:
 
-**Docker / bare metal**
+```sh
+git clone -b arm32 https://github.com/OHF-Voice/linux-voice-assistant.git
+cd linux-voice-assistant
+docker build --platform linux/arm/v7 -f Dockerfile.armhf -t linux-voice-assistant:armhf .
+cp .env.example .env
+# edit .env, then:
+LVA_IMAGE=linux-voice-assistant LVA_IMAGE_TAG=armhf \
+  docker compose -f docker-compose.armhf.yml up -d
+```
 
-For all other users, we have different installation methods available (Docker, systemd), each with its own dedicated instructions. See [Linux-Voice-Assistant - Installation](docs/install.md). 
+**Bare metal / systemd**
+
+For a direct install without Docker, see the full instructions in [Install Application](docs/install_application.md). The key extra steps versus a 64-bit install are adding piwheels as an extra pip index and installing `libopenblas0`.
 
 ### Parameter overview
 
@@ -112,15 +132,11 @@ usage: __main__.py [-h] [--name NAME] [--audio-input-device AUDIO_INPUT_DEVICE] 
 
 ## Build Information
 
-Image builds can be tracked in this repository's `Actions` tab, and utilize [artifact attestation](https://docs.github.com/en/actions/security-guides/using-artifact-attestations-to-establish-provenance-for-builds) to certify provenance.
+The armhf Docker image is built **locally on the target device** using `Dockerfile.armhf`. There is no pre-built image on a container registry for this branch.
 
-The Docker images are built using GitHub Actions, which provides:
+The build uses `python:3.11-slim-bookworm` as the base image for both build and runtime stages, and configures piwheels as an extra pip index so that armhf-native wheels for numpy, soundcard, and pymicro-wakeword are fetched without source compilation.
 
-- Automated builds for different architectures
-- Artifact attestation for build provenance verification
-- Regular updates and maintenance
-
-The documentation for the build process can be found in the [GitHub Actions Workflows](.github/workflow.md) file.
+For the upstream x86-64 / arm64 image builds (automated via GitHub Actions with artifact attestation), see [GitHub Actions Workflows](.github/workflow.md).
 
 ## Development
 
@@ -132,8 +148,9 @@ The documentation for the build process can be found in the [GitHub Actions Work
 - ALSA utils (`sudo apt install alsa-utils`)
 
 **Python:**
-- Python 3.11+ must be installed on your system (`python3 --version` should show 3.11+)
-- On Ubuntu/Debian: `sudo apt install python3.11 python3.11-venv python3.11-dev`
+- Python 3.11 must be installed on your system (`python3 --version` should show 3.11)
+- On Debian Bookworm / Raspberry Pi OS: `sudo apt install python3.11 python3.11-venv python3.11-dev`
+- Also install `libopenblas0` for the armhf numpy wheel: `sudo apt install libopenblas0`
 
 ### VS Code Setup
 
