@@ -10,12 +10,7 @@ Once your satellite is connected, Home Assistant exposes a set of controls on it
 
 The device page exposes one or two wake word selects (**Wake Word 1**, **Wake Word 2**), depending on whether your assistant is configured for dual wake words. Changing the selection here takes effect immediately and is persisted to `preferences.json`, so it survives restarts.
 
-![Wake word select](./images/wake_word.png)
-
-💡 **Note:** Models suffixed with **(OWW)** in the dropdown are [openWakeWord](https://github.com/dscripka/openWakeWord) models; everything else is a [microWakeWord](https://github.com/kahrendt/microWakeWord) model. Both engines can be mixed and matched, but keep in mind:
-
-- **microWakeWord** models are lighter-weight and use engine that can run on lower-end devices and are located in the `wakewords` directory.
-- **openWakeWord** models use higher engine with more accuracy and are located in the `wakewords/openWakeWord` directory.
+<img width="406" height="649" alt="image" src="https://github.com/user-attachments/assets/1f5cb104-78f0-4e04-8935-810c70203b1f" />
 
 See the [Wake Word section](install_application.md#wake-word) of the installation guide for the full list of bundled models and how to add custom ones.
 
