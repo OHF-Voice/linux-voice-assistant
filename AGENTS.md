@@ -21,7 +21,7 @@ LVA always means **Linux Voice Assistant**, this project.
 
 ### Architecture
 - **Protocol**: ESPHome API via `aioesphomeapi` for Home Assistant integration
-- **Wake Words**: **MicroWakeWord only** (TFLite-based; OpenWakeWord requires TensorFlow which has no 32-bit ARM wheels)
+- **Wake Words**: Supports MicroWakeWord only (TFLite-based; OpenWakeWord requires TensorFlow which has no 32-bit ARM wheels)
 - **Audio**: Uses `soundcard` library for input, `python-mpv` for output
 - **Peripherals**: WebSocket API for LEDs, buttons, HAT boards
 - **Discovery**: mDNS/ZeroConf for auto-discovery by Home Assistant
