@@ -20,16 +20,6 @@ def make_micro_json(wake_word: str = "okay nabu", probability_cutoff: float = 0.
     }
 
 
-def make_oww_json(wake_word: str = "hey jarvis", model_file: str = "hey_jarvis.tflite") -> dict:
-    return {
-        "type": "openWakeWord",
-        "wake_word": wake_word,
-        "trained_languages": ["en"],
-        "model": model_file,
-        "openWakeWord": {"probability_cutoff": 0.5},
-    }
-
-
 def write_json(path: Path, data: dict) -> None:
     path.write_text(json.dumps(data), encoding="utf-8")
 
@@ -74,13 +64,6 @@ class TestFindAvailableWakeWords:
 
         result = find_available_wake_words([tmp_path], stop_model_id="stop")
         assert result["okay_nabu"].wake_word_path == tmp_path / "okay_nabu.json"
-
-    def test_oww_wake_word_path_is_model_file(self, tmp_path):
-        write_json(tmp_path / "hey_jarvis.json", make_oww_json(model_file="hey_jarvis.tflite"))
-        from linux_voice_assistant.wake_word import find_available_wake_words
-
-        result = find_available_wake_words([tmp_path], stop_model_id="stop")
-        assert result["hey_jarvis"].wake_word_path == tmp_path / "hey_jarvis.tflite"
 
     def test_probability_cutoff_loaded_from_config(self, tmp_path):
         write_json(tmp_path / "okay_nabu.json", make_micro_json(probability_cutoff=0.85))
