@@ -70,7 +70,7 @@ Start the application:
 docker compose up -d
 ```
 
-💡 **Note:** If you want to use the application with a different user, you need to change the user in the .env file. Dont forget to change the UID from the user. The docker container will run until you stop it. It will restart autiomatically after a reboot.
+💡 **Note:** If you want to use the application with a different user, you need to change the user in the .env file. Dont forget to change the UID from the user. The docker container will run until you stop it. It will restart automatically after a reboot.
 
 Check if the application is running:
 ``` sh
