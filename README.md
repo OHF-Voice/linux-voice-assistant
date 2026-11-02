@@ -32,7 +32,7 @@ Because it runs on a full Linux system and offers access significantly more loca
 - Targets **linux/arm/v7 (armhf)** — Raspberry Pi 2/3, Orange Pi, Allwinner H3/H5 boards
 - Supports [announcements](https://www.home-assistant.io/actions/assist_satellite.announce/), [start](https://www.home-assistant.io/actions/assist_satellite.start_conversation/)/continue conversation, and timers
 - Tested and works with Python 3.11
-- Docker image built locally on-device from `Dockerfile.armhf` (no pre-built registry image for armhf)
+- Docker image built locally on-device from `Dockerfile` (no pre-built registry image for armhf)
 - Supports [Websocket API](./docs/peripheral_api.md) for peripherals (e.g. buttons, LEDs, etc.) to integrate with the voice assistant
 
 Planning for future features is discussed in [Discussion #495](https://github.com/OHF-Voice/linux-voice-assistant/discussions/495).
@@ -61,11 +61,11 @@ Build the armhf image locally on the device, then run with Docker Compose:
 ```sh
 git clone -b arm32 https://github.com/OHF-Voice/linux-voice-assistant.git
 cd linux-voice-assistant
-docker build --platform linux/arm/v7 -f Dockerfile.armhf -t linux-voice-assistant:armhf .
+docker build --platform linux/arm/v7 -f Dockerfile -t linux-voice-assistant:armhf .
 cp .env.example .env
 # edit .env, then:
 LVA_IMAGE=linux-voice-assistant LVA_IMAGE_TAG=armhf \
-  docker compose -f docker-compose.armhf.yml up -d
+  docker compose -f docker-compose.yml up -d
 ```
 
 **Bare metal / systemd**
@@ -132,7 +132,7 @@ usage: __main__.py [-h] [--name NAME] [--audio-input-device AUDIO_INPUT_DEVICE] 
 
 ## Build Information
 
-The armhf Docker image is built **locally on the target device** using `Dockerfile.armhf`. There is no pre-built image on a container registry for this branch.
+The armhf Docker image is built **locally on the target device** using `Dockerfile`. There is no pre-built image on a container registry for this branch.
 
 The build uses `python:3.11-slim-bookworm` as the base image for both build and runtime stages, and configures piwheels as an extra pip index so that armhf-native wheels for numpy, soundcard, and pymicro-wakeword are fetched without source compilation.
 
