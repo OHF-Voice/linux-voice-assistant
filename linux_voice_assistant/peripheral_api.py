@@ -441,14 +441,7 @@ class PeripheralAPIServer:
             state.persist_volume(new_vol)
 
         elif command == LVACommand.STOP_TIMER_RINGING:
-            if satellite is None:
-                return
-            if getattr(satellite, "_timer_finished", False):
-                satellite._timer_finished = False  # pylint: disable=protected-access
-                state.active_wake_words.discard(state.stop_word.id)
-                state.tts_player.stop()
-                satellite.unduck()
-                await self.emit_event(LVAEvent.IDLE)
+            state.stop_timer_ringing()
 
         elif command == LVACommand.STOP_MEDIA_PLAYER:
             state.music_player.stop()
