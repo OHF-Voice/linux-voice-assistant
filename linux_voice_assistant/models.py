@@ -37,6 +37,15 @@ class WakeWordType(str, Enum):
     OPEN_WAKE_WORD = "openWakeWord"
 
 
+@dataclass(frozen=True)
+class DetectionResult:
+    """Outcome of one wake word detection, common to both engines."""
+
+    wake_word_id: str
+    slot: int
+    score: Optional[float] = None
+
+
 @dataclass
 class AvailableWakeWord:
     id: str
