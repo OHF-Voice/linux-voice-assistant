@@ -9,15 +9,14 @@ import sys
 import threading
 import time
 from pathlib import Path
-from typing import Any, List, Optional, Union
+from typing import Any, List, Optional
 
 import numpy as np
 import soundcard as sc
 from aioesphomeapi.api_pb2 import NumberStateResponse  # type: ignore  # pylint: disable=no-name-in-module
 from pymicro_wakeword import MicroWakeWord, MicroWakeWordFeatures
-from pyopen_wakeword import OpenWakeWord, OpenWakeWordFeatures
 
-from .models import Preferences, ServerState, WakeWordType, initial_stop_word_threshold
+from .models import Preferences, ServerState, initial_stop_word_threshold
 from .mpv_player import MpvMediaPlayer
 from .peripheral_api import LVAEvent, PeripheralAPIServer
 from .satellite import VoiceSatelliteProtocol
@@ -379,24 +378,6 @@ async def main() -> None:
     # Load available wake words
     wake_word_dirs = [Path(ww_dir) for ww_dir in args.wake_word_dir]
 
-    # If the operator explicitly pointed --wake-word-dir (or the WAKE_WORD_DIR
-    # env var) at the openWakeWord subdirectory, prefer resolving --wake-model
-    # to an openWakeWord model of the same name instead of a same-named
-    # microWakeWord one. Checked before the automatic dirs below are appended,
-    # since those always include the openWakeWord path and would otherwise
-    # make every configuration look like an openWakeWord preference.
-    preferred_wake_word_type = WakeWordType.OPEN_WAKE_WORD if any("openwakeword" in str(ww_dir).lower() for ww_dir in wake_word_dirs) else None
-
-    # openWakeWord models ship in their own subdirectory under the default
-    # wakewords dir. find_available_wake_words() only globs the top level of
-    # each directory it's given, so this must be added explicitly or the OWW
-    # models never get discovered (and never show up in the HA dropdown).
-    # Appended after the user-specified dirs so OWW entries are inserted
-    # (and therefore displayed) after the microWakeWord ones.
-    oww_dir = _WAKEWORDS_DIR / "openWakeWord"
-    if oww_dir not in wake_word_dirs:
-        wake_word_dirs.append(oww_dir)
-
     wake_word_dirs.append(args.download_dir / "external_wake_words")
     available_wake_words = find_available_wake_words(wake_word_dirs, args.stop_model)
 
@@ -451,10 +432,8 @@ async def main() -> None:
         available_wake_words,
         [word for word in preferences.active_wake_words if word is not None],
         args.wake_model,
-        preferred_type=preferred_wake_word_type,
     )
 
-    # TODO: allow openWakeWord for "stop"
     stop_model = load_stop_model(wake_word_dirs, args.stop_model)
     assert stop_model is not None
 
@@ -695,13 +674,9 @@ def process_audio(state: ServerState, mic, block_size: int):
     """Process audio chunks from the microphone."""
     n_channels = state.audio_input_channels
 
-    wake_words: List[Union[MicroWakeWord, OpenWakeWord]] = []
+    wake_words: List[MicroWakeWord] = []
     micro_features: Optional[MicroWakeWordFeatures] = None
     micro_inputs: List[np.ndarray] = []
-
-    oww_features: Optional[OpenWakeWordFeatures] = None
-    oww_inputs: List[np.ndarray] = []
-    has_oww = False
 
     last_active: Optional[float] = None
     webrtc: Optional[WebRTCProcessor] = None
@@ -747,7 +722,6 @@ def process_audio(state: ServerState, mic, block_size: int):
 
                     # TODO: Load default stop word value from json into state and preferences missing.
 
-                    has_oww = False
                     for idx, wake_word in enumerate(wake_words):
 
                         # Load default threshold from model json
@@ -771,9 +745,6 @@ def process_audio(state: ServerState, mic, block_size: int):
                             else:
                                 state.wake_word_2_threshold = default_threshold
                             _LOGGER.debug("Wake Word 2 threshold set to %.3f (was %.3f, preferences: %s)", state.wake_word_2_threshold, old_val, state.preferences.wake_word_2_sensitivity)
-
-                        if isinstance(wake_word, OpenWakeWord):
-                            has_oww = True
 
                     # Sync entity states after threshold values were updated
                     if state.satellite is not None:
@@ -819,9 +790,6 @@ def process_audio(state: ServerState, mic, block_size: int):
                     if micro_features is None:
                         micro_features = MicroWakeWordFeatures()
 
-                    if has_oww and (oww_features is None):
-                        oww_features = OpenWakeWordFeatures.from_builtin()
-
                 try:
                     # Both channels travel in one message: data=ch0 (enhanced), data2=ch1 (raw reference)
                     audio_chunk_2 = channel_chunks[1] if n_channels >= 2 else None
@@ -830,11 +798,6 @@ def process_audio(state: ServerState, mic, block_size: int):
                     assert micro_features is not None
                     micro_inputs.clear()
                     micro_inputs.extend(micro_features.process_streaming(audio_chunk))
-
-                    if has_oww:
-                        assert oww_features is not None
-                        oww_inputs.clear()
-                        oww_inputs.extend(oww_features.process_streaming(audio_chunk))
 
                     for wake_word_index, wake_word in enumerate(wake_words):
                         activated = False
@@ -861,12 +824,6 @@ def process_audio(state: ServerState, mic, block_size: int):
                                 if wake_word.process_streaming(micro_input):
                                     wake_word.debug_probabilities = True
                                     activated = True
-                        elif isinstance(wake_word, OpenWakeWord):
-                            for oww_input in oww_inputs:
-                                for prob in wake_word.process_streaming(oww_input):
-                                    if prob > threshold:
-                                        _LOGGER.debug("Wake word '%s' activated (probability %.3f exceeded threshold %.3f)", wake_word.wake_word, prob, threshold)  # type: ignore[attr-defined]
-                                        activated = True
 
                         if activated and not state.muted:
                             # Check refractory

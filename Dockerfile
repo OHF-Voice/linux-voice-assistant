@@ -1,11 +1,16 @@
 ### Build stage: compile the Python dependencies (pymicro-features needs a compiler)
-FROM python:3.13-slim-trixie AS build
+### Target: linux/arm/v7 (armhf) – Raspberry Pi 2/3, Orange Pi, Allwinner H3/H5
+FROM --platform=linux/arm/v7 python:3.11-slim-bookworm AS build
 
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && \
     apt-get install --yes --no-install-recommends build-essential && \
     apt-get clean
+
+# Add piwheels so pip finds armhf-native wheels for numpy, soundcard, pymicro-wakeword, etc.
+# This avoids hours-long source compilations on a resource-constrained board.
+RUN printf '[global]\nextra-index-url=https://www.piwheels.org/simple\n' > /etc/pip.conf
 
 WORKDIR /app
 
@@ -18,7 +23,7 @@ RUN python -m venv .venv && \
     find .venv -name '__pycache__' -prune -exec rm -rf {} +
 
 ### Runtime stage
-FROM python:3.13-slim-trixie
+FROM --platform=linux/arm/v7 python:3.11-slim-bookworm
 
 ENV LANG C.UTF-8
 ENV DEBIAN_FRONTEND=noninteractive
@@ -26,11 +31,11 @@ ENV PYTHONUNBUFFERED=1
 
 LABEL \
     org.opencontainers.image.authors="Open Home Foundation" \
-    org.opencontainers.image.description="Linux-Voice-Assistant for Home Assistant" \
+    org.opencontainers.image.description="Linux-Voice-Assistant for Home Assistant (32-bit ARM / armhf)" \
     org.opencontainers.image.documentation="https://github.com/OHF-Voice/linux-voice-assistant/blob/main/README.md" \
     org.opencontainers.image.licenses="Apache-2.0" \
     org.opencontainers.image.source="https://github.com/OHF-Voice/linux-voice-assistant" \
-    org.opencontainers.image.title="Linux-Voice-Assistant" \
+    org.opencontainers.image.title="Linux-Voice-Assistant (armhf)" \
     org.opencontainers.image.url="https://github.com/OHF-Voice/linux-voice-assistant" \
     org.opencontainers.image.vendor="Open Home Foundation"
 
@@ -41,15 +46,13 @@ LABEL \
 # - pipewire-bin:       Required for pipewire support
 # - pipewire-alsa:      Required for pipewire support
 # - pipewire-pulse:     Required for pipewire support
-# - libmpv2:            Runtime library for python-mpv (no -dev package, no build tools)
+# - libmpv2:            Runtime library for python-mpv
 # - libasound2-plugins: Required by python-mpv for audio playback
+# - libopenblas0:       BLAS runtime for numpy armhf wheels (from piwheels, avoids source build)
 # - ca-certificates:    For encrypted connections
 # - iproute2:           For ss command in entrypoint (port check)
 # - vim:                Editor for debugging inside the container
 # - procps:             For pgrep in healthcheck
-#
-# libmpv2 depends on libegl1/libgbm1, which pull in Mesa and LLVM (~170 MB).
-# LVA only plays audio, so these are purged without their dependents.
 RUN apt-get update && \
     apt-get install --yes --no-install-recommends \
     avahi-utils \
@@ -60,11 +63,11 @@ RUN apt-get update && \
     pipewire-pulse \
     libmpv2 \
     libasound2-plugins \
+    libopenblas0 \
     ca-certificates \
     iproute2 \
     vim \
     procps && \
-    dpkg --purge --force-depends libllvm19 mesa-libgallium libgl1-mesa-dri libz3-4 && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* /usr/share/doc /usr/share/man /usr/share/locale
 
@@ -83,7 +86,12 @@ COPY docker-entrypoint.sh ./
 COPY version.txt ./
 COPY version_githash.txt ./
 
-RUN chmod +x docker-entrypoint.sh
+# script/run uses #!/usr/bin/env python3 as its shebang — a Python-calling-Python wrapper.
+# On armhf the kernel shebang chain can fail with "Permission denied" when env resolves
+# python3 to an ELF the 32-bit kernel can't launch through that path.
+# Use a plain sh wrapper that calls the venv interpreter directly.
+RUN printf '#!/bin/sh\nexec /app/.venv/bin/python -m linux_voice_assistant "$@"\n' > script/run && \
+    chmod +x docker-entrypoint.sh script/run
 
 ### Set ports for ESPHome API:
 EXPOSE 6053

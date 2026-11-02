@@ -31,75 +31,87 @@ sudo apt-get update
 sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 ```
 
-Download the docker-compose.yml and .env.example file from the repository to a folder on your system:
+Clone the arm32 branch and build the image locally on the device:
 ``` sh
-mkdir linux-voice-assistant
+git clone -b arm32 https://github.com/OHF-Voice/linux-voice-assistant.git
 cd linux-voice-assistant
-LVA_VERSION=$(curl -s https://api.github.com/repos/ohf-voice/linux-voice-assistant/releases/latest | jq -r .tag_name)
-echo "Installing version: " $LVA_VERSION
-wget https://raw.githubusercontent.com/ohf-voice/linux-voice-assistant/refs/tags/$LVA_VERSION/docker-compose.yml
-wget https://raw.githubusercontent.com/ohf-voice/linux-voice-assistant/refs/tags/$LVA_VERSION/.env.example
-cp .env.example .env
+docker build \
+  --platform linux/arm/v7 \
+  -f Dockerfile.armhf \
+  -t linux-voice-assistant:armhf \
+  .
 ```
 
-💡 **Note:** The LVA_VERSION variable downloads the latest available version of LVA. If you want another version, you can specify it with the LVA_VERSION variable.
+💡 **Note:** The image must be built locally on the device. There is no pre-built armhf image on the container registry. On a Raspberry Pi 2/3 this takes 5–15 minutes on first build. Piwheels is used automatically during the build to fetch pre-compiled armhf wheels for numpy, soundcard and pymicro-wakeword, so no source compilation is needed.
 
-You can change the used version in the docker-compose.yml.
-
-### Docker Image Tags
-
-| Tag | Description | Example |
-|-----|-------------|---------|
-| `latest` | Latest stable release | `ghcr.io/ohf-voice/linux-voice-assistant:latest` |
-| `nightly` | Latest development build | `ghcr.io/ohf-voice/linux-voice-assistant:nightly` |
-| `x.y.z` | Specific version release | `ghcr.io/ohf-voice/linux-voice-assistant:1.0.0` |
-| `x.y` | Major.Minor with auto updates | `ghcr.io/ohf-voice/linux-voice-assistant:1.0` |
-| `<branch>` | Branch-specific build | `ghcr.io/ohf-voice/linux-voice-assistant:my-branch` |
-
-Edit the .env file and change the values to your needs:
+Copy the example environment file and edit it:
 ``` sh
+cp .env.example .env
 vim .env
 ```
 
-You can change various settings, for example the audio sounds which are played when the wake word is detected or when the timer is finished. You also need to set the correct user and group id, and the pulseaudio server in the `.env`file.
+You can change various settings, for example the audio sounds which are played when the wake word is detected or when the timer is finished. You also need to set the correct user and group id, and the pulseaudio server in the `.env` file.
 
 💡 **Note:** You can exit vim with `:wq` or `:q!` if you dont want to save the changes.
 
 Start the application:
 ``` sh
-docker compose up -d
+LVA_IMAGE=linux-voice-assistant LVA_IMAGE_TAG=armhf \
+  docker compose -f docker-compose.armhf.yml up -d
 ```
 
 💡 **Note:** If you want to use the application with a different user, you need to change the user in the .env file. Dont forget to change the UID from the user. The docker container will run until you stop it. It will restart automatically after a reboot.
 
 Check if the application is running:
 ``` sh
-docker compose ps
+docker compose -f docker-compose.armhf.yml ps
 ```
 
 Check the logs:
 ``` sh
-docker compose logs -f
+docker compose -f docker-compose.armhf.yml logs -f
 ```
 
 Stop the service:
 ``` sh
-docker-compose down
+docker compose -f docker-compose.armhf.yml down
 ```
 
-Download the latest image:
+To update, pull the latest arm32 branch and rebuild:
 ``` sh
-docker-compose pull
+git pull
+docker build \
+  --platform linux/arm/v7 \
+  --no-cache \
+  -f Dockerfile.armhf \
+  -t linux-voice-assistant:armhf \
+  .
 ```
 
 
 ## B) Bare Metal:
 
-Install the required packages for the application:
+### 1. Add piwheels as extra pip index
+
+piwheels provides pre-compiled armhf wheels for numpy, soundcard, pymicro-wakeword, and other
+packages that would otherwise require hours of compilation on the device.
+
+``` sh
+sudo nano /etc/pip.conf
+```
+
+Add:
+
+``` ini
+[global]
+extra-index-url=https://www.piwheels.org/simple
+```
+
+### 2. Install the required packages for the application:
 
 ``` sh
 sudo apt update
-sudo apt-get install \
+sudo apt-get install -y \
   avahi-utils \
   pulseaudio-utils \
   alsa-utils \
@@ -108,6 +120,7 @@ sudo apt-get install \
   pipewire-pulse \
   build-essential \
   libmpv-dev \
+  libopenblas0 \
   libasound2-plugins \
   ca-certificates \
   iproute2 \
@@ -121,21 +134,24 @@ sudo apt-get install \
   python3-dev
 ```
 
-Clone the repository:
+> `libopenblas0` is the BLAS runtime for the armhf numpy wheel from piwheels — it provides
+> the routines numpy links against so you do not need to compile them from source.
+
+### 3. Clone the repository:
 
 ``` sh
-git clone https://github.com/OHF-Voice/linux-voice-assistant.git
+git clone -b arm32 https://github.com/OHF-Voice/linux-voice-assistant.git
 cd linux-voice-assistant
 chmod +x docker-entrypoint.sh
 ```
 
-Install the application:
+### 4. Install the application:
 
 ``` sh
 script/setup
 ```
 
-💡 **Note:** For hardware with limited performance (like Raspberry Pi Zero 2W or other SBCs), you may need to adjust compilation parameters to ensure the build process completes successfully. The script supports custom `CXXFLAGS` and `MAKEFLAGS`:
+💡 **Note:** For hardware with limited performance (like Raspberry Pi 2 or other SBCs), you may need to adjust compilation parameters to ensure the build process completes successfully. The script supports custom `CXXFLAGS` and `MAKEFLAGS`:
 
 - `--cxxflags`: Custom C++ compilation flags (default: `-O1 -g0`)
 - `--makeflags`: Custom make flags (default: `-j1`)
@@ -145,7 +161,7 @@ For example, to optimize for low-performance hardware:
 script/setup --cxxflags="-O1 -g0" --makeflags="-j1"
 ```
 
-Create a systemd service for the application:
+### 5. Create a systemd service for the application:
 
 ``` sh
 sudo systemctl edit --force --full linux-voice-assistant.service
@@ -322,7 +338,7 @@ Enable `LISTEN_DURING_WAKE_SOUND="1"` to let LVA begin listening immediately aft
 
 This feature is especially useful when you want a more natural interaction flow and do not want to wait to confirm that the wake word was detected before speaking the command.
 
-Keep in mind that listening while the wake sound is playing can also make the microphone pick up some of that wake sound as echo, depending on your speaker and microphone setup. This echo can interfere with speech-to-text and make commands less accurate. If you run into this, see [Enabling Acoustic Echo Cancellation (AEC)](enabling_aec.md).
+Keep in mind that listening while the wake sound is playing can also make the microphone pick up some of that wake sound as echo, depending on your speaker and microphone setup. This echo can interfere with speech-to-text and make commands less accurate. If you run into this, [Enabling Acoustic Echo Cancellation (AEC)](enabling_aec.md).
 
 
 ### Use own soundfiles:
@@ -332,13 +348,15 @@ If you want to use your own sounds, you can add them to the `sounds/custom` aka 
 
 ### Wake Word:
 
+> **Note:** This branch supports **MicroWakeWord only**. OpenWakeWord requires TensorFlow,
+> which has no 32-bit ARM wheels and is not included in this branch.
+
 💡 **Note:** The active wake word(s) can also be changed at runtime from the Home Assistant device page, without editing `.env` or restarting LVA — see [Wake Word](configuration.md#wake-word) in the dashboard documentation.
 
 #### Available Wake Word Models:
 
-The following wake word models are available:
+The following MicroWakeWord models are available:
 
-**microWakeWord:**
 - `okay_nabu` - Default wake word
 - `alexa` - Alexa wake word
 - `hey_jarvis` - Jarvis wake word
@@ -349,16 +367,9 @@ The following wake word models are available:
 - `okay_computer` - Okay Computer wake word
 - `choo_choo_homie` - Choo Choo Homie wake word
 
-**openWakeWord:**
-- `ok_nabu` - Default wake word
-- `alexa` - Alexa wake word
-- `hey_jarvis` - Jarvis wake word
-- `hey_mycroft` - Mycroft wake word
-- `hey_rhasspy` - Rhasspy wake word
-
 ### Stop Word:
 
-The `stop` wake word is used to stop the current process (response, announcement, or timer). It is available in the `wakewords` directory (using the microWakeWord engine) and can be referenced in the `.env` file with `STOP_MODEL=stop`.
+The `stop` wake word is used to stop the current process (response, announcement, or timer). It is available in the `wakewords` directory (using the MicroWakeWord engine) and can be referenced in the `.env` file with `STOP_MODEL=stop`.
 
 ### Custom Wake Word:
 
@@ -366,20 +377,23 @@ If you want to use your own wakewords, you can add them to the `wakewords/custom
 
 Change the default wake word with `WAKE_MODEL <id>` where `<id>` is the name of a model in the `wakewords` directory. For example, `WAKE_MODEL hey_jarvis` will load `app/wakewords/hey_jarvis.tflite` by default.
 
-You can include more wakeword directories by adding `WAKE_WORD_DIR <DIR>` where `<DIR>` contains either [microWakeWord][] or [openWakeWord][] config files and `.tflite` models. For example, `WAKE_WORD_DIR app/wakewords/openWakeWord` will include the default wake words for openWakeWord.
+You can include more wakeword directories by adding `WAKE_WORD_DIR <DIR>` where `<DIR>` contains [MicroWakeWord][] config files and `.tflite` models.
 
-If you want to add [other wakewords][wakewords-collection], make sure to create a small JSON config file to identify it as an openWakeWord model. For example, download the [GLaDOS][glados] model to `glados.tflite` and create `glados.json` with:
+If you want to add a custom MicroWakeWord model, create a small JSON config file to identify it. For example, download a `.tflite` model to `my_wake_word.tflite` and create `my_wake_word.json` with:
 
 ``` json
 {
-  "type": "openWakeWord",
-  "wake_word": "GLaDOS",
-  "model": "glados.tflite"
+  "type": "micro",
+  "wake_word": "My Wake Word",
+  "trained_languages": ["en"],
+  "micro": {
+    "probability_cutoff": 0.7
+  }
 }
 ```
 
-Add `WAKE_WORD_DIR <DIR>` with the directory containing `glados.tflite` and `glados.json` to your command-line.
+Add `WAKE_WORD_DIR <DIR>` with the directory containing both files to your command-line.
 
 #### Additional Wakewords:
 
-More wakewords can be found in the [wakewords-collection](https://github.com/fwartner/home-assistant-wakewords-collection) repository.
+More MicroWakeWord models can be found in the [wakewords-collection](https://github.com/fwartner/home-assistant-wakewords-collection) repository.

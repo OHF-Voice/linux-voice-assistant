@@ -6,12 +6,11 @@ from collections.abc import Iterable
 from dataclasses import asdict, dataclass, field, fields
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Union
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set
 
 if TYPE_CHECKING:
     from google.protobuf import message
     from pymicro_wakeword import MicroWakeWord
-    from pyopen_wakeword import OpenWakeWord
 
     from .entity import (
         ButtonEventSensorEntity,
@@ -34,7 +33,6 @@ _LOGGER = logging.getLogger(__name__)
 
 class WakeWordType(str, Enum):
     MICRO_WAKE_WORD = "micro"
-    OPEN_WAKE_WORD = "openWakeWord"
 
 
 @dataclass
@@ -46,19 +44,11 @@ class AvailableWakeWord:
     wake_word_path: Path
     probability_cutoff: float = 0.7
 
-    def load(self) -> "Union[MicroWakeWord, OpenWakeWord]":
+    def load(self) -> "MicroWakeWord":
         if self.type == WakeWordType.MICRO_WAKE_WORD:
             from pymicro_wakeword import MicroWakeWord
 
             return MicroWakeWord.from_config(config_path=self.wake_word_path)
-
-        if self.type == WakeWordType.OPEN_WAKE_WORD:
-            from pyopen_wakeword import OpenWakeWord
-
-            oww_model = OpenWakeWord.from_model(model_path=self.wake_word_path)
-            setattr(oww_model, "wake_word", self.wake_word)
-
-            return oww_model
 
         raise ValueError(f"Unexpected wake word type: {self.type}")
 
@@ -119,7 +109,7 @@ class ServerState:
     esphome_version: str
     entities: "List[ESPHomeEntity]"
     available_wake_words: "Dict[str, AvailableWakeWord]"
-    wake_words: "Dict[str, Union[MicroWakeWord, OpenWakeWord]]"
+    wake_words: "Dict[str, MicroWakeWord]"
     active_wake_words: Set[str]
     stop_word: "MicroWakeWord"
     music_player: "MpvMediaPlayer"
@@ -185,9 +175,6 @@ class ServerState:
     muted: bool = False
     connected: bool = False
     volume: float = 1.0
-    oww_probability_cutoff: float = 0.7  # Dynamic threshold for OpenWakeWord
-    oww_second_probability_cutoff: float = 0.7  # Dynamic threshold for second OpenWakeWord
-    oww_stop_probability_cutoff: float = 0.5  # Dynamic threshold for Stop word
     wake_word_1_threshold: float = 0.7
     wake_word_2_threshold: float = 0.7
     stop_word_threshold: float = 0.5

@@ -16,12 +16,12 @@ LVA always means **Linux Voice Assistant**, this project.
 
 ### Purpose
 - Provides voice control and interaction for Home Assistant via the Assist integration
-- Runs on x64/ARM64 Linux hardware with PulseAudio/PipeWire audio support
-- Performs local wake word detection (OpenWakeWord/MicroWakeWord) and on-device processing
+- Runs on **32-bit ARM** (linux/arm/v7 armhf) Linux hardware — Raspberry Pi 2/3 (32-bit OS), Orange Pi, Allwinner H3/H5 boards
+- Performs local wake word detection using **MicroWakeWord only** and on-device processing
 
 ### Architecture
 - **Protocol**: ESPHome API via `aioesphomeapi` for Home Assistant integration
-- **Wake Words**: Supports both OpenWakeWord and MicroWakeWord engines
+- **Wake Words**: Supports MicroWakeWord only (TFLite-based; OpenWakeWord requires TensorFlow which has no 32-bit ARM wheels)
 - **Audio**: Uses `soundcard` library for input, `python-mpv` for output
 - **Peripherals**: WebSocket API for LEDs, buttons, HAT boards
 - **Discovery**: mDNS/ZeroConf for auto-discovery by Home Assistant
@@ -62,8 +62,8 @@ LVA always means **Linux Voice Assistant**, this project.
 
 ## Code Quality Standards
 
-- **Python**: 3.11, 3.12, 3.13 supported
-- **Formatting**: Black (200 char line length, py312/py313 target)
+- **Python**: 3.11 only (this branch; no 32-bit ARM wheels exist for 3.12/3.13 dependencies)
+- **Formatting**: Black (200 char line length, py311 target)
 - **Import Sorting**: isort with black profile
 - **Type Checking**: mypy (non-strict, configured in `mypy.ini`, targets Python 3.11)
 - **Linting**: pylint (many checks disabled in pyproject.toml for practical reasons)
@@ -76,14 +76,14 @@ LVA always means **Linux Voice Assistant**, this project.
 
 ## CI/CD
 
-- GitHub Actions for lint checks and unit tests
-- Tests run on Python 3.12 with libmpv-dev system dependency
-- Lint runs on Python 3.13
+- This branch has **no automated CI** for Docker image builds. The armhf image is built locally on the target device using `Dockerfile.armhf`.
+- Unit tests and lint can still be run locally with `./script/tests` and `./script/lint` on an armhf host or in a cross-compiled environment.
 
 ## Branching and PRs
 
-- All PRs target `main` (primary development branch). `stable` is for production releases.
-- PRs labeled `bugfix` + `backport-to-stable` are automatically backported to `stable` — use only for bugs also present in `stable`.
+- This is the `arm32` branch — a 32-bit ARM fork of the upstream `main` branch.
+- PRs against this branch should target `arm32`, not `main`.
+- For upstream (x86-64 / arm64) changes, see the [OHF-Voice/linux-voice-assistant](https://github.com/OHF-Voice/linux-voice-assistant) repository.
 
 ## Agent Commands
 

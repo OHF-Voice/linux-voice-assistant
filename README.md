@@ -1,12 +1,24 @@
-# Linux-Voice-Assistant
+# Linux-Voice-Assistant (32-bit version)
 
 [![CI](https://github.com/OHF-Voice/linux-voice-assistant/actions/workflows/docker-build-release.yml/badge.svg)](https://github.com/OHF-Voice/linux-voice-assistant/actions/workflows/docker-build-release.yml) [![GitHub Package Version](https://img.shields.io/github/v/tag/OHF-Voice/linux-voice-assistant?label=version)](https://github.com/OHF-Voice/linux-voice-assistant/pkgs/container/linux-voice-assistant) [![GitHub License](https://img.shields.io/github/license/OHF-Voice/linux-voice-assistant)](https://github.com/OHF-Voice/linux-voice-assistant/blob/main/LICENSE.md) [![GitHub last commit](https://img.shields.io/github/last-commit/OHF-Voice/linux-voice-assistant)](https://github.com/OHF-Voice/linux-voice-assistant/commits) [![GitHub Container Registry](https://img.shields.io/badge/Container%20Registry-GHCR-blue)](https://github.com/OHF-Voice/linux-voice-assistant/pkgs/container/linux-voice-assistant)
 
+> **arm32 branch — 32-bit ARM (armhf) only**
+>
+> This branch targets **32-bit ARM** hardware: Raspberry Pi 2/3 running a 32-bit OS,
+> Orange Pi / Allwinner H3/H5 boards, and any Armbian or Raspberry Pi OS device
+> reporting `armv7l` or `armhf`.
+>
+> **MicroWakeWord only.** OpenWakeWord requires TensorFlow, which has no 32-bit ARM
+> wheels. All wake word detection on this branch uses MicroWakeWord (TFLite).
+>
+> For x86-64 or 64-bit ARM hardware, use the
+> [main branch](https://github.com/OHF-Voice/linux-voice-assistant).
+
 An experimental voice satellite software for [Home Assistant](https://www.home-assistant.io/) remote voice control and interaction.
 
-This project enables you to build a Linux-based voice assistant designed to use [Assist](https://www.home-assistant.io/voice_control/) for Home Assistant. It allows you to create your own smart speaker that runs on any x64 or ARM64 hardware capable of handling local audio processing (using PulseAudio).
+This project enables you to build a Linux-based voice assistant designed to use [Assist](https://www.home-assistant.io/voice_control/) for Home Assistant. It allows you to create your own smart speaker that runs on any x86 or ARM32 hardware capable of handling local audio processing (using PulseAudio).
 
-Unlike simpler voice satellites that run on microcontrollers with very limited compute power, this setup can perform local wake word detection (OWW/MWW) and process some data on-device.
+Unlike simpler voice satellites that run on microcontrollers with very limited compute power, this setup can perform local wake word detection (MWW) and process some data on-device.
 
 Because it runs on a full Linux system and offers access significantly more local computing resources for additional features and other integrations on the same satellite, this approach also provides greater flexibility for customization (such as for example experiment with using PipeWire).
 
@@ -15,31 +27,24 @@ Because it runs on a full Linux system and offers access significantly more loca
 ## Features
 
 - Works with [Home Assistant](https://www.home-assistant.io/integrations/esphome/) using the [ESPHome](https://esphome.io/) protocol/API (via [aioesphomeapi](https://github.com/esphome/aioesphomeapi))
-- Feature local on-device wake word detection using integrated [OpenWakeWord](https://github.com/dscripka/openWakeWord) or [MicroWakeWord](https://github.com/kahrendt/microWakeWord)
+- Local on-device wake word detection using [MicroWakeWord](https://github.com/kahrendt/microWakeWord) (TFLite-based, armhf wheels via piwheels)
 - Supports multiple wake words and languages
-- Supports multiple architectures (linux/amd64 and linux/aarch64)
-- Automated builds with artifact attestation for security
-- Supports [announcments](https://www.home-assistant.io/actions/assist_satellite.announce/), [start](https://www.home-assistant.io/actions/assist_satellite.start_conversation/)/continue conversation, and timers
-- Tested and works with Python 3.11 and Python 3.13.
-- Prebuild docker image available on [GitHub Container Registry](https://github.com/OHF-Voice/linux-voice-assistant/pkgs/container/linux-voice-assistant)
-- Prebuild [Raspberry Pi image](https://github.com/florian-asche/PiCompose)
+- Targets **linux/arm/v7 (armhf)** — Raspberry Pi 2/3, Orange Pi, Allwinner H3/H5 boards
+- Supports [announcements](https://www.home-assistant.io/actions/assist_satellite.announce/), [start](https://www.home-assistant.io/actions/assist_satellite.start_conversation/)/continue conversation, and timers
+- Tested and works with Python 3.11
+- Docker image built locally on-device from `Dockerfile.armhf` (no pre-built registry image for armhf)
 - Supports [Websocket API](./docs/peripheral_api.md) for peripherals (e.g. buttons, LEDs, etc.) to integrate with the voice assistant
 
 Planning for future features is discussed in [Discussion #495](https://github.com/OHF-Voice/linux-voice-assistant/discussions/495).
 ## Requirements
 
 - **Microphone:** Device must support 16kHz mono audio
-- **CPU:** 1Ghz
-- **Memory:** min. 512MB
-- **Storage:** The OS and software is around 4GB
-- **OS:** linux/amd64 or linux/aarch64
+- **CPU:** ARMv7 or later, 1 GHz+
+- **Memory:** min. 512 MB
+- **Storage:** The OS and software is around 4 GB
+- **OS:** 32-bit ARM Linux (linux/arm/v7 armhf) — Raspberry Pi OS Lite 32-bit, Armbian, Debian Bookworm armhf
 
 A more extensive list for possible compatible hardware can be found in the [PiCompose documentation](https://github.com/florian-asche/PiCompose) but basically any microphone that works with [PipeWire (multimedia framework for Linux)](https://pipewire.org/) can in theory be used for voice input with the prebuild image from there, you should however preferably use a far-field microphone-array solution if want better result.
-
-Two solutions recommended for setups today is:
-
-- use a Raspberry Pi Zero 2W (Single Board Computer with built-in WiFi) in combination with the [Satellite1 Hat Board](https://futureproofhomes.net/products/satellite1-top-microphone-board)
-- use at least a Raspberry Pi 3 with the [Respeaker Lite](https://wiki.seeedstudio.com/reSpeaker_usb_v3/). The Respeaker Lite currently has a problem with the Zero 2W.
 
 Those mic-boards have microphone-array designed for far-field voice capture with the added benefit of using an onboard XMOS DSP microcontroller with custom firmware which does advanced audio pre-processing for microphone cleanup that result in very good voice recognition capabilities (as it runs algorithms for Noise Suppression, Acoustic Echo Cancellation, Interference Cancellation, and Automatic Gain Control).
 
@@ -49,26 +54,23 @@ Alternatively if on a lower budget then suggest could use other microphone-array
 
 ### Installation
 
-**Assist Satellite app for Home Assistant OS**
+**Docker (recommended)**
 
-For HA OS, we provide a finished [Assist Satellite](https://github.com/OHF-Voice/apps/tree/main/assist_satellite) app (formerly add-on), which uses the Linux Voice Assistant runtime to turn your HA host into a voice satellite. 
+Build the armhf image locally on the device, then run with Docker Compose:
 
-> [!NOTE]
-> For now you first have to add the [OHF-Voice apps](https://github.com/OHF-Voice/apps) repo manually to the App Store repository inside Home Assistant before you can install it.
+```sh
+git clone -b arm32 https://github.com/OHF-Voice/linux-voice-assistant.git
+cd linux-voice-assistant
+docker build --platform linux/arm/v7 -f Dockerfile.armhf -t linux-voice-assistant:armhf .
+cp .env.example .env
+# edit .env, then:
+LVA_IMAGE=linux-voice-assistant LVA_IMAGE_TAG=armhf \
+  docker compose -f docker-compose.armhf.yml up -d
+```
 
-Later you will be able to install it directly from the official add-on repository (but it is not yet published publicly there):
+**Bare metal / systemd**
 
-[![Add repository to your Home Assistant instance.](https://my.home-assistant.io/badges/supervisor_addon.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https://github.com/home-assistant/addons)
-
-Once installed, the satellite is automatically discovered by Home Assistant via the ESPHome integration.
-
-**Raspberry Pi prebuilt image**
-
-For Raspberry Pi users, we provide a prebuild image that can be flashed to a SD card. See [PiCompose](https://github.com/florian-asche/PiCompose).
-
-**Docker / bare metal**
-
-For all other users, we have different installation methods available (Docker, systemd), each with its own dedicated instructions. See [Linux-Voice-Assistant - Installation](docs/install.md). 
+For a direct install without Docker, see the full instructions in [Install Application](docs/install_application.md). The key extra steps versus a 64-bit install are adding piwheels as an extra pip index and installing `libopenblas0`.
 
 ### Parameter overview
 
@@ -130,15 +132,11 @@ usage: __main__.py [-h] [--name NAME] [--audio-input-device AUDIO_INPUT_DEVICE] 
 
 ## Build Information
 
-Image builds can be tracked in this repository's `Actions` tab, and utilize [artifact attestation](https://docs.github.com/en/actions/security-guides/using-artifact-attestations-to-establish-provenance-for-builds) to certify provenance.
+The armhf Docker image is built **locally on the target device** using `Dockerfile.armhf`. There is no pre-built image on a container registry for this branch.
 
-The Docker images are built using GitHub Actions, which provides:
+The build uses `python:3.11-slim-bookworm` as the base image for both build and runtime stages, and configures piwheels as an extra pip index so that armhf-native wheels for numpy, soundcard, and pymicro-wakeword are fetched without source compilation.
 
-- Automated builds for different architectures
-- Artifact attestation for build provenance verification
-- Regular updates and maintenance
-
-The documentation for the build process can be found in the [GitHub Actions Workflows](.github/workflow.md) file.
+For the upstream x86-64 / arm64 image builds (automated via GitHub Actions with artifact attestation), see [GitHub Actions Workflows](.github/workflow.md).
 
 ## Development
 
@@ -150,8 +148,9 @@ The documentation for the build process can be found in the [GitHub Actions Work
 - ALSA utils (`sudo apt install alsa-utils`)
 
 **Python:**
-- Python 3.11+ must be installed on your system (`python3 --version` should show 3.11+)
-- On Ubuntu/Debian: `sudo apt install python3.11 python3.11-venv python3.11-dev`
+- Python 3.11 must be installed on your system (`python3 --version` should show 3.11)
+- On Debian Bookworm / Raspberry Pi OS: `sudo apt install python3.11 python3.11-venv python3.11-dev`
+- Also install `libopenblas0` for the armhf numpy wheel: `sudo apt install libopenblas0`
 
 ### VS Code Setup
 

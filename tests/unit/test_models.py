@@ -25,11 +25,6 @@ class TestWakeWordType:
 
         assert WakeWordType.MICRO_WAKE_WORD == "micro"
 
-    def test_open_wake_word_value(self):
-        from linux_voice_assistant.models import WakeWordType
-
-        assert WakeWordType.OPEN_WAKE_WORD == "openWakeWord"
-
     def test_is_string_enum(self):
         from linux_voice_assistant.models import WakeWordType
 
