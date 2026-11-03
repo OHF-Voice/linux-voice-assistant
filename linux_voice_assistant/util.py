@@ -1,5 +1,6 @@
 """Utility methods."""
 
+import re
 from collections.abc import Callable
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
@@ -7,6 +8,7 @@ from typing import Optional
 
 # netifaces lib is from netifaces2
 import netifaces
+from getmac import get_mac_address  # type: ignore
 
 # Cache for version to avoid repeated file reading
 _version_cache: Optional[str] = None
@@ -19,10 +21,7 @@ def get_version() -> str:
 
     This function reads the content safely without risk of code injection,
     as it only reads raw text and performs no evaluation.
-
-    Returns:
-        str:    The version from version.txt or 'unknown' if the file
-                does not exist or cannot be read.
+    :return: The version from version.txt or 'unknown' if the file does not exist or cannot be read.
     """
     global _version_cache
 
@@ -48,10 +47,7 @@ def get_esphome_version() -> str:
     This function uses importlib.metadata to safely retrieve the version
     of an installed Python package without executing any code from the
     package itself.
-
-    Returns:
-        str:    The version of aioesphomeapi (e.g., '42.7.0'), or 'unknown'
-                if the package is not installed or the version cannot be read.
+    :return: The version of aioesphomeapi (e.g., '42.7.0'), or 'unknown' if the package is not installed or the version cannot be read.
     """
     global _esphome_version_cache
 
@@ -102,3 +98,23 @@ def get_default_ipv4(interface: str):
         return None
 
     return ipv4_info[0]["addr"]
+
+
+_MAC_ADDRESS = re.compile(r"[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}")
+
+
+def resolve_mac_address(given: Optional[str], interface: Optional[str]) -> str:
+    """
+    The MAC address the device is known by: the one given (--mac-address), or the network
+    interface's.
+    :param given: MAC address from --mac-address (colon separated), or None to use the interface's.
+    :param interface: Network interface to take the MAC address from when none is given.
+    :raises ValueError: if the given one is not a MAC address, or the interface has none.
+    """
+    if given:
+        if not _MAC_ADDRESS.fullmatch(given):
+            raise ValueError(f"Invalid MAC address: {given} (expected for example 02:00:00:00:00:01)")
+        return given.lower()
+    if not (mac_address := get_mac_address(interface=interface)):
+        raise ValueError("No Mac address was found")
+    return str(mac_address)
