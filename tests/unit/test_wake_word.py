@@ -239,7 +239,7 @@ class TestLoadStopModel:
     def test_returns_model_when_found(self, tmp_path):
         write_json(tmp_path / "stop.json", make_micro_json("stop"))
         mock_model = MagicMock()
-        with patch("linux_voice_assistant.wake_word.MicroWakeWord.from_config", return_value=mock_model):
+        with patch("linux_voice_assistant.models.AvailableWakeWord.load", return_value=mock_model):
             from linux_voice_assistant.wake_word import load_stop_model
 
             result = load_stop_model([tmp_path], "stop")
@@ -258,7 +258,7 @@ class TestLoadStopModel:
         dir2.mkdir()
         write_json(dir2 / "stop.json", make_micro_json("stop"))
         mock_model = MagicMock()
-        with patch("linux_voice_assistant.wake_word.MicroWakeWord.from_config", return_value=mock_model):
+        with patch("linux_voice_assistant.models.AvailableWakeWord.load", return_value=mock_model):
             from linux_voice_assistant.wake_word import load_stop_model
 
             result = load_stop_model([dir1, dir2], "stop")
@@ -266,7 +266,7 @@ class TestLoadStopModel:
 
     def test_returns_none_when_load_fails(self, tmp_path):
         write_json(tmp_path / "stop.json", make_micro_json("stop"))
-        with patch("linux_voice_assistant.wake_word.MicroWakeWord.from_config", side_effect=Exception("load error")):
+        with patch("linux_voice_assistant.models.AvailableWakeWord.load", side_effect=Exception("load error")):
             from linux_voice_assistant.wake_word import load_stop_model
 
             result = load_stop_model([tmp_path], "stop")
@@ -280,7 +280,7 @@ class TestLoadStopModel:
         write_json(dir1 / "stop.json", make_micro_json("stop"))
         write_json(dir2 / "stop.json", make_micro_json("stop"))
         mock_model = MagicMock()
-        with patch("linux_voice_assistant.wake_word.MicroWakeWord.from_config", return_value=mock_model) as mock_load:
+        with patch("linux_voice_assistant.models.AvailableWakeWord.load", return_value=mock_model) as mock_load:
             from linux_voice_assistant.wake_word import load_stop_model
 
             load_stop_model([dir1, dir2], "stop")

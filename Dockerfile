@@ -12,15 +12,30 @@ WORKDIR /app
 COPY pyproject.toml setup.cfg version.txt version_githash.txt ./
 COPY linux_voice_assistant/ ./linux_voice_assistant/
 
+### Optional prebuilt sherpa-onnx wheel with RK3588 NPU support:
+# If wheels/sherpa_onnx-*-cp313-*_aarch64.whl is present, it is installed into
+# .venv on top of the plain PyPI wheel. The build arg only controls whether the
+# sherpa-kws extra is requested.
+COPY wheels/ ./wheels/
+
+ARG INSTALL_SHERPA_KWS=0
+
 RUN python -m venv .venv && \
-    .venv/bin/pip install --no-cache-dir . && \
+    if [ "$INSTALL_SHERPA_KWS" = "1" ]; then \
+    .venv/bin/pip install --no-cache-dir ".[sherpa-kws]"; \
+    else \
+    .venv/bin/pip install --no-cache-dir .; \
+    fi && \
+    if ls wheels/sherpa_onnx-*-cp313-*_aarch64.whl >/dev/null 2>&1; then \
+    .venv/bin/pip install --no-cache-dir --force-reinstall wheels/sherpa_onnx-*-cp313-*_aarch64.whl; \
+    fi && \
     .venv/bin/pip uninstall --yes pip setuptools wheel && \
     find .venv -name '__pycache__' -prune -exec rm -rf {} +
 
 ### Runtime stage
 FROM python:3.13-slim-trixie
 
-ENV LANG C.UTF-8
+ENV LANG=C.UTF-8
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 

@@ -139,3 +139,41 @@ Before claiming completion:
 - `linux_voice_assistant/mpv_player.py` and `linux_voice_assistant/player/libmpv.py` - Audio output requires `libmpv-dev`
 - `linux_voice_assistant/webrtc.py` - Noise suppression/gain algorithms
 - `linux_voice_assistant/satellite.py` - ESPHome API protocol handling
+
+## Sherpa-onnx KWS Integration (added 2026-10-05)
+
+### What was added
+- **Third wake word engine**: sherpa-onnx KeywordSpotter (`WakeWordType.SHERPA_ONNX`, optional dep `[sherpa-kws]`).
+- `linux_voice_assistant/sherpa_kws.py` - `SherpaKwsWakeWord` wrapper: raw 16 kHz s16le bytes in, `process_streaming() -> bool`; `sherpa_onnx` imported lazily inside methods (pure micro/oww setups never touch it).
+- `linux_voice_assistant/wake_engines.py` - uniform adapters `MicroWakeWordAdapter` / `OpenWakeWordAdapter` over the two-stage micro/oww APIs (shared feature frontends).
+- `models.py`: `AUDIO_SAMPLE_RATE = 16000` is the single sample-rate constant (recorder + sherpa `accept_waveform` both read it); `AvailableWakeWord.load()` is the single factory for all engines.
+
+### Uniform engine contract
+All three engines expose flat instance attributes `.wake_word`, `.id`, `.is_active`, settable `.probability_cutoff`, and `process_streaming(audio_chunk: bytes) -> bool`. No properties, no engine-specific branches in the audio loop.
+
+### Ownership rules (learned the hard way - do not regress)
+- JSON config parsing lives in ONE place: `_parse_wake_word_config()` in `wake_word.py` (used by `find_available_wake_words` with default cutoff 0.7 and `load_stop_model` with 0.5).
+- sherpa path resolution lives in `SherpaKwsWakeWord.resolve_paths()` classmethod, called from `AvailableWakeWord.load()`; the constructor takes ready `model_files`.
+- Stop model is separated from wake words purely by file stem vs `--stop-model` (default `stop`); exactly one stop model.
+- External wake words (HA -> satellite) are micro/.tflite only per ESPHome protocol; sherpa is unreachable there by design.
+
+### Import policy (decided with the developer)
+- Our own modules: plain imports, no `TYPE_CHECKING`, no quoted annotations (style of `satellite.py`) - `wake_word.py` imports `sherpa_kws`/`wake_engines` directly.
+- `TYPE_CHECKING` is allowed ONLY for optional third-party deps (`wake_engines.py`: pymicro_wakeword/pyopen_wakeword) - plain imports there would break pure-sherpa setups.
+- CRITICAL: every annotation referencing a TYPE_CHECKING-only name MUST be quoted. Unquoted = runtime NameError at import. mypy does NOT catch this (it skips the check); only a real import in an env without the package does. `wake_engines.py` had 6 such latent NameErrors, fixed by quoting.
+
+### Pitfalls (encoding / tooling on Windows desktop)
+- NEVER rewrite whole files through PowerShell pipelines without `-Encoding UTF8` (PS 5.1 default is Windows-1251; historically corrupted Cyrillic comments, added BOMs, broke line endings making `git diff` show 800+ noise lines). Use targeted `edit_block` edits only.
+- `git stash`/`pop` mid-edit rolls back unsaved edits - re-verify recent changes after any stash.
+- `mypy.ini`: upstream fixed the broken `python_version >= 3.11` line to `python_version = 3.11` (their choice; keep it on syncs even though the local `lva` env is 3.13).
+
+### Verification environments (desktop basic-ruslan)
+- **Project env**: conda env `lva` (`C:\Users\rusla\.conda\envs\lva`), Python 3.13.16, real deps: pymicro-wakeword 2.5.0, pyopen-wakeword 1.1.0, numpy, SoundCard, sherpa_onnx 1.13.8. mypy 2.4.0 and pytest 9.1.1 installed. black/isort/flake8/pylint installed 2026-11-08.
+- **Lint on this machine**: `./script/lint*` and `./script/tests` do NOT work (no `.venv`; they pick up the wrong `python3` from PATH). Run tools directly: `C:/Users/rusla/.conda/envs/lva/python.exe -m {black,isort,flake8,pylint,mypy,pytest} ...`; mypy needs `--ignore-missing-imports`.
+- **Fallback**: base miniconda (`C:\tools\miniconda3`, Python 3.10.10) - kept clean, no dev tools installed; use the `lva` env for mypy/pytest (it has all real deps).
+- mypy passes: `... -m mypy linux_voice_assistant/{wake_word,wake_engines,models,__main__,satellite,sherpa_kws}.py --ignore-missing-imports` (without the flag: 14 stub-related import errors for sherpa_onnx/aioesphomeapi/protobuf/webrtc_noise_gain - noise, not real errors).
+- Unit tests: `tests/unit/test_wake_word.py` 26/26 passed; combined with `test_models.py` 64/65 (the single `TestPersistVolume` failure pre-exists on clean HEAD).
+
+### Still open
+- Live device run: `pip install sherpa-onnx` on target + a zipformer transducer KWS model; stop model must be provided separately.
+- KWS vs KPS: it is KeywordSpotter (KWS); do not rename to KPS.

@@ -46,8 +46,6 @@ from aioesphomeapi.model import (
     VoiceAssistantTimerEventType,
 )
 from google.protobuf import message
-from pymicro_wakeword import MicroWakeWord
-from pyopen_wakeword import OpenWakeWord
 
 from .api_server import APIServer
 from .entity import (
@@ -64,7 +62,9 @@ from .entity import (
 )
 from .models import AvailableWakeWord, ServerState, WakeWordType
 from .peripheral_api import LVAEvent
+from .sherpa_kws import SherpaKwsWakeWord
 from .util import call_all
+from .wake_engines import MicroWakeWordAdapter, OpenWakeWordAdapter
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -909,7 +909,7 @@ class VoiceSatelliteProtocol(APIServer):
     # Wake word / stop
     # ------------------------------------------------------------------
 
-    def wakeup(self, wake_word: Union[MicroWakeWord, OpenWakeWord]) -> None:
+    def wakeup(self, wake_word: Union[MicroWakeWordAdapter, OpenWakeWordAdapter, SherpaKwsWakeWord]) -> None:
 
         if self.state.muted:
             # Don't respond to wake words when muted (voice_assistant.stop behavior)
