@@ -167,13 +167,3 @@ All three engines expose flat instance attributes `.wake_word`, `.id`, `.is_acti
 - `git stash`/`pop` mid-edit rolls back unsaved edits - re-verify recent changes after any stash.
 - `mypy.ini`: upstream fixed the broken `python_version >= 3.11` line to `python_version = 3.11` (their choice; keep it on syncs even though the local `lva` env is 3.13).
 
-### Verification environments (desktop basic-ruslan)
-- **Project env**: conda env `lva` (`C:\Users\rusla\.conda\envs\lva`), Python 3.13.16, real deps: pymicro-wakeword 2.5.0, pyopen-wakeword 1.1.0, numpy, SoundCard, sherpa_onnx 1.13.8. mypy 2.4.0 and pytest 9.1.1 installed. black/isort/flake8/pylint installed 2026-11-08.
-- **Lint on this machine**: `./script/lint*` and `./script/tests` do NOT work (no `.venv`; they pick up the wrong `python3` from PATH). Run tools directly: `C:/Users/rusla/.conda/envs/lva/python.exe -m {black,isort,flake8,pylint,mypy,pytest} ...`; mypy needs `--ignore-missing-imports`.
-- **Fallback**: base miniconda (`C:\tools\miniconda3`, Python 3.10.10) - kept clean, no dev tools installed; use the `lva` env for mypy/pytest (it has all real deps).
-- mypy passes: `... -m mypy linux_voice_assistant/{wake_word,wake_engines,models,__main__,satellite,sherpa_kws}.py --ignore-missing-imports` (without the flag: 14 stub-related import errors for sherpa_onnx/aioesphomeapi/protobuf/webrtc_noise_gain - noise, not real errors).
-- Unit tests: `tests/unit/test_wake_word.py` 26/26 passed; combined with `test_models.py` 64/65 (the single `TestPersistVolume` failure pre-exists on clean HEAD).
-
-### Still open
-- Live device run: `pip install sherpa-onnx` on target + a zipformer transducer KWS model; stop model must be provided separately.
-- KWS vs KPS: it is KeywordSpotter (KWS); do not rename to KPS.
