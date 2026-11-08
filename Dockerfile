@@ -1,5 +1,12 @@
+# syntax=docker/dockerfile:1
+
+ARG INSTALL_SHERPA_KWS=0
+
 ### Build stage: compile the Python dependencies (pymicro-features needs a compiler)
 FROM python:3.13-slim-trixie AS build
+
+ARG INSTALL_SHERPA_KWS
+ARG TARGETARCH
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -12,22 +19,33 @@ WORKDIR /app
 COPY pyproject.toml setup.cfg version.txt version_githash.txt ./
 COPY linux_voice_assistant/ ./linux_voice_assistant/
 
-### Optional prebuilt sherpa-onnx wheel with RK3588 NPU support:
-# If wheels/sherpa_onnx-*-cp313-*_aarch64.whl is present, it is installed into
-# .venv on top of the plain PyPI wheel. The build arg only controls whether the
-# sherpa-kws extra is requested.
-COPY wheels/ ./wheels/
-
-ARG INSTALL_SHERPA_KWS=0
-
-RUN python -m venv .venv && \
+### Optional prebuilt sherpa-onnx wheel with RK3588 NPU support and the RKNPU2
+# SDK runtime (librknnrt.so, which the NPU wheel links against), both bound
+# from the wheels/ directory via RUN --mount so neither lands in an image
+# layer. On arm64 builds with INSTALL_SHERPA_KWS=1 and a
+# sherpa_onnx-*-cp313-*_aarch64.whl present, the wheel is installed with
+# --no-index, so the plain PyPI wheel (no NPU support) can never silently win
+# (see wheels/README.md), and the RKNN libraries from RKNPU2_SDK-*.tgz are
+# staged into /out/rknn-libs for the runtime stage. Any other configuration
+# (no flag, other arch, no wheel) installs sherpa-onnx from PyPI via the
+# sherpa-kws extra and stages no RKNN libraries.
+RUN --mount=type=bind,source=wheels,target=/tmp/wheels \
+    python -m venv .venv && \
+    .venv/bin/pip install --no-cache-dir . && \
+    mkdir -p /out/rknn-libs && \
     if [ "$INSTALL_SHERPA_KWS" = "1" ]; then \
-    .venv/bin/pip install --no-cache-dir ".[sherpa-kws]"; \
+    if [ "$TARGETARCH" = "arm64" ] && \
+    ls /tmp/wheels/sherpa_onnx-*-cp313-*_aarch64.whl >/dev/null 2>&1; then \
+    .venv/bin/pip install --no-cache-dir --no-index --find-links /tmp/wheels sherpa-onnx && \
+    SDK_TGZ=$(ls /tmp/wheels/RKNPU2_SDK-*.tgz 2>/dev/null | head -n1) && \
+    { [ -n "$SDK_TGZ" ] || { echo "ERROR: RKNPU2_SDK-*.tgz not found in wheels/ (required for the NPU sherpa-onnx wheel)"; exit 1; }; } && \
+    mkdir /tmp/rknn && \
+    tar -zxf "$SDK_TGZ" -C /tmp/rknn && \
+    tar -zxf /tmp/rknn/*/rknpu2_runtime*.tar.gz -C /tmp/rknn && \
+    cp /tmp/rknn/runtime/Linux/librknn_api/aarch64/* /out/rknn-libs/; \
     else \
-    .venv/bin/pip install --no-cache-dir .; \
-    fi && \
-    if ls wheels/sherpa_onnx-*-cp313-*_aarch64.whl >/dev/null 2>&1; then \
-    .venv/bin/pip install --no-cache-dir --force-reinstall wheels/sherpa_onnx-*-cp313-*_aarch64.whl; \
+    .venv/bin/pip install --no-cache-dir ".[sherpa-kws]"; \
+    fi; \
     fi && \
     .venv/bin/pip uninstall --yes pip setuptools wheel && \
     find .venv -name '__pycache__' -prune -exec rm -rf {} +
@@ -82,6 +100,11 @@ RUN apt-get update && \
     dpkg --purge --force-depends libllvm19 mesa-libgallium libgl1-mesa-dri libz3-4 && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* /usr/share/doc /usr/share/man /usr/share/locale
+
+### RK3588 NPU runtime libraries staged by the build stage; the directory is
+### empty (no-op) unless INSTALL_SHERPA_KWS=1 with an NPU wheel present.
+COPY --from=build /out/rknn-libs/ /usr/local/lib/
+RUN ldconfig
 
 ### Set workdir:
 WORKDIR /app
