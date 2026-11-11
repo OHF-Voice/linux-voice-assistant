@@ -26,8 +26,7 @@ Example JSON config:
             "num_threads": 2,
             "provider": "cpu",
             "max_active_paths": 4,
-            "keywords_score": 1.0,
-            "greedy_search": true
+            "keywords_score": 1.0
         }
     }
 
@@ -136,22 +135,20 @@ class SherpaKwsWakeWord:
             raise RuntimeError(f"sherpa-onnx wake word '{self.id}': missing required config keys: {', '.join(missing)}")
 
         # sherpa_onnx is a compiled extension: pylint cannot introspect its members.
-        kws_config = sherpa_onnx.KeywordSpotterConfig(  # pylint: disable=no-member
-            transducer=sherpa_onnx.OfflineTransducerConfig(  # pylint: disable=no-member
-                encoder=encoder,
-                decoder=decoder,
-                joiner=joiner,
-            ),
+        # KeywordSpotter takes its options as direct keyword arguments (there is no
+        # KeywordSpotterConfig in the published python API).
+        spotter = sherpa_onnx.KeywordSpotter(  # pylint: disable=no-member
             tokens=tokens,
+            encoder=encoder,
+            decoder=decoder,
+            joiner=joiner,
             keywords_file=keywords_file,
-            max_active_paths=config.get("max_active_paths", 4),
             num_threads=int(config.get("num_threads", 1)),
             provider=config.get("provider", "cpu"),
+            max_active_paths=int(config.get("max_active_paths", 4)),
             keywords_score=float(config.get("keywords_score", 1.0)),
             keywords_threshold=float(config.get("keywords_threshold", 0.25)),
         )
-
-        spotter = sherpa_onnx.KeywordSpotter(kws_config)  # pylint: disable=no-member,no-value-for-parameter
         self._stream = spotter.create_stream()
         _LOGGER.info(
             "Loaded sherpa-onnx KWS wake word '%s' (id=%s, keywords=%s)",
@@ -184,18 +181,22 @@ class SherpaKwsWakeWord:
         while self._spotter.is_ready(self._stream):
             self._spotter.decode_stream(self._stream)
 
-        result = self._stream.result
-        if result and (result.json or result.text):
+        # get_result() returns "" while no keyword matched (there is no
+        # stream.result object in the published python API).
+        result = self._spotter.get_result(self._stream)
+        if result:
             if not self._detected:
-                _LOGGER.info("sherpa-onnx KWS detected keyword: %s", result.text or result.json)
+                _LOGGER.info("sherpa-onnx KWS detected keyword: %s", result)
             self._detected = True
-            self._last_keyword = result.text
+            self._last_keyword = result
 
         detected = self._detected
         if detected:
             # Re-arm: after a detection the caller will start the pipeline,
-            # and further audio should start a fresh search.
+            # and further audio should start a fresh search. reset_stream()
+            # is the documented way to restart the search after a hit.
             self._detected = False
-            self._stream = self._spotter.create_stream()
+            self._last_keyword = None
+            self._spotter.reset_stream(self._stream)
 
         return detected
