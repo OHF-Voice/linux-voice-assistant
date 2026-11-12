@@ -61,6 +61,7 @@ class SherpaKwsWakeWord:
         model_files: Dict[str, Optional[str]],
         engine_config: Dict[str, Any],
         probability_cutoff: float = 0.7,
+        supports_sensitivity: bool = False,
     ) -> None:
         self.wake_word = wake_word
         self.id = wake_word_id
@@ -68,6 +69,10 @@ class SherpaKwsWakeWord:
         self.model_files = dict(model_files or {})
         self.engine_config = dict(engine_config or {})
         self.probability_cutoff = probability_cutoff
+        # Capability flag matching the other engines' duck-typed interface.
+        # Always False: the spotter thresholds inside the keywords file and
+        # cannot be re-thresholded at runtime via probability_cutoff.
+        self.supports_sensitivity = supports_sensitivity
 
         self._spotter = self._load_spotter()
         self._detected = False

@@ -149,7 +149,7 @@ Before claiming completion:
 - `models.py`: `AUDIO_SAMPLE_RATE = 16000` is the single sample-rate constant (recorder + sherpa `accept_waveform` both read it); `AvailableWakeWord.load()` is the single factory for all engines.
 
 ### Uniform engine contract
-All three engines expose flat instance attributes `.wake_word`, `.id`, `.is_active`, settable `.probability_cutoff`, and `process_streaming(audio_chunk: bytes) -> bool`. No properties, no engine-specific branches in the audio loop.
+All three engines expose flat instance attributes `.wake_word`, `.id`, `.is_active`, `supports_sensitivity` (capability flag: True for micro/openWakeWord, which honour `.probability_cutoff` at runtime; False for sherpa-onnx, which thresholds in its keywords file — it gates visibility of the HA sensitivity entities), settable `.probability_cutoff`, and `process_streaming(audio_chunk: bytes) -> bool`. No properties on the loaded engines, no engine-specific branches in the audio loop.
 
 ### Ownership rules (learned the hard way - do not regress)
 - JSON config parsing lives in ONE place: `_parse_wake_word_config()` in `wake_word.py` (used by `find_available_wake_words` with default cutoff 0.7 and `load_stop_model` with 0.5).

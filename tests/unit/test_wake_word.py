@@ -30,6 +30,22 @@ def make_oww_json(wake_word: str = "hey jarvis", model_file: str = "hey_jarvis.t
     }
 
 
+def make_sherpa_json(wake_word: str = "наташка") -> dict:
+    return {
+        "type": "sherpa-onnx",
+        "wake_word": wake_word,
+        "trained_languages": ["ru"],
+        "sherpa-onnx": {
+            "model_dir": ".",
+            "encoder": "encoder.onnx",
+            "decoder": "decoder.onnx",
+            "joiner": "joiner.onnx",
+            "tokens": "tokens.txt",
+            "keywords_file": "keywords.txt",
+        },
+    }
+
+
 def write_json(path: Path, data: dict) -> None:
     path.write_text(json.dumps(data), encoding="utf-8")
 
@@ -134,6 +150,44 @@ class TestFindAvailableWakeWords:
 
         result = find_available_wake_words([tmp_path], stop_model_id="stop")
         assert result["okay_nabu"].type == WakeWordType.MICRO_WAKE_WORD
+
+
+# ---------------------------------------------------------------------------
+# supports_sensitivity capability
+# ---------------------------------------------------------------------------
+
+
+class TestSupportsSensitivity:
+    """The capability flag driving visibility of the HA sensitivity entities."""
+
+    def test_micro_supports_sensitivity(self, tmp_path):
+        write_json(tmp_path / "okay_nabu.json", make_micro_json())
+        from linux_voice_assistant.wake_word import find_available_wake_words
+
+        result = find_available_wake_words([tmp_path], stop_model_id="stop")
+        assert result["okay_nabu"].supports_sensitivity is True
+
+    def test_oww_supports_sensitivity(self, tmp_path):
+        write_json(tmp_path / "hey_jarvis.json", make_oww_json())
+        from linux_voice_assistant.wake_word import find_available_wake_words
+
+        result = find_available_wake_words([tmp_path], stop_model_id="stop")
+        assert result["hey_jarvis"].supports_sensitivity is True
+
+    def test_sherpa_does_not_support_sensitivity(self, tmp_path):
+        write_json(tmp_path / "natashka.json", make_sherpa_json())
+        from linux_voice_assistant.wake_word import find_available_wake_words
+
+        result = find_available_wake_words([tmp_path], stop_model_id="stop")
+        assert result["natashka"].supports_sensitivity is False
+
+    def test_adapters_default_to_supported(self):
+        from linux_voice_assistant.wake_engines import MicroWakeWordAdapter, OpenWakeWordAdapter
+
+        micro = MicroWakeWordAdapter(MagicMock(), wake_word="w", id="w", probability_cutoff=0.7)
+        oww = OpenWakeWordAdapter(MagicMock(), wake_word="w", id="w", probability_cutoff=0.7)
+        assert micro.supports_sensitivity is True
+        assert oww.supports_sensitivity is True
 
 
 # ---------------------------------------------------------------------------

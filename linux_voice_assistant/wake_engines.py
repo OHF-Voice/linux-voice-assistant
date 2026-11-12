@@ -7,8 +7,10 @@ streaming state, so they must be SHARED between all models of the same
 engine (2 wake words + stop word would otherwise triplicate the work).
 
 These adapters hide that plumbing behind the same duck-typed interface as
-``SherpaKwsWakeWord``: ``.id``, ``.wake_word``, settable
-``.probability_cutoff`` and ``process_streaming(audio_chunk) -> bool`` that
+``SherpaKwsWakeWord``: ```.id``, ``.wake_word``, settable ``.probability_cutoff``, a read-only
+``.supports_sensitivity`` capability flag (True: the engine honours
+``probability_cutoff`` at runtime; False: sherpa-onnx, which thresholds in
+its keywords file) and ``process_streaming(audio_chunk) -> bool`` that
 takes raw 16 kHz s16le bytes. The audio loop in ``__main__.py`` then treats
 all engines identically.
 """
@@ -57,13 +59,21 @@ class MicroWakeWordAdapter:
 
         return MicroWakeWord.from_config(config_path=config_path)
 
-    def __init__(self, inner: "MicroWakeWord", wake_word: str, id: str, probability_cutoff: float) -> None:  # pylint: disable=redefined-builtin
+    def __init__(
+        self,
+        inner: "MicroWakeWord",
+        wake_word: str,
+        id: str,  # pylint: disable=redefined-builtin
+        probability_cutoff: float,
+        supports_sensitivity: bool = True,
+    ) -> None:
         self._inner = inner
         # Adapter-level metadata; owned here so every engine exposes the same
         # uniform interface regardless of what the inner model provides.
         self.wake_word = wake_word
         self.id = id
         self.probability_cutoff = probability_cutoff
+        self.supports_sensitivity = supports_sensitivity
         self.is_active = False
 
     @classmethod
@@ -114,11 +124,19 @@ class OpenWakeWordAdapter:
             _LOGGER.debug("Created shared OpenWakeWordFeatures frontend")
         return cls._frontend
 
-    def __init__(self, inner: "OpenWakeWord", wake_word: str, id: str, probability_cutoff: float = 0.7) -> None:  # pylint: disable=redefined-builtin
+    def __init__(
+        self,
+        inner: "OpenWakeWord",
+        wake_word: str,
+        id: str,  # pylint: disable=redefined-builtin
+        probability_cutoff: float = 0.7,
+        supports_sensitivity: bool = True,
+    ) -> None:
         self._inner = inner
         self.wake_word = wake_word
         self.id = id
         self.probability_cutoff = probability_cutoff
+        self.supports_sensitivity = supports_sensitivity
         self.is_active = False
 
     def process_streaming(self, audio_chunk: bytes) -> bool:

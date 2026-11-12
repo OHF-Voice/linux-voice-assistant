@@ -53,6 +53,18 @@ class AvailableWakeWord:
     # Engine-specific settings from the model JSON (e.g. sherpa-onnx KWS options).
     engine_config: Dict[str, Any] = field(default_factory=dict)
 
+    @property
+    def supports_sensitivity(self) -> bool:
+        """Whether this model's engine honours runtime ``probability_cutoff`` tuning.
+
+        microWakeWord and openWakeWord compare each frame's probability
+        against ``probability_cutoff``; the sherpa-onnx KWS engine thresholds
+        inside its keywords file (``#threshold`` per line) and ignores the
+        attribute, so its models report False and the HA sensitivity number
+        entities are withheld for them.
+        """
+        return self.type is not WakeWordType.SHERPA_ONNX
+
     def load(self) -> "Union[MicroWakeWordAdapter, OpenWakeWordAdapter, SherpaKwsWakeWord]":
         if self.type == WakeWordType.MICRO_WAKE_WORD:
             from .wake_engines import MicroWakeWordAdapter
@@ -63,6 +75,7 @@ class AvailableWakeWord:
                 wake_word=self.wake_word,
                 id=self.id,
                 probability_cutoff=self.probability_cutoff,
+                supports_sensitivity=self.supports_sensitivity,
             )
 
         if self.type == WakeWordType.OPEN_WAKE_WORD:
@@ -77,6 +90,7 @@ class AvailableWakeWord:
                 wake_word=self.wake_word,
                 id=self.id,
                 probability_cutoff=self.probability_cutoff,
+                supports_sensitivity=self.supports_sensitivity,
             )
 
         if self.type == WakeWordType.SHERPA_ONNX:
@@ -94,6 +108,7 @@ class AvailableWakeWord:
                 model_files=model_files,
                 engine_config=self.engine_config,
                 probability_cutoff=self.probability_cutoff,
+                supports_sensitivity=self.supports_sensitivity,
             )
 
         raise ValueError(f"Unexpected wake word type: {self.type}")
