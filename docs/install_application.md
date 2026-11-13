@@ -31,18 +31,24 @@ sudo apt-get update
 sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 ```
 
-Clone the arm32 branch and build the image locally on the device:
+Clone the arm32 branch (it contains the compose file and `.env.example`):
 ``` sh
 git clone -b arm32 https://github.com/OHF-Voice/linux-voice-assistant.git
 cd linux-voice-assistant
-docker build \
-  --platform linux/arm/v7 \
-  -f Dockerfile.armhf \
-  -t linux-voice-assistant:armhf \
-  .
 ```
 
-💡 **Note:** The image must be built locally on the device. There is no pre-built armhf image on the container registry. On a Raspberry Pi 2/3 this takes 5–15 minutes on first build. Piwheels is used automatically during the build to fetch pre-compiled armhf wheels for numpy, soundcard and pymicro-wakeword, so no source compilation is needed.
+Then get the image in one of two ways:
+
+- **Pre-built image (default):** the GitHub Actions workflows of this branch publish the `linux/arm/v7` image to ghcr.io with the tag `armhf` (see [GitHub Actions Workflows](../.github/workflow.md)). `docker-compose.yml` pulls `ghcr.io/ohf-voice/linux-voice-assistant:armhf` by default. If you use a fork, set `LVA_IMAGE=ghcr.io/<owner>/linux-voice-assistant` in your `.env` file. No build step is needed.
+- **Build locally:** use this if no pre-built image is available for your repository, or if you changed the code:
+  ``` sh
+  docker build \
+    --platform linux/arm/v7 \
+    -f Dockerfile \
+    -t linux-voice-assistant:armhf \
+    .
+  ```
+  On a Raspberry Pi 2/3 this takes 5–15 minutes on first build. Piwheels is used automatically during the build to fetch pre-compiled armhf wheels for numpy, soundcard and pymicro-wakeword, so no source compilation is needed.
 
 Copy the example environment file and edit it:
 ``` sh
@@ -56,36 +62,48 @@ You can change various settings, for example the audio sounds which are played w
 
 Start the application:
 ``` sh
-LVA_IMAGE=linux-voice-assistant LVA_IMAGE_TAG=armhf \
-  docker compose -f docker-compose.armhf.yml up -d
+docker compose up -d
+```
+
+If you built the image locally, tell compose to use it instead of the registry image:
+``` sh
+LVA_IMAGE=linux-voice-assistant docker compose up -d
 ```
 
 💡 **Note:** If you want to use the application with a different user, you need to change the user in the .env file. Dont forget to change the UID from the user. The docker container will run until you stop it. It will restart automatically after a reboot.
 
 Check if the application is running:
 ``` sh
-docker compose -f docker-compose.armhf.yml ps
+docker compose ps
 ```
 
 Check the logs:
 ``` sh
-docker compose -f docker-compose.armhf.yml logs -f
+docker compose logs -f
 ```
 
 Stop the service:
 ``` sh
-docker compose -f docker-compose.armhf.yml down
+docker compose down
 ```
 
-To update, pull the latest arm32 branch and rebuild:
+To update, pull the latest arm32 branch and the latest image:
+``` sh
+git pull
+docker compose pull
+docker compose up -d
+```
+
+If you built the image locally, rebuild it instead of pulling:
 ``` sh
 git pull
 docker build \
   --platform linux/arm/v7 \
   --no-cache \
-  -f Dockerfile.armhf \
+  -f Dockerfile \
   -t linux-voice-assistant:armhf \
   .
+LVA_IMAGE=linux-voice-assistant docker compose up -d
 ```
 
 

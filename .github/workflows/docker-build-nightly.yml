@@ -1,13 +1,14 @@
 ---
-name: Build main
+name: Build arm32
 
 on:
   push:
     branches:
-      - "main"
+      - "arm32"
     paths-ignore:
       - "**.md"
       - "docs/**"
+  workflow_dispatch:
 
 env:
   REGISTRY: ghcr.io
@@ -35,9 +36,11 @@ jobs:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ github.token }}
-      # Build Docker Images (amd64 and arm64)
+      # Build the 32-bit ARM (armhf) Docker image. Hosted runners are x86-64, so QEMU emulates linux/arm/v7.
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v4
+        with:
+          platforms: arm
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
@@ -49,15 +52,15 @@ jobs:
         with:
           images: ${{ env.REGISTRY_LOWER }}/${{ env.REPOSITORY_LOWER }}
           tags: |
-            type=raw,value=nightly
+            type=raw,value=nightly-armhf
           labels: |
             org.opencontainers.image.authors="Open Home Foundation"
-            org.opencontainers.image.base.name="docker.io/library/python:3.13-slim-trixie"
-            org.opencontainers.image.description="Linux-Voice-Assistant for Home Assistant"
+            org.opencontainers.image.base.name="docker.io/library/python:3.11-slim-bookworm"
+            org.opencontainers.image.description="Linux-Voice-Assistant for Home Assistant (32-bit ARM / armhf)"
             org.opencontainers.image.documentation="https://github.com/OHF-Voice/linux-voice-assistant/blob/main/README.md"
             org.opencontainers.image.licenses="Apache-2.0"
             org.opencontainers.image.source="https://github.com/OHF-Voice/linux-voice-assistant"
-            org.opencontainers.image.title="Linux-Voice-Assistant"
+            org.opencontainers.image.title="Linux-Voice-Assistant (armhf)"
             org.opencontainers.image.url="https://github.com/OHF-Voice/linux-voice-assistant"
             org.opencontainers.image.vendor="Open Home Foundation"
 
@@ -72,14 +75,17 @@ jobs:
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
-          platforms: linux/amd64,linux/aarch64
+          platforms: linux/arm/v7
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           annotations: ${{ steps.meta.outputs.annotations }}
+          # QEMU builds are slow; reuse layers between runs.
+          cache-from: type=gha,scope=armhf
+          cache-to: type=gha,scope=armhf,mode=max
       - name: Generate artifact attestation
         uses: actions/attest-build-provenance@v4
         with:
-          subject-name: ${{ env.REGISTRY }}/${{ github.repository }}
+          subject-name: ${{ env.REGISTRY_LOWER }}/${{ env.REPOSITORY_LOWER }}
           subject-digest: ${{ steps.push.outputs.digest }}
           push-to-registry: true
