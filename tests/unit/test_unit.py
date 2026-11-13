@@ -241,3 +241,38 @@ class TestGetDefaultIpv4:
             mock_netifaces.ifaddresses.return_value = {}
             result = util.get_default_ipv4("eth0")
         assert result is None
+
+
+class TestResolveMacAddress:
+    def test_given_one_is_used_lowercase(self):
+        import linux_voice_assistant.util as util
+
+        with patch("linux_voice_assistant.util.get_mac_address") as mock_get:
+            result = util.resolve_mac_address("02:AB:00:00:00:01", "eth0")
+        assert result == "02:ab:00:00:00:01"
+        mock_get.assert_not_called()
+
+    def test_invalid_one_is_refused(self):
+        import pytest
+
+        import linux_voice_assistant.util as util
+
+        with pytest.raises(ValueError):
+            util.resolve_mac_address("02:ab:00:00:00", "eth0")
+
+    def test_default_is_the_interfaces(self):
+        import linux_voice_assistant.util as util
+
+        with patch("linux_voice_assistant.util.get_mac_address", return_value="aa:bb:cc:dd:ee:ff") as mock_get:
+            result = util.resolve_mac_address(None, "eth0")
+        assert result == "aa:bb:cc:dd:ee:ff"
+        mock_get.assert_called_once_with(interface="eth0")
+
+    def test_no_interface_mac_is_an_error(self):
+        import pytest
+
+        import linux_voice_assistant.util as util
+
+        with patch("linux_voice_assistant.util.get_mac_address", return_value=None):
+            with pytest.raises(ValueError):
+                util.resolve_mac_address(None, "eth0")

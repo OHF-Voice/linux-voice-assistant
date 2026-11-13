@@ -27,6 +27,7 @@ class LibMpvPlayer(AudioPlayer):
         self._log = logging.getLogger(self.__class__.__name__)
         self._state: PlayerState = PlayerState.IDLE
         self._state_lock = threading.Lock()
+        self._last_error: Optional[str] = None
 
         # Volume handling
         self._user_volume: float = 100.0  # 0.0 – 100.0
@@ -35,6 +36,7 @@ class LibMpvPlayer(AudioPlayer):
         # mpv setup
         self._mpv = mpv.MPV(
             audio_display=False,
+            video=False,
             log_handler=self._on_mpv_log,
             loglevel="error",
             cache="yes",
@@ -54,10 +56,10 @@ class LibMpvPlayer(AudioPlayer):
         # noticeable latency for a user-facing notification sound.
         self._mpv["audio-buffer"] = _AUDIO_BUFFER_SECS
 
-        # Keep the PulseAudio/PipeWire stream open between files by outputting
-        # silence when idle.  This eliminates the per-play sink re-initialisation
-        # penalty entirely, so back-to-back short sounds (wakeup → TTS, mute →
-        # unmute) never lose their first samples regardless of system load.
+        # Feed silence instead of stopping the audio output on pause and seeks.
+        # mpv only does this while a file is loaded: once playback ends the
+        # audio device is closed, so this does NOT keep the PulseAudio/PipeWire
+        # stream open between files.
         self._mpv["audio-stream-silence"] = True
 
         # Callback Handling
@@ -76,16 +78,15 @@ class LibMpvPlayer(AudioPlayer):
     ) -> None:
         """
         Start playback of a media URL.
-
-        Args:
-            url: Media URL or local file path.
-            done_callback: Optional callback invoked when playback finishes.
-            stop_first: If True, start playback in paused state.
+        :param url: Media URL or local file path.
+        :param done_callback: Optional callback invoked when playback finishes.
+        :param stop_first: If True, start playback in paused state.
         """
         with self._state_lock:
             self._log.debug("play: current_state=%s", self._state)
             self._cancel_eof_timer()
             self._done_callback = done_callback
+            self._last_error = None
             self._set_state(PlayerState.LOADING)
         self._mpv.pause = stop_first
         self._mpv.play(url)
@@ -131,9 +132,7 @@ class LibMpvPlayer(AudioPlayer):
     def set_volume(self, volume: float) -> None:
         """
         Set user volume.
-
-        Args:
-            volume: Volume level (0.0–100.0).
+        :param volume: Volume level (0.0–100.0).
         """
         self._log.debug("set_volume() called")
         with self._state_lock:
@@ -143,9 +142,7 @@ class LibMpvPlayer(AudioPlayer):
     def duck(self, factor: float = 0.5) -> None:
         """
         Reduce volume temporarily by a ducking factor.
-
-        Args:
-            factor: Ducking factor (0.0–1.0).
+        :param factor: Ducking factor (0.0–1.0).
         """
         self._log.debug("duck() called")
         with self._state_lock:
@@ -183,6 +180,7 @@ class LibMpvPlayer(AudioPlayer):
             # mpv END_FILE_REASON constants:
             # 0 = eof (end of file), 1 = stop, 2 = abort, 3 = quit, 4 = error
             is_eof = reason == 0
+            is_error = reason == 4
 
             self._log.debug(
                 "_on_end_file: reason=%s (is_eof=%s), state=%s, has_callback=%s",
@@ -192,14 +190,20 @@ class LibMpvPlayer(AudioPlayer):
                 self._done_callback is not None,
             )
 
-            # Only process "eof" (reason=0) events as actual track completion.
-            # Other reasons are from track changes, stops, or errors.
-            if not is_eof:
-                self._log.debug("_on_end_file: ignoring non-eof event (reason=%s)", reason)
+            # Only process "eof" (reason=0) and "error" (reason=4) events as track completion.
+            # Other reasons are from track changes or stops, which stop() handles itself.
+            if not (is_eof or is_error):
+                self._log.debug("_on_end_file: ignoring non-completion event (reason=%s)", reason)
                 return
 
+            # A failed or empty file never reached the audio output, so there is nothing to drain.
+            # Without the callback the pipeline would stay in "responding" and block the wake word.
+            if is_error:
+                self._log.error("Playback failed: %s", self._last_error or "unknown mpv error")
+                self._log.warning("_on_end_file: playback ended with error; invoking done_callback")
+
             self._cancel_eof_timer()
-            timer = threading.Timer(_EOF_DRAIN_DELAY_SECS, self._finish_playback)
+            timer = threading.Timer(0 if is_error else _EOF_DRAIN_DELAY_SECS, self._finish_playback)
             timer.daemon = True
             self._eof_timer = timer
             timer.start()
@@ -237,6 +241,7 @@ class LibMpvPlayer(AudioPlayer):
         """
         if level in ("error", "fatal"):
             with self._state_lock:
+                self._last_error = f"[{prefix}] {text.strip()}"
                 self._set_state(PlayerState.ERROR)
 
     def _set_state(self, new_state: PlayerState) -> None:
