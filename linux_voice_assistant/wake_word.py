@@ -4,12 +4,46 @@ import logging
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Union
 
-from pymicro_wakeword import MicroWakeWord
-from pyopen_wakeword import OpenWakeWord
-
 from .models import AvailableWakeWord, WakeWordType
+from .sherpa_kws import SherpaKwsWakeWord
+from .wake_engines import MicroWakeWordAdapter, OpenWakeWordAdapter
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _parse_wake_word_config(model_config_path: Path, model_id: str, default_probability_cutoff: float) -> AvailableWakeWord:
+    """Parse a wake word JSON config into an AvailableWakeWord.
+
+    Shared by find_available_wake_words (wake words) and load_stop_model
+    (the stop word): the JSON schema and path resolution are identical for
+    both, only the default probability_cutoff differs.
+    """
+    with open(model_config_path, "r", encoding="utf-8") as model_config_file:
+        model_config = json.load(model_config_file)
+
+    model_type = WakeWordType(model_config["type"])
+    _LOGGER.debug("Model %s is of type: %s", model_id, model_type)
+
+    if model_type == WakeWordType.OPEN_WAKE_WORD:
+        wake_word_path = model_config_path.parent / model_config["model"]
+    else:
+        wake_word_path = model_config_path
+
+    _LOGGER.debug("Model path resolved to: %s (exists: %s)", wake_word_path, wake_word_path.exists())
+
+    # Get type specific configuration
+    type_config = model_config.get(model_type.value, {})
+    _LOGGER.debug("Type specific config for %s (%s): %s", model_id, model_type.value, type_config)
+
+    return AvailableWakeWord(
+        id=model_id,
+        type=model_type,
+        wake_word=model_config["wake_word"],
+        trained_languages=model_config.get("trained_languages", []),
+        wake_word_path=wake_word_path,
+        probability_cutoff=type_config.get("probability_cutoff", default_probability_cutoff),
+        engine_config=type_config,
+    )
 
 
 def find_available_wake_words(wake_word_dirs: List[Path], stop_model_id: str) -> Dict[str, AvailableWakeWord]:
@@ -39,33 +73,8 @@ def find_available_wake_words(wake_word_dirs: List[Path], stop_model_id: str) ->
                 _LOGGER.debug("Skipping stop model: %s", model_id)
                 continue
 
-            with open(model_config_path, "r", encoding="utf-8") as model_config_file:
-                model_config = json.load(model_config_file)
-                model_type = WakeWordType(model_config["type"])
-
-                _LOGGER.debug("Model %s is of type: %s", model_id, model_type)
-
-                if model_type == WakeWordType.OPEN_WAKE_WORD:
-                    wake_word_path = model_config_path.parent / model_config["model"]
-                else:
-                    wake_word_path = model_config_path
-
-                _LOGGER.debug("Model path resolved to: %s (exists: %s)", wake_word_path, wake_word_path.exists())
-
-                # Get type specific configuration
-                type_config = model_config.get(model_type.value, {})
-
-                _LOGGER.debug("Type specific config for %s (%s): %s", model_id, model_type.value, type_config)
-
-                available_wake_words[model_id] = AvailableWakeWord(
-                    id=model_id,
-                    type=WakeWordType(model_type),
-                    wake_word=model_config["wake_word"],
-                    trained_languages=model_config.get("trained_languages", []),
-                    wake_word_path=wake_word_path,
-                    probability_cutoff=type_config.get("probability_cutoff", 0.7),
-                )
-                _LOGGER.debug("Successfully registered wake word: %s", model_id)
+            available_wake_words[model_id] = _parse_wake_word_config(model_config_path, model_id, default_probability_cutoff=0.7)
+            _LOGGER.debug("Successfully registered wake word: %s", model_id)
 
     _LOGGER.debug("Total available wake words found: %d", len(available_wake_words))
     _LOGGER.debug("Available wake words: %s", list(sorted(available_wake_words.keys())))
@@ -105,7 +114,7 @@ def load_wake_models(
     active_wake_word_ids: Optional[List[str]],
     default_wake_word_id: str,
     preferred_type: Optional[WakeWordType] = None,
-) -> tuple[Dict[str, Union[MicroWakeWord, OpenWakeWord]], Set[str], bool]:
+) -> tuple[Dict[str, Union[MicroWakeWordAdapter, OpenWakeWordAdapter, SherpaKwsWakeWord]], Set[str], bool]:
     """
     Loads the specified wake word models.
 
@@ -122,7 +131,7 @@ def load_wake_models(
     :return: Tuple with (dictionary of loaded models, set of active wake word IDs, whether the default fallback was used).
     """
     active_wake_words: Set[str] = set()
-    wake_models: Dict[str, Union[MicroWakeWord, OpenWakeWord]] = {}
+    wake_models: Dict[str, Union[MicroWakeWordAdapter, OpenWakeWordAdapter, SherpaKwsWakeWord]] = {}
 
     _LOGGER.debug("Requested active wake word ids: %s", active_wake_word_ids)
     _LOGGER.debug("Default wake word id: %s", default_wake_word_id)
@@ -223,12 +232,15 @@ def load_wake_models(
     return wake_models, active_wake_words, fallback_used
 
 
-def load_stop_model(wake_word_dirs: List[Path], stop_model_id: str) -> Optional[MicroWakeWord]:
+def load_stop_model(wake_word_dirs: List[Path], stop_model_id: str) -> Optional[Union[MicroWakeWordAdapter, OpenWakeWordAdapter, SherpaKwsWakeWord]]:
     """
     Loads the stop word model.
     :param wake_word_dirs: List of directories to search for the stop model.
     :param stop_model_id: ID of the stop model.
-    :return: Loaded MicroWakeWord object or None if not found.
+    :return: The loaded wake word model, or None if not found.
+
+    The stop model may use any supported wake word engine; the engine is
+    selected by the "type" key in the model's JSON configuration.
     """
     _LOGGER.debug("Searching for stop model '%s' in directories: %s", stop_model_id, [str(d) for d in wake_word_dirs])
 
@@ -240,11 +252,14 @@ def load_stop_model(wake_word_dirs: List[Path], stop_model_id: str) -> Optional[
             continue
 
         _LOGGER.debug("Found stop model configuration at: %s", stop_config_path)
-        _LOGGER.debug("Loading stop model: %s", stop_config_path)
 
         try:
-            model = MicroWakeWord.from_config(stop_config_path)
-            _LOGGER.debug("Successfully loaded stop model")
+            available = _parse_wake_word_config(stop_config_path, stop_model_id, default_probability_cutoff=0.5)
+            # AvailableWakeWord.load() returns uniform raw-audio adapters
+            # (MicroWakeWordAdapter / OpenWakeWordAdapter / SherpaKwsWakeWord).
+            model = available.load()
+
+            _LOGGER.debug("Successfully loaded stop model (type=%s)", available.type.value)
             return model
         except Exception as ex:
             _LOGGER.error("Failed to load stop model from %s: %s", stop_config_path, ex, exc_info=True)

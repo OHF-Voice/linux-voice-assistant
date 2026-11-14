@@ -46,8 +46,6 @@ from aioesphomeapi.model import (
     VoiceAssistantTimerEventType,
 )
 from google.protobuf import message
-from pymicro_wakeword import MicroWakeWord
-from pyopen_wakeword import OpenWakeWord
 
 from .api_server import APIServer
 from .entity import (
@@ -64,13 +62,21 @@ from .entity import (
 )
 from .models import AvailableWakeWord, ServerState, WakeWordType
 from .peripheral_api import LVAEvent
+from .sherpa_kws import SherpaKwsWakeWord
 from .util import call_all
+from .wake_engines import MicroWakeWordAdapter, OpenWakeWordAdapter
 
 _LOGGER = logging.getLogger(__name__)
 
 # Error code Home Assistant sends to the satellites that lost a wake word to another one
 # (homeassistant/components/assist_pipeline, DuplicateWakeUpDetectedError).
 _DUPLICATE_WAKE_UP_CODE = "duplicate_wake_up_detected"
+
+
+def _model_supports_sensitivity(model: Any) -> bool:
+    """True when the engine honours ``probability_cutoff`` at runtime."""
+    return bool(getattr(model, "supports_sensitivity", True))
+
 
 PROTO_TO_MESSAGE_TYPE = {v: k for k, v in MESSAGE_TYPE_TO_PROTO.items()}
 
@@ -185,75 +191,111 @@ class VoiceSatelliteProtocol(APIServer):
         thinking_sound_switch.update_set_thinking_sound_enabled(self._set_thinking_sound_enabled)
         thinking_sound_switch.sync_with_state()
 
-        # Add/update Wake Word 1 sensitivity number entity
+        # Sensitivity number entities exist only for engines that honour
+        # ``probability_cutoff`` at runtime (microWakeWord / openWakeWord).
+        # The sherpa-onnx KWS engine thresholds inside its keywords file
+        # (``#threshold`` per line), so a sensitivity number for it would be
+        # a dead control — the entity is withheld per active model. Slot
+        # order mirrors process_audio: first/second entry of state.wake_words
+        # filtered to the active ids.
+        def _next_entity_key() -> int:
+            # Entities that can be removed must never recycle a key after a
+            # reconnect: max()+1 stays unique even once entities were dropped.
+            keys = [key for key in (getattr(entity, "key", None) for entity in state.entities) if isinstance(key, int)]
+            return max(keys, default=-1) + 1
+
+        ww1_visible, ww2_visible, _stop_visible = self._sensitivity_visibility()
+
+        # Wake Word 1 sensitivity: shown only when the active slot-0 model
+        # supports runtime tuning.
         sensitivity_1_entity = self.state.sensitivity_1_number_entity
-        if sensitivity_1_entity is None:
-            sensitivity_1_entity = WakeWord1SensitivityNumberEntity(
-                server=self,
-                key=len(state.entities),
-                name="Wake Word 1 Sensitivity",
-                object_id="wake_word_1_sensitivity",
-                get_sensitivity=lambda: self.state.wake_word_1_threshold,
-                set_sensitivity=self._set_sensitivity_1,
-                initial_value=self.state.wake_word_1_threshold,
-            )
-            self.state.entities.append(sensitivity_1_entity)
-            self.state.sensitivity_1_number_entity = sensitivity_1_entity
-        elif sensitivity_1_entity not in self.state.entities:
-            self.state.entities.append(sensitivity_1_entity)
+        if not ww1_visible:
+            # Drop a stale entity left over from a previously active engine
+            # that supported tuning (e.g. after switching to sherpa-onnx);
+            # HA removes it once this connection no longer lists it.
+            if sensitivity_1_entity is not None and sensitivity_1_entity in self.state.entities:
+                self.state.entities.remove(sensitivity_1_entity)
+            self.state.sensitivity_1_number_entity = None
+        else:
+            if sensitivity_1_entity is None:
+                sensitivity_1_entity = WakeWord1SensitivityNumberEntity(
+                    server=self,
+                    key=_next_entity_key(),
+                    name="Wake Word 1 Sensitivity",
+                    object_id="wake_word_1_sensitivity",
+                    get_sensitivity=lambda: self.state.wake_word_1_threshold,
+                    set_sensitivity=self._set_sensitivity_1,
+                    initial_value=self.state.wake_word_1_threshold,
+                )
+                self.state.entities.append(sensitivity_1_entity)
+                self.state.sensitivity_1_number_entity = sensitivity_1_entity
+            elif sensitivity_1_entity not in self.state.entities:
+                self.state.entities.append(sensitivity_1_entity)
 
-        sensitivity_1_entity.server = self
-        sensitivity_1_entity.update_get_sensitivity(lambda: self.state.wake_word_1_threshold)
-        sensitivity_1_entity.update_set_sensitivity(self._set_sensitivity_1)
+            sensitivity_1_entity.server = self
+            sensitivity_1_entity.update_get_sensitivity(lambda: self.state.wake_word_1_threshold)
+            sensitivity_1_entity.update_set_sensitivity(self._set_sensitivity_1)
 
-        sensitivity_1_entity.sync_with_state()
-        _LOGGER.debug("INIT: Wake Word 1 entity initialized with value %.3f", sensitivity_1_entity.value)
+            sensitivity_1_entity.sync_with_state()
+            _LOGGER.debug("INIT: Wake Word 1 entity initialized with value %.3f", sensitivity_1_entity.value)
 
-        # Add/update Wake Word 2 sensitivity number entity
+        # Wake Word 2 sensitivity: shown only when a second wake word is
+        # active AND it supports runtime tuning.
         sensitivity_2_entity = self.state.sensitivity_2_number_entity
-        if sensitivity_2_entity is None:
-            sensitivity_2_entity = WakeWord2SensitivityNumberEntity(
-                server=self,
-                key=len(state.entities),
-                name="Wake Word 2 Sensitivity",
-                object_id="wake_word_2_sensitivity",
-                get_sensitivity=lambda: self.state.wake_word_2_threshold,
-                set_sensitivity=self._set_sensitivity_2,
-                initial_value=self.state.wake_word_2_threshold,
-            )
-            self.state.entities.append(sensitivity_2_entity)
-            self.state.sensitivity_2_number_entity = sensitivity_2_entity
-        elif sensitivity_2_entity not in self.state.entities:
-            self.state.entities.append(sensitivity_2_entity)
+        if not ww2_visible:
+            if sensitivity_2_entity is not None and sensitivity_2_entity in self.state.entities:
+                self.state.entities.remove(sensitivity_2_entity)
+            self.state.sensitivity_2_number_entity = None
+        else:
+            if sensitivity_2_entity is None:
+                sensitivity_2_entity = WakeWord2SensitivityNumberEntity(
+                    server=self,
+                    key=_next_entity_key(),
+                    name="Wake Word 2 Sensitivity",
+                    object_id="wake_word_2_sensitivity",
+                    get_sensitivity=lambda: self.state.wake_word_2_threshold,
+                    set_sensitivity=self._set_sensitivity_2,
+                    initial_value=self.state.wake_word_2_threshold,
+                )
+                self.state.entities.append(sensitivity_2_entity)
+                self.state.sensitivity_2_number_entity = sensitivity_2_entity
+            elif sensitivity_2_entity not in self.state.entities:
+                self.state.entities.append(sensitivity_2_entity)
 
-        sensitivity_2_entity.server = self
-        sensitivity_2_entity.update_get_sensitivity(lambda: self.state.wake_word_2_threshold)
-        sensitivity_2_entity.update_set_sensitivity(self._set_sensitivity_2)
+            sensitivity_2_entity.server = self
+            sensitivity_2_entity.update_get_sensitivity(lambda: self.state.wake_word_2_threshold)
+            sensitivity_2_entity.update_set_sensitivity(self._set_sensitivity_2)
 
-        sensitivity_2_entity.sync_with_state()
+            sensitivity_2_entity.sync_with_state()
 
-        # Add/update Stop Word sensitivity number entity
+        # Stop Word sensitivity: shown only when the loaded stop model
+        # supports runtime tuning.
         stop_sensitivity_entity = self.state.stop_sensitivity_number_entity
-        if stop_sensitivity_entity is None:
-            stop_sensitivity_entity = StopWordSensitivityNumberEntity(
-                server=self,
-                key=len(state.entities),
-                name="Stop Word Sensitivity",
-                object_id="stop_word_sensitivity",
-                get_sensitivity=lambda: self.state.stop_word_threshold,
-                set_sensitivity=self._set_stop_sensitivity,
-                initial_value=self.state.stop_word_threshold,
-            )
-            self.state.entities.append(stop_sensitivity_entity)
-            self.state.stop_sensitivity_number_entity = stop_sensitivity_entity
-        elif stop_sensitivity_entity not in self.state.entities:
-            self.state.entities.append(stop_sensitivity_entity)
+        if not _model_supports_sensitivity(state.stop_word):
+            if stop_sensitivity_entity is not None and stop_sensitivity_entity in self.state.entities:
+                self.state.entities.remove(stop_sensitivity_entity)
+            self.state.stop_sensitivity_number_entity = None
+        else:
+            if stop_sensitivity_entity is None:
+                stop_sensitivity_entity = StopWordSensitivityNumberEntity(
+                    server=self,
+                    key=_next_entity_key(),
+                    name="Stop Word Sensitivity",
+                    object_id="stop_word_sensitivity",
+                    get_sensitivity=lambda: self.state.stop_word_threshold,
+                    set_sensitivity=self._set_stop_sensitivity,
+                    initial_value=self.state.stop_word_threshold,
+                )
+                self.state.entities.append(stop_sensitivity_entity)
+                self.state.stop_sensitivity_number_entity = stop_sensitivity_entity
+            elif stop_sensitivity_entity not in self.state.entities:
+                self.state.entities.append(stop_sensitivity_entity)
 
-        stop_sensitivity_entity.server = self
-        stop_sensitivity_entity.update_get_sensitivity(lambda: self.state.stop_word_threshold)
-        stop_sensitivity_entity.update_set_sensitivity(self._set_stop_sensitivity)
+            stop_sensitivity_entity.server = self
+            stop_sensitivity_entity.update_get_sensitivity(lambda: self.state.stop_word_threshold)
+            stop_sensitivity_entity.update_set_sensitivity(self._set_stop_sensitivity)
 
-        stop_sensitivity_entity.sync_with_state()
+            stop_sensitivity_entity.sync_with_state()
 
         # Mic Gain
         if self.state.mic_gain_entity is None:
@@ -892,6 +934,56 @@ class VoiceSatelliteProtocol(APIServer):
             self.state.save_preferences()
             self.state.wake_words_changed = True
 
+            # The entity list is only sent once per connection, so a wake-word
+            # switch that changes sensitivity-entity visibility requires HA to
+            # reconnect and re-list entities.
+            self._reconnect_if_sensitivity_visibility_changed()
+
+    # ------------------------------------------------------------------
+    # Sensitivity entity visibility
+    # ------------------------------------------------------------------
+
+    def _sensitivity_visibility(self) -> "tuple[bool, bool, bool]":
+        """Desired visibility of the (WW1, WW2, stop) sensitivity entities.
+
+        An entity is visible only when its slot is active AND the model in
+        that slot honours ``probability_cutoff`` at runtime.
+        """
+        active_wake_models = [ww for ww_id, ww in self.state.wake_words.items() if ww_id in self.state.active_wake_words]
+        ww1 = bool(active_wake_models) and _model_supports_sensitivity(active_wake_models[0])
+        ww2 = len(active_wake_models) >= 2 and _model_supports_sensitivity(active_wake_models[1])
+        stop = _model_supports_sensitivity(self.state.stop_word)
+        return ww1, ww2, stop
+
+    def _reconnect_if_sensitivity_visibility_changed(self) -> None:
+        """Close HA connections when the desired sensitivity-entity visibility
+        differs from what this connection was set up with.
+
+        The ESPHome protocol lists entities exactly ONCE per connection and
+        has no live add/remove, so the only way to refresh HA's view is a
+        reconnect: HA auto-reconnects, the freshly built satellite re-runs
+        ``__init__`` and lists the entity set for the now-active engines.
+        """
+        state = self.state
+        current = (
+            state.sensitivity_1_number_entity is not None and state.sensitivity_1_number_entity in state.entities,
+            state.sensitivity_2_number_entity is not None and state.sensitivity_2_number_entity in state.entities,
+            state.stop_sensitivity_number_entity is not None and state.stop_sensitivity_number_entity in state.entities,
+        )
+        desired = self._sensitivity_visibility()
+        if desired == current:
+            return
+
+        _LOGGER.info(
+            "Sensitivity entity visibility changed %s -> %s; closing HA connection so entities are re-listed",
+            current,
+            desired,
+        )
+        for connection in list(state.connections):
+            transport = getattr(connection, "_transport", None)
+            if transport is not None:
+                transport.close()
+
     # ------------------------------------------------------------------
     # Audio streaming
     # ------------------------------------------------------------------
@@ -909,7 +1001,7 @@ class VoiceSatelliteProtocol(APIServer):
     # Wake word / stop
     # ------------------------------------------------------------------
 
-    def wakeup(self, wake_word: Union[MicroWakeWord, OpenWakeWord]) -> None:
+    def wakeup(self, wake_word: Union[MicroWakeWordAdapter, OpenWakeWordAdapter, SherpaKwsWakeWord]) -> None:
 
         if self.state.muted:
             # Don't respond to wake words when muted (voice_assistant.stop behavior)

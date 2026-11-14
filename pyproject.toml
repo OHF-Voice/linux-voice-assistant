@@ -38,6 +38,9 @@ dependencies = [
 dynamic = ["version"]
 
 [project.optional-dependencies]
+sherpa-kws = [
+    "sherpa-onnx>=1.10,<2",
+]
 dev = [
     "black",
     "flake8",

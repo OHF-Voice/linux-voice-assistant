@@ -648,3 +648,134 @@ class TestSetConfiguration:
 
         assert list(sat.state.wake_words) == ["okay_nabu"]
         assert sat.state.active_wake_words == set()
+
+
+# ---------------------------------------------------------------------------
+# Sensitivity entity visibility (engine capability)
+# ---------------------------------------------------------------------------
+
+
+class TestSensitivityEntityVisibility:
+    """Sensitivity number entities are withheld when the active engine cannot
+    honour probability_cutoff at runtime (sherpa-onnx KWS), and re-created
+    again once a supporting engine is active. Stale entities from a previous
+    connection are dropped so HA stops listing them."""
+
+    @staticmethod
+    def _make_model(supports: bool) -> MagicMock:
+        model = MagicMock()
+        model.supports_sensitivity = supports
+        return model
+
+    def test_hidden_when_wake_word_lacks_support(self, tmp_path):
+        model = self._make_model(False)
+        sat = make_satellite(tmp_path, {"wake_words": {"natashka": model}, "active_wake_words": {"natashka"}})
+        assert sat.state.sensitivity_1_number_entity is None
+        assert sat.state.sensitivity_2_number_entity is None
+        # The default stop-word mock carries no flag -> defaults to shown.
+        assert sat.state.stop_sensitivity_number_entity is not None
+
+    def test_shown_when_wake_word_supports(self, tmp_path):
+        model = self._make_model(True)
+        sat = make_satellite(tmp_path, {"wake_words": {"okay_nabu": model}, "active_wake_words": {"okay_nabu"}})
+        assert sat.state.sensitivity_1_number_entity is not None
+        assert sat.state.stop_sensitivity_number_entity is not None
+
+    def test_ww2_hidden_when_only_one_active(self, tmp_path):
+        model = self._make_model(True)
+        sat = make_satellite(tmp_path, {"wake_words": {"okay_nabu": model}, "active_wake_words": {"okay_nabu"}})
+        assert sat.state.sensitivity_1_number_entity is not None
+        assert sat.state.sensitivity_2_number_entity is None
+
+    def test_ww2_shown_when_two_supporting_active(self, tmp_path):
+        m1 = self._make_model(True)
+        m2 = self._make_model(True)
+        sat = make_satellite(
+            tmp_path,
+            {"wake_words": {"okay_nabu": m1, "hey_jarvis": m2}, "active_wake_words": {"okay_nabu", "hey_jarvis"}},
+        )
+        assert sat.state.sensitivity_2_number_entity is not None
+
+    def test_hidden_when_stop_word_lacks_support(self, tmp_path):
+        stop = self._make_model(False)
+        sat = make_satellite(tmp_path, {"stop_word": stop})
+        assert sat.state.stop_sensitivity_number_entity is None
+        # No wake words active in this bare state -> no slot, no entity either.
+        assert sat.state.sensitivity_1_number_entity is None
+
+    def test_stale_entity_removed_on_reconnect(self, tmp_path):
+        state = make_state(tmp_path, wake_words={"natashka": self._make_model(False)}, active_wake_words={"natashka"})
+        # Simulate a previous connection where a supporting engine created the entity.
+        stale = MagicMock()
+        state.entities.append(stale)
+        state.sensitivity_1_number_entity = stale
+
+        with (
+            patch("linux_voice_assistant.satellite.WakeWord1SensitivityNumberEntity", MagicMock()),
+            patch("linux_voice_assistant.satellite.WakeWord2SensitivityNumberEntity", MagicMock()),
+            patch("linux_voice_assistant.satellite.StopWordSensitivityNumberEntity", MagicMock()),
+        ):
+            from linux_voice_assistant.satellite import VoiceSatelliteProtocol
+
+            VoiceSatelliteProtocol(state)
+
+        assert stale not in state.entities
+        assert state.sensitivity_1_number_entity is None
+
+    def test_entity_keys_stay_unique(self, tmp_path):
+        m1 = self._make_model(True)
+        m2 = self._make_model(True)
+        sat = make_satellite(
+            tmp_path,
+            {"wake_words": {"okay_nabu": m1, "hey_jarvis": m2}, "active_wake_words": {"okay_nabu", "hey_jarvis"}},
+        )
+        keys = [getattr(entity, "key", None) for entity in sat.state.entities]
+        assert None not in keys
+        assert len(keys) == len(set(keys))
+
+    def test_reconnect_when_visibility_changes(self, tmp_path):
+        supporting = self._make_model(True)
+        sat = make_satellite(tmp_path, {"wake_words": {"okay_nabu": supporting}, "active_wake_words": {"okay_nabu"}})
+        sat._transport = MagicMock()
+        sat.state.connections = [sat]
+
+        # The active set switches to a model without runtime tuning.
+        non_supporting = self._make_model(False)
+        sat.state.wake_words = {"natashka": non_supporting}
+        sat.state.active_wake_words = {"natashka"}
+
+        sat._reconnect_if_sensitivity_visibility_changed()
+
+        sat._transport.close.assert_called_once()
+
+    def test_no_reconnect_when_visibility_unchanged(self, tmp_path):
+        supporting = self._make_model(True)
+        sat = make_satellite(tmp_path, {"wake_words": {"okay_nabu": supporting}, "active_wake_words": {"okay_nabu"}})
+        sat._transport = MagicMock()
+        sat.state.connections = [sat]
+
+        # Same capability, different id — visibility is unchanged.
+        other = self._make_model(True)
+        sat.state.wake_words = {"hey_jarvis": other}
+        sat.state.active_wake_words = {"hey_jarvis"}
+
+        sat._reconnect_if_sensitivity_visibility_changed()
+
+        sat._transport.close.assert_not_called()
+
+    def test_sensitivity_visibility_reflects_active_set(self, tmp_path):
+        supporting = self._make_model(True)
+        non_supporting = self._make_model(False)
+        stop = self._make_model(False)
+        sat = make_satellite(
+            tmp_path,
+            {
+                "wake_words": {"okay_nabu": supporting, "natashka": non_supporting},
+                "active_wake_words": {"natashka"},
+                "stop_word": stop,
+            },
+        )
+        assert sat._sensitivity_visibility() == (False, False, False)
+
+        sat.state.active_wake_words = {"okay_nabu", "natashka"}
+        assert sat._sensitivity_visibility() == (True, False, False)

@@ -117,6 +117,8 @@ Values range from `0.0` to `1.0`:
 - **Higher value** (e.g. `0.95`) → more selective, fewer false activations, may miss quieter or accented speech
 - **Lower value** (e.g. `0.50`) → more responsive, but more likely to trigger on similar-sounding words
 The defaults are read directly from each model's `.json` manifest file (the `probability_cutoff` field), so bundled models like `okay_nabu` (0.85), `hey_jarvis` (0.97), and custom downloaded models all start at their author-tested baseline. Changes made in the Home Assistant UI are persisted in `preferences.json` and survive restarts.
+
+💡 **Note:** These entities are only shown for engines that actually honour the probability cutoff at runtime — microWakeWord and openWakeWord. Models using the `sherpa-onnx` engine threshold inside their keywords file (`#threshold` per line) and ignore runtime tuning, so LVA withholds the matching sensitivity entity (Wake Word 1/2 per active slot, Stop Word for the stop model) instead of exposing a dead control. The ESPHome protocol lists entities once per connection, so when a wake-word switch changes visibility LVA closes the HA connection; Home Assistant reconnects automatically within seconds and re-lists the entity set with a brief unavailable blip.
  
 **Tuning guide:**
  

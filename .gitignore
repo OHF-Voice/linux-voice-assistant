@@ -24,3 +24,7 @@ venv/
 dev.env
 version.txt
 version_githash.txt
+
+# Large build artifacts (place manually, see wheels/README.md)
+wheels/*
+!wheels/README.md

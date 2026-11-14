@@ -14,13 +14,12 @@ from typing import Any, List, Optional, Union
 import numpy as np
 import soundcard as sc
 from aioesphomeapi.api_pb2 import NumberStateResponse  # type: ignore  # pylint: disable=no-name-in-module
-from pymicro_wakeword import MicroWakeWord, MicroWakeWordFeatures
-from pyopen_wakeword import OpenWakeWord, OpenWakeWordFeatures
 
-from .models import Preferences, ServerState, WakeWordType, initial_stop_word_threshold
+from .models import AUDIO_SAMPLE_RATE, Preferences, ServerState, WakeWordType, initial_stop_word_threshold
 from .mpv_player import MpvMediaPlayer
 from .peripheral_api import LVAEvent, PeripheralAPIServer
 from .satellite import VoiceSatelliteProtocol
+from .sherpa_kws import SherpaKwsWakeWord
 from .util import (
     get_default_interface,
     get_default_ipv4,
@@ -28,6 +27,7 @@ from .util import (
     get_version,
     resolve_mac_address,
 )
+from .wake_engines import MicroWakeWordAdapter, OpenWakeWordAdapter
 from .wake_word import find_available_wake_words, load_stop_model, load_wake_models
 from .webrtc import WebRTCProcessor
 from .zeroconf import HomeAssistantZeroconf
@@ -695,13 +695,7 @@ def process_audio(state: ServerState, mic, block_size: int):
     """Process audio chunks from the microphone."""
     n_channels = state.audio_input_channels
 
-    wake_words: List[Union[MicroWakeWord, OpenWakeWord]] = []
-    micro_features: Optional[MicroWakeWordFeatures] = None
-    micro_inputs: List[np.ndarray] = []
-
-    oww_features: Optional[OpenWakeWordFeatures] = None
-    oww_inputs: List[np.ndarray] = []
-    has_oww = False
+    wake_words: List[Union[MicroWakeWordAdapter, OpenWakeWordAdapter, SherpaKwsWakeWord]] = []
 
     last_active: Optional[float] = None
     webrtc: Optional[WebRTCProcessor] = None
@@ -747,9 +741,7 @@ def process_audio(state: ServerState, mic, block_size: int):
 
                     # TODO: Load default stop word value from json into state and preferences missing.
 
-                    has_oww = False
                     for idx, wake_word in enumerate(wake_words):
-
                         # Load default threshold from model json
                         wake_word_id = next((ww_id for ww_id, ww in state.wake_words.items() if ww is wake_word), "")
                         available_word = state.available_wake_words.get(wake_word_id)
@@ -771,9 +763,6 @@ def process_audio(state: ServerState, mic, block_size: int):
                             else:
                                 state.wake_word_2_threshold = default_threshold
                             _LOGGER.debug("Wake Word 2 threshold set to %.3f (was %.3f, preferences: %s)", state.wake_word_2_threshold, old_val, state.preferences.wake_word_2_sensitivity)
-
-                        if isinstance(wake_word, OpenWakeWord):
-                            has_oww = True
 
                     # Sync entity states after threshold values were updated
                     if state.satellite is not None:
@@ -816,57 +805,22 @@ def process_audio(state: ServerState, mic, block_size: int):
 
                     # TODO: Save settings: At this moment settings are only saved when changed in the UI. Means that the default value can change while updating since its not saved in preferences.
 
-                    if micro_features is None:
-                        micro_features = MicroWakeWordFeatures()
-
-                    if has_oww and (oww_features is None):
-                        oww_features = OpenWakeWordFeatures.from_builtin()
-
                 try:
                     # Both channels travel in one message: data=ch0 (enhanced), data2=ch1 (raw reference)
                     audio_chunk_2 = channel_chunks[1] if n_channels >= 2 else None
                     state.satellite.handle_audio(audio_chunk, audio_chunk_2)
 
-                    assert micro_features is not None
-                    micro_inputs.clear()
-                    micro_inputs.extend(micro_features.process_streaming(audio_chunk))
-
-                    if has_oww:
-                        assert oww_features is not None
-                        oww_inputs.clear()
-                        oww_inputs.extend(oww_features.process_streaming(audio_chunk))
-
                     for wake_word_index, wake_word in enumerate(wake_words):
-                        activated = False
-
-                        # Set dynamic threshold depending on wake word index
+                        # Dynamic threshold per wake word slot (0/1)
                         if wake_word_index == 0:
-                            threshold = state.wake_word_1_threshold
-                            # _LOGGER.debug("Set wake word %d probability cutoff to %.3f", wake_word_index+1, state.wake_word_1_threshold)
+                            wake_word.probability_cutoff = state.wake_word_1_threshold
                         elif wake_word_index == 1:
-                            threshold = state.wake_word_2_threshold
-                            # _LOGGER.debug("Set wake word %d probability cutoff to %.3f", wake_word_index+1, state.wake_word_2_threshold)
+                            wake_word.probability_cutoff = state.wake_word_2_threshold
                         else:
-                            threshold = 0.7
-                            # _LOGGER.debug("Set wake word %d probability cutoff to fallback value 0.7", wake_word_index+1)
+                            wake_word.probability_cutoff = 0.7
 
-                        if isinstance(wake_word, MicroWakeWord):
-                            # No debugging when no detection
-                            wake_word.debug_probabilities = False
-
-                            # set microWakeWord cutoff
-                            wake_word.probability_cutoff = threshold
-
-                            for micro_input in micro_inputs:
-                                if wake_word.process_streaming(micro_input):
-                                    wake_word.debug_probabilities = True
-                                    activated = True
-                        elif isinstance(wake_word, OpenWakeWord):
-                            for oww_input in oww_inputs:
-                                for prob in wake_word.process_streaming(oww_input):
-                                    if prob > threshold:
-                                        _LOGGER.debug("Wake word '%s' activated (probability %.3f exceeded threshold %.3f)", wake_word.wake_word, prob, threshold)  # type: ignore[attr-defined]
-                                        activated = True
+                        # Every engine adapter consumes raw audio uniformly.
+                        activated = wake_word.process_streaming(audio_chunk)
 
                         if activated and not state.muted:
                             # Check refractory
@@ -876,18 +830,10 @@ def process_audio(state: ServerState, mic, block_size: int):
                                 last_active = now
 
                     # Always process to keep state correct
-                    stopped = False
-
-                    # No debugging when no detection
-                    state.stop_word.debug_probabilities = False
 
                     # Apply stop word sensitivity threshold
                     state.stop_word.probability_cutoff = state.stop_word_threshold
-                    # _LOGGER.debug("Set stop word probability cutoff to %.3f", state.stop_word_threshold)
-                    for micro_input in micro_inputs:
-                        if state.stop_word.process_streaming(micro_input):
-                            state.stop_word.debug_probabilities = True
-                            stopped = True
+                    stopped = state.stop_word.process_streaming(audio_chunk)
 
                     if stopped and (state.stop_word.id in state.active_wake_words) and not state.muted:
                         _LOGGER.debug("Stop word detected")
@@ -948,7 +894,7 @@ class _ReconnectingRecorder:
             return self._recorder.record(frames)  # type: ignore[no-any-return]
 
     def _open(self) -> None:
-        self._recorder = self._mic.recorder(samplerate=16000, channels=self._n_channels, blocksize=self._block_size)
+        self._recorder = self._mic.recorder(samplerate=AUDIO_SAMPLE_RATE, channels=self._n_channels, blocksize=self._block_size)
         self._recorder.__enter__()  # pylint: disable=unnecessary-dunder-call
 
     def _close(self) -> None:

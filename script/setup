@@ -13,6 +13,13 @@ _VENV_DIR = _PROGRAM_DIR / ".venv"
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--dev", action="store_true", help="Install dev requirements")
+parser.add_argument("--sherpa-kws", action="store_true", help="Install the sherpa-kws extra (sherpa-onnx KWS engine)")
+parser.add_argument(
+    "--sherpa-wheel-dir",
+    type=str,
+    default=None,
+    help="Directory with a prebuilt sherpa-onnx wheel (e.g. RK3588 NPU build); installed instead of the PyPI wheel",
+)
 parser.add_argument("--cxxflags", type=str, help="CXXFLAGS for compilation (default: -O1 -g0)")
 parser.add_argument("--makeflags", type=str, help="MAKEFLAGS for compilation (default: -j1)")
 args = parser.parse_args()
@@ -72,7 +79,30 @@ subprocess.check_call(pip + ["install", "--upgrade", "pip"])
 subprocess.check_call(pip + ["install", "--upgrade", "setuptools", "wheel"])
 
 # Install requirements
-subprocess.check_call(pip + ["install", "-e", str(_PROGRAM_DIR)])
+extras = []
+if args.sherpa_kws:
+    extras.append("sherpa-kws")
+extra_suffix = f"[{','.join(extras)}]" if extras else ""
+subprocess.check_call(pip + ["install", "-e", f"{_PROGRAM_DIR}{extra_suffix}"])
+
+# Install prebuilt sherpa-onnx wheel (e.g. RK3588 NPU build) over the
+# PyPI wheel: --no-index --find-links pins pip to the local file only.
+if args.sherpa_wheel_dir:
+    wheel_dir = Path(args.sherpa_wheel_dir)
+    if not wheel_dir.is_dir():
+        print(f"ERROR: sherpa wheel dir not found: {wheel_dir}")
+        sys.exit(1)
+    subprocess.check_call(
+        pip
+        + [
+            "install",
+            "--no-index",
+            "--find-links",
+            str(wheel_dir),
+            "sherpa-onnx>=1.10,<2",
+        ]
+    )
+    print(f"Installed prebuilt sherpa-onnx wheel from {wheel_dir}")
 
 # Install dev requirements
 if args.dev:

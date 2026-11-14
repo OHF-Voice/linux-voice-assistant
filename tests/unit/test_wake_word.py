@@ -30,6 +30,22 @@ def make_oww_json(wake_word: str = "hey jarvis", model_file: str = "hey_jarvis.t
     }
 
 
+def make_sherpa_json(wake_word: str = "наташка") -> dict:
+    return {
+        "type": "sherpa-onnx",
+        "wake_word": wake_word,
+        "trained_languages": ["ru"],
+        "sherpa-onnx": {
+            "model_dir": ".",
+            "encoder": "encoder.onnx",
+            "decoder": "decoder.onnx",
+            "joiner": "joiner.onnx",
+            "tokens": "tokens.txt",
+            "keywords_file": "keywords.txt",
+        },
+    }
+
+
 def write_json(path: Path, data: dict) -> None:
     path.write_text(json.dumps(data), encoding="utf-8")
 
@@ -137,6 +153,44 @@ class TestFindAvailableWakeWords:
 
 
 # ---------------------------------------------------------------------------
+# supports_sensitivity capability
+# ---------------------------------------------------------------------------
+
+
+class TestSupportsSensitivity:
+    """The capability flag driving visibility of the HA sensitivity entities."""
+
+    def test_micro_supports_sensitivity(self, tmp_path):
+        write_json(tmp_path / "okay_nabu.json", make_micro_json())
+        from linux_voice_assistant.wake_word import find_available_wake_words
+
+        result = find_available_wake_words([tmp_path], stop_model_id="stop")
+        assert result["okay_nabu"].supports_sensitivity is True
+
+    def test_oww_supports_sensitivity(self, tmp_path):
+        write_json(tmp_path / "hey_jarvis.json", make_oww_json())
+        from linux_voice_assistant.wake_word import find_available_wake_words
+
+        result = find_available_wake_words([tmp_path], stop_model_id="stop")
+        assert result["hey_jarvis"].supports_sensitivity is True
+
+    def test_sherpa_does_not_support_sensitivity(self, tmp_path):
+        write_json(tmp_path / "natashka.json", make_sherpa_json())
+        from linux_voice_assistant.wake_word import find_available_wake_words
+
+        result = find_available_wake_words([tmp_path], stop_model_id="stop")
+        assert result["natashka"].supports_sensitivity is False
+
+    def test_adapters_default_to_supported(self):
+        from linux_voice_assistant.wake_engines import MicroWakeWordAdapter, OpenWakeWordAdapter
+
+        micro = MicroWakeWordAdapter(MagicMock(), wake_word="w", id="w", probability_cutoff=0.7)
+        oww = OpenWakeWordAdapter(MagicMock(), wake_word="w", id="w", probability_cutoff=0.7)
+        assert micro.supports_sensitivity is True
+        assert oww.supports_sensitivity is True
+
+
+# ---------------------------------------------------------------------------
 # load_wake_models()
 # ---------------------------------------------------------------------------
 
@@ -239,7 +293,7 @@ class TestLoadStopModel:
     def test_returns_model_when_found(self, tmp_path):
         write_json(tmp_path / "stop.json", make_micro_json("stop"))
         mock_model = MagicMock()
-        with patch("linux_voice_assistant.wake_word.MicroWakeWord.from_config", return_value=mock_model):
+        with patch("linux_voice_assistant.models.AvailableWakeWord.load", return_value=mock_model):
             from linux_voice_assistant.wake_word import load_stop_model
 
             result = load_stop_model([tmp_path], "stop")
@@ -258,7 +312,7 @@ class TestLoadStopModel:
         dir2.mkdir()
         write_json(dir2 / "stop.json", make_micro_json("stop"))
         mock_model = MagicMock()
-        with patch("linux_voice_assistant.wake_word.MicroWakeWord.from_config", return_value=mock_model):
+        with patch("linux_voice_assistant.models.AvailableWakeWord.load", return_value=mock_model):
             from linux_voice_assistant.wake_word import load_stop_model
 
             result = load_stop_model([dir1, dir2], "stop")
@@ -266,7 +320,7 @@ class TestLoadStopModel:
 
     def test_returns_none_when_load_fails(self, tmp_path):
         write_json(tmp_path / "stop.json", make_micro_json("stop"))
-        with patch("linux_voice_assistant.wake_word.MicroWakeWord.from_config", side_effect=Exception("load error")):
+        with patch("linux_voice_assistant.models.AvailableWakeWord.load", side_effect=Exception("load error")):
             from linux_voice_assistant.wake_word import load_stop_model
 
             result = load_stop_model([tmp_path], "stop")
@@ -280,7 +334,7 @@ class TestLoadStopModel:
         write_json(dir1 / "stop.json", make_micro_json("stop"))
         write_json(dir2 / "stop.json", make_micro_json("stop"))
         mock_model = MagicMock()
-        with patch("linux_voice_assistant.wake_word.MicroWakeWord.from_config", return_value=mock_model) as mock_load:
+        with patch("linux_voice_assistant.models.AvailableWakeWord.load", return_value=mock_model) as mock_load:
             from linux_voice_assistant.wake_word import load_stop_model
 
             load_stop_model([dir1, dir2], "stop")

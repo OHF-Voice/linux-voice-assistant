@@ -8,10 +8,12 @@ from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Union
 
+# Project-wide audio protocol: the mic recorder captures 16 kHz and every
+# wake word engine consumes 16 kHz s16le chunks (see __main__.py process_audio).
+AUDIO_SAMPLE_RATE = 16000
+
 if TYPE_CHECKING:
     from google.protobuf import message
-    from pymicro_wakeword import MicroWakeWord
-    from pyopen_wakeword import OpenWakeWord
 
     from .entity import (
         ButtonEventSensorEntity,
@@ -28,6 +30,8 @@ if TYPE_CHECKING:
     )
     from .mpv_player import MpvMediaPlayer
     from .satellite import VoiceSatelliteProtocol
+    from .sherpa_kws import SherpaKwsWakeWord
+    from .wake_engines import MicroWakeWordAdapter, OpenWakeWordAdapter
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -35,6 +39,7 @@ _LOGGER = logging.getLogger(__name__)
 class WakeWordType(str, Enum):
     MICRO_WAKE_WORD = "micro"
     OPEN_WAKE_WORD = "openWakeWord"
+    SHERPA_ONNX = "sherpa-onnx"
 
 
 @dataclass
@@ -45,20 +50,66 @@ class AvailableWakeWord:
     trained_languages: List[str]
     wake_word_path: Path
     probability_cutoff: float = 0.7
+    # Engine-specific settings from the model JSON (e.g. sherpa-onnx KWS options).
+    engine_config: Dict[str, Any] = field(default_factory=dict)
 
-    def load(self) -> "Union[MicroWakeWord, OpenWakeWord]":
+    @property
+    def supports_sensitivity(self) -> bool:
+        """Whether this model's engine honours runtime ``probability_cutoff`` tuning.
+
+        microWakeWord and openWakeWord compare each frame's probability
+        against ``probability_cutoff``; the sherpa-onnx KWS engine thresholds
+        inside its keywords file (``#threshold`` per line) and ignores the
+        attribute, so its models report False and the HA sensitivity number
+        entities are withheld for them.
+        """
+        return self.type is not WakeWordType.SHERPA_ONNX
+
+    def load(self) -> "Union[MicroWakeWordAdapter, OpenWakeWordAdapter, SherpaKwsWakeWord]":
         if self.type == WakeWordType.MICRO_WAKE_WORD:
-            from pymicro_wakeword import MicroWakeWord
+            from .wake_engines import MicroWakeWordAdapter
 
-            return MicroWakeWord.from_config(config_path=self.wake_word_path)
+            inner = MicroWakeWordAdapter.load_inner(self.wake_word_path)
+            return MicroWakeWordAdapter(
+                inner,
+                wake_word=self.wake_word,
+                id=self.id,
+                probability_cutoff=self.probability_cutoff,
+                supports_sensitivity=self.supports_sensitivity,
+            )
 
         if self.type == WakeWordType.OPEN_WAKE_WORD:
             from pyopen_wakeword import OpenWakeWord
 
             oww_model = OpenWakeWord.from_model(model_path=self.wake_word_path)
-            setattr(oww_model, "wake_word", self.wake_word)
 
-            return oww_model
+            from .wake_engines import OpenWakeWordAdapter
+
+            return OpenWakeWordAdapter(
+                oww_model,
+                wake_word=self.wake_word,
+                id=self.id,
+                probability_cutoff=self.probability_cutoff,
+                supports_sensitivity=self.supports_sensitivity,
+            )
+
+        if self.type == WakeWordType.SHERPA_ONNX:
+            from .sherpa_kws import SherpaKwsWakeWord
+
+            # Path resolution happens here (single owner per engine, like the
+            # oww "model" entry in wake_word.py and micro's from_config);
+            # the constructor receives ready absolute paths.
+            model_files = SherpaKwsWakeWord.resolve_paths(self.wake_word_path, self.engine_config)
+
+            return SherpaKwsWakeWord(
+                wake_word=self.wake_word,
+                wake_word_id=self.id,
+                model_path=self.wake_word_path,
+                model_files=model_files,
+                engine_config=self.engine_config,
+                probability_cutoff=self.probability_cutoff,
+                supports_sensitivity=self.supports_sensitivity,
+            )
 
         raise ValueError(f"Unexpected wake word type: {self.type}")
 
@@ -119,9 +170,9 @@ class ServerState:
     esphome_version: str
     entities: "List[ESPHomeEntity]"
     available_wake_words: "Dict[str, AvailableWakeWord]"
-    wake_words: "Dict[str, Union[MicroWakeWord, OpenWakeWord]]"
+    wake_words: "Dict[str, Union[MicroWakeWordAdapter, OpenWakeWordAdapter, SherpaKwsWakeWord]]"
     active_wake_words: Set[str]
-    stop_word: "MicroWakeWord"
+    stop_word: "Union[MicroWakeWordAdapter, OpenWakeWordAdapter, SherpaKwsWakeWord]"
     music_player: "MpvMediaPlayer"
     tts_player: "MpvMediaPlayer"
     wakeup_sound: str

@@ -61,7 +61,7 @@ Details:
 - **Wake word while a timer rings.** Saying the wake word silences the ringing timer and starts a normal interaction.
 - **Starting by button.** A peripheral button can start listening without a wake word. Instead of the wake sound, the start-listening sound (`--start-listening-sound`) plays; everything else is identical. This also silences a ringing timer.
 - **Errors.** If the pipeline reports an error, peripherals receive a `pipeline_error` event. See [peripheral_api.md](peripheral_api.md).
-- **Two wake words.** Home Assistant can activate up to two wake words at once. Each has its own sensitivity setting (*Wake Word 1/2 Sensitivity*).
+- **Two wake words.** Home Assistant can activate up to two wake words at once. Each has its own sensitivity setting (*Wake Word 1/2 Sensitivity*). Sensitivity entities appear only while the active models support runtime tuning; see [configuration.md](configuration.md#wake-word-sensitivity).
 
 ---
 
@@ -153,7 +153,7 @@ What it does:
 
 The stop word does **not** stop music that you started from Home Assistant. Use the media player (or a peripheral button) for that.
 
-The detection sensitivity can be adjusted with the *Stop Word Sensitivity* number in Home Assistant.
+The detection sensitivity can be adjusted with the *Stop Word Sensitivity* number in Home Assistant. The number only appears while the loaded stop model supports runtime tuning (see [configuration.md](configuration.md#wake-word-sensitivity)).
 
 ---
 
