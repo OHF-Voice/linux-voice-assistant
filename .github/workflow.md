@@ -2,7 +2,7 @@
 
 This branch (`arm32`) builds **32-bit ARM (linux/arm/v7, armhf)** Docker images and publishes them to GitHub Container Registry (ghcr.io). Every image tag carries an `armhf` marker so it can never be confused with the 64-bit images of the upstream `main` branch.
 
-Image paths below use `<owner>/linux-voice-assistant`, which resolves to the repository that runs the workflow (lowercased), e.g. `ghcr.io/omaramin-2000/linux-voice-assistant`.
+Image paths below use `<ohf-voice>/linux-voice-assistant`, which resolves to the repository that runs the workflow (lowercased).
 
 ## Workflows Overview
 
@@ -28,10 +28,10 @@ Publishes versioned images for new releases.
 
 **Image Tags:**
 ```
-ghcr.io/<owner>/linux-voice-assistant:1.0.0-armhf
-ghcr.io/<owner>/linux-voice-assistant:1.0-armhf
-ghcr.io/<owner>/linux-voice-assistant:1-armhf
-ghcr.io/<owner>/linux-voice-assistant:armhf
+ghcr.io/<ohf-voice>/linux-voice-assistant:1.0.0-armhf
+ghcr.io/<ohf-voice>/linux-voice-assistant:1.0-armhf
+ghcr.io/<ohf-voice>/linux-voice-assistant:1-armhf
+ghcr.io/<ohf-voice>/linux-voice-assistant:armhf
 ```
 
 `armhf` always points to the latest **stable** release. Prereleases (e.g. `v1.3.0-alpha1`) only get their own `1.3.0-alpha1-armhf` tag. `docker-compose.yml` defaults to the `armhf` tag.
@@ -42,7 +42,7 @@ Builds an image from every push to the `arm32` branch (documentation-only change
 
 **Image Tag:**
 ```
-ghcr.io/<owner>/linux-voice-assistant:nightly-armhf
+ghcr.io/<ohf-voice>/linux-voice-assistant:nightly-armhf
 ```
 
 ### PR Workflow (`docker-build-pr.yml`)
@@ -51,7 +51,7 @@ Builds images for pull requests that target `arm32`, using the PR number as tag.
 
 **Image Tag:**
 ```
-ghcr.io/<owner>/linux-voice-assistant-pr:<pr-number>-armhf
+ghcr.io/<ohf-voice>/linux-voice-assistant-pr:<pr-number>-armhf
 ```
 
 ### Lint and Unit Tests (`lint.yml`, `tests.yml`)
@@ -80,7 +80,7 @@ git push origin v1.0.0
 ```
 
 This creates images with the following tags:
-- `ghcr.io/<owner>/linux-voice-assistant:1.0.0-armhf`
-- `ghcr.io/<owner>/linux-voice-assistant:1.0-armhf`
-- `ghcr.io/<owner>/linux-voice-assistant:1-armhf`
-- `ghcr.io/<owner>/linux-voice-assistant:armhf`
+- `ghcr.io/<ohf-voice>/linux-voice-assistant:1.0.0-armhf`
+- `ghcr.io/<ohf-voice>/linux-voice-assistant:1.0-armhf`
+- `ghcr.io/<ohf-voice>/linux-voice-assistant:1-armhf`
+- `ghcr.io/<ohf-voice>/linux-voice-assistant:armhf`
