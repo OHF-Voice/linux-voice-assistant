@@ -108,7 +108,7 @@ These are all the events LVA emits. Your peripheral script receives them and rea
 
 | Event | Data | Description |
 |-------|------|-------------|
-| `wake_word_detected` | — | The configured wake word was detected. The wakeup chime is now playing. Start your "wake" animation here. |
+| `wake_word_detected` | `{"wake_word_id": str, "slot": int, "score": float\|null}` | The configured wake word was detected. `slot` is the wake word slot (0 or 1), `score` the detection probability (0.0–1.0) that exceeded the sensitivity threshold. The wakeup chime is now playing. Start your "wake" animation here. |
 | `listening` | — | The wakeup chime has finished and LVA is now streaming audio to Home Assistant for speech-to-text. Show a "listening" animation. |
 | `stt_text` | `{"text": str}` | Home Assistant returned the recognised speech transcript. Use this to show what the user said on a display or LED ticker. |
 | `thinking` | — | LVA has stopped streaming audio and Home Assistant is processing the intent. Show a "thinking" animation. |
