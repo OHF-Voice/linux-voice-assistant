@@ -15,6 +15,16 @@ env:
 jobs:
   build-and-push-image:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - suffix: ""
+            platforms: linux/amd64,linux/aarch64
+            dockerfile: Dockerfile
+          - suffix: "-armhf"
+            platforms: linux/arm/v7
+            dockerfile: Dockerfile.armhf
     permissions:
       contents: read
       packages: write
@@ -47,6 +57,8 @@ jobs:
           DOCKER_METADATA_ANNOTATIONS_LEVELS: manifest,index
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
+          flavor: |
+            suffix=${{ matrix.suffix }}
           images: ${{ env.REGISTRY_LOWER }}/${{ env.REPOSITORY_LOWER }}
           tags: |
             type=raw,value=nightly
@@ -72,7 +84,10 @@ jobs:
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
-          platforms: linux/amd64,linux/aarch64
+          file: ${{ matrix.dockerfile }}
+          platforms: ${{ matrix.platforms }}
+          cache-from: type=gha,scope=build${{ matrix.suffix }}
+          cache-to: type=gha,scope=build${{ matrix.suffix }},mode=max
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
