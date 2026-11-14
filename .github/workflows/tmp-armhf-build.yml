@@ -18,8 +18,8 @@ jobs:
             platforms: linux/amd64,linux/aarch64
             dockerfile: Dockerfile
           - suffix: "-armhf"
-            platforms: ${{ matrix.platforms }}
-            dockerfile: ${{ matrix.dockerfile }}
+            platforms: linux/arm/v7
+            dockerfile: Dockerfile.armhf
     permissions:
       contents: read
     steps:
