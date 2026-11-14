@@ -1,7 +1,7 @@
 ---
-name: Temp armhf build
+name: Temp Docker build
 
-# Temporary: builds Dockerfile.armhf on pushes to this branch. Remove before merging.
+# Temporary: builds both Docker images (no push) on pushes to this branch. Remove before merging.
 on:
   push:
     branches:
@@ -10,6 +10,16 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - suffix: ""
+            platforms: linux/amd64,linux/aarch64
+            dockerfile: Dockerfile
+          - suffix: "-armhf"
+            platforms: ${{ matrix.platforms }}
+            dockerfile: ${{ matrix.dockerfile }}
     permissions:
       contents: read
     steps:
@@ -23,12 +33,12 @@ jobs:
         run: |
           echo "tmp-armhf" > version.txt
           echo "${{ github.sha }}" > version_githash.txt
-      - name: Build armhf image (no push)
+      - name: Build image (no push)
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
-          file: Dockerfile.armhf
-          platforms: linux/arm/v7
+          file: ${{ matrix.dockerfile }}
+          platforms: ${{ matrix.platforms }}
           push: false
-          cache-from: type=gha,scope=build-armhf
-          cache-to: type=gha,scope=build-armhf,mode=max
+          cache-from: type=gha,scope=build${{ matrix.suffix }}
+          cache-to: type=gha,scope=build${{ matrix.suffix }},mode=max
