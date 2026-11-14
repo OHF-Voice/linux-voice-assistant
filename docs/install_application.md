@@ -56,6 +56,8 @@ You can change the used version in the docker-compose.yml.
 | `x.y` | Major.Minor with auto updates | `ghcr.io/ohf-voice/linux-voice-assistant:1.0` |
 | `<branch>` | Branch-specific build | `ghcr.io/ohf-voice/linux-voice-assistant:my-branch` |
 
+The tags above are built for `linux/amd64` and `linux/aarch64`. For 32-bit ARM (`linux/arm/v7`, armhf: e.g. Raspberry Pi 2/3 with a 32-bit OS, Orange Pi, Allwinner H3) append `-armhf` to the tag, for example `latest-armhf`, `nightly-armhf` or `1.0.0-armhf`. Set it with `LVA_IMAGE_TAG` in the .env file.
+
 Edit the .env file and change the values to your needs:
 ``` sh
 vim .env
@@ -128,34 +130,6 @@ git clone https://github.com/OHF-Voice/linux-voice-assistant.git
 cd linux-voice-assistant
 chmod +x docker-entrypoint.sh
 ```
-
-### 32-bit ARM (armv7l / armhf)
-
-32-bit ARM boards (e.g. Raspberry Pi 2/3 in 32-bit mode, Orange Pi / Allwinner H3) work with
-this Bare Metal install, with two extra steps **before** `script/setup`:
-
-1. Also install `libopenblas0` (NumPy wheels for `armv7l` do not bundle BLAS):
-
-   ``` sh
-   sudo apt-get install -y libopenblas0
-   ```
-
-2. Use [piwheels](https://www.piwheels.org/) as an extra pip index so NumPy and the other
-   dependencies install as prebuilt `armv7l` wheels instead of compiling from source (a source
-   build of NumPy on a ~1 GB board is slow and can OOM):
-
-   ``` sh
-   sudo tee /etc/pip.conf >/dev/null <<'EOF'
-   [global]
-   extra-index-url = https://www.piwheels.org/simple
-   EOF
-   ```
-
-> Requires `pymicro-wakeword` with `armv7l` wheels (see OHF-Voice/pymicro-wakeword#18). On
-> earlier versions the 64-bit TFLite library was selected on 32-bit ARM and failed to load
-> with `wrong ELF class: ELFCLASS64`.
-
-Validated on an Allwinner H3 (Cortex-A7, `armv7l`) running Armbian (Debian bookworm).
 
 Install the application:
 
