@@ -5,8 +5,13 @@ FROM python:3.13-slim-trixie AS build
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && \
-    apt-get install --yes --no-install-recommends build-essential pkg-config libopenblas-dev && \
+    apt-get install --yes --no-install-recommends build-essential pkg-config libopenblas-dev libffi-dev && \
     apt-get clean
+
+# webrtc-noise-gain has no armv7l wheel and its setup.py breaks with setuptools >= 83 ("run() must precede build_extension()").
+# PIP_CONSTRAINT is also applied to pip's isolated build environments.
+RUN echo 'setuptools<83' > /tmp/constraints.txt
+ENV PIP_CONSTRAINT=/tmp/constraints.txt
 
 WORKDIR /app
 
