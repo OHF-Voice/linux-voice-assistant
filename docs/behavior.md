@@ -171,6 +171,13 @@ When muted:
 
 When unmuted, the unmute sound (`--unmute-sound`) plays and the assistant returns to idle.
 
+**Remote mute.** With `--allow-remote-mute`, a peripheral can mute the assistant from the machine's side (`remote_mute`, see [peripheral_api.md](peripheral_api.md)), for example a physical mute switch or a privacy toggle on the desktop. The assistant then stays muted until a peripheral sends `remote_unmute`, which also unmutes:
+
+- Turning the **Mute** switch off in Home Assistant is refused (it stays on), and so is `unmute_mic` from any peripheral.
+- The **Remote mute** sensor on the Home Assistant device page is on, so Home Assistant shows that the mute comes from the machine.
+- It also applies while Home Assistant is not connected, and Home Assistant finds the assistant muted when it connects.
+- It is saved in `preferences.json`: after a restart the assistant starts muted, until `remote_unmute`. Without `--allow-remote-mute` the commands are ignored and a saved remote mute is dropped at startup.
+
 Do not confuse this with the **media player mute**, which sets the shared volume to 0, see below.
 
 ---

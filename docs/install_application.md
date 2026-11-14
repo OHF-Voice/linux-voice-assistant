@@ -206,6 +206,7 @@ Environment=PREFERENCES_FILE="/home/pi/linux-voice-assistant/preferences.json"
 # Environment=PERIPHERAL_PORT="6055"
 # Environment=PERIPHERAL_VOLUME_STEP="%(default)s"
 # Environment=PERIPHERAL_STARTUP_WAIT="2.0"
+# Environment=ALLOW_REMOTE_MUTE="1"
 # Environment=DISABLE_PERIPHERAL_API="1"
 # Environment=ENABLE_OUTPUT_ONLY="1"
 ExecStart=/home/pi/linux-voice-assistant/docker-entrypoint.sh
@@ -308,6 +309,7 @@ The following variables can be configured in the `.env` or in the service file:
 | `PERIPHERAL_PORT` | 6055 | Port for the peripheral WebSocket API |
 | `PERIPHERAL_VOLUME_STEP` | %(default)s | Volume change per button press |
 | `PERIPHERAL_STARTUP_WAIT` | `2.0` | Seconds to wait for peripherals to register entities before Home Assistant enumerates them (0 to skip) |
+| `ALLOW_REMOTE_MUTE` | false | Set to "1" to let peripherals mute the microphone with `remote_mute` so that Home Assistant cannot unmute it until `remote_unmute` |
 | `DISABLE_PERIPHERAL_API` | false | Disable the peripheral WebSocket API |
 | `ENABLE_OUTPUT_ONLY` | (optional) | Set to "1" to enable output-only mode |
 

@@ -5,9 +5,11 @@ from typing import Callable, List, Optional, Union
 
 # pylint: disable=no-name-in-module
 from aioesphomeapi.api_pb2 import (  # type: ignore[attr-defined]
+    BinarySensorStateResponse,
     EventResponse,
     LightCommandRequest,
     LightStateResponse,
+    ListEntitiesBinarySensorResponse,
     ListEntitiesEventResponse,
     ListEntitiesLightResponse,
     ListEntitiesMediaPlayerResponse,
@@ -323,6 +325,9 @@ class MuteSwitchEntity(ESPHomeEntity):
             new_state = bool(msg.state)
             self._switch_state = new_state
             self._set_muted(new_state)
+            if not new_state and self._get_muted():
+                # Unmute refused (muted by remote_mute): the switch stays on
+                self._switch_state = True
             # Return the new state immediately
             yield SwitchStateResponse(key=self.key, state=self._switch_state)
         elif isinstance(msg, ListEntitiesRequest):
@@ -337,6 +342,47 @@ class MuteSwitchEntity(ESPHomeEntity):
             # Always return our internal switch state
             self.sync_with_state()
             yield SwitchStateResponse(key=self.key, state=self._switch_state)
+
+
+class RemoteMuteSensorEntity(ESPHomeEntity):
+    """Binary sensor that is on while a peripheral has muted the microphone with remote_mute.
+
+    Read-only: only a peripheral's remote_unmute turns it off. Created only with --allow-remote-mute.
+    """
+
+    def __init__(
+        self,
+        server: APIServer,
+        key: int,
+        name: str,
+        object_id: str,
+        get_remote_muted: Callable[[], bool],
+    ) -> None:
+        ESPHomeEntity.__init__(self, server)
+
+        self.key = key
+        self.name = name
+        self.object_id = object_id
+        self._get_remote_muted = get_remote_muted
+
+    def update_get_remote_muted(self, get_remote_muted: Callable[[], bool]) -> None:
+        self._get_remote_muted = get_remote_muted
+
+    def state_message(self) -> BinarySensorStateResponse:
+        """The sensor's current state, to send to Home Assistant."""
+        return BinarySensorStateResponse(key=self.key, state=self._get_remote_muted())
+
+    def handle_message(self, msg: message.Message) -> Iterable[message.Message]:
+        if isinstance(msg, ListEntitiesRequest):
+            yield ListEntitiesBinarySensorResponse(
+                object_id=self.object_id,
+                key=self.key,
+                name=self.name,
+                entity_category=EntityCategory.DIAGNOSTIC,
+                icon="mdi:microphone-off",
+            )
+        elif isinstance(msg, SubscribeHomeAssistantStatesRequest):
+            yield self.state_message()
 
 
 class ThinkingSoundEntity(ESPHomeEntity):
@@ -874,6 +920,7 @@ __all__ = [
     "ESPHomeEntity",
     "MediaPlayerEntity",
     "MuteSwitchEntity",
+    "RemoteMuteSensorEntity",
     "ThinkingSoundEntity",
     "LEDLightEntity",
     "ButtonEventSensorEntity",

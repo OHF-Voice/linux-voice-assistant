@@ -25,6 +25,10 @@ The **Mute** switch disables wake word detection and stops the assistant from re
 
 ![Mute Switch](./images/mute_switch.png)
 
+## Remote Mute
+
+Only with `--allow-remote-mute` / `ALLOW_REMOTE_MUTE="1"`. The **Remote mute** sensor is on while a peripheral on the machine (for example a physical mute switch or a desktop privacy toggle) has muted the assistant with `remote_mute`. Until a peripheral sends `remote_unmute`, the **Mute** switch cannot be turned off from Home Assistant. See [behavior.md](behavior.md#mute).
+
 ## Thinking Sound
 
 The **Thinking Sound** switch toggles whether a short audible chime plays while the assistant is processing your request (between the end of listening and the start of the response). This is the same setting as the `--enable-thinking-sound` CLI flag / `ENABLE_THINKING_SOUND` environment variable, but can be flipped on or off at runtime from this switch. The change is saved to `preferences.json`.
