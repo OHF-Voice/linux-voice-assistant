@@ -8,7 +8,7 @@
 > Orange Pi / Allwinner H3/H5 boards, and any Armbian or Raspberry Pi OS device
 > reporting `armv7l` or `armhf`.
 >
-> **MicroWakeWord only.** OpenWakeWord requires TensorFlow, which has no 32-bit ARM
+> **MicroWakeWord only.** `pyopen-wakeword` publishes no 32-bit ARM (armv7l)
 > wheels. All wake word detection on this branch uses MicroWakeWord (TFLite).
 >
 > For x86-64 or 64-bit ARM hardware, use the

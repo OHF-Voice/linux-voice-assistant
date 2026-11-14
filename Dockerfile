@@ -1,6 +1,6 @@
 ### Build stage: compile the Python dependencies (pymicro-features needs a compiler)
 ### Target: linux/arm/v7 (armhf) – Raspberry Pi 2/3, Orange Pi, Allwinner H3/H5
-FROM --platform=linux/arm/v7 python:3.11-slim-bookworm AS build
+FROM python:3.11-slim-bookworm AS build
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -23,7 +23,7 @@ RUN python -m venv .venv && \
     find .venv -name '__pycache__' -prune -exec rm -rf {} +
 
 ### Runtime stage
-FROM --platform=linux/arm/v7 python:3.11-slim-bookworm
+FROM python:3.11-slim-bookworm
 
 ENV LANG C.UTF-8
 ENV DEBIAN_FRONTEND=noninteractive
@@ -86,12 +86,7 @@ COPY docker-entrypoint.sh ./
 COPY version.txt ./
 COPY version_githash.txt ./
 
-# script/run uses #!/usr/bin/env python3 as its shebang — a Python-calling-Python wrapper.
-# On armhf the kernel shebang chain can fail with "Permission denied" when env resolves
-# python3 to an ELF the 32-bit kernel can't launch through that path.
-# Use a plain sh wrapper that calls the venv interpreter directly.
-RUN printf '#!/bin/sh\nexec /app/.venv/bin/python -m linux_voice_assistant "$@"\n' > script/run && \
-    chmod +x docker-entrypoint.sh script/run
+RUN chmod +x docker-entrypoint.sh
 
 ### Set ports for ESPHome API:
 EXPOSE 6053

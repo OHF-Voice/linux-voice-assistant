@@ -154,7 +154,7 @@ If no models are loaded, or `state.wake_words_changed` is set, the loop rebuilds
 
 - picks the threshold per slot (preference override or the model's `probability_cutoff`),
 - syncs the sensitivity entities and pushes their values to HA,
-- creates `MicroWakeWordFeatures` and, if an openWakeWord model is active, `OpenWakeWordFeatures`.
+- creates `MicroWakeWordFeatures`.
 
 ### 6. Streaming to Home Assistant
 
@@ -178,7 +178,7 @@ Audio flows to HA only between a wake word (or a manual start) and the end of sp
 
 After `handle_audio()`, the processed `audio_chunk` feeds the detectors:
 
-1. `MicroWakeWordFeatures.process_streaming()` (and the openWakeWord equivalent) turns the PCM into feature windows.
+1. `MicroWakeWordFeatures.process_streaming()` turns the PCM into feature windows.
 2. Each active wake word model evaluates the windows against its threshold (slot 0 uses `wake_word_1_threshold`, slot 1 `wake_word_2_threshold`).
 3. If a model fires, the device is not muted and the refractory time (`state.refractory_seconds`) has passed, `satellite.wakeup(wake_word)` runs.
 4. The stop word model runs on every block to keep its state correct. It only acts if `state.stop_word.id` is in `state.active_wake_words` (during TTS, announcements and ringing timers) and the device is not muted. Then `satellite.stop()` is called.

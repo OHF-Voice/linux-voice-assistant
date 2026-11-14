@@ -43,7 +43,7 @@ Thread-safety rules:
 - `state.connections` lists all live protocol instances. Use `state.broadcast(msgs)` for asynchronous state changes so every client gets them. `satellite.send_messages` reaches only one client.
 - `Preferences` is loaded with `Preferences.from_dict()`, which drops unknown keys and logs a warning. Adding a field with a default is safe. **Renaming a field silently loses the stored value**, because the old key is dropped and the new one falls back to its default. Migrate the value explicitly if a rename is unavoidable.
 - Persist helpers: `save_preferences()`, `persist_volume()` (it also emits `volume_changed`/`volume_muted` to peripherals), `persist_mic_gain/noise/volume()`.
-- `oww_*_probability_cutoff` fields are legacy and unused. The thresholds in use are `wake_word_1_threshold`, `wake_word_2_threshold` and `stop_word_threshold`.
+- The thresholds in use are `wake_word_1_threshold`, `wake_word_2_threshold` and `stop_word_threshold`.
 
 ## Module map
 

@@ -908,7 +908,7 @@ class VoiceSatelliteProtocol(APIServer):
     # Wake word / stop
     # ------------------------------------------------------------------
 
-    def wakeup(self, wake_word: Union[MicroWakeWord]) -> None:
+    def wakeup(self, wake_word: MicroWakeWord) -> None:
 
         if self.state.muted:
             # Don't respond to wake words when muted (voice_assistant.stop behavior)

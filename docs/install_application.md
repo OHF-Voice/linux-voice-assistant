@@ -356,7 +356,7 @@ Enable `LISTEN_DURING_WAKE_SOUND="1"` to let LVA begin listening immediately aft
 
 This feature is especially useful when you want a more natural interaction flow and do not want to wait to confirm that the wake word was detected before speaking the command.
 
-Keep in mind that listening while the wake sound is playing can also make the microphone pick up some of that wake sound as echo, depending on your speaker and microphone setup. This echo can interfere with speech-to-text and make commands less accurate. If you run into this, [Enabling Acoustic Echo Cancellation (AEC)](enabling_aec.md).
+Keep in mind that listening while the wake sound is playing can also make the microphone pick up some of that wake sound as echo, depending on your speaker and microphone setup. This echo can interfere with speech-to-text and make commands less accurate. If you run into this, see [Enabling Acoustic Echo Cancellation (AEC)](enabling_aec.md).
 
 
 ### Use own soundfiles:
@@ -366,8 +366,8 @@ If you want to use your own sounds, you can add them to the `sounds/custom` aka 
 
 ### Wake Word:
 
-> **Note:** This branch supports **MicroWakeWord only**. OpenWakeWord requires TensorFlow,
-> which has no 32-bit ARM wheels and is not included in this branch.
+> **Note:** This branch supports **MicroWakeWord only**. `pyopen-wakeword` publishes no 32-bit ARM
+> (armv7l) wheels, so OpenWakeWord is not included in this branch.
 
 💡 **Note:** The active wake word(s) can also be changed at runtime from the Home Assistant device page, without editing `.env` or restarting LVA — see [Wake Word](configuration.md#wake-word) in the dashboard documentation.
 

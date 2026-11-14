@@ -10,7 +10,7 @@ Once your satellite is connected, Home Assistant exposes a set of controls on it
 
 The device page exposes one or two wake word selects (**Wake Word 1**, **Wake Word 2**), depending on whether your assistant is configured for dual wake words. Changing the selection here takes effect immediately and is persisted to `preferences.json`, so it survives restarts.
 
-<img width="406" height="649" alt="image" src="https://github.com/user-attachments/assets/1f5cb104-78f0-4e04-8935-810c70203b1f" />
+![Wake word select](./images/wake_word.png)
 
 See the [Wake Word section](install_application.md#wake-word) of the installation guide for the full list of bundled models and how to add custom ones.
 

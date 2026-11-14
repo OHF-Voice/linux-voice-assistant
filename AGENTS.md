@@ -21,7 +21,7 @@ LVA always means **Linux Voice Assistant**, this project.
 
 ### Architecture
 - **Protocol**: ESPHome API via `aioesphomeapi` for Home Assistant integration
-- **Wake Words**: Supports MicroWakeWord only (TFLite-based; OpenWakeWord requires TensorFlow which has no 32-bit ARM wheels)
+- **Wake Words**: Supports MicroWakeWord only (pyopen-wakeword publishes no armv7l wheels)
 - **Audio**: Uses `soundcard` library for input, `python-mpv` for output
 - **Peripherals**: WebSocket API for LEDs, buttons, HAT boards
 - **Discovery**: mDNS/ZeroConf for auto-discovery by Home Assistant
@@ -62,7 +62,7 @@ LVA always means **Linux Voice Assistant**, this project.
 
 ## Code Quality Standards
 
-- **Python**: 3.11 only (this branch; no 32-bit ARM wheels exist for 3.12/3.13 dependencies)
+- **Python**: 3.11 only (this branch; matches the `python:3.11-slim-bookworm` base image)
 - **Formatting**: Black (200 char line length, py311 target)
 - **Import Sorting**: isort with black profile
 - **Type Checking**: mypy (non-strict, configured in `mypy.ini`, targets Python 3.11)
