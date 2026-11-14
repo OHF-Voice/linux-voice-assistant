@@ -1,11 +1,14 @@
 ---
 name: Temp Docker build
 
-# Temporary: builds both Docker images (no push) on pushes to this branch. Remove before merging.
+# Temporary: builds and pushes both Docker images to the -pr package on pushes to this branch (tag "arm32"). Remove before merging.
 on:
   push:
     branches:
       - "pr-344-armv7l"
+
+env:
+  REGISTRY: ghcr.io
 
 jobs:
   build:
@@ -22,23 +25,57 @@ jobs:
             dockerfile: Dockerfile.armhf
     permissions:
       contents: read
+      packages: write
+      id-token: write
+      attestations: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
+      - name: Set variables
+        run: |
+          echo "REGISTRY_LOWER=$(echo '${{ env.REGISTRY }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+          echo "REPOSITORY_LOWER=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+      - name: Log in to the Container registry
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v4
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
+      - name: Extract metadata for Docker
+        id: meta
+        env:
+          DOCKER_METADATA_ANNOTATIONS_LEVELS: manifest,index
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          flavor: |
+            suffix=${{ matrix.suffix }}
+          images: ${{ env.REGISTRY_LOWER }}/${{ env.REPOSITORY_LOWER }}-pr
+          tags: |
+            type=raw,value=arm32
       - name: Create version files
         run: |
-          echo "tmp-armhf" > version.txt
+          echo "arm32" > version.txt
           echo "${{ github.sha }}" > version_githash.txt
-      - name: Build image (no push)
+      - name: Build and push Docker image
+        id: push
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           file: ${{ matrix.dockerfile }}
           platforms: ${{ matrix.platforms }}
-          push: false
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          annotations: ${{ steps.meta.outputs.annotations }}
           cache-from: type=gha,scope=build${{ matrix.suffix }}
           cache-to: type=gha,scope=build${{ matrix.suffix }},mode=max
+      - name: Generate artifact attestation
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-name: ${{ env.REGISTRY_LOWER }}/${{ env.REPOSITORY_LOWER }}-pr
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
