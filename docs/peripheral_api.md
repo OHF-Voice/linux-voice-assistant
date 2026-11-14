@@ -15,6 +15,17 @@ LVA acts as the WebSocket **server**. Your peripheral script or container connec
 
 All messages are JSON objects sent over a plain WebSocket connection. No authentication is required.
 
+**This matters because of the default bind address.** LVA binds the peripheral
+API to `0.0.0.0` by default, meaning any device on the same network — not
+just this machine — can connect to it. Combined with the lack of
+authentication, that means anyone on the LAN can mute/unmute the mic, start a
+voice pipeline (which sends captured audio to whatever conversation agent is
+configured), change the volume, or register arbitrary entities into Home
+Assistant. If you don't need to control LVA from another device or
+container on the network, start it with `--peripheral-host 127.0.0.1` so the
+API only accepts connections from this machine. LVA logs a warning at
+startup whenever it binds to a non-loopback address.
+
 ```
 Your peripheral script                   LVA
         │                                  │
