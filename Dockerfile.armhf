@@ -9,9 +9,9 @@ RUN apt-get update && \
     apt-get clean
 
 # webrtc-noise-gain has no armv7l wheel and its setup.py breaks with setuptools >= 83 ("run() must precede build_extension()").
-# PIP_CONSTRAINT is also applied to pip's isolated build environments.
+# PIP_BUILD_CONSTRAINT (pip >= 25.3) applies to pip's isolated build environments; PIP_CONSTRAINT no longer does.
 RUN echo 'setuptools<83' > /tmp/constraints.txt
-ENV PIP_CONSTRAINT=/tmp/constraints.txt
+ENV PIP_BUILD_CONSTRAINT=/tmp/constraints.txt
 
 WORKDIR /app
 
