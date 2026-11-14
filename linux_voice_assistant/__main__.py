@@ -254,6 +254,31 @@ async def main() -> None:
         action="store_true",
         help="Add this to enable debug logging",
     )
+    # ------------------------------------------------------------------
+    # SendSpin client options
+    # ------------------------------------------------------------------
+    parser.add_argument(
+        "--enable-sendspin",
+        type=int,
+        choices=(0, 1),
+        default=1,
+        metavar="{0,1}",
+        help="Enable (1) or disable (0) the SendSpin client (default: enabled)",
+    )
+    parser.add_argument(
+        "--sendspin-url",
+        help="SendSpin server WebSocket URL (e.g., ws://192.168.1.100:8928/sendspin)",
+    )
+    parser.add_argument(
+        "--sendspin-client-id",
+        help="Unique identifier for SendSpin client (default: linux-voice-assistant-<hostname>)",
+    )
+    parser.add_argument(
+        "--sendspin-static-delay-ms",
+        type=float,
+        default=0.0,
+        help="Static playback delay in milliseconds for SendSpin sync adjustment",
+    )
     parser.add_argument(
         "--colored-debug",
         action="store_true",
@@ -283,6 +308,9 @@ async def main() -> None:
         return
 
     if args.list_output_devices:
+        from .audio_device_util import list_output_devices
+
+        list_output_devices()
         from mpv import MPV
 
         player = MPV()
@@ -596,6 +624,39 @@ async def main() -> None:
     )
     process_audio_thread.start()
 
+    vsp = VoiceSatelliteProtocol(state)
+    # Initialize SendSpin bridge; without a URL it advertises a listener for discovery.
+    # SendSpin is optional: any failure here must not stop the voice assistant.
+    if args.enable_sendspin:
+        try:
+            from .audio_device_util import find_soundcard_by_name
+            from .sendspin_bridge import SendspinBridge
+
+            # Resolve MPV device name to soundcard speaker index.
+            soundcard_index = find_soundcard_by_name(args.audio_output_device)
+
+            bridge = SendspinBridge(
+                media_player_entity=vsp.state.media_player_entity,
+                client_id=f"linux-voice-assistant-{device_name}",
+                client_name=device_name,
+                static_delay_ms=args.sendspin_static_delay_ms,
+                audio_device=soundcard_index,
+            )
+            # Wire up the bridge to the entity for coordinated playback
+            vsp.state.media_player_entity.set_sendspin_bridge(bridge)
+            await bridge.start(server_url=args.sendspin_url)
+            vsp.state.sendspin_bridge = bridge
+        except Exception:  # pylint: disable=broad-except
+            _LOGGER.exception("SendSpin failed to start; continuing without SendSpin support")
+            # Undo any partial wiring so nothing references a broken bridge.
+            vsp.state.sendspin_bridge = None
+            if vsp.state.media_player_entity is not None:
+                vsp.state.media_player_entity.sendspin_bridge = None
+
+    loop = asyncio.get_running_loop()
+
+    loop = asyncio.get_running_loop()
+
     # Auto discovery (zeroconf, mDNS)
     discovery = HomeAssistantZeroconf(
         port=args.port,
@@ -633,6 +694,10 @@ async def main() -> None:
     except KeyboardInterrupt:
         pass
     finally:
+        # Stop SendSpin bridge
+        if state.sendspin_bridge:
+            await state.sendspin_bridge.disconnect()
+
         process_audio_thread.join()
         if peripheral_api is not None:
             await peripheral_api.stop()
