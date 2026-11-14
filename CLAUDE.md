@@ -138,7 +138,7 @@ Existing env quirk: `REFACTORY_SECONDS` is misspelled on purpose (it's the publi
 - In Docker the working directory is `/app`, so the default `--download-dir` is `/app/local` (a named volume in `docker-compose.yml`). Bare metal uses `local/` inside the repo.
 - Paths in `.env.example` and the docs are written for the container (`/app/...`). The systemd examples use `/home/pi/linux-voice-assistant/...`.
 - `mypy` runs non-strict with `python_version = 3.11` (`mypy.ini`). Don't use syntax newer than 3.11.
-- On this branch the Docker image **is built locally** on the target device — there is no pre-built registry image for 32-bit ARM. `docker-compose.armhf.yml` expects the image `linux-voice-assistant:armhf` (set via `LVA_IMAGE` / `LVA_IMAGE_TAG` env vars). Build it first with `docker build --platform linux/arm/v7 -f Dockerfile.armhf -t linux-voice-assistant:armhf .`. The `Dockerfile.armhf` installs dependencies from piwheels for armhf-native wheels; a fresh build always matches `pyproject.toml`. `satellite.py` guards `MULTI_CHANNEL_AUDIO` with `getattr` as a safety net only.
+- On this branch the root `Dockerfile` is the 32-bit ARM (`linux/arm/v7`, `python:3.11-slim-bookworm`) build. CI publishes it to ghcr.io with `-armhf` tags (`armhf`, `<version>-armhf`, `nightly-armhf`, `<pr-number>-armhf` on the `-pr` image) and `docker-compose.yml` defaults to the `armhf` tag. For local builds use `docker build --platform linux/arm/v7 -f Dockerfile -t linux-voice-assistant:armhf .` and `LVA_IMAGE=linux-voice-assistant`. The `Dockerfile` installs dependencies from piwheels for armhf-native wheels; a fresh build always matches `pyproject.toml`. `satellite.py` guards `MULTI_CHANNEL_AUDIO` with `getattr` as a safety net only.
 - Some older docstrings in modules not touched recently may still be Google style. New code must use the Sphinx `:param:` style from AGENTS.md.
 
 ## Documentation map
@@ -147,7 +147,6 @@ Existing env quirk: `REFACTORY_SECONDS` is misspelled on purpose (it's the publi
 |-----|----------|
 | `README.md` | Features, hardware, CLI parameter table, dev setup |
 | `docs/install.md` → `install_audioserver.md`, `install_application.md` | Install flow (PipeWire/PulseAudio, Docker Compose, systemd, env var reference, wake word lists) |
-| `docs/install_application_armhf.md` | armhf-specific install guide: piwheels pip config, `libopenblas0`, local Docker build, MicroWakeWord only, PulseAudio troubleshooting |
 | `docs/behavior.md` | User-visible behavior (phases, ducking, stop word, timers, announcements). Binding for code changes, see AGENTS.md |
 | `docs/configuration.md` | Every HA device-page entity, from the user's view |
 | `docs/peripheral_api.md` | Full WebSocket protocol for peripheral authors |
@@ -155,7 +154,7 @@ Existing env quirk: `REFACTORY_SECONDS` is misspelled on purpose (it's the publi
 | `docs/enabling_aec.md` | Echo cancellation via PulseAudio/PipeWire |
 | `docs/debugging.md` | Audio stack / container socket troubleshooting |
 | `examples/*/` | Peripheral containers (Satellite1, ReSpeaker 2/4-mic, USB array, Jabra, web console) using the WebSocket API |
-| `.github/workflow.md` | Docker build workflows (release/nightly/PR) |
+| `.github/workflow.md` | armhf Docker build workflows (release/nightly/PR), lint and test workflows, image tags |
 | `.kilo/skill/review-pr/` | PR review procedure + `REVIEW_STANDARDS.md` (severity tags, no conventional-commit prefixes in PR titles) |
 
 ## Contribution constraints

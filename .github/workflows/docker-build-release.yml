@@ -22,15 +22,22 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
+      - name: Set lowercase registry and repository
+        run: |
+          echo "REGISTRY_LOWER=$(echo '${{ env.REGISTRY }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+          echo "REPOSITORY_LOWER=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+
       - name: Log in to the Container registry
         uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ github.token }}
-      # Build Docker Images (amd64 and arm64)
+      # Build the 32-bit ARM (armhf) Docker image. Hosted runners are x86-64, so QEMU emulates linux/arm/v7.
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v4
+        with:
+          platforms: arm
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
       - name: Extract metadata for Docker
@@ -39,27 +46,32 @@ jobs:
           DOCKER_METADATA_ANNOTATIONS_LEVELS: manifest,index
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
-          images: ${{ env.REGISTRY }}/${{ github.repository }}
-          # E.g. tag v1.2.0 produces 3 tags: '1.2.0', '1.2', and 'latest'
+          images: ${{ env.REGISTRY_LOWER }}/${{ env.REPOSITORY_LOWER }}
+          flavor: |
+            latest=false
+          # E.g. tag v1.2.0 produces 4 tags: '1.2.0-armhf', '1.2-armhf', '1-armhf', and 'armhf'.
+          # Prereleases (e.g. v1.3.0-alpha1) only get '1.3.0-alpha1-armhf', so 'armhf' always points to the latest stable release.
           # https://github.com/docker/metadata-action?tab=readme-ov-file#semver
           tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}
+            type=semver,pattern={{version}},suffix=-armhf
+            type=semver,pattern={{major}}.{{minor}},suffix=-armhf
+            type=semver,pattern={{major}},suffix=-armhf
+            type=raw,value=armhf,enable=${{ !contains(github.ref_name, '-') }}
           labels: |
             org.opencontainers.image.authors="Open Home Foundation"
-            org.opencontainers.image.base.name="docker.io/library/python:3.13-slim-trixie"
-            org.opencontainers.image.description="Linux-Voice-Assistant for Home Assistant"
+            org.opencontainers.image.base.name="docker.io/library/python:3.11-slim-bookworm"
+            org.opencontainers.image.description="Linux-Voice-Assistant for Home Assistant (32-bit ARM / armhf)"
             org.opencontainers.image.documentation="https://github.com/OHF-Voice/linux-voice-assistant/blob/main/README.md"
             org.opencontainers.image.licenses="Apache-2.0"
             org.opencontainers.image.source="https://github.com/OHF-Voice/linux-voice-assistant"
-            org.opencontainers.image.title="Linux-Voice-Assistant"
+            org.opencontainers.image.title="Linux-Voice-Assistant (armhf)"
             org.opencontainers.image.url="https://github.com/OHF-Voice/linux-voice-assistant"
             org.opencontainers.image.vendor="Open Home Foundation"
 
+      # The metadata version carries the '-armhf' suffix, so take the version from the git tag instead.
       - name: Create version files
         run: |
-          echo "${{ steps.meta.outputs.version }}" > version.txt
+          echo "${GITHUB_REF_NAME#v}" > version.txt
           echo "${{ github.sha }}" > version_githash.txt
           ls -ltr
 
@@ -68,15 +80,17 @@ jobs:
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
-          platforms: linux/amd64,linux/aarch64
+          platforms: linux/arm/v7
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           annotations: ${{ steps.meta.outputs.annotations }}
+          # QEMU builds are slow; reuse layers between runs.
+          cache-from: type=gha,scope=armhf
+          cache-to: type=gha,scope=armhf,mode=max
       - name: Generate artifact attestation
         uses: actions/attest-build-provenance@v4
         with:
-          subject-name: ${{ env.REGISTRY }}/${{ github.repository }}
+          subject-name: ${{ env.REGISTRY_LOWER }}/${{ env.REPOSITORY_LOWER }}
           subject-digest: ${{ steps.push.outputs.digest }}
           push-to-registry: true
-

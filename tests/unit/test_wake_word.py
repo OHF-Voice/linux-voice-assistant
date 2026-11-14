@@ -95,6 +95,7 @@ class TestFindAvailableWakeWords:
         dir1.mkdir()
         dir2.mkdir()
         write_json(dir1 / "okay_nabu.json", make_micro_json())
+        write_json(dir2 / "hey_jarvis.json", make_micro_json(wake_word="hey jarvis"))
         from linux_voice_assistant.wake_word import find_available_wake_words
 
         result = find_available_wake_words([dir1, dir2], stop_model_id="stop")

@@ -76,8 +76,9 @@ LVA always means **Linux Voice Assistant**, this project.
 
 ## CI/CD
 
-- This branch has **no automated CI** for Docker image builds. The armhf image is built locally on the target device using `Dockerfile.armhf`.
-- Unit tests and lint can still be run locally with `./script/tests` and `./script/lint` on an armhf host or in a cross-compiled environment.
+- GitHub Actions run lint and unit tests on Python 3.11, and build the `linux/arm/v7` Docker image from `Dockerfile` under QEMU (see `.github/workflow.md`).
+- Images are published to ghcr.io with an `armhf` marker in every tag: `<version>-armhf` / `armhf` (release), `nightly-armhf` (push to `arm32`), `<pr-number>-armhf` (PRs).
+- Lint and tests run on the x86-64 runner. They do not need armhf hardware.
 
 ## Branching and PRs
 

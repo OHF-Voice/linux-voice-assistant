@@ -1,14 +1,20 @@
 # GitHub Actions Workflows
 
-This project uses three separate Docker build workflows that automatically build and publish Docker images to GitHub Container Registry (ghcr.io).
+This branch (`arm32`) builds **32-bit ARM (linux/arm/v7, armhf)** Docker images and publishes them to GitHub Container Registry (ghcr.io). Every image tag carries an `armhf` marker so it can never be confused with the 64-bit images of the upstream `main` branch.
+
+Image paths below use `<ohf-voice>/linux-voice-assistant`, which resolves to the repository that runs the workflow (lowercased).
 
 ## Workflows Overview
 
 | Workflow | Trigger | Image Tag(s) |
 |----------|---------|--------------|
-| [docker-build-release.yml](.github/workflows/docker-build-release.yml) | Tags: `v1.2.0`, `v1.2.0-alpha1` | `1.2.0`, `1.2`, `latest` |
-| [docker-build-nightly.yml](.github/workflows/docker-build-nightly.yml) | Push to `main` | `nightly` |
-| [docker-build-pr.yml](.github/workflows/docker-build-pr.yml) | Pull requests | `pr-<pr-number>` |
+| [docker-build-release.yml](workflows/docker-build-release.yml) | Tags: `v1.2.0`, `v1.2.0-alpha1` | `1.2.0-armhf`, `1.2-armhf`, `1-armhf`, `armhf` |
+| [docker-build-nightly.yml](workflows/docker-build-nightly.yml) | Push to `arm32` (or manual run) | `nightly-armhf` |
+| [docker-build-pr.yml](workflows/docker-build-pr.yml) | Pull requests targeting `arm32` | `<pr-number>-armhf` (image `linux-voice-assistant-pr`) |
+| [lint.yml](workflows/lint.yml) | Push to `arm32`, release tags, PRs targeting `arm32` | none (Python 3.11) |
+| [tests.yml](workflows/tests.yml) | Push to `arm32`, release tags, PRs targeting `arm32` | none (Python 3.11) |
+| [pr-labels.yaml](workflows/pr-labels.yaml) | PRs targeting `arm32` | none (applies a release-note label) |
+| [gen_changelog.yml](workflows/gen_changelog.yml) | Release published | none (updates `CHANGELOG.md` on `arm32`) |
 
 ## Detailed Description
 
@@ -22,45 +28,49 @@ Publishes versioned images for new releases.
 
 **Image Tags:**
 ```
-ghcr.io/ohf-voice/linux-voice-assistant:1.0.0
-ghcr.io/ohf-voice/linux-voice-assistant:1.0
-ghcr.io/ohf-voice/linux-voice-assistant:1
-ghcr.io/ohf-voice/linux-voice-assistant:latest
+ghcr.io/<ohf-voice>/linux-voice-assistant:1.0.0-armhf
+ghcr.io/<ohf-voice>/linux-voice-assistant:1.0-armhf
+ghcr.io/<ohf-voice>/linux-voice-assistant:1-armhf
+ghcr.io/<ohf-voice>/linux-voice-assistant:armhf
 ```
+
+`armhf` always points to the latest **stable** release. Prereleases (e.g. `v1.3.0-alpha1`) only get their own `1.3.0-alpha1-armhf` tag. `docker-compose.yml` defaults to the `armhf` tag.
 
 ### Nightly Workflow (`docker-build-nightly.yml`)
 
-Automatically builds nightly images from the main branch.
-
-**Triggers:**
-- Push to `main` branch
+Builds an image from every push to the `arm32` branch (documentation-only changes are skipped). It can also be started manually from the Actions tab.
 
 **Image Tag:**
 ```
-ghcr.io/ohf-voice/linux-voice-assistant:nightly
+ghcr.io/<ohf-voice>/linux-voice-assistant:nightly-armhf
 ```
 
 ### PR Workflow (`docker-build-pr.yml`)
 
-Builds images for pull requests using the PR number as tag.
-
-**Triggers:**
-- Pull request opened, synchronized, or reopened
+Builds images for pull requests that target `arm32`, using the PR number as tag.
 
 **Image Tag:**
 ```
-ghcr.io/ohf-voice/linux-voice-assistant:pr-<pr-number>
+ghcr.io/<ohf-voice>/linux-voice-assistant-pr:<pr-number>-armhf
 ```
 
-## Multi-Architecture Support
+### Lint and Unit Tests (`lint.yml`, `tests.yml`)
 
-All workflows build for multiple architectures:
-- `linux/amd64` (x86_64)
-- `linux/aarch64` (ARM 64-bit, e.g., Raspberry Pi 4)
+Run on Python 3.11, the only Python version supported on this branch. The tests do not need armhf hardware; they run on the normal x86-64 runner.
+
+## Architecture Support
+
+All Docker workflows build **only** `linux/arm/v7`. GitHub-hosted runners are x86-64, so the build runs under QEMU emulation (`docker/setup-qemu-action`, `platforms: arm`). The Docker layer cache is stored in the GitHub Actions cache (`scope=armhf`) because emulated builds are slow, especially the first one.
+
+The image is built from the `Dockerfile` in the repository root (`python:3.11-slim-bookworm`, with piwheels as an extra pip index).
 
 ## Setup Requirements
 
-**No additional setup needed!** The workflows use `GITHUB_TOKEN` which is automatically provided by GitHub Actions.
+The workflows use `GITHUB_TOKEN`, which GitHub Actions provides automatically.
+
+The first time an image is pushed, GitHub creates the package as **private**. To let devices pull it without logging in, open the package page (Profile or Organization → Packages → `linux-voice-assistant`) → Package settings → Change visibility → Public.
+
+If you use a fork, point the compose file at your own image, for example `LVA_IMAGE=ghcr.io/<owner>/linux-voice-assistant` in `.env`; the compose default is `ghcr.io/ohf-voice/linux-voice-assistant`.
 
 ## Creating a Release
 
@@ -70,7 +80,7 @@ git push origin v1.0.0
 ```
 
 This creates images with the following tags:
-- `ghcr.io/ohf-voice/linux-voice-assistant:1.0.0`
-- `ghcr.io/ohf-voice/linux-voice-assistant:1.0`
-- `ghcr.io/ohf-voice/linux-voice-assistant:1`
-- `ghcr.io/ohf-voice/linux-voice-assistant:latest`
+- `ghcr.io/<ohf-voice>/linux-voice-assistant:1.0.0-armhf`
+- `ghcr.io/<ohf-voice>/linux-voice-assistant:1.0-armhf`
+- `ghcr.io/<ohf-voice>/linux-voice-assistant:1-armhf`
+- `ghcr.io/<ohf-voice>/linux-voice-assistant:armhf`
