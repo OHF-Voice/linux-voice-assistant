@@ -253,3 +253,24 @@ class TestVolume:
         player = make_player()
         player.unduck()
         player._mock.unduck.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# is_paused
+# ---------------------------------------------------------------------------
+
+
+class TestIsPaused:
+    def test_true_when_paused(self):
+        from linux_voice_assistant.player.state import PlayerState
+
+        player = make_player()
+        player._mock.state.return_value = PlayerState.PAUSED
+        assert player.is_paused is True
+
+    def test_false_when_playing(self):
+        from linux_voice_assistant.player.state import PlayerState
+
+        player = make_player()
+        player._mock.state.return_value = PlayerState.PLAYING
+        assert player.is_paused is False
