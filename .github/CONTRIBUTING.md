@@ -7,6 +7,7 @@ The process is straight-forward.
 - Fork the LVA repository.
 - Write the code for your feature or fix.
 - Ensure tests pass and linting succeeds (`./script/lint` and `./script/tests`).
+- Write docstrings in Sphinx style with `:param:` (see the Code Quality Checks section in the README).
 - Create a Pull Request against the `main` branch.
 
 ## Feature suggestions

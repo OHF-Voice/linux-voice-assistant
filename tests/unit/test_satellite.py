@@ -4,6 +4,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from linux_voice_assistant.models import DetectionResult
+from linux_voice_assistant.peripheral_api import LVAEvent
 from tests.unit.conftest import make_satellite, make_state
 
 # ---------------------------------------------------------------------------
@@ -317,6 +319,24 @@ class TestStop:
 # ---------------------------------------------------------------------------
 
 
+class TestWakeWordDetectionEvent:
+    def test_wakeup_emits_slot_and_score(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        sat._emit = MagicMock()
+
+        sat.wakeup(MagicMock(wake_word="Hey Jarvis"), DetectionResult("hey_jarvis", 1, 0.93))
+
+        sat._emit.assert_called_once_with(LVAEvent.WAKE_WORD_DETECTED, {"wake_word_id": "hey_jarvis", "slot": 1, "score": 0.93})
+
+    def test_wakeup_without_detection_has_no_data(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        sat._emit = MagicMock()
+
+        sat.wakeup(MagicMock(wake_word="Hey Jarvis"))
+
+        sat._emit.assert_called_once_with(LVAEvent.WAKE_WORD_DETECTED, None)
+
+
 class TestContinueConversation:
     def _follow_up_request(self, sat):
         sat.send_messages = MagicMock()
@@ -412,6 +432,65 @@ class TestPipelineEndedSound:
         sat.handle_voice_event(VoiceAssistantEventType.VOICE_ASSISTANT_RUN_END, {})
         sat.state.tts_player.play.assert_not_called()
         sat.state.music_player.unduck.assert_called_once()
+
+    def test_duplicate_wake_up_does_not_play_sound(self, tmp_path):
+        # Another satellite heard the same wake word and HA gave the run to it.
+        from aioesphomeapi import VoiceAssistantEventType
+
+        sat = make_satellite(tmp_path)
+        sat.handle_voice_event(VoiceAssistantEventType.VOICE_ASSISTANT_RUN_START, {})
+        sat.handle_voice_event(VoiceAssistantEventType.VOICE_ASSISTANT_ERROR, {"code": "duplicate_wake_up_detected"})
+        sat.handle_voice_event(VoiceAssistantEventType.VOICE_ASSISTANT_RUN_END, {})
+        sat.state.tts_player.play.assert_not_called()
+        sat.state.music_player.unduck.assert_called_once()
+        assert sat._pipeline_active is False
+
+    def test_sound_plays_again_after_a_duplicate_wake_up(self, tmp_path):
+        from aioesphomeapi import VoiceAssistantEventType
+
+        sat = make_satellite(tmp_path)
+        sat.handle_voice_event(VoiceAssistantEventType.VOICE_ASSISTANT_ERROR, {"code": "duplicate_wake_up_detected"})
+        sat.handle_voice_event(VoiceAssistantEventType.VOICE_ASSISTANT_RUN_END, {})
+        sat.handle_voice_event(VoiceAssistantEventType.VOICE_ASSISTANT_RUN_START, {})
+        sat.handle_voice_event(VoiceAssistantEventType.VOICE_ASSISTANT_ERROR, {"code": "stt-no-text-recognized"})
+        sat.handle_voice_event(VoiceAssistantEventType.VOICE_ASSISTANT_RUN_END, {})
+        sat.state.tts_player.play.assert_called_once()
+        assert sat.state.tts_player.play.call_args.args[0] == sat.state.pipeline_ended_sound
+
+    def test_run_ending_after_stt_does_not_play_sound(self, tmp_path):
+        # HA ends the run after speech recognition when an automation handles the answer (ask_question).
+        from aioesphomeapi import VoiceAssistantEventType
+
+        sat = make_satellite(tmp_path)
+        sat.handle_voice_event(VoiceAssistantEventType.VOICE_ASSISTANT_RUN_START, {})
+        sat.handle_voice_event(VoiceAssistantEventType.VOICE_ASSISTANT_STT_END, {"text": " Musik"})
+        sat.handle_voice_event(VoiceAssistantEventType.VOICE_ASSISTANT_RUN_END, {})
+        sat.state.tts_player.play.assert_not_called()
+        sat.state.music_player.unduck.assert_called_once()
+        assert sat._pipeline_active is False
+
+    def test_run_with_intent_but_no_reply_plays_sound(self, tmp_path):
+        from aioesphomeapi import VoiceAssistantEventType
+
+        sat = make_satellite(tmp_path)
+        sat.handle_voice_event(VoiceAssistantEventType.VOICE_ASSISTANT_RUN_START, {})
+        sat.handle_voice_event(VoiceAssistantEventType.VOICE_ASSISTANT_STT_END, {"text": "turn on the light"})
+        sat.handle_voice_event(VoiceAssistantEventType.VOICE_ASSISTANT_INTENT_START, {})
+        sat.handle_voice_event(VoiceAssistantEventType.VOICE_ASSISTANT_RUN_END, {})
+        sat.state.tts_player.play.assert_called_once()
+        assert sat.state.tts_player.play.call_args.args[0] == sat.state.pipeline_ended_sound
+
+    def test_sound_plays_again_after_a_run_ending_after_stt(self, tmp_path):
+        from aioesphomeapi import VoiceAssistantEventType
+
+        sat = make_satellite(tmp_path)
+        sat.handle_voice_event(VoiceAssistantEventType.VOICE_ASSISTANT_RUN_START, {})
+        sat.handle_voice_event(VoiceAssistantEventType.VOICE_ASSISTANT_STT_END, {"text": "Musik"})
+        sat.handle_voice_event(VoiceAssistantEventType.VOICE_ASSISTANT_RUN_END, {})
+        sat.handle_voice_event(VoiceAssistantEventType.VOICE_ASSISTANT_RUN_START, {})
+        sat.handle_voice_event(VoiceAssistantEventType.VOICE_ASSISTANT_ERROR, {"code": "stt-no-text-recognized"})
+        sat.handle_voice_event(VoiceAssistantEventType.VOICE_ASSISTANT_RUN_END, {})
+        sat.state.tts_player.play.assert_called_once()
 
 
 # ---------------------------------------------------------------------------

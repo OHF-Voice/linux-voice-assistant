@@ -62,11 +62,15 @@ from .entity import (
     WakeWord1SensitivityNumberEntity,
     WakeWord2SensitivityNumberEntity,
 )
-from .models import AvailableWakeWord, ServerState, WakeWordType
+from .models import AvailableWakeWord, DetectionResult, ServerState, WakeWordType
 from .peripheral_api import LVAEvent
 from .util import call_all
 
 _LOGGER = logging.getLogger(__name__)
+
+# Error code Home Assistant sends to the satellites that lost a wake word to another one
+# (homeassistant/components/assist_pipeline, DuplicateWakeUpDetectedError).
+_DUPLICATE_WAKE_UP_CODE = "duplicate_wake_up_detected"
 
 PROTO_TO_MESSAGE_TYPE = {v: k for k, v in MESSAGE_TYPE_TO_PROTO.items()}
 
@@ -345,6 +349,11 @@ class VoiceSatelliteProtocol(APIServer):
         self._is_streaming_audio = False
         self._tts_url: Optional[str] = None
         self._tts_played = False
+        # HA gave this run to another satellite that heard the same wake word.
+        self._run_taken_by_other = False
+        # HA ended the run after speech recognition, so something else (e.g. an automation) handles the transcript.
+        self._intent_started = False
+        self._stt_text_received = False
         self._continue_conversation = False
         # Phrase that started the conversation. HA selects the pipeline from it, so a
         # follow-up request without it would run the first pipeline instead of the one
@@ -573,10 +582,14 @@ class VoiceSatelliteProtocol(APIServer):
         if event_type == VoiceAssistantEventType.VOICE_ASSISTANT_RUN_START:
             self._tts_url = data.get("url")
             self._tts_played = False
+            self._run_taken_by_other = False
+            self._intent_started = False
+            self._stt_text_received = False
             self._continue_conversation = False
             self._pipeline_active = True
 
         elif event_type == VoiceAssistantEventType.VOICE_ASSISTANT_INTENT_START:
+            self._intent_started = True
             self._emit(LVAEvent.THINKING)
             # Play optional audible thinking sound
             if self.state.thinking_sound_enabled:
@@ -596,6 +609,7 @@ class VoiceSatelliteProtocol(APIServer):
             if event_type == VoiceAssistantEventType.VOICE_ASSISTANT_STT_END:
                 stt_text = data.get("text", "").strip()
                 if stt_text:
+                    self._stt_text_received = True
                     self._emit(LVAEvent.STT_TEXT, {"text": stt_text})
                     _LOGGER.debug("STT transcript: %s", stt_text)
 
@@ -622,15 +636,23 @@ class VoiceSatelliteProtocol(APIServer):
             self._is_streaming_audio = False
             if not self._tts_played:
                 self._pipeline_active = False
-                self._tts_finished(pipeline_ended=True)
+                # The pipeline ended sound is for the user's own run, not one another satellite answers
+                # and not one that stopped after speech recognition (the transcript is handled elsewhere).
+                stt_only_run = self._stt_text_received and not self._intent_started
+                self._tts_finished(pipeline_ended=not (self._run_taken_by_other or stt_only_run))
             # When TTS is playing, keep _pipeline_active = True to block
             # false wake word detections from speaker audio feedback.
             # _tts_finished() callback will clear it when playback ends.
 
             self._tts_played = False
+            self._run_taken_by_other = False
+            self._intent_started = False
+            self._stt_text_received = False
 
         elif event_type == VoiceAssistantEventType.VOICE_ASSISTANT_ERROR:
             self._emit(LVAEvent.PIPELINE_ERROR)
+            if data.get("code") == _DUPLICATE_WAKE_UP_CODE:
+                self._run_taken_by_other = True
 
     # ------------------------------------------------------------------
     # Timer event handler
@@ -888,7 +910,12 @@ class VoiceSatelliteProtocol(APIServer):
     # Wake word / stop
     # ------------------------------------------------------------------
 
-    def wakeup(self, wake_word: Union[MicroWakeWord, OpenWakeWord]) -> None:
+    def wakeup(self, wake_word: Union[MicroWakeWord, OpenWakeWord], detection: Optional[DetectionResult] = None) -> None:
+        """
+        Start the voice pipeline after a wake word detection.
+        :param wake_word: The detected wake word model.
+        :param detection: Slot and score of the detection, forwarded to peripherals.
+        """
 
         if self.state.muted:
             # Don't respond to wake words when muted (voice_assistant.stop behavior)
@@ -906,7 +933,7 @@ class VoiceSatelliteProtocol(APIServer):
         self._timer_ring_start = None
         _LOGGER.debug("Stopping timer finished sound")
         self._pipeline_active = True
-        self._emit(LVAEvent.WAKE_WORD_DETECTED)
+        self._emit(LVAEvent.WAKE_WORD_DETECTED, self._detection_event_data(detection))
         self.duck()
         if self.state.listen_during_wake_sound:
             _LOGGER.debug("Starting audio streaming immediately (listen_during_wake_sound enabled)")
@@ -917,6 +944,16 @@ class VoiceSatelliteProtocol(APIServer):
                 self.state.wakeup_sound,
                 done_callback=lambda: self._on_wakeup_sound_finished(wake_word_phrase),
             )
+
+    @staticmethod
+    def _detection_event_data(detection: Optional[DetectionResult]) -> Optional[Dict[str, Any]]:
+        """
+        Build the ``wake_word_detected`` event payload.
+        :param detection: Detection result, or None when unknown.
+        """
+        if detection is None:
+            return None
+        return {"wake_word_id": detection.wake_word_id, "slot": detection.slot, "score": detection.score}
 
     def _start_audio_streaming(self, wake_word_phrase: str) -> None:
         """Start streaming audio during wake sound detection."""

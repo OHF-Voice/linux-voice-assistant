@@ -26,6 +26,10 @@ if [ -n "${NETWORK_INTERFACE}" ]; then
   EXTRA_ARGS+=( "--network-interface" "$NETWORK_INTERFACE" )
 fi
 
+if [ -n "${MAC_ADDRESS}" ]; then
+  EXTRA_ARGS+=( "--mac-address" "$MAC_ADDRESS" )
+fi
+
 # IP-ADDRESS
 if [ -n "${HOST}" ]; then
   EXTRA_ARGS+=( "--host" "$HOST" )

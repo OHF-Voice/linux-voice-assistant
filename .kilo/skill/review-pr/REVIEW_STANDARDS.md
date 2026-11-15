@@ -27,7 +27,7 @@ Key standards for LVA:
 - Python 3.11, 3.12, 3.13 supported
 - Black formatting with 200 char line length
 - isort import sorting with black profile
-- mypy type checking with strict settings
+- mypy type checking (non-strict, configured in `mypy.ini`)
 - pylint code quality checks (many checks disabled in pyproject.toml)
 
 ## Architecture-Specific Checks
