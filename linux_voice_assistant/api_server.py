@@ -1,6 +1,7 @@
 """Partial ESPHome server implementation."""
 
 import asyncio
+import base64
 import binascii
 import logging
 import os
@@ -54,6 +55,18 @@ def decode_encryption_key(key: str) -> bytes:
     if len(key_bytes) != 32:
         raise ValueError("Encryption key must be 32 bytes (base64), for example from: openssl rand -base64 32")
     return key_bytes
+
+
+def create_encryption_key_file(path: Path) -> None:
+    """
+    Create a file with a new random ESPHome API encryption key, readable only by the current user.
+    :param path: File to create, including missing parent directories. It must not exist yet.
+    :raises OSError: If the file exists or cannot be written.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    file_descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(file_descriptor, "w", encoding="utf-8") as key_file:
+        key_file.write(base64.b64encode(os.urandom(32)).decode() + "\n")
 
 
 def load_encryption_key_file(path: Path) -> bytes:

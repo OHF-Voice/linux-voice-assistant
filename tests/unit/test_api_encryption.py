@@ -11,6 +11,7 @@ from noise.connection import NoiseConnection  # type: ignore[import-untyped]
 
 from linux_voice_assistant.api_server import (
     APIServer,
+    create_encryption_key_file,
     decode_encryption_key,
     load_encryption_key_file,
 )
@@ -150,3 +151,22 @@ def test_load_encryption_key_file_errors(tmp_path):
     bad.chmod(0o600)
     with pytest.raises(ValueError):
         load_encryption_key_file(bad)
+
+
+def test_create_encryption_key_file(tmp_path, caplog):
+    key_file = tmp_path / "config" / "encryption.key"
+    create_encryption_key_file(key_file)
+    with caplog.at_level("WARNING"):
+        assert len(load_encryption_key_file(key_file)) == 32
+    assert not caplog.records
+    if os.name == "posix":
+        assert key_file.stat().st_mode & 0o777 == 0o600
+
+
+def test_create_encryption_key_file_does_not_overwrite(tmp_path):
+    key_file = tmp_path / "encryption.key"
+    create_encryption_key_file(key_file)
+    content = key_file.read_text(encoding="utf-8")
+    with pytest.raises(FileExistsError):
+        create_encryption_key_file(key_file)
+    assert key_file.read_text(encoding="utf-8") == content

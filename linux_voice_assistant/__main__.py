@@ -17,7 +17,7 @@ from aioesphomeapi.api_pb2 import NumberStateResponse  # type: ignore  # pylint:
 from pymicro_wakeword import MicroWakeWord, MicroWakeWordFeatures
 from pyopen_wakeword import OpenWakeWord, OpenWakeWordFeatures
 
-from .api_server import load_encryption_key_file
+from .api_server import create_encryption_key_file, load_encryption_key_file
 from .models import DetectionResult, Preferences, ServerState, WakeWordType, initial_stop_word_threshold
 from .mpv_player import MpvMediaPlayer
 from .peripheral_api import LVAEvent, PeripheralAPIServer
@@ -207,7 +207,7 @@ async def main() -> None:
     )
     parser.add_argument(
         "--encryption-key-file",
-        help="File holding the encryption key (32 bytes, base64; for example from: openssl rand -base64 32). Default: encryption.key next to the preferences file",
+        help="File holding the encryption key (32 bytes, base64; for example from: openssl rand -base64 32). Default: encryption.key next to the preferences file. Created with a new random key if it does not exist",
     )
     parser.add_argument(
         "--enable-thinking-sound",
@@ -350,6 +350,9 @@ async def main() -> None:
     if args.enable_encryption:
         key_path = Path(args.encryption_key_file) if args.encryption_key_file else Path(args.preferences_file).parent / "encryption.key"
         try:
+            if not key_path.exists():
+                create_encryption_key_file(key_path)
+                _LOGGER.info("Created encryption key file: %s", key_path)
             noise_psk = load_encryption_key_file(key_path)
         except OSError as err:
             _LOGGER.error("Cannot read the encryption key file: %s, app stopped.", err)

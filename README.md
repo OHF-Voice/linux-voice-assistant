@@ -114,7 +114,7 @@ usage: __main__.py [-h] [--name NAME] [--audio-input-device AUDIO_INPUT_DEVICE] 
 | `--mac-address`                 | MAC address the device is known by in Home Assistant (e.g. `02:00:00:00:00:01`)        | The network interface's              |
 | `--port`                        | Port for ESPHome server                                                                | 6053                                 |
 | `--enable-encryption`           | Encrypt the ESPHome API with the key from `--encryption-key-file`                      | False                                |
-| `--encryption-key-file`         | File with the encryption key (32 bytes, base64, e.g. `openssl rand -base64 32`)        | `encryption.key` next to the preferences file |
+| `--encryption-key-file`         | File with the encryption key (32 bytes, base64); created with a new key if missing     | `encryption.key` next to the preferences file |
 | `--enable-thinking-sound`       | Enable thinking sound on startup                                                       | False                                |
 | `--listen-during-wake-sound`    | Start listening while the wake sound is still playing                                  | False                                |
 | `--peripheral-host`             | Bind address for the peripheral WebSocket API                                          | 0.0.0.0                              |
