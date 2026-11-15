@@ -837,7 +837,7 @@ def process_audio(state: ServerState, mic, block_size: int):
                         oww_inputs.extend(oww_features.process_streaming(audio_chunk))
 
                     for wake_word_index, wake_word in enumerate(wake_words):
-                        best_score: Optional[float] = None
+                        activated: Optional[float] = None
 
                         # Set dynamic threshold depending on wake word index
                         if wake_word_index == 0:
@@ -858,19 +858,19 @@ def process_audio(state: ServerState, mic, block_size: int):
                                 prob = wake_word.process_streaming_prob(micro_input)
                                 if prob is not None and prob > threshold:
                                     _LOGGER.debug("Wake word '%s' activated (probability %.3f exceeded threshold %.3f)", wake_word.wake_word, prob, threshold)
-                                    best_score = prob if best_score is None else max(best_score, prob)
+                                    activated = prob if activated is None else max(activated, prob)
                         elif isinstance(wake_word, OpenWakeWord):
                             for oww_input in oww_inputs:
                                 for prob in wake_word.process_streaming(oww_input):
                                     if prob > threshold:
                                         _LOGGER.debug("Wake word '%s' activated (probability %.3f exceeded threshold %.3f)", wake_word.wake_word, prob, threshold)  # type: ignore[attr-defined]
-                                        best_score = prob if best_score is None else max(best_score, prob)
+                                        activated = prob if activated is None else max(activated, prob)
 
-                        if best_score is not None and not state.muted:
+                        if activated is not None and not state.muted:
                             # Check refractory
                             now = time.monotonic()
                             if (last_active is None) or ((now - last_active) > state.refractory_seconds):
-                                state.satellite.wakeup(wake_word, DetectionResult(wake_word.id, wake_word_index, best_score))
+                                state.satellite.wakeup(wake_word, DetectionResult(wake_word.id, wake_word_index, activated))
                                 last_active = now
 
                     # Always process to keep state correct
