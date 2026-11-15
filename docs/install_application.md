@@ -337,7 +337,7 @@ By default the connection between LVA and Home Assistant is plaintext, like an E
 **The key is created on the LVA side, not by Home Assistant.** Home Assistant only asks for it when adding the device and stores it. Both sides need the same key, and nothing is exchanged automatically. The key can only be given as a file, never on the command line, where it would be visible in the process list.
 
 1. Set `ENABLE_ENCRYPTION="1"` and start LVA. If the key file does not exist, LVA creates it (32 random bytes, base64, mode 600). By default it is `encryption.key` in the same directory as the preferences file (`/app/configuration/encryption.key` in Docker). Set `ENCRYPTION_KEY_FILE` to use another path. Docker: the path is inside the container, so keep it in a mounted volume, otherwise a new key is created on every container start. You can also create the key yourself: `openssl rand -base64 32 > encryption.key`.
-2. LVA logs the new key once when it creates the file (look for "Enter this key in Home Assistant"). It is not logged on later starts, so show it from the file if you need it again. Enter it in Home Assistant when it asks (see [Connecting to Home Assistant](#connecting-to-home-assistant)):
+2. LVA logs the new key once when it creates the file, at error level so it is always visible (look for "Enter this key in Home Assistant"). It is not logged on later starts, so show it from the file if you need it again. Enter it in Home Assistant when it asks (see [Connecting to Home Assistant](#connecting-to-home-assistant)):
    ``` sh
    docker compose exec linux-voice-assistant cat /app/configuration/encryption.key   # Docker, use your service name
    cat /home/pi/linux-voice-assistant/encryption.key                                 # systemd

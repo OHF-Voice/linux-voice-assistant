@@ -353,7 +353,8 @@ async def main() -> None:
             if not key_path.exists():
                 new_key = create_encryption_key_file(key_path)
                 _LOGGER.info("Created encryption key file: %s", key_path)
-                _LOGGER.info("Enter this key in Home Assistant when it asks for the encryption key: %s", new_key)
+                # Logged as error on purpose, so the one-time key is visible at any log level
+                _LOGGER.error("Enter this key in Home Assistant when it asks for the encryption key: %s", new_key)
             noise_psk = load_encryption_key_file(key_path)
         except OSError as err:
             _LOGGER.error("Cannot read the encryption key file: %s, app stopped.", err)
