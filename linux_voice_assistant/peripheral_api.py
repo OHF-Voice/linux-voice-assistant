@@ -9,7 +9,9 @@ Protocol (JSON over WebSocket):
 
 Feedback events emitted by LVA
 -------------------------------
-  wake_word_detected
+  wake_word_detected  data: {"wake_word_id": str, "slot": int, "score": float | null}
+              ``slot`` is 0 or 1 (wake word slot), ``score`` the detection
+              probability (0.0–1.0) that exceeded the sensitivity threshold.
   listening
   stt_text        data: {"text": str}
               Emitted when HA returns the recognised speech transcript.
