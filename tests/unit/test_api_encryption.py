@@ -155,9 +155,9 @@ def test_load_encryption_key_file_errors(tmp_path):
 
 def test_create_encryption_key_file(tmp_path, caplog):
     key_file = tmp_path / "config" / "encryption.key"
-    create_encryption_key_file(key_file)
+    new_key = create_encryption_key_file(key_file)
     with caplog.at_level("WARNING"):
-        assert len(load_encryption_key_file(key_file)) == 32
+        assert load_encryption_key_file(key_file) == decode_encryption_key(new_key)
     assert not caplog.records
     if os.name == "posix":
         assert key_file.stat().st_mode & 0o777 == 0o600
