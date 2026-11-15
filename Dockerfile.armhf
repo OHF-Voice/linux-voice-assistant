@@ -19,7 +19,16 @@ COPY pyproject.toml setup.cfg version.txt version_githash.txt ./
 COPY linux_voice_assistant/ ./linux_voice_assistant/
 
 RUN python -m venv .venv && \
-    .venv/bin/pip install --no-cache-dir --no-binary numpy . && \
+    .venv/bin/pip install --no-cache-dir --no-binary numpy .
+
+# pyopen-wakeword has no armv7l wheel, so the sdist build bundles the x86-64 libtensorflowlite_c.so, which fails to load on 32-bit ARM.
+# Replace it with the armv7l library from the pymicro-wakeword wheel and check that it loads (the build stage runs under QEMU).
+RUN .venv/bin/python -c "\
+import ctypes, pathlib, shutil, pymicro_wakeword, pyopen_wakeword; \
+src = pathlib.Path(pymicro_wakeword.__file__).parent / 'lib' / 'libtensorflowlite_c.so'; \
+dst = pathlib.Path(pyopen_wakeword.__file__).parent / 'lib' / 'libtensorflowlite_c.so'; \
+shutil.copy(src, dst); \
+ctypes.CDLL(str(dst))" && \
     .venv/bin/pip uninstall --yes pip setuptools wheel && \
     find .venv -name '__pycache__' -prune -exec rm -rf {} +
 
