@@ -56,7 +56,7 @@ You can change the used version in the docker-compose.yml.
 | `x.y` | Major.Minor with auto updates | `ghcr.io/ohf-voice/linux-voice-assistant:1.0` |
 | `<branch>` | Branch-specific build | `ghcr.io/ohf-voice/linux-voice-assistant:my-branch` |
 
-The tags above are built for `linux/amd64` and `linux/aarch64`. For 32-bit ARM (`linux/arm/v7`, armhf: e.g. Raspberry Pi 2/3 with a 32-bit OS, Orange Pi, Allwinner H3) append `-armhf` to the tag, for example `latest-armhf`, `nightly-armhf` or `1.0.0-armhf`. Set it with `LVA_IMAGE_TAG` in the .env file.
+All tags are multi-architecture images for `linux/amd64`, `linux/aarch64` and `linux/arm/v7` (32-bit ARM, e.g. Raspberry Pi 2/3 with a 32-bit OS, Orange Pi, Allwinner H3). Docker selects the matching image for your platform automatically.
 
 Edit the .env file and change the values to your needs:
 ``` sh
