@@ -3,9 +3,12 @@
 import asyncio
 import binascii
 import logging
+import os
+import stat
 import threading
 from abc import abstractmethod
 from collections.abc import Iterable
+from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
 # pylint: disable=no-name-in-module
@@ -51,6 +54,25 @@ def decode_encryption_key(key: str) -> bytes:
     if len(key_bytes) != 32:
         raise ValueError("Encryption key must be 32 bytes (base64), for example from: openssl rand -base64 32")
     return key_bytes
+
+
+def load_encryption_key_file(path: Path) -> bytes:
+    """
+    Read the ESPHome API encryption key from a file and warn if other users can access it.
+    :param path: File holding the key (32 bytes, base64).
+    :raises OSError: If the file cannot be read.
+    :raises ValueError: If the content is not a valid key.
+    """
+    if os.name == "posix":
+        mode = stat.S_IMODE(path.stat().st_mode)
+        if mode & (stat.S_IRWXG | stat.S_IRWXO):
+            _LOGGER.warning(
+                "Encryption key file %s is accessible by other users (mode %04o), restrict it with: chmod 600 %s",
+                path,
+                mode,
+                path,
+            )
+    return decode_encryption_key(path.read_text(encoding="utf-8"))
 
 
 class APIServer(asyncio.Protocol):

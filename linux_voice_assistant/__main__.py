@@ -17,7 +17,7 @@ from aioesphomeapi.api_pb2 import NumberStateResponse  # type: ignore  # pylint:
 from pymicro_wakeword import MicroWakeWord, MicroWakeWordFeatures
 from pyopen_wakeword import OpenWakeWord, OpenWakeWordFeatures
 
-from .api_server import decode_encryption_key
+from .api_server import load_encryption_key_file
 from .models import DetectionResult, Preferences, ServerState, WakeWordType, initial_stop_word_threshold
 from .mpv_player import MpvMediaPlayer
 from .peripheral_api import LVAEvent, PeripheralAPIServer
@@ -201,12 +201,13 @@ async def main() -> None:
         help="Port the application is listening on (default: 6053)",
     )
     parser.add_argument(
-        "--encryption-key",
-        help="Encryption key for the ESPHome API (32 bytes, base64; for example from: openssl rand -base64 32). " "Home Assistant then needs the same key; clients without it are refused",
+        "--enable-encryption",
+        action="store_true",
+        help="Encrypt the ESPHome API with the key from --encryption-key-file; Home Assistant then needs the same key, clients without it are refused",
     )
     parser.add_argument(
         "--encryption-key-file",
-        help="File holding the encryption key (keeps it off the command line)",
+        help="File holding the encryption key (32 bytes, base64; for example from: openssl rand -base64 32). Default: encryption.key next to the preferences file",
     )
     parser.add_argument(
         "--enable-thinking-sound",
@@ -346,22 +347,17 @@ async def main() -> None:
 
     # Resolve encryption key
     noise_psk: Optional[bytes] = None
-    if args.encryption_key and args.encryption_key_file:
-        _LOGGER.error("Use either --encryption-key or --encryption-key-file, not both.")
-        sys.exit(1)
-    if args.encryption_key_file:
+    if args.enable_encryption:
+        key_path = Path(args.encryption_key_file) if args.encryption_key_file else Path(args.preferences_file).parent / "encryption.key"
         try:
-            args.encryption_key = Path(args.encryption_key_file).read_text(encoding="utf-8")
+            noise_psk = load_encryption_key_file(key_path)
         except OSError as err:
-            _LOGGER.error("Cannot read the encryption key file: %s", err)
+            _LOGGER.error("Cannot read the encryption key file: %s, app stopped.", err)
             sys.exit(1)
-    if args.encryption_key:
-        try:
-            noise_psk = decode_encryption_key(args.encryption_key)
         except ValueError as err:
-            _LOGGER.error("%s", err)
+            _LOGGER.error("%s (%s), app stopped.", err, key_path)
             sys.exit(1)
-        _LOGGER.info("API encryption: enabled")
+        _LOGGER.info("API encryption: enabled (key file %s)", key_path)
     else:
         _LOGGER.info("API encryption: disabled (plaintext)")
 

@@ -9,7 +9,11 @@ from aioesphomeapi.api_pb2 import HelloRequest, HelloResponse  # type: ignore[at
 from aioesphomeapi.core import MESSAGE_TYPE_TO_PROTO
 from noise.connection import NoiseConnection  # type: ignore[import-untyped]
 
-from linux_voice_assistant.api_server import APIServer, decode_encryption_key
+from linux_voice_assistant.api_server import (
+    APIServer,
+    decode_encryption_key,
+    load_encryption_key_file,
+)
 
 PROTO_TO_MESSAGE_TYPE = {v: k for k, v in MESSAGE_TYPE_TO_PROTO.items()}
 KEY = os.urandom(32)
@@ -117,3 +121,32 @@ def test_decode_encryption_key():
         decode_encryption_key(base64.b64encode(os.urandom(16)).decode())
     with pytest.raises(ValueError):
         decode_encryption_key("not base64!")
+
+
+def test_load_encryption_key_file(tmp_path, caplog):
+    key_file = tmp_path / "encryption.key"
+    key_file.write_text(base64.b64encode(KEY).decode() + "\n", encoding="utf-8")
+    key_file.chmod(0o600)
+    with caplog.at_level("WARNING"):
+        assert load_encryption_key_file(key_file) == KEY
+    assert not caplog.records
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX permissions")
+def test_load_encryption_key_file_warns_on_open_permissions(tmp_path, caplog):
+    key_file = tmp_path / "encryption.key"
+    key_file.write_text(base64.b64encode(KEY).decode(), encoding="utf-8")
+    key_file.chmod(0o644)
+    with caplog.at_level("WARNING"):
+        assert load_encryption_key_file(key_file) == KEY
+    assert "chmod 600" in caplog.text
+
+
+def test_load_encryption_key_file_errors(tmp_path):
+    with pytest.raises(OSError):
+        load_encryption_key_file(tmp_path / "missing.key")
+    bad = tmp_path / "bad.key"
+    bad.write_text("not base64!", encoding="utf-8")
+    bad.chmod(0o600)
+    with pytest.raises(ValueError):
+        load_encryption_key_file(bad)

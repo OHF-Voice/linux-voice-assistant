@@ -40,12 +40,14 @@ if [ -n "${PORT}" ]; then
   EXTRA_ARGS+=( "--port" "$PORT" )
 fi
 
-if [ -n "${ENCRYPTION_KEY}" ]; then
-  EXTRA_ARGS+=( "--encryption-key" "$ENCRYPTION_KEY" )
-fi
-
-if [ -n "${ENCRYPTION_KEY_FILE}" ]; then
-  EXTRA_ARGS+=( "--encryption-key-file" "$ENCRYPTION_KEY_FILE" )
+if [ "$ENABLE_ENCRYPTION" = "1" ]; then
+  ENCRYPTION_KEY_FILE=${ENCRYPTION_KEY_FILE:-"$(dirname "$PREFERENCES_FILE")/encryption.key"}
+  if [ ! -f "$ENCRYPTION_KEY_FILE" ]; then
+    echo "Creating encryption key file at $ENCRYPTION_KEY_FILE"
+    mkdir -p "$(dirname "$ENCRYPTION_KEY_FILE")"
+    (umask 077 && head -c 32 /dev/urandom | base64 > "$ENCRYPTION_KEY_FILE")
+  fi
+  EXTRA_ARGS+=( "--enable-encryption" "--encryption-key-file" "$ENCRYPTION_KEY_FILE" )
 fi
 
 if [ -n "${AUDIO_INPUT_DEVICE}" ]; then
