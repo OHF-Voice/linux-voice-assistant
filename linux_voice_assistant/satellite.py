@@ -900,7 +900,9 @@ class VoiceSatelliteProtocol(APIServer):
     def handle_audio(self, audio_chunk: bytes, audio_chunk_2: Optional[bytes] = None) -> None:
         if not self._is_streaming_audio or self.state.muted:
             return
-        if _HAS_AUDIO_DATA2 and audio_chunk_2 is not None:
+        use_data2 = _HAS_AUDIO_DATA2 and audio_chunk_2 is not None
+        _LOGGER.debug("Sending audio with %d channel(s)", 2 if use_data2 else 1)
+        if use_data2:
             self.send_messages([VoiceAssistantAudio(data=audio_chunk, data2=audio_chunk_2)])
         else:
             self.send_messages([VoiceAssistantAudio(data=audio_chunk)])
