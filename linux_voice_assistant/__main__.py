@@ -22,6 +22,7 @@ from .models import DetectionResult, Preferences, ServerState, WakeWordType, ini
 from .mpv_player import MpvMediaPlayer
 from .peripheral_api import LVAEvent, PeripheralAPIServer
 from .satellite import VoiceSatelliteProtocol
+from .stop_word import process_stop_word
 from .util import (
     get_default_interface,
     get_default_ipv4,
@@ -906,28 +907,7 @@ def process_audio(state: ServerState, mic, block_size: int):
                                 state.satellite.wakeup(wake_word, DetectionResult(wake_word.id, wake_word_index, activated))
                                 last_active = now
 
-                    # The stop word can only act while a reply, announcement or
-                    # timer is playing, which is exactly when its id is in
-                    # active_wake_words.  Inferring it at other times costs a
-                    # model pass on every frame for a result that is discarded.
-                    # The model carries state between windows, so reset it when
-                    # it becomes reachable again instead of scoring a stale
-                    # window as if it were current.
-                    stopped = False
-                    stop_active = state.stop_word.id in state.active_wake_words
-                    if stop_active and not stop_word_running:
-                        state.stop_word.reset()
-                        stop_word_running = True
-                    elif not stop_active:
-                        stop_word_running = False
-
-                    if stop_active:
-                        # Apply stop word sensitivity threshold
-                        state.stop_word.probability_cutoff = state.stop_word_threshold
-                        # _LOGGER.debug("Set stop word probability cutoff to %.3f", state.stop_word_threshold)
-                        for micro_input in micro_inputs:
-                            if state.stop_word.process_streaming(micro_input):
-                                stopped = True
+                    stopped, stop_word_running = process_stop_word(state, micro_inputs, stop_word_running)
 
                     if stopped and (state.stop_word.id in state.active_wake_words) and not state.muted:
                         _LOGGER.debug("Stop word detected")
