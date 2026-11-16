@@ -690,13 +690,8 @@ class VoiceSatelliteProtocol(APIServer):
             self._emit(LVAEvent.IDLE)
 
         elif event_type == VoiceAssistantTimerEventType.VOICE_ASSISTANT_TIMER_FINISHED:
-            if not self._timer_finished:
-                self.state.active_wake_words.add(self.state.stop_word.id)
-                self._timer_finished = True
-                self._timer_ring_start = time.monotonic()
-                self.duck()
-                self._emit(LVAEvent.TIMER_RINGING, timer_data)
-                self._play_timer_finished()
+            self.state.local_timers.pop(msg.timer_id, None)
+            self.state.start_timer_ringing(msg.timer_id, timer_data)
 
     # ------------------------------------------------------------------
     # Message routing
@@ -930,9 +925,7 @@ class VoiceSatelliteProtocol(APIServer):
         _LOGGER.debug("Detected wake word: %s", wake_word_phrase)
         self._wake_word_phrase = wake_word_phrase
 
-        self._timer_finished = False
-        self._timer_ring_start = None
-        _LOGGER.debug("Stopping timer finished sound")
+        self.state.stop_timer_ringing()
         self._pipeline_active = True
         self._emit(LVAEvent.WAKE_WORD_DETECTED, self._detection_event_data(detection))
         self.duck()
@@ -993,6 +986,7 @@ class VoiceSatelliteProtocol(APIServer):
             return
 
         _LOGGER.debug("Button start_listening triggered")
+        self.state.stop_timer_ringing()
         self._wake_word_phrase = ""
         self._timer_finished = False
         self._timer_ring_start = None
@@ -1015,12 +1009,8 @@ class VoiceSatelliteProtocol(APIServer):
         self.state.active_wake_words.discard(self.state.stop_word.id)
         self._pipeline_active = False
 
-        if self._timer_finished:
-            self._timer_finished = False
-            self._timer_ring_start = None
-            self.unduck()
-            self.state.tts_player.stop()
-            self._emit(LVAEvent.IDLE)
+        if self.state.ringing_timer_id is not None:
+            self.state.stop_timer_ringing()
             _LOGGER.debug("Stopping timer finished sound")
         else:
             # tts_player.stop() invokes the done_callback (_tts_finished),
