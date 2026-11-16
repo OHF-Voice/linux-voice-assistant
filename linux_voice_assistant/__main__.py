@@ -201,13 +201,8 @@ async def main() -> None:
         help="Port the application is listening on (default: 6053)",
     )
     parser.add_argument(
-        "--enable-encryption",
-        action="store_true",
-        help="Encrypt the ESPHome API with the key from --encryption-key-file; Home Assistant then needs the same key, clients without it are refused",
-    )
-    parser.add_argument(
         "--encryption-key-file",
-        help="File holding the encryption key (32 bytes, base64; for example from: openssl rand -base64 32). Default: encryption.key next to the preferences file. Created with a new random key if it does not exist",
+        help="Encrypt the ESPHome API with the key in this file (32 bytes, base64; for example from: openssl rand -base64 32). Created with a new random key if it does not exist. Home Assistant then needs the same key, clients without it are refused",
     )
     parser.add_argument(
         "--enable-thinking-sound",
@@ -347,8 +342,8 @@ async def main() -> None:
 
     # Resolve encryption key
     noise_psk: Optional[bytes] = None
-    if args.enable_encryption:
-        key_path = Path(args.encryption_key_file) if args.encryption_key_file else Path(args.preferences_file).parent / "encryption.key"
+    if args.encryption_key_file:
+        key_path = Path(args.encryption_key_file)
         try:
             if not key_path.exists():
                 new_key = create_encryption_key_file(key_path)
