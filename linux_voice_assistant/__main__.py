@@ -89,7 +89,7 @@ async def main() -> None:
         type=int,
         default=1,
         choices=(1, 2),
-        help="Number of mic channels to capture and stream (1=mono, 2=dual-channel voice)",
+        help="Number of mic channels to capture (1=mono, 2=mic + AEC reference channel); what is streamed to Home Assistant does not depend on it",
     )
     parser.add_argument(
         "--wake-word-dir",
@@ -756,6 +756,8 @@ def process_audio(state: ServerState, mic, block_size: int):
 
                 # Primary channel drives WebRTC and wake-word detection.
                 audio_chunk = channel_chunks[0]
+                # Save raw before any processing
+                audio_chunk_unprocessed = channel_chunks[0]
                 agc = state.preferences.mic_auto_gain or 0
                 ns = state.preferences.mic_noise_suppression or 0
 
@@ -854,8 +856,8 @@ def process_audio(state: ServerState, mic, block_size: int):
                         oww_features = OpenWakeWordFeatures.from_builtin()
 
                 try:
-                    # Both channels travel in one message: data=ch0 (enhanced), data2=ch1 (raw reference)
-                    audio_chunk_2 = channel_chunks[1] if n_channels >= 2 else None
+                    # data=ch0 (after WebRTC gain/noise suppression), data2=ch0 before any WebRTC processing
+                    audio_chunk_2 = audio_chunk_unprocessed
                     state.satellite.handle_audio(audio_chunk, audio_chunk_2)
 
                     assert micro_features is not None
