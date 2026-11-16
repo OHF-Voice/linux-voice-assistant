@@ -3,12 +3,47 @@ updates:
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
-      interval: daily
+      interval: weekly
+    labels: ["dependencies"]
+    commit-message:
+      prefix: ""
+    groups:
+      minor-and-patch:
+        update-types: ["minor", "patch"]
+
   - package-ecosystem: "pip"
+    directories:
+      - "/"
+      - "/examples/ReSpeaker 2mic HAT"
+      - "/examples/ReSpeaker 4mic HAT"
+      - "/examples/Satellite1 HAT Board"
+      - "/examples/Jabra Speak 410"
+    schedule:
+      interval: weekly
+    labels: ["dependencies"]
+    commit-message:
+      prefix: ""
+    cooldown:
+      default-days: 3
+
+  - package-ecosystem: "docker"
+    directories:
+      - "/"
+      - "/examples/ReSpeaker 2mic HAT"
+      - "/examples/ReSpeaker 4mic HAT"
+      - "/examples/ReSpeaker Mic Array v2.0 (USB)"
+      - "/examples/Satellite1 HAT Board"
+      - "/examples/Jabra Speak 410"
+    schedule:
+      interval: weekly
+    labels: ["dependencies"]
+    commit-message:
+      prefix: ""
+
+  - package-ecosystem: "docker-compose"
     directory: "/"
     schedule:
       interval: weekly
-    groups:
-      dependencies:
-        patterns:
-          - "*"
+    labels: ["dependencies"]
+    commit-message:
+      prefix: ""
