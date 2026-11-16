@@ -143,6 +143,10 @@ The stop word (default model `stop`, configurable with `--stop-model`) is a safe
 
 At all other times it is ignored, so saying "stop" in a normal conversation does nothing. This avoids accidental triggers.
 
+The stop model is reset each time it becomes active again, so a word said in the
+first fraction of a second (about 0.2 s) of a reply, announcement or ringing timer
+may not be heard. Anything after that is detected as usual.
+
 What it does:
 
 | Situation | Effect |
