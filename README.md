@@ -17,6 +17,7 @@ Because it runs on a full Linux system and offers access significantly more loca
 - Works with [Home Assistant](https://www.home-assistant.io/integrations/esphome/) using the [ESPHome](https://esphome.io/) protocol/API (via [aioesphomeapi](https://github.com/esphome/aioesphomeapi))
 - Feature local on-device wake word detection using integrated [OpenWakeWord](https://github.com/dscripka/openWakeWord) or [MicroWakeWord](https://github.com/kahrendt/microWakeWord)
 - Supports multiple wake words and languages
+- Optional encryption of the connection to Home Assistant, like ESPHome devices with an API encryption key (see [API Encryption](./docs/install_application.md#feature-api-encryption))
 - Supports multiple architectures (linux/amd64 and linux/aarch64)
 - Automated builds with artifact attestation for security
 - Supports [announcments](https://www.home-assistant.io/actions/assist_satellite.announce/), [start](https://www.home-assistant.io/actions/assist_satellite.start_conversation/)/continue conversation, and timers
