@@ -69,8 +69,6 @@ jobs:
         with:
           context: .
           platforms: linux/amd64,linux/aarch64,linux/arm/v7
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
