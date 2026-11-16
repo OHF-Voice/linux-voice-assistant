@@ -134,7 +134,7 @@ Existing env quirk: `REFACTORY_SECONDS` is misspelled on purpose (it's the publi
 
 ## Gotchas
 
-- `ServerState.audio_input_channels` defaults to 2 and argparse (`--audio-input-channels`) also defaults to **2**, so the effective default is dual-channel. Audio flow: see `docs/audio_pipeline.md`.
+- `ServerState.audio_input_channels` defaults to 1 and argparse (`--audio-input-channels`) also defaults to **1**, so the effective default is mono. The option only controls capture (2 = mic + AEC reference channel). What is streamed (`data` = channel 0 after WebRTC, `data2` = channel 0 before WebRTC) does not depend on it. Audio flow: see `docs/audio_pipeline.md`.
 - In Docker the working directory is `/app`, so the default `--download-dir` is `/app/local` (a named volume in `docker-compose.yml`). Bare metal uses `local/` inside the repo.
 - Paths in `.env.example` and the docs are written for the container (`/app/...`). The systemd examples use `/home/pi/linux-voice-assistant/...`.
 - `mypy` runs non-strict with `python_version = 3.11` (`mypy.ini`). Don't use syntax newer than 3.11.
