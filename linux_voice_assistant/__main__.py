@@ -756,7 +756,7 @@ def process_audio(state: ServerState, mic, block_size: int):
 
                 # Primary channel drives WebRTC and wake-word detection.
                 audio_chunk = channel_chunks[0]
-                # save raw before any processing
+                # Save raw before any processing
                 audio_chunk_unprocessed = channel_chunks[0]
                 agc = state.preferences.mic_auto_gain or 0
                 ns = state.preferences.mic_noise_suppression or 0
