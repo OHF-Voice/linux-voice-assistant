@@ -17,7 +17,8 @@ from aioesphomeapi.api_pb2 import NumberStateResponse  # type: ignore  # pylint:
 from pymicro_wakeword import MicroWakeWord, MicroWakeWordFeatures
 from pyopen_wakeword import OpenWakeWord, OpenWakeWordFeatures
 
-from .models import Preferences, ServerState, WakeWordType, initial_stop_word_threshold
+from .api_server import create_encryption_key_file, load_encryption_key_file
+from .models import DetectionResult, Preferences, ServerState, WakeWordType, initial_stop_word_threshold
 from .mpv_player import MpvMediaPlayer
 from .peripheral_api import LVAEvent, PeripheralAPIServer
 from .satellite import VoiceSatelliteProtocol
@@ -200,6 +201,15 @@ async def main() -> None:
         help="Port the application is listening on (default: 6053)",
     )
     parser.add_argument(
+        "--enable-encryption",
+        action="store_true",
+        help="Encrypt the ESPHome API with the key from --encryption-key-file; Home Assistant then needs the same key, clients without it are refused",
+    )
+    parser.add_argument(
+        "--encryption-key-file",
+        help="File holding the encryption key (32 bytes, base64; for example from: openssl rand -base64 32). Default: encryption.key next to the preferences file. Created with a new random key if it does not exist",
+    )
+    parser.add_argument(
         "--enable-thinking-sound",
         action="store_true",
         help="Enable thinking sound on startup",
@@ -334,6 +344,27 @@ async def main() -> None:
         friendly_name = args.name
 
     device_name = f"lva-{mac_address_clean}"
+
+    # Resolve encryption key
+    noise_psk: Optional[bytes] = None
+    if args.enable_encryption:
+        key_path = Path(args.encryption_key_file) if args.encryption_key_file else Path(args.preferences_file).parent / "encryption.key"
+        try:
+            if not key_path.exists():
+                new_key = create_encryption_key_file(key_path)
+                _LOGGER.info("Created encryption key file: %s", key_path)
+                # Logged as error on purpose, so the one-time key is visible at any log level
+                _LOGGER.error("Enter this key in Home Assistant when it asks for the encryption key: %s", new_key)
+            noise_psk = load_encryption_key_file(key_path)
+        except OSError as err:
+            _LOGGER.error("Cannot read the encryption key file: %s, app stopped.", err)
+            sys.exit(1)
+        except ValueError as err:
+            _LOGGER.error("%s (%s), app stopped.", err, key_path)
+            sys.exit(1)
+        _LOGGER.info("API encryption: enabled (key file %s)", key_path)
+    else:
+        _LOGGER.info("API encryption: disabled (plaintext)")
 
     _LOGGER.info("Device name: %s", device_name)
 
@@ -478,6 +509,7 @@ async def main() -> None:
         timer_finished_sound=args.timer_finished_sound,
         processing_sound=args.processing_sound,
         mute_sound=args.mute_sound,
+        noise_psk=noise_psk,
         unmute_sound=args.unmute_sound,
         pipeline_ended_sound=args.pipeline_ended_sound,
         button_double_press_sound=args.button_double_press_sound,
@@ -608,6 +640,7 @@ async def main() -> None:
         name=state.name,
         mac_address=state.mac_address,
         host_ip_address=host_ip_address,
+        encrypted=noise_psk is not None,
     )
     await discovery.register_server()
 
@@ -844,7 +877,7 @@ def process_audio(state: ServerState, mic, block_size: int):
                         oww_inputs.extend(oww_features.process_streaming(audio_chunk))
 
                     for wake_word_index, wake_word in enumerate(wake_words):
-                        activated = False
+                        activated: Optional[float] = None
 
                         # Set dynamic threshold depending on wake word index
                         if wake_word_index == 0:
@@ -858,42 +891,36 @@ def process_audio(state: ServerState, mic, block_size: int):
                             # _LOGGER.debug("Set wake word %d probability cutoff to fallback value 0.7", wake_word_index+1)
 
                         if isinstance(wake_word, MicroWakeWord):
-                            # No debugging when no detection
-                            wake_word.debug_probabilities = False
-
                             # set microWakeWord cutoff
                             wake_word.probability_cutoff = threshold
 
                             for micro_input in micro_inputs:
-                                if wake_word.process_streaming(micro_input):
-                                    wake_word.debug_probabilities = True
-                                    activated = True
+                                prob = wake_word.process_streaming_prob(micro_input)
+                                if prob is not None and prob > threshold:
+                                    _LOGGER.debug("Wake word '%s' activated (probability %.3f exceeded threshold %.3f)", wake_word.wake_word, prob, threshold)
+                                    activated = prob if activated is None else max(activated, prob)
                         elif isinstance(wake_word, OpenWakeWord):
                             for oww_input in oww_inputs:
                                 for prob in wake_word.process_streaming(oww_input):
                                     if prob > threshold:
                                         _LOGGER.debug("Wake word '%s' activated (probability %.3f exceeded threshold %.3f)", wake_word.wake_word, prob, threshold)  # type: ignore[attr-defined]
-                                        activated = True
+                                        activated = prob if activated is None else max(activated, prob)
 
-                        if activated and not state.muted:
+                        if activated is not None and not state.muted:
                             # Check refractory
                             now = time.monotonic()
                             if (last_active is None) or ((now - last_active) > state.refractory_seconds):
-                                state.satellite.wakeup(wake_word)
+                                state.satellite.wakeup(wake_word, DetectionResult(wake_word.id, wake_word_index, activated))
                                 last_active = now
 
                     # Always process to keep state correct
                     stopped = False
-
-                    # No debugging when no detection
-                    state.stop_word.debug_probabilities = False
 
                     # Apply stop word sensitivity threshold
                     state.stop_word.probability_cutoff = state.stop_word_threshold
                     # _LOGGER.debug("Set stop word probability cutoff to %.3f", state.stop_word_threshold)
                     for micro_input in micro_inputs:
                         if state.stop_word.process_streaming(micro_input):
-                            state.stop_word.debug_probabilities = True
                             stopped = True
 
                     if stopped and (state.stop_word.id in state.active_wake_words) and not state.muted:

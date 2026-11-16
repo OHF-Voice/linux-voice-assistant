@@ -62,7 +62,7 @@ from .entity import (
     WakeWord1SensitivityNumberEntity,
     WakeWord2SensitivityNumberEntity,
 )
-from .models import AvailableWakeWord, ServerState, WakeWordType
+from .models import AvailableWakeWord, DetectionResult, ServerState, WakeWordType
 from .peripheral_api import LVAEvent
 from .util import call_all
 
@@ -80,7 +80,7 @@ _HAS_AUDIO_DATA2 = "data2" in {f.name for f in VoiceAssistantAudio.DESCRIPTOR.fi
 class VoiceSatelliteProtocol(APIServer):
 
     def __init__(self, state: ServerState) -> None:
-        super().__init__(state.name)
+        super().__init__(state.name, noise_psk=state.noise_psk, mac_address=state.mac_address)
 
         self.state = state
         self.state.satellite = self
@@ -742,6 +742,7 @@ class VoiceSatelliteProtocol(APIServer):
                 manufacturer="Open Home Foundation",
                 model="Linux Voice Assistant",
                 voice_assistant_feature_flags=self.supported_features,
+                api_encryption_supported=self.state.noise_psk is not None,
             )
         elif isinstance(msg, SubscribeStatesRequest):
             # Standard ESPHome state subscription. Replay current entity state to
@@ -904,7 +905,12 @@ class VoiceSatelliteProtocol(APIServer):
     # Wake word / stop
     # ------------------------------------------------------------------
 
-    def wakeup(self, wake_word: Union[MicroWakeWord, OpenWakeWord]) -> None:
+    def wakeup(self, wake_word: Union[MicroWakeWord, OpenWakeWord], detection: Optional[DetectionResult] = None) -> None:
+        """
+        Start the voice pipeline after a wake word detection.
+        :param wake_word: The detected wake word model.
+        :param detection: Slot and score of the detection, forwarded to peripherals.
+        """
 
         if self.state.muted:
             # Don't respond to wake words when muted (voice_assistant.stop behavior)
@@ -920,7 +926,7 @@ class VoiceSatelliteProtocol(APIServer):
 
         self.state.stop_timer_ringing()
         self._pipeline_active = True
-        self._emit(LVAEvent.WAKE_WORD_DETECTED)
+        self._emit(LVAEvent.WAKE_WORD_DETECTED, self._detection_event_data(detection))
         self.duck()
         if self.state.listen_during_wake_sound:
             _LOGGER.debug("Starting audio streaming immediately (listen_during_wake_sound enabled)")
@@ -931,6 +937,16 @@ class VoiceSatelliteProtocol(APIServer):
                 self.state.wakeup_sound,
                 done_callback=lambda: self._on_wakeup_sound_finished(wake_word_phrase),
             )
+
+    @staticmethod
+    def _detection_event_data(detection: Optional[DetectionResult]) -> Optional[Dict[str, Any]]:
+        """
+        Build the ``wake_word_detected`` event payload.
+        :param detection: Detection result, or None when unknown.
+        """
+        if detection is None:
+            return None
+        return {"wake_word_id": detection.wake_word_id, "slot": detection.slot, "score": detection.score}
 
     def _start_audio_streaming(self, wake_word_phrase: str) -> None:
         """Start streaming audio during wake sound detection."""

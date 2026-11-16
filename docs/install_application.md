@@ -175,6 +175,8 @@ Environment=PREFERENCES_FILE="/home/pi/linux-voice-assistant/preferences.json"
 # Environment=MAC_ADDRESS="02:00:00:00:00:01"
 # Environment=HOST="0.0.0.0"
 # Environment=PORT="6053"
+# Environment=ENABLE_ENCRYPTION="1"
+# Environment=ENCRYPTION_KEY_FILE="/home/pi/linux-voice-assistant/encryption.key"
 # Environment=AUDIO_INPUT_DEVICE="default"
 # Environment=AUDIO_INPUT_BLOCK_SIZE="1024"
 # Environment=AUDIO_OUTPUT_DEVICE="pulse"
@@ -246,6 +248,7 @@ sudo systemctl status linux-voice-assistant
 3. Choose "ESPHome" and then "Set up another instance of ESPHome"
 4. Enter the IP address of your voice satellite with port 6053
 5. Click "Submit"
+6. If you enabled encryption (see [Feature: API Encryption](#feature-api-encryption)), Home Assistant asks for it now. Enter the key from LVA's key file.
 
 
 ## Additional Information:
@@ -277,6 +280,8 @@ The following variables can be configured in the `.env` or in the service file:
 | `MAC_ADDRESS` | The network interface's | MAC address the device is known by in Home Assistant (colon separated, e.g. `02:00:00:00:00:01`). Keeps one identity across interfaces, or gives several instances on one machine each their own |
 | `HOST` | Autodetected | API server IP-Address, can be 0.0.0.0 for all interfaces, but only one network card works for MAC-ADDRESS and ESP protocol |
 | `PORT` | `6053` | API server port |
+| `ENABLE_ENCRYPTION` | false | Set to "1" to encrypt the ESPHome API. LVA creates the key file if it does not exist (see [Feature: API Encryption](#feature-api-encryption)) |
+| `ENCRYPTION_KEY_FILE` | `encryption.key` in the directory of `PREFERENCES_FILE` | Key file used when `ENABLE_ENCRYPTION` is set. LVA creates it with mode 600 if it does not exist |
 | `AUDIO_INPUT_DEVICE` | Autodetected | Audio input device name |
 | `AUDIO_INPUT_BLOCK_SIZE` | `1024` | Audio input block size in samples |
 | `AUDIO_OUTPUT_DEVICE` | `pulse` | Audio output device name, use a `pulse/...` name from the device list (see `LIST_DEVICES`) |
@@ -323,6 +328,24 @@ Enable `LISTEN_DURING_WAKE_SOUND="1"` to let LVA begin listening immediately aft
 This feature is especially useful when you want a more natural interaction flow and do not want to wait to confirm that the wake word was detected before speaking the command.
 
 Keep in mind that listening while the wake sound is playing can also make the microphone pick up some of that wake sound as echo, depending on your speaker and microphone setup. This echo can interfere with speech-to-text and make commands less accurate. If you run into this, see [Enabling Acoustic Echo Cancellation (AEC)](enabling_aec.md).
+
+
+### Feature: API Encryption
+
+By default the connection between LVA and Home Assistant is plaintext, like an ESPHome device without `api: encryption:`. Microphone audio, replies and controls then travel unencrypted, and anyone who can reach the port can drive the satellite. Set `ENABLE_ENCRYPTION="1"` to turn on the same Noise encryption that ESPHome devices use.
+
+**The key is created on the LVA side, not by Home Assistant.** Home Assistant only asks for it when adding the device and stores it. Both sides need the same key, and nothing is exchanged automatically. The key can only be given as a file, never on the command line, where it would be visible in the process list.
+
+1. Set `ENABLE_ENCRYPTION="1"` and start LVA. If the key file does not exist, LVA creates it (32 random bytes, base64, mode 600). By default it is `encryption.key` in the same directory as the preferences file (`/app/configuration/encryption.key` in Docker). Set `ENCRYPTION_KEY_FILE` to use another path. Docker: the path is inside the container, so keep it in a mounted volume, otherwise a new key is created on every container start. You can also create the key yourself: `openssl rand -base64 32 > encryption.key`.
+2. LVA logs the new key once when it creates the file, at error level so it is always visible (look for "Enter this key in Home Assistant"). It is not logged on later starts, so show it from the file if you need it again. Enter it in Home Assistant when it asks (see [Connecting to Home Assistant](#connecting-to-home-assistant)):
+   ``` sh
+   docker compose exec linux-voice-assistant cat /app/configuration/encryption.key   # Docker, use your service name
+   cat /home/pi/linux-voice-assistant/encryption.key                                 # systemd
+   ```
+
+LVA warns at startup if the key file is readable by other users; fix it with `chmod 600 <file>`. LVA refuses to start if the file cannot be read or is not 32 bytes of base64. Clients without the key, or with a different one, are refused.
+
+To change the key, replace the content of the file, restart LVA, and enter the new key in Home Assistant (ESPHome integration, "Reconfigure" on the device, or remove and re-add it). Remove `ENABLE_ENCRYPTION` to serve plaintext again.
 
 
 ### Use own soundfiles:
