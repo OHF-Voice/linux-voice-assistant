@@ -92,7 +92,6 @@ def load_encryption_key_file(path: Path) -> bytes:
 
 
 class APIServer(asyncio.Protocol):
-
     def __init__(self, name: str, noise_psk: Optional[bytes] = None, mac_address: str = "") -> None:
         """Serve the ESPHome API to one client.
 
