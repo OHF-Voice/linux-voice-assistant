@@ -2,4 +2,4 @@ websockets>=12.0
 apa102-pi>=2.0.0
 spidev>=3.6
 gpiozero>=2.0
-lgpio>=0.2
+lgpio>=0.2.2.0
