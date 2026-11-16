@@ -737,6 +737,7 @@ def process_audio(state: ServerState, mic, block_size: int):
 
     last_active: Optional[float] = None
     webrtc: Optional[WebRTCProcessor] = None
+    stop_word_running = False
 
     try:
         _LOGGER.debug("Opening audio input device: %s", mic.name)
@@ -905,15 +906,28 @@ def process_audio(state: ServerState, mic, block_size: int):
                                 state.satellite.wakeup(wake_word, DetectionResult(wake_word.id, wake_word_index, activated))
                                 last_active = now
 
-                    # Always process to keep state correct
+                    # The stop word can only act while a reply, announcement or
+                    # timer is playing, which is exactly when its id is in
+                    # active_wake_words.  Inferring it at other times costs a
+                    # model pass on every frame for a result that is discarded.
+                    # The model carries state between windows, so reset it when
+                    # it becomes reachable again instead of scoring a stale
+                    # window as if it were current.
                     stopped = False
+                    stop_active = state.stop_word.id in state.active_wake_words
+                    if stop_active and not stop_word_running:
+                        state.stop_word.reset()
+                        stop_word_running = True
+                    elif not stop_active:
+                        stop_word_running = False
 
-                    # Apply stop word sensitivity threshold
-                    state.stop_word.probability_cutoff = state.stop_word_threshold
-                    # _LOGGER.debug("Set stop word probability cutoff to %.3f", state.stop_word_threshold)
-                    for micro_input in micro_inputs:
-                        if state.stop_word.process_streaming(micro_input):
-                            stopped = True
+                    if stop_active:
+                        # Apply stop word sensitivity threshold
+                        state.stop_word.probability_cutoff = state.stop_word_threshold
+                        # _LOGGER.debug("Set stop word probability cutoff to %.3f", state.stop_word_threshold)
+                        for micro_input in micro_inputs:
+                            if state.stop_word.process_streaming(micro_input):
+                                stopped = True
 
                     if stopped and (state.stop_word.id in state.active_wake_words) and not state.muted:
                         _LOGGER.debug("Stop word detected")
