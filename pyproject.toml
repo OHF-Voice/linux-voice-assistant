@@ -22,17 +22,17 @@ classifiers = [
 ]
 requires-python = ">=3.11.0"
 dependencies = [
-    "aioesphomeapi==45.3.1",
+    "aioesphomeapi==46.30.0",
     "netifaces2==0.0.22",
     "soundcard<1",
     "numpy>=2,<3",
-    "pymicro-wakeword==2.4.1",
+    "pymicro-wakeword==2.5.0",
     "pyopen-wakeword>=1,<2",
     "python-mpv>=1,<2",
     "zeroconf<1",
     "getmac<1",
     "types-protobuf",
-    "websockets==12",
+    "websockets==17.4",
     "webrtc-noise-gain>=1,<2",
 ]
 dynamic = ["version"]
