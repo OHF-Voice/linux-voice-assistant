@@ -174,6 +174,27 @@ If no models are loaded, or `state.wake_words_changed` is set, the loop rebuilds
 
 Audio flows to HA only between a wake word (or a manual start) and the end of speech. `_is_streaming_audio` is set to true when `VoiceAssistantRequest(start=True, wake_word_phrase=...)` is sent. It is set to false by HA's `STT_VAD_END` / `STT_END` events (see "Voice pipeline state" in `CLAUDE.md`).
 
+#### Who decides when streaming stops (VAD)
+
+LVA has no voice activity detection (VAD) of its own. While `_is_streaming_audio` is true, every block is sent, including silence and noise. Speech detection runs in Home Assistant on the received audio and is reported back as pipeline events (`VoiceAssistantEventResponse`, handled in `handle_voice_event()`):
+
+| Event from HA | LVA reaction |
+|---------------|--------------|
+| `STT_VAD_START` | Only logged. Streaming already runs. |
+| `STT_VAD_END` | `_is_streaming_audio = False`, streaming stops. |
+| `STT_END` | `_is_streaming_audio = False`. The transcript is emitted as `stt_text` to peripherals. |
+| `RUN_END` | `_is_streaming_audio = False` as a safety net, for example if no speech was detected. |
+
+Audio is sent in these windows only:
+
+- From the wake word (after the wake sound, or immediately with `--listen-during-wake-sound`) until HA ends the speech.
+- From a button start (`start_listening()`) until HA ends the speech.
+- During a continued conversation, from the end of the settle delay until HA ends the speech.
+
+Outside these windows nothing is sent. Wake word and stop word detection run locally on every block and send no audio to HA. Muting also stops the stream immediately.
+
+If nobody speaks, LVA keeps sending until HA's own speech timeout ends the run. That timeout is not configurable in LVA.
+
 ### 7. Wake word and stop word detection (same loop, same chunk)
 
 After `handle_audio()`, the processed `audio_chunk` feeds the detectors:
