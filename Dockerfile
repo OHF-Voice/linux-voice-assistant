@@ -1,7 +1,7 @@
 ### Build stage: compile the Python dependencies (pymicro-features needs a compiler)
 # On linux/arm/v7 the dependencies without wheels (NumPy, cffi, webrtc-noise-gain, ...) are built from source,
 # NumPy against OpenBLAS.
-FROM python:3.13-slim-trixie AS build
+FROM python:3.15-slim-trixie AS build
 
 ARG TARGETARCH
 
@@ -44,7 +44,7 @@ ctypes.CDLL(str(dst))"; \
     find .venv -name '__pycache__' -prune -exec rm -rf {} +
 
 ### Runtime stage
-FROM python:3.13-slim-trixie
+FROM python:3.15-slim-trixie
 
 ARG TARGETARCH
 
