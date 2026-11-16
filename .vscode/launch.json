@@ -3,9 +3,10 @@
   "configurations": [
     {
       "name": "Run Linux Voice Assistant",
-      "type": "python",
+      "type": "debugpy",
       "request": "launch",
-      "program": "${workspaceFolder}/linux_voice_assistant/__main__.py",
+      "module": "linux_voice_assistant",
+      "cwd": "${workspaceFolder}",
       "console": "integratedTerminal",
       "justMyCode": true,
       "envFile": "${workspaceFolder}/.env"

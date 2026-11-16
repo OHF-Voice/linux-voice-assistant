@@ -393,7 +393,6 @@ class PeripheralAPIServer:
 
                 # Push the new volume to HA so its media player entity updates in real time
                 if satellite is not None:
-
                     satellite.send_messages(
                         [
                             MediaPlayerStateResponse(
@@ -427,7 +426,6 @@ class PeripheralAPIServer:
 
                 # Push the new volume to HA so its media player entity updates in real time
                 if satellite is not None:
-
                     satellite.send_messages(
                         [
                             MediaPlayerStateResponse(
@@ -455,7 +453,6 @@ class PeripheralAPIServer:
         elif command == LVACommand.STOP_MEDIA_PLAYER:
             state.music_player.stop()
             if state.media_player_entity is not None:
-
                 state.media_player_entity.state = MediaPlayerState.IDLE
                 if satellite is not None:
                     satellite.send_messages([self._create_media_player_response(MediaPlayerState.IDLE)])

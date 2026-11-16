@@ -40,6 +40,6 @@ Behavior changes (if any):
 ## Checklist
 
 - [ ] The code change is tested and works locally.
-- [ ] `./script/lint` passes.
-- [ ] `./script/tests` passes, and tests have been added/updated under `tests/` where applicable.
+- [ ] `prek run lint --all-files` lint passes.
+- [ ] `prek run tests --all-files` passes, and tests have been added/updated under `tests/` where applicable.
 - [ ] `docs/behavior.md` matches the code after this change.

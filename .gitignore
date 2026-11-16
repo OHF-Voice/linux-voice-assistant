@@ -24,3 +24,6 @@ venv/
 dev.env
 version.txt
 version_githash.txt
+
+__pycache__/
+.ruff_cache/
