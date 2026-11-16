@@ -56,6 +56,8 @@ You can change the used version in the docker-compose.yml.
 | `x.y` | Major.Minor with auto updates | `ghcr.io/ohf-voice/linux-voice-assistant:1.0` |
 | `<branch>` | Branch-specific build | `ghcr.io/ohf-voice/linux-voice-assistant:my-branch` |
 
+All tags are multi-architecture images for `linux/amd64`, `linux/aarch64` and `linux/arm/v7` (32-bit ARM, e.g. Raspberry Pi 2/3 with a 32-bit OS, Orange Pi, Allwinner H3). Docker selects the matching image for your platform automatically.
+
 Edit the .env file and change the values to your needs:
 ``` sh
 vim .env
@@ -70,7 +72,7 @@ Start the application:
 docker compose up -d
 ```
 
-💡 **Note:** If you want to use the application with a different user, you need to change the user in the .env file. Dont forget to change the UID from the user. The docker container will run until you stop it. It will restart autiomatically after a reboot.
+💡 **Note:** If you want to use the application with a different user, you need to change the user in the .env file. Dont forget to change the UID from the user. The docker container will run until you stop it. It will restart automatically after a reboot.
 
 Check if the application is running:
 ``` sh
@@ -172,11 +174,15 @@ Environment=XDG_RUNTIME_DIR="/run/user/<replace_with_your_user_id>"
 Environment=PULSE_COOKIE="/home/pi/linux-voice-assistant/tmp_pulse_cookie"
 Environment=PREFERENCES_FILE="/home/pi/linux-voice-assistant/preferences.json"
 # Environment=NETWORK_INTERFACE="eth0"
+# Environment=MAC_ADDRESS="02:00:00:00:00:01"
 # Environment=HOST="0.0.0.0"
 # Environment=PORT="6053"
+# Environment=ENABLE_ENCRYPTION="1"
+# Environment=ENCRYPTION_KEY_FILE="/home/pi/linux-voice-assistant/encryption.key"
 # Environment=AUDIO_INPUT_DEVICE="default"
-# Environment=AUDIO_OUTPUT_DEVICE="default"
-# Environment=MUSIC_OUTPUT_DEVICE="default"
+# Environment=AUDIO_INPUT_BLOCK_SIZE="1024"
+# Environment=AUDIO_OUTPUT_DEVICE="pulse"
+# Environment=MUSIC_OUTPUT_DEVICE="pulse"
 # Environment=MIC_VOLUME="1.0"
 # Environment=MIC_AUTO_GAIN="0"
 # Environment=MIC_NOISE_SUPPRESSION="0"
@@ -185,6 +191,7 @@ Environment=PREFERENCES_FILE="/home/pi/linux-voice-assistant/preferences.json"
 # Environment=WAKE_WORD_DIR="app/wakewords"
 # Environment=WAKE-MODEL="okay_nabu"
 # Environment=STOP_MODEL="stop"
+# Environment=DOWNLOAD_DIR="/home/pi/linux-voice-assistant/local"
 # Environment=TIMER_MAX_RING_SECONDS="900"
 # Environment=REFACTORY_SECONDS="2"
 # Environment=CONTINUE_CONVERSATION_DELAY="0.5"
@@ -195,14 +202,19 @@ Environment=PREFERENCES_FILE="/home/pi/linux-voice-assistant/preferences.json"
 # Environment=LISTEN_DURING_WAKE_SOUND="0"
 # Environment=MUTE_SOUND="sounds/mute_switch_on.flac"
 # Environment=UNMUTE_SOUND="sounds/mute_switch_off.flac"
+# Environment=PIPELINE_ENDED_SOUND="sounds/pipeline_ended_low.flac"
+# Environment=BUTTON_DOUBLE_PRESS_SOUND="sounds/button_double_press.flac"
+# Environment=BUTTON_TRIPLE_PRESS_SOUND="sounds/button_triple_press.flac"
+# Environment=BUTTON_LONG_PRESS_SOUND="sounds/button_long_press.flac"
 # Environment=PERIPHERAL_HOST="0.0.0.0"
 # Environment=PERIPHERAL_PORT="6055"
 # Environment=PERIPHERAL_VOLUME_STEP="%(default)s"
+# Environment=PERIPHERAL_STARTUP_WAIT="2.0"
 # Environment=DISABLE_PERIPHERAL_API="1"
 # Environment=ENABLE_OUTPUT_ONLY="1"
 ExecStart=/home/pi/linux-voice-assistant/docker-entrypoint.sh
 # ExecStart=/home/pi/linux-voice-assistant/docker-entrypoint.sh --additional-parameter-if-you-want
-Restart=always
+Restart=on-failure
 RestartSec=5
 
 [Install]
@@ -238,6 +250,7 @@ sudo systemctl status linux-voice-assistant
 3. Choose "ESPHome" and then "Set up another instance of ESPHome"
 4. Enter the IP address of your voice satellite with port 6053
 5. Click "Submit"
+6. If you enabled encryption (see [Feature: API Encryption](#feature-api-encryption)), Home Assistant asks for it now. Enter the key from LVA's key file.
 
 
 ## Additional Information:
@@ -266,10 +279,14 @@ The following variables can be configured in the `.env` or in the service file:
 | `LIST_DEVICES` | (optional) | Set to "1" to list audio devices instead of starting |
 | `PREFERENCES_FILE` | (optional) | Path to a custom preferences JSON file |
 | `NETWORK_INTERFACE` | Autodetected | network card for server |
+| `MAC_ADDRESS` | The network interface's | MAC address the device is known by in Home Assistant (colon separated, e.g. `02:00:00:00:00:01`). Keeps one identity across interfaces, or gives several instances on one machine each their own |
 | `HOST` | Autodetected | API server IP-Address, can be 0.0.0.0 for all interfaces, but only one network card works for MAC-ADDRESS and ESP protocol |
 | `PORT` | `6053` | API server port |
+| `ENABLE_ENCRYPTION` | false | Set to "1" to encrypt the ESPHome API. LVA creates the key file if it does not exist (see [Feature: API Encryption](#feature-api-encryption)) |
+| `ENCRYPTION_KEY_FILE` | `encryption.key` in the directory of `PREFERENCES_FILE` | Key file used when `ENABLE_ENCRYPTION` is set. LVA creates it with mode 600 if it does not exist |
 | `AUDIO_INPUT_DEVICE` | Autodetected | Audio input device name |
-| `AUDIO_OUTPUT_DEVICE` | Autodetected | Audio output device name |
+| `AUDIO_INPUT_BLOCK_SIZE` | `1024` | Audio input block size in samples |
+| `AUDIO_OUTPUT_DEVICE` | `pulse` | Audio output device name, use a `pulse/...` name from the device list (see `LIST_DEVICES`) |
 | `MUSIC_OUTPUT_DEVICE` | `AUDIO_OUTPUT_DEVICE` | Music/media output device name (defaults to the voice output device) |
 | `MIC_VOLUME` | 100 | Control microphone volume |
 | `MIC_AUTO_GAIN` | 0 | Add WebRTC Gain to Mic |
@@ -279,6 +296,7 @@ The following variables can be configured in the `.env` or in the service file:
 | `WAKE_WORD_DIR` | `app/wakewords` | Path to the wake word directory |
 | `WAKE_MODEL` | `okay_nabu` | Wake word model to use |
 | `STOP_MODEL` | `stop` | Stop model to use |
+| `DOWNLOAD_DIR` | `/app/local` | Directory to download custom wake word models to |
 | `TIMER_MAX_RING_SECONDS` | `900` | Seconds after which the timer stops ringing |
 | `REFACTORY_SECONDS` | `2` | Refractory period in seconds after wake word |
 | `CONTINUE_CONVERSATION_DELAY` | `0.5` | Delay before mic opens for continued conversation |
@@ -289,9 +307,14 @@ The following variables can be configured in the `.env` or in the service file:
 | `LISTEN_DURING_WAKE_SOUND` | false | Set to "1" to start listening immediately after wake word detection, without waiting for the wake sound to finish |
 | `MUTE_SOUND` | `sounds/mute_switch_on.flac` | Sound file for mute on |
 | `UNMUTE_SOUND` | `sounds/mute_switch_off.flac` | Sound file for mute off |
+| `PIPELINE_ENDED_SOUND` | `sounds/pipeline_ended_low.flac` | Sound file to play when the voice pipeline ends without a response (e.g. no speech detected) |
+| `BUTTON_DOUBLE_PRESS_SOUND` | `sounds/button_double_press.flac` | Sound file for button double press |
+| `BUTTON_TRIPLE_PRESS_SOUND` | `sounds/button_triple_press.flac` | Sound file for button triple press |
+| `BUTTON_LONG_PRESS_SOUND` | `sounds/button_long_press.flac` | Sound file for button long press |
 | `PERIPHERAL_HOST` | 0.0.0.0 | Host for the peripheral WebSocket API |
 | `PERIPHERAL_PORT` | 6055 | Port for the peripheral WebSocket API |
 | `PERIPHERAL_VOLUME_STEP` | %(default)s | Volume change per button press |
+| `PERIPHERAL_STARTUP_WAIT` | `2.0` | Seconds to wait for peripherals to register entities before Home Assistant enumerates them (0 to skip) |
 | `DISABLE_PERIPHERAL_API` | false | Disable the peripheral WebSocket API |
 | `ENABLE_OUTPUT_ONLY` | (optional) | Set to "1" to enable output-only mode |
 
@@ -307,6 +330,24 @@ Enable `LISTEN_DURING_WAKE_SOUND="1"` to let LVA begin listening immediately aft
 This feature is especially useful when you want a more natural interaction flow and do not want to wait to confirm that the wake word was detected before speaking the command.
 
 Keep in mind that listening while the wake sound is playing can also make the microphone pick up some of that wake sound as echo, depending on your speaker and microphone setup. This echo can interfere with speech-to-text and make commands less accurate. If you run into this, see [Enabling Acoustic Echo Cancellation (AEC)](enabling_aec.md).
+
+
+### Feature: API Encryption
+
+By default the connection between LVA and Home Assistant is plaintext, like an ESPHome device without `api: encryption:`. Microphone audio, replies and controls then travel unencrypted, and anyone who can reach the port can drive the satellite. Set `ENABLE_ENCRYPTION="1"` to turn on the same Noise encryption that ESPHome devices use.
+
+**The key is created on the LVA side, not by Home Assistant.** Home Assistant only asks for it when adding the device and stores it. Both sides need the same key, and nothing is exchanged automatically. The key can only be given as a file, never on the command line, where it would be visible in the process list.
+
+1. Set `ENABLE_ENCRYPTION="1"` and start LVA. If the key file does not exist, LVA creates it (32 random bytes, base64, mode 600). By default it is `encryption.key` in the same directory as the preferences file (`/app/configuration/encryption.key` in Docker). Set `ENCRYPTION_KEY_FILE` to use another path. Docker: the path is inside the container, so keep it in a mounted volume, otherwise a new key is created on every container start. You can also create the key yourself: `openssl rand -base64 32 > encryption.key`.
+2. When LVA creates the file it logs a warning with its path (look for "Created encryption key file"). The key itself is never written to the log, so show it from the file and enter it in Home Assistant when it asks (see [Connecting to Home Assistant](#connecting-to-home-assistant)):
+   ``` sh
+   docker compose exec linux-voice-assistant cat /app/configuration/encryption.key   # Docker, use your service name
+   cat /home/pi/linux-voice-assistant/encryption.key                                 # systemd
+   ```
+
+LVA warns at startup if the key file is readable by other users; fix it with `chmod 600 <file>`. LVA refuses to start if the file cannot be read or is not 32 bytes of base64. Clients without the key, or with a different one, are refused.
+
+To change the key, replace the content of the file, restart LVA, and enter the new key in Home Assistant (ESPHome integration, "Reconfigure" on the device, or remove and re-add it). Remove `ENABLE_ENCRYPTION` to serve plaintext again.
 
 
 ### Use own soundfiles:

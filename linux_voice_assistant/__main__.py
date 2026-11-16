@@ -4,21 +4,21 @@ import asyncio
 import errno
 import json
 import logging
+import os
 import sys
 import threading
 import time
 from pathlib import Path
-from queue import Queue
-from typing import List, Optional, Union
+from typing import Any, List, Optional, Union
 
 import numpy as np
 import soundcard as sc
 from aioesphomeapi.api_pb2 import NumberStateResponse  # type: ignore  # pylint: disable=no-name-in-module
-from getmac import get_mac_address  # type: ignore
 from pymicro_wakeword import MicroWakeWord, MicroWakeWordFeatures
 from pyopen_wakeword import OpenWakeWord, OpenWakeWordFeatures
 
-from .models import Preferences, ServerState, WakeWordType, initial_stop_word_threshold
+from .api_server import create_encryption_key_file, load_encryption_key_file
+from .models import DetectionResult, Preferences, ServerState, WakeWordType, initial_stop_word_threshold
 from .mpv_player import MpvMediaPlayer
 from .peripheral_api import LVAEvent, PeripheralAPIServer
 from .satellite import VoiceSatelliteProtocol
@@ -27,12 +27,17 @@ from .util import (
     get_default_ipv4,
     get_esphome_version,
     get_version,
+    resolve_mac_address,
 )
 from .wake_word import find_available_wake_words, load_stop_model, load_wake_models
 from .webrtc import WebRTCProcessor
 from .zeroconf import HomeAssistantZeroconf
 
 _LOGGER = logging.getLogger(__name__)
+
+_MIC_RETRY_DELAY_SECONDS = 2.0
+_LOG_FORMAT = "%(asctime)s.%(msecs)03d %(levelname)s:%(name)s:%(message)s"
+_LOG_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 _MODULE_DIR = Path(__file__).parent
 _REPO_DIR = _MODULE_DIR.parent
 _WAKEWORDS_DIR = _REPO_DIR / "wakewords"
@@ -64,7 +69,8 @@ async def main() -> None:
     )
     parser.add_argument(
         "--audio-output-device",
-        help="Name for the audio output device (see --list-output-devices)",
+        default="pulse",
+        help="Name for the audio output device, use a pulse/... name (see --list-output-devices)",
     )
     parser.add_argument(
         "--music-output-device",
@@ -149,6 +155,11 @@ async def main() -> None:
         help="Sound to play when unmuting the assistant",
     )
     parser.add_argument(
+        "--pipeline-ended-sound",
+        default=str(_SOUNDS_DIR / "pipeline_ended_low.flac"),
+        help="Sound to play when the voice pipeline ends without a response (e.g. no speech detected)",
+    )
+    parser.add_argument(
         "--button-double-press-sound",
         default=str(_SOUNDS_DIR / "button_double_press.flac"),
         help="Sound to play for button double press",
@@ -176,12 +187,27 @@ async def main() -> None:
         "--network-interface",
         help="Network interface the application listens on (default: auto-detected by gateway)",
     )
+    parser.add_argument(
+        "--mac-address",
+        help="MAC address the device is known by in Home Assistant, e.g. 02:00:00:00:00:01 "
+        "(default: the network interface's). Set it to keep one identity across interfaces, "
+        "or to run several instances on one machine",
+    )
     # Note that default port is also set in docker-entrypoint.sh
     parser.add_argument(
         "--port",
         type=int,
         default=6053,
         help="Port the application is listening on (default: 6053)",
+    )
+    parser.add_argument(
+        "--enable-encryption",
+        action="store_true",
+        help="Encrypt the ESPHome API with the key from --encryption-key-file; Home Assistant then needs the same key, clients without it are refused",
+    )
+    parser.add_argument(
+        "--encryption-key-file",
+        help="File holding the encryption key (32 bytes, base64; for example from: openssl rand -base64 32). Default: encryption.key next to the preferences file. Created with a new random key if it does not exist",
     )
     parser.add_argument(
         "--enable-thinking-sound",
@@ -254,9 +280,9 @@ async def main() -> None:
         args.debug = True
         _setup_logging(args)
     elif args.debug:
-        logging.basicConfig(level=logging.DEBUG)
+        logging.basicConfig(level=logging.DEBUG, format=_LOG_FORMAT, datefmt=_LOG_DATE_FORMAT)
     else:
-        logging.basicConfig(level=logging.INFO)
+        logging.basicConfig(level=logging.INFO, format=_LOG_FORMAT, datefmt=_LOG_DATE_FORMAT)
 
     _LOGGER.debug(args)
     if args.list_input_devices:
@@ -279,51 +305,75 @@ async def main() -> None:
 
     # Resolve network interface for mac-address detection
     if not args.network_interface:
-        print("No network interface specified, try to detect default interface")
+        _LOGGER.info("No network interface specified, try to detect default interface")
         network_interface = get_default_interface()
-        print(f"Default interface detected: {network_interface}")
+        _LOGGER.info("Default interface detected: %s", network_interface)
     else:
-        print("Network interface specified")
+        _LOGGER.info("Network interface specified")
         network_interface = args.network_interface
-        print(f"Using network interface: {network_interface}")
+        _LOGGER.info("Using network interface: %s", network_interface)
 
     # Resolve ip_address where the application will be listening
     if not args.host:
-        print("No host (ip-address) specified, try to detect IP-Address")
+        _LOGGER.info("No host (ip-address) specified, try to detect IP-Address")
         host_ip_address = get_default_ipv4(network_interface)
-        print(f"IP-Address detected: {host_ip_address}")
+        _LOGGER.info("IP-Address detected: %s", host_ip_address)
     else:
-        print("Host specified")
-        print(f"Using host: {args.host}")
+        _LOGGER.info("Custom Host specified")
+        _LOGGER.info("Using host: %s", args.host)
         host_ip_address = args.host
 
     # Resolve mac
-    if not (mac_address := get_mac_address(interface=network_interface)):
-        print("No Mac address was found, app stopped.")
+    try:
+        mac_address = resolve_mac_address(args.mac_address, network_interface)
+    except ValueError as err:
+        _LOGGER.error("%s, app stopped.", err)
         sys.exit(1)
+    if args.mac_address:
+        _LOGGER.info("Using custom MAC address: %s", mac_address)
     mac_address_clean = mac_address.replace(":", "").lower()
 
     # Resolve name
     if not args.name:
-        print("No friendly name specified, try to autogenerate name")
+        _LOGGER.info("No friendly name specified, try to autogenerate name")
         friendly_name = f"LVA - {mac_address_clean}"
-        print(f"Friendly name autogenerated: {friendly_name}")
+        _LOGGER.info("Friendly name autogenerated: %s", friendly_name)
     else:
-        print("Friendly name specified")
-        print(f"Using friendly name: {args.name}")
+        _LOGGER.info("Friendly name specified")
+        _LOGGER.info("Using custom friendly name: %s", args.name)
         friendly_name = args.name
 
     device_name = f"lva-{mac_address_clean}"
 
-    print(f"Device name: {device_name}")
+    # Resolve encryption key
+    noise_psk: Optional[bytes] = None
+    if args.enable_encryption:
+        key_path = Path(args.encryption_key_file) if args.encryption_key_file else Path(args.preferences_file).parent / "encryption.key"
+        try:
+            if not key_path.exists():
+                create_encryption_key_file(key_path)
+                # Only the path is logged, never the key: logs are less protected than the key file
+                _LOGGER.warning("Created encryption key file: %s. Home Assistant will ask for this key, read it from that file.", key_path)
+            noise_psk = load_encryption_key_file(key_path)
+        except OSError as err:
+            _LOGGER.error("Cannot read the encryption key file: %s, app stopped.", err)
+            sys.exit(1)
+        except ValueError as err:
+            _LOGGER.error("%s (%s), app stopped.", err, key_path)
+            sys.exit(1)
+        _LOGGER.info("API encryption: enabled (key file %s)", key_path)
+    else:
+        _LOGGER.info("API encryption: disabled (plaintext)")
+
+    _LOGGER.info("Device name: %s", device_name)
 
     # Resolve version
     version = get_version()
-    print(f"Version: {version}")
+    _LOGGER.info("Version: %s", version)
 
     # Resolve esphome version
     esphome_version = get_esphome_version()
-    print(f"ESPHome api version: {esphome_version}")
+    _LOGGER.info("ESPHome api version: %s", esphome_version)
 
     # Resolve download dir
     args.download_dir = Path(args.download_dir)
@@ -336,9 +386,25 @@ async def main() -> None:
         except ValueError:
             pass
 
-        mic = sc.get_microphone(args.audio_input_device)
+        try:
+            mic = sc.get_microphone(args.audio_input_device)
+        except IndexError:
+            _LOGGER.error("Audio input device %r not found.", args.audio_input_device)
+            _LOGGER.error("Available input devices:")
+            for idx, available_mic in enumerate(sc.all_microphones()):
+                _LOGGER.error("  [%d] %s", idx, available_mic.name)
+            sys.exit(1)
     else:
         mic = sc.default_microphone()
+
+    # Validate output devices, mpv silently accepts unknown names
+    for output_device in (args.audio_output_device, args.music_output_device):
+        if output_device and not _output_device_exists(output_device):
+            _LOGGER.error("Audio output device %r not found.", output_device)
+            _LOGGER.error("Available output devices:")
+            for idx, speaker in enumerate(_list_output_devices()):
+                _LOGGER.error("  [%d] %s: %s", idx, speaker["name"], speaker["description"])
+            sys.exit(1)
 
     # Load available wake words
     wake_word_dirs = [Path(ww_dir) for ww_dir in args.wake_word_dir]
@@ -370,7 +436,7 @@ async def main() -> None:
         _LOGGER.debug("Loading preferences: %s", preferences_path)
         with open(preferences_path, "r", encoding="utf-8") as preferences_file:
             preferences_dict = json.load(preferences_file)
-            preferences = Preferences(**preferences_dict)
+            preferences = Preferences.from_dict(preferences_dict)
     else:
         preferences = Preferences()
 
@@ -430,7 +496,6 @@ async def main() -> None:
         ip_address=host_ip_address,
         version=version,
         esphome_version=esphome_version,
-        audio_queue=Queue(),
         entities=[],
         available_wake_words=available_wake_words,
         wake_words=wake_models,
@@ -443,7 +508,9 @@ async def main() -> None:
         timer_finished_sound=args.timer_finished_sound,
         processing_sound=args.processing_sound,
         mute_sound=args.mute_sound,
+        noise_psk=noise_psk,
         unmute_sound=args.unmute_sound,
+        pipeline_ended_sound=args.pipeline_ended_sound,
         button_double_press_sound=args.button_double_press_sound,
         button_triple_press_sound=args.button_triple_press_sound,
         button_long_press_sound=args.button_long_press_sound,
@@ -566,6 +633,7 @@ async def main() -> None:
         name=state.name,
         mac_address=state.mac_address,
         host_ip_address=host_ip_address,
+        encrypted=noise_psk is not None,
     )
     await discovery.register_server()
 
@@ -597,7 +665,6 @@ async def main() -> None:
     except KeyboardInterrupt:
         pass
     finally:
-        state.audio_queue.put_nowait(None)
         process_audio_thread.join()
         if peripheral_api is not None:
             await peripheral_api.stop()
@@ -606,6 +673,22 @@ async def main() -> None:
 
 
 # -----------------------------------------------------------------------------
+def _list_output_devices() -> list:
+    """Return the audio output devices reported by mpv."""
+    from mpv import MPV
+
+    return list(MPV().audio_device_list)  # type: ignore
+
+
+def _output_device_exists(device: str) -> bool:
+    """
+    Check whether mpv knows the given output device.
+    :param device: Device name as passed to --audio-output-device, a bare driver name like "pulse" matches any "pulse/..." device.
+    """
+    names = [speaker["name"] for speaker in _list_output_devices()]
+    return device in names or any(name.startswith(f"{device}/") for name in names)
+
+
 def _setup_logging(args: argparse.Namespace) -> None:
     COLORS = {
         logging.DEBUG: "\033[36m",
@@ -627,7 +710,7 @@ def _setup_logging(args: argparse.Namespace) -> None:
     handler = logging.StreamHandler()
     handler.setFormatter(
         logging.Formatter(
-            fmt="%(asctime)s %(levelname)s %(name)s: %(message)s",
+            fmt="%(asctime)s.%(msecs)03d %(levelname)s %(name)s: %(message)s",
             datefmt="%H:%M:%S",
         )
     )
@@ -657,7 +740,7 @@ def process_audio(state: ServerState, mic, block_size: int):
 
     try:
         _LOGGER.debug("Opening audio input device: %s", mic.name)
-        with mic.recorder(samplerate=16000, channels=n_channels, blocksize=block_size) as mic_in:
+        with _ReconnectingRecorder(mic, n_channels, block_size) as mic_in:
             while True:
                 # Shape: (block_size, n_channels) for stereo, (block_size, 1) for mono.
                 raw = mic_in.record(block_size)  # float32, range [-1, 1]
@@ -669,8 +752,7 @@ def process_audio(state: ServerState, mic, block_size: int):
                 channel_chunks: list[bytes] = []
                 for ch in range(n_channels):
                     col = raw[:, ch] if n_channels > 1 else raw.reshape(-1)
-                    chunk = (np.clip(col * mic_vol_scalar, -1.0, 1.0) * 32767.0).astype("<i2").tobytes()
-                    channel_chunks.append(chunk)
+                    channel_chunks.append(_float_to_pcm16(col, mic_vol_scalar))
 
                 # Primary channel drives WebRTC and wake-word detection.
                 audio_chunk = channel_chunks[0]
@@ -693,14 +775,14 @@ def process_audio(state: ServerState, mic, block_size: int):
                 if (not wake_words) or (state.wake_words_changed and state.wake_words):
                     # Update list of wake word models to process
                     state.wake_words_changed = False
-                    wake_words = [ww for ww in state.wake_words.values() if ww.id in state.active_wake_words]
+                    wake_words = [ww for ww_id, ww in state.wake_words.items() if ww_id in state.active_wake_words]
 
                     # TODO: Load default stop word value from json into state and preferences missing.
 
                     has_oww = False
                     for idx, wake_word in enumerate(wake_words):
                         # Load default threshold from model json
-                        wake_word_id = wake_word.id if hasattr(wake_word, "id") else next(iter(state.wake_words.keys()))
+                        wake_word_id = next((ww_id for ww_id, ww in state.wake_words.items() if ww is wake_word), "")
                         available_word = state.available_wake_words.get(wake_word_id)
                         # _LOGGER.debug("word= %s", state.available_wake_words.get(wake_word_id))
                         default_threshold = available_word.probability_cutoff if available_word else 0.7
@@ -786,7 +868,7 @@ def process_audio(state: ServerState, mic, block_size: int):
                         oww_inputs.extend(oww_features.process_streaming(audio_chunk))
 
                     for wake_word_index, wake_word in enumerate(wake_words):
-                        activated = False
+                        activated: Optional[float] = None
 
                         # Set dynamic threshold depending on wake word index
                         if wake_word_index == 0:
@@ -800,42 +882,36 @@ def process_audio(state: ServerState, mic, block_size: int):
                             # _LOGGER.debug("Set wake word %d probability cutoff to fallback value 0.7", wake_word_index+1)
 
                         if isinstance(wake_word, MicroWakeWord):
-                            # No debugging when no detection
-                            wake_word.debug_probabilities = False
-
                             # set microWakeWord cutoff
                             wake_word.probability_cutoff = threshold
 
                             for micro_input in micro_inputs:
-                                if wake_word.process_streaming(micro_input):
-                                    wake_word.debug_probabilities = True
-                                    activated = True
+                                prob = wake_word.process_streaming_prob(micro_input)
+                                if prob is not None and prob > threshold:
+                                    _LOGGER.debug("Wake word '%s' activated (probability %.3f exceeded threshold %.3f)", wake_word.wake_word, prob, threshold)
+                                    activated = prob if activated is None else max(activated, prob)
                         elif isinstance(wake_word, OpenWakeWord):
                             for oww_input in oww_inputs:
                                 for prob in wake_word.process_streaming(oww_input):
                                     if prob > threshold:
                                         _LOGGER.debug("Wake word '%s' activated (probability %.3f exceeded threshold %.3f)", wake_word.wake_word, prob, threshold)  # type: ignore[attr-defined]
-                                        activated = True
+                                        activated = prob if activated is None else max(activated, prob)
 
-                        if activated and not state.muted:
+                        if activated is not None and not state.muted:
                             # Check refractory
                             now = time.monotonic()
                             if (last_active is None) or ((now - last_active) > state.refractory_seconds):
-                                state.satellite.wakeup(wake_word)
+                                state.satellite.wakeup(wake_word, DetectionResult(wake_word.id, wake_word_index, activated))
                                 last_active = now
 
                     # Always process to keep state correct
                     stopped = False
-
-                    # No debugging when no detection
-                    state.stop_word.debug_probabilities = False
 
                     # Apply stop word sensitivity threshold
                     state.stop_word.probability_cutoff = state.stop_word_threshold
                     # _LOGGER.debug("Set stop word probability cutoff to %.3f", state.stop_word_threshold)
                     for micro_input in micro_inputs:
                         if state.stop_word.process_streaming(micro_input):
-                            state.stop_word.debug_probabilities = True
                             stopped = True
 
                     if stopped and (state.stop_word.id in state.active_wake_words) and not state.muted:
@@ -844,11 +920,103 @@ def process_audio(state: ServerState, mic, block_size: int):
                 except Exception:  # pylint: disable=broad-except
                     _LOGGER.exception("Unexpected error handling audio")
     except Exception:  # pylint: disable=broad-except
-        _LOGGER.exception("Unexpected error processing audio")
-        sys.exit(1)
+        _LOGGER.exception("Unexpected error processing audio, stopping because no audio can be recorded anymore")
+        logging.shutdown()
+        os._exit(1)  # pylint: disable=protected-access
 
 
 # -----------------------------------------------------------------------------
+
+
+def _float_to_pcm16(samples: np.ndarray, scalar: float) -> bytes:
+    """
+    Scale float samples in [-1, 1] and convert them to little-endian 16-bit PCM bytes.
+    :param samples: Float32 samples of a single channel.
+    :param scalar: Gain applied before clipping.
+    """
+    scaled = samples * scalar
+    np.clip(scaled, -1.0, 1.0, out=scaled)
+    scaled *= 32767.0
+    return scaled.astype("<i2").tobytes()
+
+
+class _ReconnectingRecorder:
+    """Microphone recorder that reopens its stream when the audio server reports a failure."""
+
+    def __init__(self, mic, n_channels: int, block_size: int) -> None:
+        """
+        :param mic: soundcard microphone to record from.
+        :param n_channels: Number of channels to record.
+        :param block_size: Frames per recorded block.
+        """
+        self._mic = mic
+        self._n_channels = n_channels
+        self._block_size = block_size
+        self._recorder: Any = None
+
+    def __enter__(self) -> "_ReconnectingRecorder":
+        self._open()
+        return self
+
+    def __exit__(self, *exc_info) -> None:
+        self._close()
+
+    def record(self, frames: int) -> np.ndarray:
+        """
+        Record a block, reopening the microphone stream if it failed.
+        :param frames: Number of frames to record.
+        """
+        try:
+            return self._recorder.record(frames)  # type: ignore[no-any-return]
+        except RuntimeError as err:
+            self._recover(err)
+            return self._recorder.record(frames)  # type: ignore[no-any-return]
+
+    def _open(self) -> None:
+        self._recorder = self._mic.recorder(samplerate=16000, channels=self._n_channels, blocksize=self._block_size)
+        self._recorder.__enter__()  # pylint: disable=unnecessary-dunder-call
+
+    def _close(self) -> None:
+        recorder, self._recorder = self._recorder, None
+        if recorder is not None:
+            try:
+                recorder.__exit__(None, None, None)
+            except Exception:  # pylint: disable=broad-except
+                _LOGGER.debug("Ignoring error while closing failed microphone stream", exc_info=True)
+
+    def _recover(self, err: Exception) -> None:
+        """
+        Reopen the microphone stream immediately and, if that fails, once more after a short delay.
+        :param err: Error that interrupted recording.
+        """
+        name = getattr(self._mic, "name", self._mic)
+        _LOGGER.error(
+            "Recording from microphone '%s' failed: %s. The device may have been suspended, unplugged or the audio server restarted. Trying to reconnect...",
+            name,
+            err,
+        )
+        last_err: Exception = err
+        for attempt in (1, 2):
+            if attempt == 2:
+                time.sleep(_MIC_RETRY_DELAY_SECONDS)
+            self._close()
+            try:
+                self._refresh_mic()
+                self._open()
+                _LOGGER.info("Microphone '%s' reconnected (attempt %d)", name, attempt)
+                return
+            except Exception as open_err:  # pylint: disable=broad-except
+                last_err = open_err
+                _LOGGER.warning("Reconnecting microphone '%s' failed (attempt %d): %s", name, attempt, open_err)
+
+        self._close()
+        raise RuntimeError(f"Microphone '{name}' did not recover after 2 reconnect attempts: {last_err}") from last_err
+
+    def _refresh_mic(self) -> None:
+        """Look up the microphone again, because the device object can be stale after a suspend or replug."""
+        mic_id = getattr(self._mic, "id", None)
+        if mic_id is not None:
+            self._mic = sc.get_microphone(mic_id)
 
 
 def run():

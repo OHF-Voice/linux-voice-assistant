@@ -1,3 +1,107 @@
+<a id="v1.1.18"></a>
+# [v1.1.18](https://github.com/OHF-Voice/linux-voice-assistant/releases/tag/v1.1.18) - 2026-10-29
+
+<!-- Release notes generated using configuration in .github/release.yml at main -->
+
+## What's Changed
+### Exciting New Features 🎉
+* Link the feature planning discussion in the README by [@florian-asche](https://github.com/florian-asche) in [#503](https://github.com/OHF-Voice/linux-voice-assistant/pull/503)
+### Other Changes
+* Default the audio output device to pulse by [@florian-asche](https://github.com/florian-asche) in [#496](https://github.com/OHF-Voice/linux-voice-assistant/pull/496)
+* Log a clear error when the configured audio input device is not found by [@florian-asche](https://github.com/florian-asche) in [#497](https://github.com/OHF-Voice/linux-voice-assistant/pull/497)
+* Log a clear error when the configured audio output device is not found by [@florian-asche](https://github.com/florian-asche) in [#498](https://github.com/OHF-Voice/linux-voice-assistant/pull/498)
+* Log startup information through the logger instead of print by [@florian-asche](https://github.com/florian-asche) in [#500](https://github.com/OHF-Voice/linux-voice-assistant/pull/500)
+* Don't play the pipeline ended sound after a run that stopped following speech recognition by [@florian-asche](https://github.com/florian-asche) in [#502](https://github.com/OHF-Voice/linux-voice-assistant/pull/502)
+
+
+**Full Changelog**: https://github.com/OHF-Voice/linux-voice-assistant/compare/v1.1.17...v1.1.18
+
+[Changes][v1.1.18]
+
+
+<a id="v1.1.17"></a>
+# [v1.1.17](https://github.com/OHF-Voice/linux-voice-assistant/releases/tag/v1.1.17) - 2026-10-28
+
+<!-- Release notes generated using configuration in .github/release.yml at main -->
+
+## What's Changed
+### Exciting New Features 🎉
+* Make docs/behavior.md binding for contributors and agents by [@florian-asche](https://github.com/florian-asche) in [#480](https://github.com/OHF-Voice/linux-voice-assistant/pull/480)
+* feat: add pipeline ended sound by [@dmarkey](https://github.com/dmarkey) in [#267](https://github.com/OHF-Voice/linux-voice-assistant/pull/267)
+* build(docker): add standard oci image labels by [@florian-asche](https://github.com/florian-asche) in [#307](https://github.com/OHF-Voice/linux-voice-assistant/pull/307)
+* Mount the sounds directory in the dev docker-compose by [@florian-asche](https://github.com/florian-asche) in [#485](https://github.com/OHF-Voice/linux-voice-assistant/pull/485)
+* Add `--mac-address` by [@miguelangel-nubla](https://github.com/miguelangel-nubla) in [#490](https://github.com/OHF-Voice/linux-voice-assistant/pull/490)
+### Other Changes
+* Resolve active wake word ids from model dict keys by [@florian-asche](https://github.com/florian-asche) in [#470](https://github.com/OHF-Voice/linux-voice-assistant/pull/470)
+* Build slimmer Docker image with multi-stage build by [@florian-asche](https://github.com/florian-asche) in [#472](https://github.com/OHF-Voice/linux-voice-assistant/pull/472)
+* perf(satellite): unload wake word models that are no longer active by [@florian-asche](https://github.com/florian-asche) in [#454](https://github.com/OHF-Voice/linux-voice-assistant/pull/454)
+* Disable video in LibMpvPlayer by [@florian-asche](https://github.com/florian-asche) in [#486](https://github.com/OHF-Voice/linux-voice-assistant/pull/486)
+* Ignore unknown keys when loading preferences.json by [@florian-asche](https://github.com/florian-asche) in [#448](https://github.com/OHF-Voice/linux-voice-assistant/pull/448)
+* Correct misleading audio-stream-silence comment in LibMpvPlayer by [@florian-asche](https://github.com/florian-asche) in [#471](https://github.com/OHF-Voice/linux-voice-assistant/pull/471)
+* Document the audio input pipeline and require English documentation by [@florian-asche](https://github.com/florian-asche) in [#482](https://github.com/OHF-Voice/linux-voice-assistant/pull/482)
+* perf(audio): convert mic samples to PCM16 with fewer temporaries by [@florian-asche](https://github.com/florian-asche) in [#456](https://github.com/OHF-Voice/linux-voice-assistant/pull/456)
+* Document stale Docker image pitfall in CLAUDE.md by [@florian-asche](https://github.com/florian-asche) in [#481](https://github.com/OHF-Voice/linux-voice-assistant/pull/481)
+* perf(satellite): hash external wake word models in chunks by [@florian-asche](https://github.com/florian-asche) in [#455](https://github.com/OHF-Voice/linux-voice-assistant/pull/455)
+* Bump docker/build-push-action from 7.3.0 to 7.4.0 by [@dependabot](https://github.com/dependabot)[bot] in [#424](https://github.com/OHF-Voice/linux-voice-assistant/pull/424)
+* Keep wake word phrase on continued conversation by [@ChrisB85](https://github.com/ChrisB85) in [#430](https://github.com/OHF-Voice/linux-voice-assistant/pull/430)
+* Bump actions/setup-python from 5 to 7 by [@dependabot](https://github.com/dependabot)[bot] in [#369](https://github.com/OHF-Voice/linux-voice-assistant/pull/369)
+* Bump docker/login-action from 4.6.0 to 4.7.0 by [@dependabot](https://github.com/dependabot)[bot] in [#487](https://github.com/OHF-Voice/linux-voice-assistant/pull/487)
+* Reconnect the microphone after a failed stream and exit if it does not recover by [@florian-asche](https://github.com/florian-asche) in [#491](https://github.com/OHF-Voice/linux-voice-assistant/pull/491)
+* Fix outdated tooling docs and unify docstring style by [@florian-asche](https://github.com/florian-asche) in [#445](https://github.com/OHF-Voice/linux-voice-assistant/pull/445)
+* Don't play the pipeline ended sound on a satellite that lost the wake word by [@ChrisB85](https://github.com/ChrisB85) in [#492](https://github.com/OHF-Voice/linux-voice-assistant/pull/492)
+
+## New Contributors
+* [@dmarkey](https://github.com/dmarkey) made their first contribution in [#267](https://github.com/OHF-Voice/linux-voice-assistant/pull/267)
+* [@ChrisB85](https://github.com/ChrisB85) made their first contribution in [#430](https://github.com/OHF-Voice/linux-voice-assistant/pull/430)
+* [@miguelangel-nubla](https://github.com/miguelangel-nubla) made their first contribution in [#490](https://github.com/OHF-Voice/linux-voice-assistant/pull/490)
+
+**Full Changelog**: https://github.com/OHF-Voice/linux-voice-assistant/compare/v1.1.16...v1.1.17
+
+[Changes][v1.1.17]
+
+
+<a id="v1.1.16"></a>
+# [v1.1.16](https://github.com/OHF-Voice/linux-voice-assistant/releases/tag/v1.1.16) - 2026-10-24
+
+<!-- Release notes generated using configuration in .github/release.yml at main -->
+
+## What's Changed
+### Exciting New Features 🎉
+* Peripheral volume display by [@omaramin-2000](https://github.com/omaramin-2000) in [#411](https://github.com/OHF-Voice/linux-voice-assistant/pull/411)
+* Add unit tests for PeripheralAPIServer by [@omaramin-2000](https://github.com/omaramin-2000) in [#413](https://github.com/OHF-Voice/linux-voice-assistant/pull/413)
+* perf(player): limit mpv demuxer cache to 16 MiB by [@florian-asche](https://github.com/florian-asche) in [#453](https://github.com/OHF-Voice/linux-voice-assistant/pull/453)
+* Add timestamps to log output by [@florian-asche](https://github.com/florian-asche) in [#460](https://github.com/OHF-Voice/linux-voice-assistant/pull/460)
+* Expose remaining CLI options as environment variables by [@florian-asche](https://github.com/florian-asche) in [#447](https://github.com/OHF-Voice/linux-voice-assistant/pull/447)
+### Other Changes
+* Enhance Satellite1 HAT Board volume button functionality with hold-repeat by [@omaramin-2000](https://github.com/omaramin-2000) in [#415](https://github.com/OHF-Voice/linux-voice-assistant/pull/415)
+* Fix peripheral volume_muted state by [@omaramin-2000](https://github.com/omaramin-2000) in [#403](https://github.com/OHF-Voice/linux-voice-assistant/pull/403)
+* Fix a slight typo in README.md by [@dovy6](https://github.com/dovy6) in [#402](https://github.com/OHF-Voice/linux-voice-assistant/pull/402)
+* Restore stop word sensitivity from preferences on startup by [@ryanfelder](https://github.com/ryanfelder) in [#394](https://github.com/OHF-Voice/linux-voice-assistant/pull/394)
+* docs: remove obsolete option from pipewire aec by [@dankamongmen](https://github.com/dankamongmen) in [#416](https://github.com/OHF-Voice/linux-voice-assistant/pull/416)
+* Add an option to disable peripheral buttons by [@omaramin-2000](https://github.com/omaramin-2000) in [#423](https://github.com/OHF-Voice/linux-voice-assistant/pull/423)
+* Tell peripherals when a timer is cancelled by [@iamamoose](https://github.com/iamamoose) in [#431](https://github.com/OHF-Voice/linux-voice-assistant/pull/431)
+* Document player/libmpv.py in AGENTS.md key components by [@florian-asche](https://github.com/florian-asche) in [#446](https://github.com/OHF-Voice/linux-voice-assistant/pull/446)
+* refactor: remove unused audio_queue from ServerState by [@florian-asche](https://github.com/florian-asche) in [#457](https://github.com/OHF-Voice/linux-voice-assistant/pull/457)
+* Add CLAUDE.md with a codebase guide for AI agents by [@florian-asche](https://github.com/florian-asche) in [#449](https://github.com/OHF-Voice/linux-voice-assistant/pull/449)
+* Reset player state to idle when playback is stopped by [@cpruijsen](https://github.com/cpruijsen) in [#452](https://github.com/OHF-Voice/linux-voice-assistant/pull/452)
+* Keep music paused after an announcement by [@florian-asche](https://github.com/florian-asche) in [#459](https://github.com/OHF-Voice/linux-voice-assistant/pull/459)
+* Invoke the done callback after the audio has been played out by [@florian-asche](https://github.com/florian-asche) in [#462](https://github.com/OHF-Voice/linux-voice-assistant/pull/462)
+* Skip Docker image builds for documentation-only changes by [@florian-asche](https://github.com/florian-asche) in [#466](https://github.com/OHF-Voice/linux-voice-assistant/pull/466)
+* Add behavior guide describing user-facing functionality by [@florian-asche](https://github.com/florian-asche) in [#465](https://github.com/OHF-Voice/linux-voice-assistant/pull/465)
+* Complete playback when mpv ends with an error by [@florian-asche](https://github.com/florian-asche) in [#463](https://github.com/OHF-Voice/linux-voice-assistant/pull/463)
+
+## New Contributors
+* [@dovy6](https://github.com/dovy6) made their first contribution in [#402](https://github.com/OHF-Voice/linux-voice-assistant/pull/402)
+* [@ryanfelder](https://github.com/ryanfelder) made their first contribution in [#394](https://github.com/OHF-Voice/linux-voice-assistant/pull/394)
+* [@dankamongmen](https://github.com/dankamongmen) made their first contribution in [#416](https://github.com/OHF-Voice/linux-voice-assistant/pull/416)
+* [@iamamoose](https://github.com/iamamoose) made their first contribution in [#431](https://github.com/OHF-Voice/linux-voice-assistant/pull/431)
+* [@cpruijsen](https://github.com/cpruijsen) made their first contribution in [#452](https://github.com/OHF-Voice/linux-voice-assistant/pull/452)
+
+**Full Changelog**: https://github.com/OHF-Voice/linux-voice-assistant/compare/v1.1.15...v1.1.16
+
+[Changes][v1.1.16]
+
+
 <a id="v1.1.15"></a>
 # [v1.1.15](https://github.com/OHF-Voice/linux-voice-assistant/releases/tag/v1.1.15) - 2026-08-02
 
@@ -390,6 +494,9 @@ Initial release
 [Changes][v1.0.0]
 
 
+[v1.1.18]: https://github.com/OHF-Voice/linux-voice-assistant/compare/v1.1.17...v1.1.18
+[v1.1.17]: https://github.com/OHF-Voice/linux-voice-assistant/compare/v1.1.16...v1.1.17
+[v1.1.16]: https://github.com/OHF-Voice/linux-voice-assistant/compare/v1.1.15...v1.1.16
 [v1.1.15]: https://github.com/OHF-Voice/linux-voice-assistant/compare/v1.1.14...v1.1.15
 [v1.1.14]: https://github.com/OHF-Voice/linux-voice-assistant/compare/v1.1.13...v1.1.14
 [v1.1.13]: https://github.com/OHF-Voice/linux-voice-assistant/compare/v1.1.12...v1.1.13

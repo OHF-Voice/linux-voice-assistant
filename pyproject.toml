@@ -26,7 +26,7 @@ dependencies = [
     "netifaces2==0.0.22",
     "soundcard<1",
     "numpy>=2,<3",
-    "pymicro-wakeword>=2,<3",
+    "pymicro-wakeword==2.4.1",
     "pyopen-wakeword>=1,<2",
     "python-mpv>=1,<2",
     "zeroconf<1",

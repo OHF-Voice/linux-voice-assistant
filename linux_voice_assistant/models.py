@@ -3,10 +3,9 @@
 import json
 import logging
 from collections.abc import Iterable
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, fields
 from enum import Enum
 from pathlib import Path
-from queue import Queue
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Union
 
 if TYPE_CHECKING:
@@ -36,6 +35,15 @@ _LOGGER = logging.getLogger(__name__)
 class WakeWordType(str, Enum):
     MICRO_WAKE_WORD = "micro"
     OPEN_WAKE_WORD = "openWakeWord"
+
+
+@dataclass(frozen=True)
+class DetectionResult:
+    """Outcome of one wake word detection, common to both engines."""
+
+    wake_word_id: str
+    slot: int
+    score: Optional[float] = None
 
 
 @dataclass
@@ -95,6 +103,19 @@ class Preferences:
     mic_noise_suppression: int = 0
     mic_volume: int = 100  # 1–100, default maximum
 
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "Preferences":
+        """
+        Build preferences from a loaded preferences.json, ignoring keys this version does not know.
+        :param data: Parsed content of the preferences file.
+        """
+        known_keys = {f.name for f in fields(cls)}
+        unknown_keys = sorted(set(data) - known_keys)
+        if unknown_keys:
+            _LOGGER.warning("Ignoring unknown preferences: %s", ", ".join(unknown_keys))
+
+        return cls(**{key: value for key, value in data.items() if key in known_keys})
+
 
 @dataclass
 class ServerState:
@@ -105,7 +126,6 @@ class ServerState:
     network_interface: str
     version: str
     esphome_version: str
-    audio_queue: "Queue[Optional[bytes]]"
     entities: "List[ESPHomeEntity]"
     available_wake_words: "Dict[str, AvailableWakeWord]"
     wake_words: "Dict[str, Union[MicroWakeWord, OpenWakeWord]]"
@@ -119,6 +139,7 @@ class ServerState:
     timer_finished_sound: str
     mute_sound: str
     unmute_sound: str
+    pipeline_ended_sound: str
     button_double_press_sound: str
     button_triple_press_sound: str
     button_long_press_sound: str
@@ -126,6 +147,8 @@ class ServerState:
     preferences_path: Path
     download_dir: Path
     continue_conversation_delay: float = 0.5  # seconds to wait after TTS before opening mic
+    # ESPHome API encryption key (32 bytes); None serves plaintext only.
+    noise_psk: Optional[bytes] = None
 
     media_player_entity: "Optional[MediaPlayerEntity]" = None
     satellite: "Optional[VoiceSatelliteProtocol]" = None
