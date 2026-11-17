@@ -315,6 +315,298 @@ class TestStop:
 
 
 # ---------------------------------------------------------------------------
+# Wake word audio verification
+# ---------------------------------------------------------------------------
+
+
+def _wake_word_audio():
+    from linux_voice_assistant.wake_word_audio import WakeWordAudio
+
+    return WakeWordAudio(((b"\x01\x01", b"\x02\x02\x02\x02"), (b"\x03\x03", b"\x04\x04\x04\x04")))
+
+
+def _verifying_satellite(tmp_path):
+    sat = make_satellite(tmp_path)
+    sat.send_messages = MagicMock()
+    sat._emit = MagicMock()
+    sat._wake_word_audio_requested = True
+    with patch("linux_voice_assistant.satellite.threading.Timer") as timer_cls:
+        sat.wakeup(MagicMock(wake_word="Hey Jarvis"), DetectionResult("hey_jarvis", 0, 0.91, 0.5), _wake_word_audio())
+    sat._timer_cls = timer_cls
+    return sat
+
+
+class TestWakeWordAudioSubscription:
+    def _subscribe(self, sat, subscribe, flags):
+        from aioesphomeapi.api_pb2 import SubscribeVoiceAssistantRequest
+
+        list(sat.handle_message(SubscribeVoiceAssistantRequest(subscribe=subscribe, flags=flags)))
+
+    def test_feature_is_advertised(self, tmp_path):
+        from aioesphomeapi import VoiceAssistantFeature
+
+        sat = make_satellite(tmp_path)
+        assert sat.supported_features & VoiceAssistantFeature.WAKE_WORD_AUDIO
+
+    def test_not_requested_by_default(self, tmp_path):
+        assert make_satellite(tmp_path).wake_word_audio_requested is False
+
+    def test_subscription_with_flag_requests_the_audio(self, tmp_path):
+        from aioesphomeapi import VoiceAssistantSubscriptionFlag
+
+        sat = make_satellite(tmp_path)
+        self._subscribe(sat, True, VoiceAssistantSubscriptionFlag.API_AUDIO | VoiceAssistantSubscriptionFlag.WAKE_WORD_AUDIO)
+        assert sat.wake_word_audio_requested is True
+
+    def test_subscription_without_flag_does_not_request_it(self, tmp_path):
+        from aioesphomeapi import VoiceAssistantSubscriptionFlag
+
+        sat = make_satellite(tmp_path)
+        self._subscribe(sat, True, VoiceAssistantSubscriptionFlag.API_AUDIO)
+        assert sat.wake_word_audio_requested is False
+
+    def test_unsubscribing_stops_the_request(self, tmp_path):
+        from aioesphomeapi import VoiceAssistantSubscriptionFlag
+
+        sat = make_satellite(tmp_path)
+        self._subscribe(sat, True, VoiceAssistantSubscriptionFlag.WAKE_WORD_AUDIO)
+        self._subscribe(sat, False, VoiceAssistantSubscriptionFlag.WAKE_WORD_AUDIO)
+        assert sat.wake_word_audio_requested is False
+
+    def test_connection_lost_resets_the_request(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        sat._wake_word_audio_requested = True
+        sat.connection_lost(None)
+        assert sat.wake_word_audio_requested is False
+
+
+class TestWakeWordVerificationStart:
+    def test_request_carries_the_detection_and_buffered_sizes(self, tmp_path):
+        sat = _verifying_satellite(tmp_path)
+
+        request = sat.send_messages.call_args.args[0][0]
+        assert request.start is True
+        assert request.wake_word_phrase == "Hey Jarvis"
+        assert request.wake_word_id == "hey_jarvis"
+        assert request.wake_word_audio_bytes == 4
+        assert request.wake_word_audio_bytes2 == 8
+        assert request.wake_word_probability == pytest.approx(0.91)
+        assert request.wake_word_probability_cutoff == pytest.approx(0.5)
+
+    def test_buffered_audio_follows_the_request_in_one_send(self, tmp_path):
+        sat = _verifying_satellite(tmp_path)
+
+        sat.send_messages.assert_called_once()
+        messages = sat.send_messages.call_args.args[0]
+        assert [(m.data, m.data2) for m in messages[1:]] == [(b"\x01\x01", b"\x02\x02\x02\x02"), (b"\x03\x03", b"\x04\x04\x04\x04")]
+
+    def test_streaming_starts_without_a_wake_sound(self, tmp_path):
+        sat = _verifying_satellite(tmp_path)
+
+        assert sat._is_streaming_audio is True
+        assert sat._pipeline_active is True
+        sat.state.tts_player.play.assert_not_called()
+
+    def test_media_is_not_ducked_before_the_wake_word_is_accepted(self, tmp_path):
+        sat = _verifying_satellite(tmp_path)
+        sat.state.music_player.duck.assert_not_called()
+
+    def test_peripherals_see_wake_word_detected_then_listening(self, tmp_path):
+        sat = _verifying_satellite(tmp_path)
+
+        events = [call.args[0] for call in sat._emit.call_args_list]
+        assert events == [LVAEvent.WAKE_WORD_DETECTED, LVAEvent.LISTENING]
+
+    def test_a_verdict_timer_is_started(self, tmp_path):
+        sat = _verifying_satellite(tmp_path)
+
+        timeout, _callback = sat._timer_cls.call_args.args
+        assert timeout == 2.0
+        sat._timer_cls.return_value.start.assert_called_once()
+        assert sat._verifying_wake_word is True
+
+    def test_without_buffered_audio_the_regular_flow_is_used(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        sat.send_messages = MagicMock()
+        sat._wake_word_audio_requested = True
+
+        sat.wakeup(MagicMock(wake_word="Hey Jarvis"), DetectionResult("hey_jarvis", 0, 0.91, 0.5))
+
+        sat.state.music_player.duck.assert_called_once()
+        sat.state.tts_player.play.assert_called_once()
+        sat.send_messages.assert_not_called()
+        assert sat._verifying_wake_word is False
+
+    def test_buffered_audio_is_ignored_when_home_assistant_did_not_ask_for_it(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        sat.send_messages = MagicMock()
+
+        sat.wakeup(MagicMock(wake_word="Hey Jarvis"), DetectionResult("hey_jarvis", 0, 0.91, 0.5), _wake_word_audio())
+
+        sat.send_messages.assert_not_called()
+        sat.state.tts_player.play.assert_called_once()
+
+    def test_muted_satellite_does_not_start_a_verification(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        sat.send_messages = MagicMock()
+        sat._wake_word_audio_requested = True
+        sat.state.muted = True
+
+        sat.wakeup(MagicMock(wake_word="Hey Jarvis"), DetectionResult("hey_jarvis", 0, 0.91, 0.5), _wake_word_audio())
+
+        sat.send_messages.assert_not_called()
+        assert sat._verifying_wake_word is False
+
+
+class TestWakeWordVerificationVerdict:
+    def test_accepted_wake_word_ducks_media_and_stops_the_timer(self, tmp_path):
+        from aioesphomeapi import VoiceAssistantEventType
+
+        sat = _verifying_satellite(tmp_path)
+        sat.handle_voice_event(VoiceAssistantEventType.VOICE_ASSISTANT_WAKE_WORD_END, {})
+
+        sat.state.music_player.duck.assert_called_once()
+        sat._timer_cls.return_value.cancel.assert_called_once()
+        assert sat._verifying_wake_word is False
+        assert sat._is_streaming_audio is True
+
+    def test_wake_word_end_outside_a_verification_does_not_duck_again(self, tmp_path):
+        from aioesphomeapi import VoiceAssistantEventType
+
+        sat = make_satellite(tmp_path)
+        sat.handle_voice_event(VoiceAssistantEventType.VOICE_ASSISTANT_WAKE_WORD_END, {})
+        sat.state.music_player.duck.assert_not_called()
+
+    def test_rejected_wake_word_goes_back_to_idle(self, tmp_path):
+        from aioesphomeapi import VoiceAssistantEventType
+
+        sat = _verifying_satellite(tmp_path)
+        sat._emit.reset_mock()
+        sat.handle_voice_event(VoiceAssistantEventType.VOICE_ASSISTANT_WAKE_WORD_REJECTED, {})
+
+        assert sat._is_streaming_audio is False
+        assert sat._pipeline_active is False
+        assert sat._verifying_wake_word is False
+        sat._timer_cls.return_value.cancel.assert_called_once()
+        sat.state.music_player.unduck.assert_called_once()
+        sat._emit.assert_called_once_with(LVAEvent.IDLE)
+
+    def test_rejected_wake_word_plays_no_sound(self, tmp_path):
+        from aioesphomeapi import VoiceAssistantEventType
+
+        sat = _verifying_satellite(tmp_path)
+        sat.handle_voice_event(VoiceAssistantEventType.VOICE_ASSISTANT_WAKE_WORD_REJECTED, {})
+        sat.state.tts_player.play.assert_not_called()
+
+    def test_rejection_also_ends_a_regular_run(self, tmp_path):
+        from aioesphomeapi import VoiceAssistantEventType
+
+        sat = make_satellite(tmp_path)
+        sat._pipeline_active = True
+        sat._is_streaming_audio = True
+        sat._emit = MagicMock()
+        sat.handle_voice_event(VoiceAssistantEventType.VOICE_ASSISTANT_WAKE_WORD_REJECTED, {})
+
+        assert sat._is_streaming_audio is False
+        assert sat._pipeline_active is False
+        sat._emit.assert_called_once_with(LVAEvent.IDLE)
+
+    def test_run_end_after_a_rejection_stays_silent(self, tmp_path):
+        from aioesphomeapi import VoiceAssistantEventType
+
+        sat = _verifying_satellite(tmp_path)
+        sat.send_messages.reset_mock()
+        sat._emit.reset_mock()
+        sat.handle_voice_event(VoiceAssistantEventType.VOICE_ASSISTANT_WAKE_WORD_REJECTED, {})
+        sat._emit.reset_mock()
+        sat.state.music_player.unduck.reset_mock()
+        sat.handle_voice_event(VoiceAssistantEventType.VOICE_ASSISTANT_RUN_END, {})
+
+        sat.state.tts_player.play.assert_not_called()
+        sat.send_messages.assert_not_called()
+        sat._emit.assert_not_called()
+        sat.state.music_player.unduck.assert_not_called()
+
+    def test_next_run_after_a_rejection_ends_normally(self, tmp_path):
+        from aioesphomeapi import VoiceAssistantEventType
+
+        sat = make_satellite(tmp_path)
+        sat.handle_voice_event(VoiceAssistantEventType.VOICE_ASSISTANT_WAKE_WORD_REJECTED, {})
+        sat.handle_voice_event(VoiceAssistantEventType.VOICE_ASSISTANT_RUN_START, {})
+        sat.handle_voice_event(VoiceAssistantEventType.VOICE_ASSISTANT_RUN_END, {})
+
+        sat.state.tts_player.play.assert_called_once()
+        assert sat.state.tts_player.play.call_args.args[0] == sat.state.pipeline_ended_sound
+
+    @pytest.mark.parametrize("event_name", ["VOICE_ASSISTANT_RUN_END", "VOICE_ASSISTANT_ERROR"])
+    def test_terminal_events_stop_waiting_for_a_verdict(self, tmp_path, event_name):
+        from aioesphomeapi import VoiceAssistantEventType
+
+        sat = _verifying_satellite(tmp_path)
+        sat.handle_voice_event(getattr(VoiceAssistantEventType, event_name), {})
+
+        assert sat._verifying_wake_word is False
+        sat._timer_cls.return_value.cancel.assert_called_once()
+
+    def test_stop_cancels_the_verification(self, tmp_path):
+        sat = _verifying_satellite(tmp_path)
+        sat.stop()
+
+        assert sat._verifying_wake_word is False
+        sat._timer_cls.return_value.cancel.assert_called_once()
+
+    def test_muting_cancels_the_verification(self, tmp_path):
+        sat = _verifying_satellite(tmp_path)
+        sat._set_muted(True)
+
+        assert sat._verifying_wake_word is False
+        sat._timer_cls.return_value.cancel.assert_called_once()
+
+    def test_connection_lost_cancels_the_verification(self, tmp_path):
+        sat = _verifying_satellite(tmp_path)
+        sat.connection_lost(None)
+
+        assert sat._verifying_wake_word is False
+        sat._timer_cls.return_value.cancel.assert_called_once()
+
+
+class TestWakeWordVerificationTimeout:
+    def _expire(self, sat):
+        _timeout, callback = sat._timer_cls.call_args.args
+        sat.send_messages.reset_mock()
+        sat._emit.reset_mock()
+        callback()
+
+    def test_timeout_aborts_the_run_and_goes_idle(self, tmp_path):
+        sat = _verifying_satellite(tmp_path)
+        self._expire(sat)
+
+        stop_request = sat.send_messages.call_args.args[0][0]
+        assert stop_request.start is False
+        assert sat._is_streaming_audio is False
+        assert sat._pipeline_active is False
+        sat.state.music_player.unduck.assert_called_once()
+        assert [call.args[0] for call in sat._emit.call_args_list] == [LVAEvent.PIPELINE_ERROR, LVAEvent.IDLE]
+        assert sat._emit.call_args_list[0].args[1] == {"reason": "wake-word-verification-timeout"}
+
+    def test_timeout_plays_no_sound(self, tmp_path):
+        sat = _verifying_satellite(tmp_path)
+        self._expire(sat)
+        sat.state.tts_player.play.assert_not_called()
+
+    def test_late_timeout_after_a_verdict_does_nothing(self, tmp_path):
+        from aioesphomeapi import VoiceAssistantEventType
+
+        sat = _verifying_satellite(tmp_path)
+        sat.handle_voice_event(VoiceAssistantEventType.VOICE_ASSISTANT_WAKE_WORD_END, {})
+        self._expire(sat)
+
+        sat.send_messages.assert_not_called()
+        sat._emit.assert_not_called()
+        assert sat._is_streaming_audio is True
+
+
+# ---------------------------------------------------------------------------
 # Continued conversation
 # ---------------------------------------------------------------------------
 

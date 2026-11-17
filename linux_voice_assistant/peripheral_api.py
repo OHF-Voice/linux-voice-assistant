@@ -12,6 +12,9 @@ Feedback events emitted by LVA
   wake_word_detected  data: {"wake_word_id": str, "slot": int, "score": float | null}
               ``slot`` is 0 or 1 (wake word slot), ``score`` the detection
               probability (0.0–1.0) that exceeded the sensitivity threshold.
+              When HA verifies microWakeWord detections, no wake sound plays,
+              ``listening`` follows at once and ``idle`` follows if HA
+              rejects the wake word.
   listening
   stt_text        data: {"text": str}
               Emitted when HA returns the recognised speech transcript.
@@ -26,7 +29,9 @@ Feedback events emitted by LVA
   pipeline_error  data: {"reason": <str>}
               Emitted when the voice pipeline reports an error (STT failure,
               intent error, etc.). NOT emitted when HA disconnects — that
-              uses the separate ``disconnected`` event below.
+              uses the separate ``disconnected`` event below. Also emitted
+              (reason ``wake-word-verification-timeout``) when HA does not
+              accept or reject a wake word in time; ``idle`` follows.
               Peripheral containers should show a brief red error animation
               (e.g. 3 red flashes then off) and then return to idle.
   disconnected

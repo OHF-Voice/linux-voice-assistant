@@ -30,6 +30,7 @@ from .util import (
     resolve_mac_address,
 )
 from .wake_word import find_available_wake_words, load_stop_model, load_wake_models
+from .wake_word_audio import WakeWordAudioBuffer
 from .webrtc import WebRTCProcessor
 from .zeroconf import HomeAssistantZeroconf
 
@@ -737,6 +738,7 @@ def process_audio(state: ServerState, mic, block_size: int):
 
     last_active: Optional[float] = None
     webrtc: Optional[WebRTCProcessor] = None
+    wake_word_audio_buffer = WakeWordAudioBuffer()
 
     try:
         _LOGGER.debug("Opening audio input device: %s", mic.name)
@@ -861,6 +863,12 @@ def process_audio(state: ServerState, mic, block_size: int):
                     audio_chunk_2 = audio_chunk_unprocessed
                     state.satellite.handle_audio(audio_chunk, audio_chunk_2)
 
+                    # Buffer the audio before a detection only while Home Assistant verifies wake words, and never while muted.
+                    if state.satellite.wake_word_audio_requested and not state.muted:
+                        wake_word_audio_buffer.append(audio_chunk, audio_chunk_2)
+                    else:
+                        wake_word_audio_buffer.clear()
+
                     assert micro_features is not None
                     micro_inputs.clear()
                     micro_inputs.extend(micro_features.process_streaming(audio_chunk))
@@ -904,7 +912,9 @@ def process_audio(state: ServerState, mic, block_size: int):
                             # Check refractory
                             now = time.monotonic()
                             if (last_active is None) or ((now - last_active) > state.refractory_seconds):
-                                state.satellite.wakeup(wake_word, DetectionResult(wake_word.id, wake_word_index, activated))
+                                # Only microWakeWord detections are verified by Home Assistant.
+                                wake_word_audio = wake_word_audio_buffer.snapshot() if isinstance(wake_word, MicroWakeWord) and state.satellite.wake_word_audio_requested else None
+                                state.satellite.wakeup(wake_word, DetectionResult(wake_word.id, wake_word_index, activated, threshold), wake_word_audio)
                                 last_active = now
 
                     # Always process to keep state correct

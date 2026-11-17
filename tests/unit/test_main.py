@@ -172,6 +172,124 @@ class TestStopWordLogic:
 
 
 # ---------------------------------------------------------------------------
+# process_audio — audio buffered before a wake word (verification by Home Assistant)
+# ---------------------------------------------------------------------------
+
+
+class _StopLoop(BaseException):
+    """Raised by the fake recorder to leave the endless audio loop."""
+
+
+class _FakeRecorder:
+    """Context manager that records the given blocks, then ends the loop."""
+
+    def __init__(self, blocks, on_block):
+        self._blocks = list(blocks)
+        self._on_block = on_block
+        self._index = 0
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def record(self, _block_size):
+        if self._index >= len(self._blocks):
+            raise _StopLoop
+        self._on_block(self._index)
+        block = self._blocks[self._index]
+        self._index += 1
+        return block.reshape(-1, 1)
+
+
+def _run_process_audio(monkeypatch, wake_word_spec, detect_at, requested=True, muted_blocks=0):
+    """Run the audio loop over four blocks (the first `muted_blocks` of them muted) and return the satellite."""
+    monkeypatch.setitem(sys.modules, "soundcard", MagicMock())
+    sys.modules.pop("linux_voice_assistant.__main__", None)
+    import linux_voice_assistant.__main__ as main_mod
+    from tests.unit.conftest import make_satellite
+
+    wake_word = MagicMock(spec=wake_word_spec)
+    wake_word.id = "hey_jarvis"
+    wake_word.wake_word = "Hey Jarvis"
+    if hasattr(wake_word_spec, "process_streaming_prob"):
+        wake_word.process_streaming_prob.side_effect = lambda _: 0.9 if wake_word.process_streaming_prob.call_count == detect_at else 0.0
+    else:
+        wake_word.process_streaming.side_effect = lambda _: [0.9] if wake_word.process_streaming.call_count == detect_at else [0.0]
+
+    sat = make_satellite()
+    sat.handle_audio = MagicMock()
+    sat.wakeup = MagicMock()
+    sat._wake_word_audio_requested = requested
+    sat.state.wake_words = {"hey_jarvis": wake_word}
+    sat.state.active_wake_words = {"hey_jarvis"}
+    sat.state.sensitivity_1_number_entity = None
+    sat.state.sensitivity_2_number_entity = None
+    sat.state.stop_sensitivity_number_entity = None
+    sat.state.stop_word.process_streaming.return_value = False
+
+    features = MagicMock()
+    features.process_streaming.return_value = [np.zeros(1, dtype=np.float32)]
+    monkeypatch.setattr(main_mod, "MicroWakeWordFeatures", MagicMock(return_value=features))
+    monkeypatch.setattr(main_mod, "OpenWakeWordFeatures", MagicMock(from_builtin=MagicMock(return_value=features)))
+
+    audio = [make_audio_chunk(samples=4, value=0.1 * (i + 1)) for i in range(4)]
+    recorder = _FakeRecorder(audio, on_block=lambda index: setattr(sat.state, "muted", index < muted_blocks))
+    monkeypatch.setattr(main_mod, "_ReconnectingRecorder", MagicMock(return_value=recorder))
+
+    with pytest.raises(_StopLoop):
+        main_mod.process_audio(sat.state, MagicMock(), 4)
+    return sat
+
+
+class TestProcessAudioWakeWordAudio:
+    def test_micro_wake_word_gets_the_audio_up_to_the_detection(self, monkeypatch):
+        from pymicro_wakeword import MicroWakeWord
+
+        sat = _run_process_audio(monkeypatch, MicroWakeWord, detect_at=3)
+
+        sat.wakeup.assert_called_once()
+        wake_word_audio = sat.wakeup.call_args.args[2]
+        assert len(wake_word_audio.chunks) == 3
+        assert wake_word_audio.audio_bytes == 3 * 4 * 2
+        assert wake_word_audio.chunks[-1][0] == sat.handle_audio.call_args_list[2].args[0]
+
+    def test_detection_carries_score_and_cutoff(self, monkeypatch):
+        from pymicro_wakeword import MicroWakeWord
+
+        sat = _run_process_audio(monkeypatch, MicroWakeWord, detect_at=2)
+
+        detection = sat.wakeup.call_args.args[1]
+        assert detection.score == pytest.approx(0.9)
+        assert detection.cutoff == pytest.approx(0.7)
+
+    def test_no_audio_is_passed_when_home_assistant_did_not_ask(self, monkeypatch):
+        from pymicro_wakeword import MicroWakeWord
+
+        sat = _run_process_audio(monkeypatch, MicroWakeWord, detect_at=3, requested=False)
+
+        sat.wakeup.assert_called_once()
+        assert sat.wakeup.call_args.args[2] is None
+
+    def test_open_wake_word_is_not_verified(self, monkeypatch):
+        from pyopen_wakeword import OpenWakeWord
+
+        sat = _run_process_audio(monkeypatch, OpenWakeWord, detect_at=3)
+
+        sat.wakeup.assert_called_once()
+        assert sat.wakeup.call_args.args[2] is None
+
+    def test_audio_recorded_while_muted_is_not_buffered(self, monkeypatch):
+        from pymicro_wakeword import MicroWakeWord
+
+        sat = _run_process_audio(monkeypatch, MicroWakeWord, detect_at=3, muted_blocks=2)
+
+        sat.wakeup.assert_called_once()
+        assert len(sat.wakeup.call_args.args[2].chunks) == 1
+
+
+# ---------------------------------------------------------------------------
 # Preferences loading from args
 # ---------------------------------------------------------------------------
 

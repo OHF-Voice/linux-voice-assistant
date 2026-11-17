@@ -108,20 +108,20 @@ These are all the events LVA emits. Your peripheral script receives them and rea
 
 | Event | Data | Description |
 |-------|------|-------------|
-| `wake_word_detected` | `{"wake_word_id": str, "slot": int, "score": float\|null}` | The configured wake word was detected. `slot` is the wake word slot (0 or 1), `score` the detection probability (0.0–1.0) that exceeded the sensitivity threshold. The wakeup chime is now playing. Start your "wake" animation here. |
+| `wake_word_detected` | `{"wake_word_id": str, "slot": int, "score": float\|null}` | The configured wake word was detected. `slot` is the wake word slot (0 or 1), `score` the detection probability (0.0–1.0) that exceeded the sensitivity threshold. The wakeup chime is now playing. Start your "wake" animation here. When Home Assistant verifies microWakeWord detections (see [behavior.md](behavior.md#wake-word-verification-by-home-assistant)) no chime plays and `listening` follows immediately. |
 | `listening` | — | The wakeup chime has finished and LVA is now streaming audio to Home Assistant for speech-to-text. Show a "listening" animation. |
 | `stt_text` | `{"text": str}` | Home Assistant returned the recognised speech transcript. Use this to show what the user said on a display or LED ticker. |
 | `thinking` | — | LVA has stopped streaming audio and Home Assistant is processing the intent. Show a "thinking" animation. |
 | `tts_text` | `{"text": str}` | Home Assistant returned the assistant's text response, just before TTS audio begins playing. Use this to display the reply on a screen. |
 | `tts_speaking` | — | The TTS audio response is now playing. Show a "speaking" animation. |
 | `tts_finished` | — | TTS playback has finished. Transition back to idle, unless a new pipeline run is about to start. |
-| `idle` | — | The assistant is idle and ready for the next wake word. Turn off active animations. |
+| `idle` | — | The assistant is idle and ready for the next wake word. Turn off active animations. Also sent right after `wake_word_detected` and `listening` when Home Assistant rejects the wake word, so every listening animation must be able to end without a `thinking` event. |
 
 ### Error and connection events
 
 | Event | Data | Description |
 |-------|------|-------------|
-| `pipeline_error` | `{"reason": str}` | The voice pipeline failed — for example STT failure or an intent error. Show a brief red error animation (3 flashes, then off). NOT emitted when HA disconnects; see `disconnected` below. |
+| `pipeline_error` | `{"reason": str}` | The voice pipeline failed — for example STT failure or an intent error. Show a brief red error animation (3 flashes, then off). NOT emitted when HA disconnects; see `disconnected` below. Also sent with the reason `wake-word-verification-timeout` when Home Assistant neither accepts nor rejects a wake word in time, followed by `idle`. A rejected wake word sends no error, only `idle`. |
 | `disconnected` | — | The TCP connection to Home Assistant was lost. Show a "no connection" animation and keep it until you see `zeroconf` with `status: connected`. Note: if LVA itself is not running, your client will see a WebSocket connection failure instead — treat that the same way. |
 | `muted` | `{"muted": bool}` | The microphone mute state changed. `true` = muted (show a muted indicator on your LEDs, e.g. red at mic positions), `false` = unmuted. Emitted on every transition in both directions, so peripherals can track mute state without inferring it from `idle`. |
 | `zeroconf` | `{"status": "getting_started" \| "connected"}` | Reports LVA's connection lifecycle. `getting_started` is emitted at startup before HA connects; `connected` is emitted once the HA TCP handshake completes. Use `connected` to clear a "no connection" animation. |
