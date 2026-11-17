@@ -12,12 +12,7 @@ updates:
         update-types: ["minor", "patch"]
 
   - package-ecosystem: "pip"
-    directories:
-      - "/"
-      - "/examples/ReSpeaker 2mic HAT"
-      - "/examples/ReSpeaker 4mic HAT"
-      - "/examples/Satellite1 HAT Board"
-      - "/examples/Jabra Speak 410"
+    directory: "/"
     schedule:
       interval: weekly
     labels: ["dependencies"]
@@ -27,13 +22,7 @@ updates:
       default-days: 3
 
   - package-ecosystem: "docker"
-    directories:
-      - "/"
-      - "/examples/ReSpeaker 2mic HAT"
-      - "/examples/ReSpeaker 4mic HAT"
-      - "/examples/ReSpeaker Mic Array v2.0 (USB)"
-      - "/examples/Satellite1 HAT Board"
-      - "/examples/Jabra Speak 410"
+    directory: "/"
     schedule:
       interval: weekly
     labels: ["dependencies"]

@@ -85,8 +85,8 @@ The same flow as plain text:
  VoiceAssistantAudio               |
  data  = audio_chunk               v
  data2 = unprocessed ch 0   VoiceAssistantRequest(start=True)
-         or channel 1              |
-         or none                   +--> _is_streaming_audio = True
+         or none (N = 1)           |
+                                   +--> _is_streaming_audio = True
         |
         v
  send_messages()
@@ -107,11 +107,11 @@ Everything from capture to `send_messages()` runs on one thread, the audio threa
 | Library | `soundcard`, `mic.recorder(samplerate=16000, channels=N, blocksize=B)` |
 | Device | `--audio-input-device` (name or index), otherwise the default microphone |
 | Sample rate | fixed 16 kHz |
-| Channels `N` | `--audio-input-channels` (1 or 2, default 2) |
+| Channels `N` | `--audio-input-channels` (1 or 2, default 1) |
 | Block size `B` | `--audio-input-block-size` (default 1024 samples, 64 ms at 16 kHz) |
 | Sample format | float32 (32 bit) in the range [-1, 1], shape `(B, N)` |
 
-Channel 0 is the microphone. Channel 1, when present, is a reference signal (for example the speaker feed of a hardware echo canceller). The system capture level set in PulseAudio/PipeWire/ALSA is applied before LVA sees any sample. See [`enabling_aec.md`](enabling_aec.md) for system-level echo cancellation.
+Channel 0 is the microphone. Channel 1, when present, is a reference signal for AEC (for example the speaker feed of a hardware echo canceller). It is captured but not streamed to Home Assistant; what is streamed does not depend on `N`. The system capture level set in PulseAudio/PipeWire/ALSA is applied before LVA sees any sample. See [`enabling_aec.md`](enabling_aec.md) for system-level echo cancellation.
 
 The float32 format is fixed in `soundcard` (version 0.4.6, PulseAudio backend: `PA_SAMPLE_FLOAT32LE`) and cannot be configured. The audio server (PulseAudio or PipeWire) converts whatever the device delivers to 16 kHz, `N` channels and float32. The real bit depth of the sound card is therefore decided by the audio server and the hardware. A float32 stream does not add resolution if the source only has 16 bit.
 
@@ -162,9 +162,7 @@ If no models are loaded, or `state.wake_words_changed` is set, the loop rebuilds
 
 | Situation | `audio_chunk` (`data`) | `audio_chunk_2` (`data2`) |
 |-----------|------------------------|---------------------------|
-| WebRTC active | processed channel 0 | unprocessed channel 0 |
-| WebRTC off, 2 channels | channel 0 | channel 1 (reference) |
-| WebRTC off, 1 channel | channel 0 | none |
+| any | channel 0 (processed if WebRTC is active) | channel 1 before any WebRTC processing |
 
 `data2` is only sent if the installed `aioesphomeapi` knows the field (`_HAS_AUDIO_DATA2`). See "How Home Assistant and aioesphomeapi treat `data2`" below for what HA does with it.
 
@@ -232,13 +230,7 @@ The Home Assistant Cloud STT reports both preferences as `False`. Wyoming engine
 
 **Consequence for LVA**
 
-LVA advertises `MULTI_CHANNEL_AUDIO` whenever `audio_input_channels >= 2`. What it puts into `data2` depends on WebRTC:
-
-| WebRTC | `data2` content | Matches what Home Assistant expects? |
-|--------|-----------------|--------------------------------------|
-| active | unprocessed channel 0 | Yes |
-| off, 2 channels | channel 1 (reference signal) | No, if Home Assistant switches to channel 1 it forwards the reference signal to the STT engine instead of the microphone |
-| off, 1 channel | none | Not applicable (flag not advertised) |
+LVA always advertises `MULTI_CHANNEL_AUDIO` (unless output only), independent of `audio_input_channels`. `data2` always carries the microphone (channel 0) before any WebRTC gain or noise suppression, which is what Home Assistant expects as "non-enhanced audio". Without WebRTC, `data` and `data2` are identical. System-level processing such as echo cancellation in PulseAudio/PipeWire happens before LVA reads the samples and therefore is also contained in `data2`.
 
 This is derived from the code and has not been reproduced on a running system. Whether it triggers depends on the `prefers_*` values of the STT engine in use.
 
@@ -267,7 +259,7 @@ The AGC does not replace it:
 
 1. **Format conversion:** `soundcard` delivers float32 in the range -1 to 1. Everything downstream expects int16 PCM bytes: WebRTC (`Process10ms` takes bytes), the wake word models and `VoiceAssistantAudio` sent to Home Assistant. The AGC only receives its input from this function.
 2. **The AGC is optional:** It only runs if gain or NS is greater than 0. With the default values (both 0) WebRTC is skipped entirely and `_float_to_pcm16` is the only stage.
-3. **The AGC only handles channel 0:** Channel 1 (the reference) never goes through WebRTC but needs the same conversion.
+3. **The AGC only handles channel 0:** Channel 1 (the AEC reference, never streamed) never goes through WebRTC.
 
 The Mic Volume scalar only lives in the same function by convenience. The conversion would still be required with a scalar of 1.0. The scalar is merely a fixed, predictable control that can be set from Home Assistant. It only attenuates. For the basic input level, the system capture level (PulseAudio/PipeWire/ALSA) is usually the better place, because it acts before LVA reads the samples and can amplify.
 
@@ -293,7 +285,6 @@ The Mic Volume scalar only lives in the same function by convenience. The conver
 
 ## Things to be aware of
 
-- With two channels and WebRTC off, `data2` carries the reference channel, which Home Assistant may forward to the STT engine (details and status in "How Home Assistant and aioesphomeapi treat `data2`").
 - With WebRTC active, `data` and `data2` come from the same microphone block but can have different lengths, because only `data` goes through the 10 ms framing buffer.
 - When WebRTC returns no data for a block, that block is skipped entirely, including wake word detection.
 - Latency: one block is 64 ms, and a block is only sent once it is complete. This is the lower bound for the delay until the first audio packet. Capture buffering in the audio server, WebRTC framing and the network add to it. No measured values exist for this document.
