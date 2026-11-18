@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import logging
 from typing import Any, Dict, Optional
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -121,6 +122,29 @@ class TestStartStop:
             await server.start()
 
         assert server._loop is asyncio.get_running_loop()
+
+    @pytest.mark.asyncio
+    async def test_start_warns_on_non_loopback_host(self, caplog):
+        server = make_server()
+        server._host = "0.0.0.0"
+
+        with patch("websockets.server.serve", AsyncMock(return_value=MagicMock())):
+            with caplog.at_level(logging.WARNING, logger="linux_voice_assistant.peripheral_api"):
+                await server.start()
+
+        assert any("no authentication" in record.message for record in caplog.records)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("host", ["127.0.0.1", "::1", "localhost"])
+    async def test_start_does_not_warn_on_loopback_host(self, caplog, host):
+        server = make_server()
+        server._host = host
+
+        with patch("websockets.server.serve", AsyncMock(return_value=MagicMock())):
+            with caplog.at_level(logging.WARNING, logger="linux_voice_assistant.peripheral_api"):
+                await server.start()
+
+        assert not any("no authentication" in record.message for record in caplog.records)
 
     @pytest.mark.asyncio
     async def test_stop_closes_server(self):
