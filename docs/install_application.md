@@ -186,7 +186,7 @@ Environment=PREFERENCES_FILE="/home/pi/linux-voice-assistant/preferences.json"
 # Environment=MIC_VOLUME="1.0"
 # Environment=MIC_AUTO_GAIN="0"
 # Environment=MIC_NOISE_SUPPRESSION="0"
-# Environment=AUDIO_INPUT_CHANNELS=2
+# Environment=AUDIO_INPUT_CHANNELS=1
 # Environment=ENABLE_THINKING_SOUND="1"
 # Environment=WAKE_WORD_DIR="app/wakewords"
 # Environment=WAKE-MODEL="okay_nabu"
@@ -291,7 +291,7 @@ The following variables can be configured in the `.env` or in the service file:
 | `MIC_VOLUME` | 100 | Control microphone volume |
 | `MIC_AUTO_GAIN` | 0 | Add WebRTC Gain to Mic |
 | `MIC_NOISE_SUPPRESSION` | 0 | Add WebRTC Noise Suppression to Mic |
-| `AUDIO_INPUT_CHANNELS` | 2 | Number of audio input channels |
+| `AUDIO_INPUT_CHANNELS` | 1 | Number of audio input channels to capture (2 for devices with a hardware AEC reference channel). Does not change what is sent to Home Assistant |
 | `ENABLE_THINKING_SOUND` | false | Set to "1" to enable thinking sound |
 | `WAKE_WORD_DIR` | `app/wakewords` | Path to the wake word directory |
 | `WAKE_MODEL` | `okay_nabu` | Wake word model to use |

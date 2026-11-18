@@ -3,12 +3,36 @@ updates:
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
-      interval: daily
+      interval: weekly
+    labels: ["dependencies"]
+    commit-message:
+      prefix: ""
+    groups:
+      minor-and-patch:
+        update-types: ["minor", "patch"]
+
   - package-ecosystem: "pip"
     directory: "/"
     schedule:
       interval: weekly
-    groups:
-      dependencies:
-        patterns:
-          - "*"
+    labels: ["dependencies"]
+    commit-message:
+      prefix: ""
+    cooldown:
+      default-days: 3
+
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: weekly
+    labels: ["dependencies"]
+    commit-message:
+      prefix: ""
+
+  - package-ecosystem: "docker-compose"
+    directory: "/"
+    schedule:
+      interval: weekly
+    labels: ["dependencies"]
+    commit-message:
+      prefix: ""
