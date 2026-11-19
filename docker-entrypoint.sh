@@ -64,7 +64,8 @@ if [ -n "${MUSIC_OUTPUT_DEVICE}" ]; then
   EXTRA_ARGS+=( "--music-output-device" "$MUSIC_OUTPUT_DEVICE" )
 fi
 
-if [ -n "${SENDSPIN_CONTROL_SOCKET}" ]; then
+# Set but empty turns the Sendspin control off, unset keeps the default of LVA
+if [ -n "${SENDSPIN_CONTROL_SOCKET+x}" ]; then
   EXTRA_ARGS+=( "--sendspin-control-socket" "$SENDSPIN_CONTROL_SOCKET" )
 fi
 

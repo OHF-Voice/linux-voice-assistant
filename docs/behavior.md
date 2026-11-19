@@ -84,7 +84,7 @@ If music is paused when you start talking to the assistant, it stays paused. Duc
 
 ### Sendspin player
 
-A Sendspin player (`sendspin-cli`, for example the Music Assistant Local Audio add-on) plays outside LVA, so LVA cannot control it through mpv. With `--sendspin-control-socket` LVA drives it through the player's control socket and treats it as the music of the media player entity:
+A Sendspin player (`sendspin-cli`, for example the Music Assistant Local Audio add-on) plays outside LVA, so LVA cannot control it through mpv. LVA drives it through the player's control socket (`--sendspin-control-socket`, default `/sendspin/control.sock`, an empty value turns it off) and treats it as the music of the media player entity:
 
 | Situation | Sendspin player / media player entity |
 |-----------|---------------------------------------|
@@ -105,7 +105,7 @@ A Sendspin player (`sendspin-cli`, for example the Music Assistant Local Audio a
 - Playback that starts while ducking is already active is not ducked.
 - The state is read from the player once a second, so a change shows up in Home Assistant after up to about a second.
 - Whether Sendspin is supported and the Sendspin pairing token are not announced to Home Assistant: `aioesphomeapi` 45.3.1 has no Sendspin messages. The handlers are prepared (commented out) in `satellite.py`.
-- If the socket is missing, unreadable or the player does not answer within 1 s, nothing is ducked, paused or mirrored and LVA goes on silently (debug log only). The entity then reports `idle` for Sendspin.
+- The default socket is the one that the Docker Compose file mounts. Without a Sendspin player the socket does not exist and nothing happens. If the socket is missing, unreadable or the player does not answer within 1 s, nothing is ducked, paused or mirrored and LVA goes on silently (debug log only). The entity then reports `idle` for Sendspin.
 
 #### Control socket protocol
 

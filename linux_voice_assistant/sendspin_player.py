@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Dict, Optional, Union
 
+DEFAULT_CONTROL_SOCKET = "/sendspin/control.sock"
+
 _LOGGER = logging.getLogger(__name__)
 
 _TIMEOUT_SECONDS = 1.0

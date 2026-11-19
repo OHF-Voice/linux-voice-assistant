@@ -22,7 +22,7 @@ from .models import DetectionResult, Preferences, ServerState, WakeWordType, ini
 from .mpv_player import MpvMediaPlayer
 from .peripheral_api import LVAEvent, PeripheralAPIServer
 from .satellite import VoiceSatelliteProtocol
-from .sendspin_player import SendspinPlayer
+from .sendspin_player import DEFAULT_CONTROL_SOCKET, SendspinPlayer
 from .util import (
     get_default_interface,
     get_default_ipv4,
@@ -79,7 +79,9 @@ async def main() -> None:
     )
     parser.add_argument(
         "--sendspin-control-socket",
-        help="Control socket of a Sendspin player (sendspin-cli); LVA ducks it during conversations and pauses it during announcements",
+        default=DEFAULT_CONTROL_SOCKET,
+        help="Control socket of a Sendspin player (sendspin-cli); LVA ducks it during conversations and pauses it during announcements. "
+        "Nothing happens while the socket does not exist, an empty value turns it off (default: %(default)s)",
     )
     parser.add_argument(
         "--list-output-devices",
