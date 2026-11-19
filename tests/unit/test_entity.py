@@ -398,6 +398,61 @@ class TestMediaPlayerEntitySendspin:
         entity.on_sendspin_status(self._status("playing", volume=50))
         assert entity.volume == pytest.approx(0.8)
 
+    def test_sendspin_starting_stops_lva_music(self):
+        entity = self._make("idle")
+        entity.music_player.is_playing = True
+        entity.on_sendspin_status(self._status("playing"))
+        entity.music_player.stop.assert_called_once()
+
+        entity.music_player.stop.reset_mock()
+        entity.on_sendspin_status(self._status("playing"))
+        entity.music_player.stop.assert_not_called()
+
+    def test_stale_sendspin_status_after_music_start_is_ignored(self):
+        entity = self._make("playing")
+        entity.sendspin_player.status.return_value = self._status("playing")
+        list(entity.play("http://example.com/song.mp3"))
+        entity.music_player.is_playing = True
+
+        entity.on_sendspin_status(self._status("playing"))
+        entity.music_player.stop.assert_not_called()
+
+    def test_sendspin_playing_is_announced_to_peripherals(self):
+        entity = self._make("idle")
+        satellite = entity.server.state.satellite
+        entity.on_sendspin_status(self._status("playing"))
+        satellite.emit_media_playing.assert_called_once_with(during_conversation=False)
+
+        entity.on_sendspin_status(self._status("paused"))
+        entity.on_sendspin_status(self._status("playing"))
+        assert satellite.emit_media_playing.call_count == 2
+
+    def test_sendspin_playing_stays_quiet_when_state_is_unchanged(self):
+        entity = self._make("idle")
+        entity.on_sendspin_status(self._status("playing"))
+        entity.server.state.satellite.emit_media_playing.reset_mock()
+        entity.on_sendspin_status(self._status("playing"))
+        entity.server.state.satellite.emit_media_playing.assert_not_called()
+
+    def test_music_from_home_assistant_stops_sendspin(self):
+        entity = self._make("playing")
+        entity.sendspin_player.status.return_value = self._status("playing")
+        list(entity.play("http://example.com/song.mp3"))
+        entity.sendspin_player.stop.assert_called_once()
+        entity.music_player.play.assert_called_once()
+
+    def test_music_leaves_idle_sendspin_alone(self):
+        entity = self._make("idle")
+        entity.sendspin_player.status.return_value = self._status("idle")
+        list(entity.play("http://example.com/song.mp3"))
+        entity.sendspin_player.stop.assert_not_called()
+
+    def test_announcement_does_not_stop_sendspin(self):
+        entity = self._make("playing")
+        entity.sendspin_player.status.return_value = self._status("playing")
+        list(entity.play("http://example.com/tts.mp3", announcement=True))
+        entity.sendspin_player.stop.assert_not_called()
+
     def test_sendspin_uri_current_resumes_and_others_are_ignored(self):
         entity = self._make("paused")
         list(entity.handle_message(MediaPlayerCommandRequest(key=1, has_media_url=True, media_url="sendspin://current")))

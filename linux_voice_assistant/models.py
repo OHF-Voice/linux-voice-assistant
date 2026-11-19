@@ -104,6 +104,10 @@ class Preferences:
     mic_noise_suppression: int = 0
     mic_volume: int = 100  # 1–100, default maximum
 
+    # Group volume of a Sendspin player before and after ducking. Set only while ducked, so that a restart can restore it.
+    sendspin_ducked_from: Optional[int] = None
+    sendspin_ducked_to: Optional[int] = None
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "Preferences":
         """

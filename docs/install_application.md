@@ -289,7 +289,7 @@ The following variables can be configured in the `.env` or in the service file:
 | `AUDIO_INPUT_BLOCK_SIZE` | `1024` | Audio input block size in samples |
 | `AUDIO_OUTPUT_DEVICE` | `pulse` | Audio output device name, use a `pulse/...` name from the device list (see `LIST_DEVICES`) |
 | `MUSIC_OUTPUT_DEVICE` | `AUDIO_OUTPUT_DEVICE` | Music/media output device name (defaults to the voice output device) |
-| `SENDSPIN_CONTROL_SOCKET` | `/sendspin/control.sock` | Control socket of a Sendspin player (`sendspin-cli`, e.g. the Music Assistant Local Audio add-on). Enables ducking and announcement pausing for it while the socket exists, an empty value turns it off, see [behavior.md](behavior.md#sendspin-player) |
+| `SENDSPIN_CONTROL_SOCKET` | `/sendspin/control.sock` | Control socket of a Sendspin player (`sendspin-cli`, e.g. the Music Assistant Local Audio add-on). Enables ducking and announcement pausing for it while the socket exists, an empty value turns it off, see [behavior.md](behavior.md#sendspin-player). The socket is created with mode `0600` for the user of the player, so LVA has to run as the same user (UID) and the directory of the socket has to be mounted into the LVA container |
 | `MIC_VOLUME` | 100 | Control microphone volume |
 | `MIC_AUTO_GAIN` | 0 | Add WebRTC Gain to Mic |
 | `MIC_NOISE_SUPPRESSION` | 0 | Add WebRTC Noise Suppression to Mic |

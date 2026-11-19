@@ -668,3 +668,20 @@ class TestSetConfiguration:
 
         assert list(sat.state.wake_words) == ["okay_nabu"]
         assert sat.state.active_wake_words == set()
+
+
+class TestEmitMediaPlaying:
+    def test_emits_event(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        sat._emit = MagicMock()
+        sat.emit_media_playing()
+        sat._emit.assert_called_once_with(LVAEvent.MEDIA_PLAYER_PLAYING)
+
+    def test_skipped_during_conversation_when_asked(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        sat._emit = MagicMock()
+        sat._pipeline_active = True
+        sat.emit_media_playing(during_conversation=False)
+        sat._emit.assert_not_called()
+        sat.emit_media_playing()
+        sat._emit.assert_called_once()

@@ -6,7 +6,7 @@ import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Dict, Optional, Union
+from typing import Callable, Dict, Optional, Tuple, Union
 
 DEFAULT_CONTROL_SOCKET = "/sendspin/control.sock"
 
@@ -49,6 +49,19 @@ class SendspinPlayer:
         self._ducked_from: Optional[int] = None
         self._paused_by_us = False
         self._poll_thread: Optional[threading.Thread] = None
+        self._reachable: Optional[bool] = None
+        self._on_duck_changed: Optional[Callable[[Optional[int], Optional[int]], None]] = None
+        self._recover: Optional[Tuple[int, int]] = None
+
+    def set_duck_persistence(self, on_duck_changed: Callable[[Optional[int], Optional[int]], None], saved: Tuple[Optional[int], Optional[int]]) -> None:
+        """
+        Remember the ducked volume across restarts. A volume saved by an earlier run is restored once the player is reachable.
+        :param on_duck_changed: Called with ``(volume before, volume after)`` when ducking starts and with ``(None, None)`` when it ends.
+        :param saved: ``(volume before, volume after)`` that an earlier run left behind, ``(None, None)`` if there is none.
+        """
+        self._on_duck_changed = on_duck_changed
+        if saved[0] is not None and saved[1] is not None:
+            self._recover = (saved[0], saved[1])
 
     @property
     def is_ducked(self) -> bool:
@@ -68,6 +81,7 @@ class SendspinPlayer:
             while True:
                 time.sleep(_POLL_INTERVAL_SECONDS)
                 try:
+                    self._recover_duck()
                     callback(self.status())
                 except Exception:  # pylint: disable=broad-exception-caught
                     _LOGGER.exception("Error in Sendspin status callback")
@@ -113,7 +127,9 @@ class SendspinPlayer:
         :param percent: Volume 0-100.
         """
         with self._lock:
-            self._ducked_from = None
+            if self._ducked_from is not None:
+                self._ducked_from = None
+                self._notify_duck(None, None)
             self._send(f"vol {max(0, min(100, percent))}")
 
     def set_muted(self, muted: bool) -> None:
@@ -137,8 +153,10 @@ class SendspinPlayer:
             if (status is None) or (status.get("state") != "playing") or (volume is None):
                 return
 
-            if self._send(f"vol {max(0, min(100, int(volume * factor)))}"):
+            ducked = max(0, min(100, int(volume * factor)))
+            if self._send(f"vol {ducked}"):
                 self._ducked_from = volume
+                self._notify_duck(volume, ducked)
 
     def unduck(self) -> None:
         """Restore the group volume saved by :meth:`duck`. Does nothing if the player was not ducked."""
@@ -148,6 +166,7 @@ class SendspinPlayer:
 
             volume, self._ducked_from = self._ducked_from, None
             self._send(f"vol {volume}")
+            self._notify_duck(None, None)
 
     def pause(self) -> bool:
         """
@@ -197,6 +216,27 @@ class SendspinPlayer:
         words = status.get("group volume", "").split()
         return int(words[0]) if words and words[0].isdigit() else None
 
+    def _notify_duck(self, volume_from: Optional[int], volume_to: Optional[int]) -> None:
+        if self._on_duck_changed is not None:
+            self._on_duck_changed(volume_from, volume_to)
+
+    def _recover_duck(self) -> None:
+        """Restore the volume of a ducking that an earlier run did not finish, once the player answers."""
+        with self._lock:
+            if self._recover is None:
+                return
+
+            volume = self._parse_volume(self._status())
+            if volume is None:
+                return
+
+            volume_from, volume_to = self._recover
+            self._recover = None
+            if volume == volume_to and volume != volume_from:
+                _LOGGER.warning("Restoring the Sendspin group volume to %d, an earlier run left it ducked at %d", volume_from, volume_to)
+                self._send(f"vol {volume_from}")
+            self._notify_duck(None, None)
+
     def _send(self, command: str) -> bool:
         return self._request(command) is not None
 
@@ -217,8 +257,18 @@ class SendspinPlayer:
                         break
                     chunks.append(chunk)
         except OSError as err:
-            _LOGGER.debug("Sendspin control socket %s: %s", self._socket_path, err)
+            if self._reachable is not False:
+                _LOGGER.warning(
+                    "Sendspin control socket %s is not reachable (%s). Check that the player runs, that the socket is mounted and that it belongs to the user of LVA",
+                    self._socket_path,
+                    err,
+                )
+            self._reachable = False
             return None
+
+        if not self._reachable:
+            _LOGGER.info("Sendspin control socket %s is reachable", self._socket_path)
+        self._reachable = True
 
         lines = b"".join(chunks).decode("utf-8", errors="replace").splitlines()
         if not lines or lines[0] != "ok":

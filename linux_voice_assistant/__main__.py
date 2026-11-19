@@ -556,6 +556,13 @@ async def main() -> None:
     state.tts_player.set_volume(initial_volume_percent)
 
     if state.sendspin_player is not None:
+
+        def save_duck(volume_from: Optional[int], volume_to: Optional[int]) -> None:
+            state.preferences.sendspin_ducked_from = volume_from
+            state.preferences.sendspin_ducked_to = volume_to
+            state.save_preferences()
+
+        state.sendspin_player.set_duck_persistence(save_duck, (state.preferences.sendspin_ducked_from, state.preferences.sendspin_ducked_to))
         state.sendspin_player.start_polling(lambda status: state.media_player_entity.on_sendspin_status(status) if state.media_player_entity else None)
 
     # ------------------------------------------------------------------

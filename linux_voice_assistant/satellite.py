@@ -371,6 +371,14 @@ class VoiceSatelliteProtocol(APIServer):
     # Peripheral API helper
     # ------------------------------------------------------------------
 
+    def emit_media_playing(self, during_conversation: bool = True) -> None:
+        """
+        Tell the peripherals that background media plays (LVA's music player or a Sendspin player).
+        :param during_conversation: False to skip the event while a conversation is running, so it does not replace its state.
+        """
+        if during_conversation or not self._pipeline_active:
+            self._emit(LVAEvent.MEDIA_PLAYER_PLAYING)
+
     def _emit(
         self,
         event: LVAEvent,
@@ -785,7 +793,7 @@ class VoiceSatelliteProtocol(APIServer):
             if isinstance(msg, MediaPlayerCommandRequest) and msg.has_media_url:
                 is_announcement = msg.has_announcement and msg.announcement
                 if not is_announcement:
-                    self._emit(LVAEvent.MEDIA_PLAYER_PLAYING)
+                    self.emit_media_playing()
 
             if isinstance(msg, ListEntitiesRequest):
                 yield ListEntitiesDoneResponse()

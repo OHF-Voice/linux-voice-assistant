@@ -90,6 +90,10 @@ A Sendspin player (`sendspin-cli`, for example the Music Assistant Local Audio a
 |-----------|---------------------------------------|
 | Sendspin plays and LVA's own music player does not | The entity reports `playing`. If Sendspin is paused it reports `paused`, if it is stopped or not connected to a server `idle`. LVA's own music has priority: while it plays or is paused, the entity shows that. |
 | Play / Pause / Stop from Home Assistant while Sendspin is `playing` or `paused` | Sent to the Sendspin player (`play`, `pause`, `stop`) instead of LVA's music player. Otherwise they apply to LVA's music player as before. |
+| Music started from Home Assistant (`media_player.play_media` without `announce`) while Sendspin is `playing` or `paused` | Sendspin is **stopped** and LVA's music plays, so only one of them plays. Like on ESPHome devices, starting a source replaces the active one. `stop` is a Sendspin group command, so it stops the whole group, not only this device. |
+| Sendspin starts playing while LVA's own music plays or is paused | LVA's music is **stopped**, so only one of them plays. |
+| Sendspin starts playing | Peripherals get `media_player_playing`, like for music from Home Assistant. Not while a conversation is running, so it does not replace the state of the conversation. |
+| Last Home Assistant client disconnects | The Sendspin player is **not** touched and keeps playing. LVA only stops its own music and its assistant playback, see [Connection to Home Assistant](#connection-to-home-assistant). |
 | Volume or mute set on the media player entity | Applied to LVA's own volume as before **and** sent to the Sendspin player as its group volume / mute. |
 | Volume or mute changed at the Sendspin group (Music Assistant, another player) | The entity follows it, so the volume of the card and the shared LVA volume ([Volume](#volume)) change too. Not applied while ducked and for 2 s after Home Assistant set the volume itself. |
 | `media_player.play_media` with `sendspin://current` | Resumes the Sendspin player. |
@@ -103,9 +107,11 @@ A Sendspin player (`sendspin-cli`, for example the Music Assistant Local Audio a
 
 - **The group volume is changed.** `sendspin-cli` has no volume that belongs to this device only. `vol` and `mute` address the whole Sendspin group, so every player in the group (and Music Assistant) follows the ducking and the volume of the media player card. A volume change made by someone else while ducked is overwritten when ducking ends.
 - Playback that starts while ducking is already active is not ducked.
+- **Restart while ducked.** While Sendspin is ducked, LVA keeps the volume before and after ducking in `preferences.json` (`sendspin_ducked_from`, `sendspin_ducked_to`). If LVA starts and finds them, it waits until the player answers and sets the group volume back, but only if the group volume still is the ducked value. If someone changed it in the meantime it is left alone. The saved values are removed afterwards.
 - The state is read from the player once a second, so a change shows up in Home Assistant after up to about a second.
 - Whether Sendspin is supported and the Sendspin pairing token are not announced to Home Assistant: `aioesphomeapi` 45.3.1 has no Sendspin messages. The handlers are prepared (commented out) in `satellite.py`.
-- The default socket is the one that the Docker Compose file mounts. Without a Sendspin player the socket does not exist and nothing happens. If the socket is missing, unreadable or the player does not answer within 1 s, nothing is ducked, paused or mirrored and LVA goes on silently (debug log only). The entity then reports `idle` for Sendspin.
+- The default socket is the one that the Docker Compose file mounts. Without a Sendspin player the socket does not exist and nothing happens. If the socket is missing, unreadable or the player does not answer within 1 s, nothing is ducked, paused or mirrored and the entity reports `idle` for Sendspin. LVA logs a warning once when a configured socket becomes unreachable (including at startup) and an info message once when it is reachable again.
+- Commands of peripherals (`volume_up`, `volume_down`, `set_volume`, `stop_media_player`, `pause_media_player`, `resume_media_player`) apply to LVA's own music player only and do not reach the Sendspin player.
 
 #### Control socket protocol
 
@@ -251,7 +257,7 @@ The *Disable button controls* switch (if the peripheral provides it) lets you lo
 - **Identity.** Home Assistant knows the device by its MAC address, which is also in its name (`lva-<mac>`): by default the network interface's. With `--mac-address` it is that one instead, so the device stays the same in Home Assistant when the machine uses another interface, and several instances on one machine get one identity each.
 - **Encryption.** With `--enable-encryption`, the connection is encrypted as on ESPHome devices with an API encryption key. The key is read from `--encryption-key-file` (default: `encryption.key` next to the preferences file): Home Assistant asks for it when adding the device, and clients without it (or with a different one) are refused. Without `--enable-encryption` the connection is plaintext, as before. LVA warns if the key file is accessible by other users (group/other permission bits set), If the key file does not exist, LVA creates it with a new random key (readable only by its user) and logs a warning with the path of the file. The key itself is never logged: read it from the file to enter it in Home Assistant. LVA refuses to start if the key file cannot be read or does not hold 32 bytes of base64.
 - When Home Assistant **reconnects** (for example after a restart), settings and entities are kept. Playback is not interrupted as long as at least one client is still connected.
-- When the **last** client disconnects, LVA **stops music and assistant playback** and goes idle. It keeps waiting for Home Assistant to reconnect.
+- When the **last** client disconnects, LVA **stops music and assistant playback** and goes idle. A Sendspin player ([Sendspin player](#sendspin-player)) is not stopped. It keeps waiting for Home Assistant to reconnect.
 - Peripherals are told when Home Assistant is connected (`zeroconf` event with status `connected`) and when it is lost (`disconnected`).
 
 ---

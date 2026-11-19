@@ -131,3 +131,54 @@ def test_commands_are_sent(tmp_path, fake):
     player.set_muted(False)
 
     assert fake.requests == ["play", "stop", "pause", "vol 100", "mute on", "mute off"]
+
+
+@pytest.mark.usefixtures("fake")
+def test_duck_state_is_reported_for_persistence(tmp_path):
+    player = SendspinPlayer(tmp_path / "control.sock")
+    changes = []
+    player.set_duck_persistence(lambda a, b: changes.append((a, b)), (None, None))
+    player.duck()
+    player.unduck()
+
+    assert changes == [(80, 40), (None, None)]
+
+
+def test_recover_restores_volume_left_ducked(tmp_path, fake):
+    fake.volume = "40"
+    player = SendspinPlayer(tmp_path / "control.sock")
+    changes = []
+    player.set_duck_persistence(lambda a, b: changes.append((a, b)), (80, 40))
+    player._recover_duck()  # pylint: disable=protected-access
+
+    assert "vol 80" in fake.requests
+    assert changes == [(None, None)]
+
+
+def test_recover_leaves_volume_changed_since_alone(tmp_path, fake):
+    fake.volume = "55"
+    player = SendspinPlayer(tmp_path / "control.sock")
+    changes = []
+    player.set_duck_persistence(lambda a, b: changes.append((a, b)), (80, 40))
+    player._recover_duck()  # pylint: disable=protected-access
+
+    assert not [r for r in fake.requests if r.startswith("vol")]
+    assert changes == [(None, None)]
+
+
+def test_recover_waits_until_player_is_reachable(tmp_path):
+    player = SendspinPlayer(tmp_path / "missing.sock")
+    changes = []
+    player.set_duck_persistence(lambda a, b: changes.append((a, b)), (80, 40))
+    player._recover_duck()  # pylint: disable=protected-access
+
+    assert not changes
+
+
+def test_reachability_is_logged_once_per_change(tmp_path, caplog):
+    caplog.set_level("INFO", logger="linux_voice_assistant.sendspin_player")
+    player = SendspinPlayer(tmp_path / "missing.sock")
+    player.status()
+    player.status()
+
+    assert len([r for r in caplog.records if r.levelname == "WARNING"]) == 1
