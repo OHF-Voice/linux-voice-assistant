@@ -74,28 +74,11 @@ def test_duck_parses_muted_volume(tmp_path, fake):
     assert "vol 30" in fake.requests
 
 
-def test_pause_resume_only_when_paused_by_us(tmp_path, fake):
-    player = SendspinPlayer(tmp_path / "control.sock")
-    assert player.pause() is True
-    player.resume()
-    player.resume()
-
-    assert [r for r in fake.requests if r != "status"] == ["pause", "play"]
-
-    fake.requests.clear()
-    fake.state = "paused"
-    assert player.pause() is False
-    player.resume()
-    assert fake.requests == ["status"]
-
-
 def test_unreachable_socket_is_ignored(tmp_path):
     player = SendspinPlayer(tmp_path / "missing.sock")
     player.duck()
     player.unduck()
-    player.resume()
 
-    assert player.pause() is False
     assert player.is_playing() is False
 
 
@@ -104,21 +87,13 @@ def test_status_parses_state_volume_and_mute(tmp_path, fake):
     fake.volume = "60 (muted)"
     status = SendspinPlayer(tmp_path / "control.sock").status()
 
-    assert (status.state, status.volume, status.muted) == ("paused", 60, True)
+    assert (status.state, status.volume, status.muted) == ("idle", 60, True)
 
 
 def test_status_unknown_state_is_idle_and_unreachable_is_none(tmp_path, fake):
     fake.state = "unknown"
     assert SendspinPlayer(tmp_path / "control.sock").status().state == "idle"
     assert SendspinPlayer(tmp_path / "missing.sock").status() is None
-
-
-def test_status_reports_announcement_pause_as_playing(tmp_path, fake):
-    player = SendspinPlayer(tmp_path / "control.sock")
-    player.pause()
-    fake.state = "paused"
-
-    assert player.status().state == "playing"
 
 
 def test_commands_are_sent(tmp_path, fake):
@@ -182,3 +157,44 @@ def test_reachability_is_logged_once_per_change(tmp_path, caplog):
     player.status()
 
     assert len([r for r in caplog.records if r.levelname == "WARNING"]) == 1
+
+
+def test_playback_that_starts_while_ducking_is_requested_gets_ducked(tmp_path, fake):
+    fake.state = "idle"
+    player = SendspinPlayer(tmp_path / "control.sock")
+    player.duck()
+    assert not player.is_ducked
+
+    fake.state = "playing"
+    player._duck_if_requested()  # pylint: disable=protected-access
+    assert player.is_ducked
+    assert "vol 40" in fake.requests
+
+    player.unduck()
+    assert not player.is_ducked
+    assert fake.requests[-1] == "vol 80"
+
+
+def test_no_late_ducking_after_unduck(tmp_path, fake):
+    fake.state = "idle"
+    player = SendspinPlayer(tmp_path / "control.sock")
+    player.duck()
+    player.unduck()
+    fake.state = "playing"
+    player._duck_if_requested()  # pylint: disable=protected-access
+
+    assert not player.is_ducked
+    assert not [r for r in fake.requests if r.startswith("vol")]
+
+
+def test_volume_is_restored_when_the_last_owner_unducks(tmp_path, fake):
+    player = SendspinPlayer(tmp_path / "control.sock")
+    player.duck(owner="assistant")
+    player.duck(owner="announcement")
+    player.unduck(owner="announcement")
+    assert player.is_ducked
+    assert "vol 80" not in fake.requests
+
+    player.unduck(owner="assistant")
+    assert not player.is_ducked
+    assert fake.requests[-1] == "vol 80"

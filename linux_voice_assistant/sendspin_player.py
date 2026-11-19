@@ -6,7 +6,7 @@ import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Dict, Optional, Tuple, Union
+from typing import Callable, Dict, Optional, Set, Tuple, Union
 
 DEFAULT_CONTROL_SOCKET = "/sendspin/control.sock"
 
@@ -20,7 +20,7 @@ _POLL_INTERVAL_SECONDS = 1.0
 class SendspinStatus:
     """
     What the Sendspin player reports.
-    :param state: ``playing``, ``paused`` or ``idle`` (stopped, unknown or no server connected).
+    :param state: ``playing`` or ``idle`` (paused, stopped, unknown or no server connected, the protocol does not tell them apart).
     :param volume: Group volume 0-100, None if unknown.
     :param muted: Whether the group is muted.
     """
@@ -47,11 +47,12 @@ class SendspinPlayer:
         self._socket_path = str(socket_path)
         self._lock = threading.Lock()
         self._ducked_from: Optional[int] = None
-        self._paused_by_us = False
         self._poll_thread: Optional[threading.Thread] = None
         self._reachable: Optional[bool] = None
         self._on_duck_changed: Optional[Callable[[Optional[int], Optional[int]], None]] = None
         self._recover: Optional[Tuple[int, int]] = None
+        self._duck_owners: Set[str] = set()
+        self._duck_factor = 0.5
 
     def set_duck_persistence(self, on_duck_changed: Callable[[Optional[int], Optional[int]], None], saved: Tuple[Optional[int], Optional[int]]) -> None:
         """
@@ -71,18 +72,23 @@ class SendspinPlayer:
     def start_polling(self, callback: Callable[[Optional[SendspinStatus]], None]) -> None:
         """
         Report the status of the player once a second from a daemon thread.
-        :param callback: Called with the status, or None while the player is unreachable. A player paused by
-            :meth:`pause` is reported as ``playing``, so an announcement does not show up as a pause.
+        :param callback: Called with the status, or None while the player is unreachable.
         """
         if self._poll_thread is not None:
             return
 
         def poll() -> None:
+            last: Optional[SendspinStatus] = None
             while True:
                 time.sleep(_POLL_INTERVAL_SECONDS)
                 try:
                     self._recover_duck()
-                    callback(self.status())
+                    self._duck_if_requested()
+                    status = self.status()
+                    if status != last:
+                        _LOGGER.debug("Sendspin status: %s", status)
+                        last = status
+                    callback(status)
                 except Exception:  # pylint: disable=broad-exception-caught
                     _LOGGER.exception("Error in Sendspin status callback")
 
@@ -99,26 +105,21 @@ class SendspinPlayer:
                 return None
 
             state = raw.get("state", "idle")
-            if self._paused_by_us:
-                state = "playing"
-            elif state not in ("playing", "paused"):
+            if state != "playing":
                 state = "idle"
 
             return SendspinStatus(state=state, volume=self._parse_volume(raw), muted="(muted)" in raw.get("group volume", ""))
 
     def play(self) -> None:
         """Start or resume playback."""
-        self._paused_by_us = False
         self._send("play")
 
     def stop(self) -> None:
         """Stop playback."""
-        self._paused_by_us = False
         self._send("stop")
 
     def pause_playback(self) -> None:
-        """Pause playback on request of the user. Unlike :meth:`pause` it is not undone by :meth:`resume`."""
-        self._paused_by_us = False
+        """Pause playback on request of the user. Unlike :meth:`stop_for_announcement` it is not undone by :meth:`resume`."""
         self._send("pause")
 
     def set_volume(self, percent: int) -> None:
@@ -139,54 +140,34 @@ class SendspinPlayer:
         """
         self._send("mute on" if muted else "mute off")
 
-    def duck(self, factor: float = 0.5) -> None:
+    def duck(self, factor: float = 0.5, owner: str = "assistant") -> None:
         """
-        Lower the group volume to ``factor`` of its current value while the player is playing.
+        Request ducking: lower the group volume to ``factor`` of its current value while the player is playing.
+        The request stays until :meth:`unduck`, so playback that starts later is ducked too.
         :param factor: Fraction of the current group volume, 0.0 to 1.0.
+        :param owner: Who asks. The volume is restored when every owner has called :meth:`unduck`.
         """
         with self._lock:
-            if self._ducked_from is not None:
-                return
+            self._duck_owners.add(owner)
+            self._duck_factor = factor
+            _LOGGER.debug("Sendspin duck requested by %s (owners: %s)", owner, sorted(self._duck_owners))
+            self._apply_duck()
 
-            status = self._status()
-            volume = self._parse_volume(status)
-            if (status is None) or (status.get("state") != "playing") or (volume is None):
-                return
-
-            ducked = max(0, min(100, int(volume * factor)))
-            if self._send(f"vol {ducked}"):
-                self._ducked_from = volume
-                self._notify_duck(volume, ducked)
-
-    def unduck(self) -> None:
-        """Restore the group volume saved by :meth:`duck`. Does nothing if the player was not ducked."""
+    def unduck(self, owner: str = "assistant") -> None:
+        """
+        End a ducking request. The group volume saved by :meth:`duck` is restored when no owner is left.
+        :param owner: The owner that called :meth:`duck`.
+        """
         with self._lock:
-            if self._ducked_from is None:
+            self._duck_owners.discard(owner)
+            _LOGGER.debug("Sendspin duck released by %s (owners left: %s, ducked: %s)", owner, sorted(self._duck_owners), self._ducked_from is not None)
+            if self._duck_owners or self._ducked_from is None:
                 return
 
             volume, self._ducked_from = self._ducked_from, None
+            _LOGGER.debug("Sendspin volume restored to %d", volume)
             self._send(f"vol {volume}")
             self._notify_duck(None, None)
-
-    def pause(self) -> bool:
-        """
-        Pause the player if it is playing.
-        :return: True if the player was playing and is paused now, so that :meth:`resume` has to undo it.
-        """
-        with self._lock:
-            status = self._status()
-            if (status is None) or (status.get("state") != "playing"):
-                return False
-
-            self._paused_by_us = self._send("pause")
-            return self._paused_by_us
-
-    def resume(self) -> None:
-        """Resume playback paused by :meth:`pause`. Does nothing if the player was not paused by it."""
-        with self._lock:
-            if self._paused_by_us:
-                self._paused_by_us = False
-                self._send("play")
 
     def is_playing(self) -> bool:
         """Whether the server reports the group as playing."""
@@ -215,6 +196,28 @@ class SendspinPlayer:
         # The value reads `55` or `55 (muted)`
         words = status.get("group volume", "").split()
         return int(words[0]) if words and words[0].isdigit() else None
+
+    def _apply_duck(self) -> None:
+        """Lower the group volume if ducking is requested and the player plays. Expects the lock to be held."""
+        if self._ducked_from is not None:
+            return
+
+        status = self._status()
+        volume = self._parse_volume(status)
+        if (status is None) or (status.get("state") != "playing") or (volume is None):
+            return
+
+        ducked = max(0, min(100, int(volume * self._duck_factor)))
+        if self._send(f"vol {ducked}"):
+            _LOGGER.debug("Sendspin ducked from %d to %d (owners: %s)", volume, ducked, sorted(self._duck_owners))
+            self._ducked_from = volume
+            self._notify_duck(volume, ducked)
+
+    def _duck_if_requested(self) -> None:
+        """Duck playback that started while ducking was requested."""
+        with self._lock:
+            if self._duck_owners:
+                self._apply_duck()
 
     def _notify_duck(self, volume_from: Optional[int], volume_to: Optional[int]) -> None:
         if self._on_duck_changed is not None:
@@ -271,6 +274,8 @@ class SendspinPlayer:
         self._reachable = True
 
         lines = b"".join(chunks).decode("utf-8", errors="replace").splitlines()
+        if command != "status":
+            _LOGGER.debug("Sendspin command '%s' -> %s", command, lines[0] if lines else "no reply")
         if not lines or lines[0] != "ok":
             _LOGGER.debug("Sendspin player refused '%s': %s", command, lines[0] if lines else "no reply")
             return None
