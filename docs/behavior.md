@@ -82,6 +82,31 @@ Music started from Home Assistant (a media player service call or the media play
 
 If music is paused when you start talking to the assistant, it stays paused. Ducking only changes the volume. The music is not resumed automatically at the end of a conversation.
 
+### Sendspin player
+
+A Sendspin player (`sendspin-cli`, for example the Music Assistant Local Audio add-on) plays outside LVA, so LVA cannot lower its volume through mpv. With `--sendspin-control-socket` LVA drives it through the player's control socket instead and treats it like the music player:
+
+| Situation | Sendspin player |
+|-----------|-----------------|
+| Ducking starts (wake word, button, announcement, timer ringing) | If the player is **playing**, the group volume is set to 50 % of its current value. A player that is paused, stopped or not connected to a server is left alone. |
+| Ducking ends | The group volume is set back to the value it had before. Only a player that LVA ducked is touched. |
+| Media player announcement, player playing | Paused for the announcement and resumed afterwards. |
+| Media player announcement, player not playing | Unchanged. |
+
+- **The group volume is changed.** `sendspin-cli` has no volume that belongs to this device only. `vol` addresses the whole Sendspin group, so every player in the group (and Music Assistant) follows the ducking. A volume change made by someone else while ducked is overwritten when ducking ends.
+- Playback that starts while ducking is already active is not ducked.
+- The state of the Sendspin player is **not** reported to Home Assistant: the media player entity only reports the music of LVA itself. `aioesphomeapi` 45.3.1 has no Sendspin-specific messages.
+- If the socket is missing, unreadable or the player does not answer within 1 s, nothing is ducked or paused and LVA goes on silently (debug log only).
+- The Sendspin player's own volume and the shared volume of LVA ([Volume](#volume)) are independent.
+
+#### Control socket protocol
+
+Plain text over a Unix stream socket, one request per connection:
+
+1. LVA connects and sends one line, for example `status\n`, `vol 25\n`, `pause\n` or `play\n`.
+2. The player answers with `ok` or `error <kind>: <reason>` as the first line and closes the connection. `status` continues with `key: value` lines.
+3. LVA reads `state` (`playing` is what counts) and `group volume` (`55` or `55 (muted)`) from `status`.
+
 ---
 
 ## Announcements
@@ -235,6 +260,7 @@ The *Disable button controls* switch (if the peripheral provides it) lets you lo
 | Media player announcement, music paused | Stays paused |
 | Timer finishes | Ducked while ringing, restored when ringing stops |
 | Stop word said | Music is not stopped, only restored from ducking |
+| Same situations with a Sendspin player (`--sendspin-control-socket`) | Playing: group volume ducked to 50 % / paused for announcements, see [Sendspin player](#sendspin-player) |
 | Mute switch toggled | Unchanged |
 | Media player stop (Home Assistant / peripheral) | Stopped |
 | Last Home Assistant client disconnects | Stopped |

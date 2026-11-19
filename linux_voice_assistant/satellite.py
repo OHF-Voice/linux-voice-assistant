@@ -120,6 +120,7 @@ class VoiceSatelliteProtocol(APIServer):
                 object_id="linux_voice_assistant_media_player",
                 music_player=state.music_player,
                 announce_player=state.tts_player,
+                sendspin_player=state.sendspin_player,
                 initial_volume=state.volume,
             )
             self.state.entities.append(self.state.media_player_entity)
@@ -1096,10 +1097,14 @@ class VoiceSatelliteProtocol(APIServer):
     def duck(self) -> None:
         _LOGGER.debug("Ducking music")
         self.state.music_player.duck()
+        if self.state.sendspin_player is not None:
+            self.state.sendspin_player.duck()
 
     def unduck(self) -> None:
         _LOGGER.debug("Unducking music")
         self.state.music_player.unduck()
+        if self.state.sendspin_player is not None:
+            self.state.sendspin_player.unduck()
 
     # ------------------------------------------------------------------
     # Timer finished loop

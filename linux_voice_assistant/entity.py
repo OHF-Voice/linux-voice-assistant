@@ -37,6 +37,7 @@ from google.protobuf import message
 
 from .api_server import APIServer
 from .mpv_player import MpvMediaPlayer
+from .sendspin_player import SendspinPlayer
 from .util import call_all
 
 SUPPORTED_MEDIA_PLAYER_FEATURES = (
@@ -71,6 +72,7 @@ class MediaPlayerEntity(ESPHomeEntity):
         object_id: str,
         music_player: MpvMediaPlayer,
         announce_player: MpvMediaPlayer,
+        sendspin_player: Optional[SendspinPlayer] = None,
         initial_volume: float = 1.0,
         on_volume_changed: Optional[Callable[[float], None]] = None,
     ) -> None:
@@ -85,9 +87,22 @@ class MediaPlayerEntity(ESPHomeEntity):
         self.previous_volume = 1.0
         self.music_player = music_player
         self.announce_player = announce_player
+        self.sendspin_player = sendspin_player
         self._on_volume_changed = on_volume_changed
         self.apply_volume_from_state(initial_volume)
         self._log = logging.getLogger(f"{self.__class__.__name__}[{self.key}]")
+
+    def _pause_sendspin_for_announcement(self, done_callback: Optional[Callable[[], None]]) -> Optional[Callable[[], None]]:
+        """
+        Pause a playing Sendspin player for an announcement.
+        :param done_callback: Callback of the announcement.
+        :return: The callback, extended to resume the Sendspin player if it was paused.
+        """
+        sendspin_player = self.sendspin_player
+        if sendspin_player is None or not sendspin_player.pause():
+            return done_callback
+
+        return lambda: call_all(sendspin_player.resume, done_callback)
 
     def _broadcast_state(self, msgs: Iterable[message.Message]) -> None:
         """Push an asynchronous state change to all connected clients.
@@ -110,6 +125,7 @@ class MediaPlayerEntity(ESPHomeEntity):
     ) -> Iterable[message.Message]:
         if announcement:
             self._log.debug("PLAY: announcement true")
+            done_callback = self._pause_sendspin_for_announcement(done_callback)
             if self.music_player.is_paused:
                 # Announce, keep music paused
                 self.announce_player.play(

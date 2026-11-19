@@ -64,6 +64,10 @@ if [ -n "${MUSIC_OUTPUT_DEVICE}" ]; then
   EXTRA_ARGS+=( "--music-output-device" "$MUSIC_OUTPUT_DEVICE" )
 fi
 
+if [ -n "${SENDSPIN_CONTROL_SOCKET}" ]; then
+  EXTRA_ARGS+=( "--sendspin-control-socket" "$SENDSPIN_CONTROL_SOCKET" )
+fi
+
 if [ -n "${MIC_VOLUME}" ]; then
   EXTRA_ARGS+=( "--mic-volume" "$MIC_VOLUME" )
 fi

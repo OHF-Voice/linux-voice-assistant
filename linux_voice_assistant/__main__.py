@@ -22,6 +22,7 @@ from .models import DetectionResult, Preferences, ServerState, WakeWordType, ini
 from .mpv_player import MpvMediaPlayer
 from .peripheral_api import LVAEvent, PeripheralAPIServer
 from .satellite import VoiceSatelliteProtocol
+from .sendspin_player import SendspinPlayer
 from .util import (
     get_default_interface,
     get_default_ipv4,
@@ -75,6 +76,10 @@ async def main() -> None:
     parser.add_argument(
         "--music-output-device",
         help="mpv name for the music/media output device (defaults to --audio-output-device)",
+    )
+    parser.add_argument(
+        "--sendspin-control-socket",
+        help="Control socket of a Sendspin player (sendspin-cli); LVA ducks it during conversations and pauses it during announcements",
     )
     parser.add_argument(
         "--list-output-devices",
@@ -503,6 +508,7 @@ async def main() -> None:
         stop_word=stop_model,
         music_player=MpvMediaPlayer(device=args.music_output_device or args.audio_output_device),
         tts_player=MpvMediaPlayer(device=args.audio_output_device),
+        sendspin_player=SendspinPlayer(args.sendspin_control_socket) if args.sendspin_control_socket else None,
         wakeup_sound=args.wakeup_sound,
         start_listening_sound=args.start_listening_sound,
         timer_finished_sound=args.timer_finished_sound,
