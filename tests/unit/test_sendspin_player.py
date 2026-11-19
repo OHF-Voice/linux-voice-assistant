@@ -97,3 +97,37 @@ def test_unreachable_socket_is_ignored(tmp_path):
 
     assert player.pause() is False
     assert player.is_playing() is False
+
+
+def test_status_parses_state_volume_and_mute(tmp_path, fake):
+    fake.state = "paused"
+    fake.volume = "60 (muted)"
+    status = SendspinPlayer(tmp_path / "control.sock").status()
+
+    assert (status.state, status.volume, status.muted) == ("paused", 60, True)
+
+
+def test_status_unknown_state_is_idle_and_unreachable_is_none(tmp_path, fake):
+    fake.state = "unknown"
+    assert SendspinPlayer(tmp_path / "control.sock").status().state == "idle"
+    assert SendspinPlayer(tmp_path / "missing.sock").status() is None
+
+
+def test_status_reports_announcement_pause_as_playing(tmp_path, fake):
+    player = SendspinPlayer(tmp_path / "control.sock")
+    player.pause()
+    fake.state = "paused"
+
+    assert player.status().state == "playing"
+
+
+def test_commands_are_sent(tmp_path, fake):
+    player = SendspinPlayer(tmp_path / "control.sock")
+    player.play()
+    player.stop()
+    player.pause_playback()
+    player.set_volume(150)
+    player.set_muted(True)
+    player.set_muted(False)
+
+    assert fake.requests == ["play", "stop", "pause", "vol 100", "mute on", "mute off"]

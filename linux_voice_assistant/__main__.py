@@ -553,6 +553,9 @@ async def main() -> None:
     state.music_player.set_volume(initial_volume_percent)
     state.tts_player.set_volume(initial_volume_percent)
 
+    if state.sendspin_player is not None:
+        state.sendspin_player.start_polling(lambda status: state.media_player_entity.on_sendspin_status(status) if state.media_player_entity else None)
+
     # ------------------------------------------------------------------
     # Peripheral API (optional – LEDs, buttons, HAT boards)
     # ------------------------------------------------------------------

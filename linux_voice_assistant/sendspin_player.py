@@ -3,12 +3,29 @@
 import logging
 import socket
 import threading
+import time
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Optional, Union
+from typing import Callable, Dict, Optional, Union
 
 _LOGGER = logging.getLogger(__name__)
 
 _TIMEOUT_SECONDS = 1.0
+_POLL_INTERVAL_SECONDS = 1.0
+
+
+@dataclass(frozen=True)
+class SendspinStatus:
+    """
+    What the Sendspin player reports.
+    :param state: ``playing``, ``paused`` or ``idle`` (stopped, unknown or no server connected).
+    :param volume: Group volume 0-100, None if unknown.
+    :param muted: Whether the group is muted.
+    """
+
+    state: str
+    volume: Optional[int]
+    muted: bool
 
 
 class SendspinPlayer:
@@ -29,6 +46,80 @@ class SendspinPlayer:
         self._lock = threading.Lock()
         self._ducked_from: Optional[int] = None
         self._paused_by_us = False
+        self._poll_thread: Optional[threading.Thread] = None
+
+    @property
+    def is_ducked(self) -> bool:
+        """Whether the group volume is currently lowered by :meth:`duck`."""
+        return self._ducked_from is not None
+
+    def start_polling(self, callback: Callable[[Optional[SendspinStatus]], None]) -> None:
+        """
+        Report the status of the player once a second from a daemon thread.
+        :param callback: Called with the status, or None while the player is unreachable. A player paused by
+            :meth:`pause` is reported as ``playing``, so an announcement does not show up as a pause.
+        """
+        if self._poll_thread is not None:
+            return
+
+        def poll() -> None:
+            while True:
+                time.sleep(_POLL_INTERVAL_SECONDS)
+                try:
+                    callback(self.status())
+                except Exception:  # pylint: disable=broad-exception-caught
+                    _LOGGER.exception("Error in Sendspin status callback")
+
+        self._poll_thread = threading.Thread(target=poll, daemon=True, name="sendspin-poll")
+        self._poll_thread.start()
+
+    def status(self) -> Optional[SendspinStatus]:
+        """
+        :return: The status of the player, None if it is unreachable.
+        """
+        with self._lock:
+            raw = self._status()
+            if raw is None:
+                return None
+
+            state = raw.get("state", "idle")
+            if self._paused_by_us:
+                state = "playing"
+            elif state not in ("playing", "paused"):
+                state = "idle"
+
+            return SendspinStatus(state=state, volume=self._parse_volume(raw), muted="(muted)" in raw.get("group volume", ""))
+
+    def play(self) -> None:
+        """Start or resume playback."""
+        self._paused_by_us = False
+        self._send("play")
+
+    def stop(self) -> None:
+        """Stop playback."""
+        self._paused_by_us = False
+        self._send("stop")
+
+    def pause_playback(self) -> None:
+        """Pause playback on request of the user. Unlike :meth:`pause` it is not undone by :meth:`resume`."""
+        self._paused_by_us = False
+        self._send("pause")
+
+    def set_volume(self, percent: int) -> None:
+        """
+        Set the group volume.
+        :param percent: Volume 0-100.
+        """
+        with self._lock:
+            self._ducked_from = None
+            self._send(f"vol {max(0, min(100, percent))}")
+
+    def set_muted(self, muted: bool) -> None:
+        """
+        Mute or unmute the group.
+        :param muted: True to mute.
+        """
+        self._send("mute on" if muted else "mute off")
 
     def duck(self, factor: float = 0.5) -> None:
         """

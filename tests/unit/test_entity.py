@@ -2,6 +2,7 @@
 
 from unittest.mock import MagicMock
 
+import pytest
 from aioesphomeapi.api_pb2 import (  # type: ignore[attr-defined]
     ListEntitiesMediaPlayerResponse,
     ListEntitiesNumberResponse,
@@ -309,6 +310,102 @@ class TestMediaPlayerEntityAnnouncement:
 
         entity.music_player.resume.assert_not_called()
         assert entity.state == MediaPlayerState.IDLE
+
+
+class TestMediaPlayerEntitySendspin:
+    @staticmethod
+    def _make(sendspin_state="playing", volume=1.0):
+        from linux_voice_assistant.sendspin_player import SendspinPlayer
+
+        entity = make_media_player(key=1, initial_volume=volume)
+        entity.sendspin_player = MagicMock(spec=SendspinPlayer)
+        entity.sendspin_player.is_ducked = False
+        entity.music_player.is_playing = False
+        entity.music_player.is_paused = False
+        entity._sendspin_state = sendspin_state  # pylint: disable=protected-access
+        return entity
+
+    @staticmethod
+    def _status(state="playing", volume=100, muted=False):
+        from linux_voice_assistant.sendspin_player import SendspinStatus
+
+        return SendspinStatus(state=state, volume=volume, muted=muted)
+
+    def test_status_is_mirrored_and_broadcast(self):
+        entity = self._make(sendspin_state="idle")
+        entity.on_sendspin_status(self._status("playing"))
+        assert entity.state == MediaPlayerState.PLAYING
+        entity.server.state.broadcast.assert_called_once()
+
+        entity.on_sendspin_status(self._status("paused"))
+        assert entity.state == MediaPlayerState.PAUSED
+
+        entity.on_sendspin_status(None)
+        assert entity.state == MediaPlayerState.IDLE
+
+    def test_own_music_has_priority_over_sendspin(self):
+        entity = self._make(sendspin_state="idle")
+        entity.music_player.is_playing = True
+        entity.on_sendspin_status(self._status("playing"))
+        assert entity.state == MediaPlayerState.IDLE
+
+    def test_commands_go_to_sendspin_while_it_is_active(self):
+        entity = self._make("playing")
+        list(entity.handle_message(MediaPlayerCommandRequest(key=1, has_command=True, command=MediaPlayerCommand.PAUSE)))
+        entity.sendspin_player.pause_playback.assert_called_once()
+        entity.music_player.pause.assert_not_called()
+        assert entity.state == MediaPlayerState.PAUSED
+
+        list(entity.handle_message(MediaPlayerCommandRequest(key=1, has_command=True, command=MediaPlayerCommand.PLAY)))
+        entity.sendspin_player.play.assert_called_once()
+
+        list(entity.handle_message(MediaPlayerCommandRequest(key=1, has_command=True, command=MediaPlayerCommand.STOP)))
+        entity.sendspin_player.stop.assert_called_once()
+        entity.music_player.stop.assert_not_called()
+        assert entity.state == MediaPlayerState.IDLE
+
+    def test_commands_go_to_mpv_when_sendspin_is_idle(self):
+        entity = self._make("idle")
+        list(entity.handle_message(MediaPlayerCommandRequest(key=1, has_command=True, command=MediaPlayerCommand.PAUSE)))
+        entity.music_player.pause.assert_called_once()
+        entity.sendspin_player.pause_playback.assert_not_called()
+
+    def test_volume_command_is_forwarded(self):
+        entity = self._make()
+        list(entity.handle_message(MediaPlayerCommandRequest(key=1, has_volume=True, volume=0.4)))
+        entity.sendspin_player.set_volume.assert_called_once_with(40)
+
+    def test_mute_command_is_forwarded(self):
+        entity = self._make()
+        list(entity.handle_message(MediaPlayerCommandRequest(key=1, has_command=True, command=MediaPlayerCommand.MUTE)))
+        entity.sendspin_player.set_muted.assert_called_once_with(True)
+
+    def test_volume_follows_sendspin(self):
+        entity = self._make(volume=1.0)
+        entity.on_sendspin_status(self._status("playing", volume=30))
+        assert entity.volume == 0.3
+        entity.music_player.set_volume.assert_called_with(30)
+        entity.sendspin_player.set_volume.assert_not_called()
+
+    def test_volume_is_not_taken_over_while_ducked_or_just_set(self):
+        entity = self._make(volume=1.0)
+        entity.sendspin_player.is_ducked = True
+        entity.on_sendspin_status(self._status("playing", volume=50))
+        assert entity.volume == 1.0
+
+        entity.sendspin_player.is_ducked = False
+        list(entity.handle_message(MediaPlayerCommandRequest(key=1, has_volume=True, volume=0.8)))
+        entity.on_sendspin_status(self._status("playing", volume=50))
+        assert entity.volume == pytest.approx(0.8)
+
+    def test_sendspin_uri_current_resumes_and_others_are_ignored(self):
+        entity = self._make("paused")
+        list(entity.handle_message(MediaPlayerCommandRequest(key=1, has_media_url=True, media_url="sendspin://current")))
+        entity.sendspin_player.play.assert_called_once()
+
+        list(entity.handle_message(MediaPlayerCommandRequest(key=1, has_media_url=True, media_url="sendspin://192.168.1.2:8927")))
+        entity.music_player.play.assert_not_called()
+        entity.sendspin_player.play.assert_called_once()
 
 
 # ---------------------------------------------------------------------------
