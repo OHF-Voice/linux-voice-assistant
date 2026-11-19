@@ -57,6 +57,15 @@ ghcr.io/ohf-voice/linux-voice-assistant:pr-<pr-number>
 All workflows build for multiple architectures:
 - `linux/amd64` (x86_64)
 - `linux/aarch64` (ARM 64-bit, e.g., Raspberry Pi 4)
+- `linux/arm/v7` (ARM 32-bit)
+
+Each workflow has three jobs. The slow armv7 build does not delay the 64-bit platforms:
+
+1. `build-and-push-64` builds amd64 + arm64 and publishes the tag.
+2. `build-and-push-32` builds armv7 in parallel and pushes it by digest only (no tag).
+3. `merge-32` runs after both and adds the armv7 image to the already published tags, so the same tag contains all three architectures.
+
+amd64/arm64 can be used as soon as job 1 is done. Until `merge-32` has finished, the tag has no armv7 variant. If `build-and-push-32` fails, the tag stays at amd64 + arm64.
 
 ## Setup Requirements
 
