@@ -74,6 +74,7 @@ _DUPLICATE_WAKE_UP_CODE = "duplicate_wake_up_detected"
 
 PROTO_TO_MESSAGE_TYPE = {v: k for k, v in MESSAGE_TYPE_TO_PROTO.items()}
 
+# SENDSPIN_FEATURE_PAIRING_TOKEN = 1 << 0
 _HAS_AUDIO_DATA2 = "data2" in {f.name for f in VoiceAssistantAudio.DESCRIPTOR.fields}
 
 
@@ -749,6 +750,22 @@ class VoiceSatelliteProtocol(APIServer):
                 voice_assistant_feature_flags=self.supported_features,
                 api_encryption_supported=self.state.noise_psk is not None,
             )
+        # Prepared for an aioesphomeapi release that has the Sendspin messages (missing in 45.3.1, Home Assistant uses 46.x).
+        # Needs DeviceCapabilitiesRequest/-Response, SendspinCapabilities, SendspinPairingTokenRequest/-Response and
+        # SendspinPairingTokenStatus from aioesphomeapi.api_pb2, and a SendspinPlayer method that returns the "client id"
+        # line of `status` and the output of `pair-token` (the reply format of `pair-token` still has to be checked).
+        # ESPHome only defines the feature flag SENDSPIN_FEATURE_PAIRING_TOKEN = 1 << 0: Home Assistant shows Sendspin as
+        # supported when the flags are not 0 and then asks for the pairing token with SendspinPairingTokenRequest.
+        # elif isinstance(msg, DeviceCapabilitiesRequest) and self.state.sendspin_player is not None:
+        #     yield DeviceCapabilitiesResponse(
+        #         sendspin=SendspinCapabilities(feature_flags=SENDSPIN_FEATURE_PAIRING_TOKEN, client_id=self.state.sendspin_player.client_id() or ""),
+        #     )
+        # elif isinstance(msg, SendspinPairingTokenRequest) and self.state.sendspin_player is not None:
+        #     token = self.state.sendspin_player.pair_token()
+        #     yield SendspinPairingTokenResponse(
+        #         status=SendspinPairingTokenStatus.SENDSPIN_PAIRING_TOKEN_STATUS_OK if token else SendspinPairingTokenStatus.SENDSPIN_PAIRING_TOKEN_STATUS_NOT_READY,
+        #         token=token or "",
+        #     )
         elif isinstance(msg, SubscribeStatesRequest):
             # Standard ESPHome state subscription. Replay current entity state to
             # the subscribing client. (Entities answer SubscribeHomeAssistantStatesRequest;
