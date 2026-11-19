@@ -33,6 +33,8 @@ services:
       - XDG_RUNTIME_DIR=${LVA_XDG_RUNTIME_DIR:-/run/user/1000}
       - PULSE_SERVER=${LVA_PULSE_SERVER:-/run/user/1000/pulse/native}
       - PULSE_COOKIE=${LVA_PULSE_COOKIE:-/run/user/1000/pulse/cookie}
+      # Control socket of a Sendspin player (ducking and pausing, ignored while the socket does not exist)
+      - SENDSPIN_CONTROL_SOCKET=/sendspin/control.sock
     env_file: ${ENV_FILE:-.env}
     group_add:
       - audio
@@ -51,6 +53,9 @@ services:
       # Pulseaudio
       # /run/user/1000:/run/user/1000
       - ${LVA_XDG_RUNTIME_DIR:-/run/user/1000}:${LVA_XDG_RUNTIME_DIR:-/run/user/1000}
+      # Control socket of a Sendspin player. The directory is mounted, not the socket, so that the player
+      # can create the socket again when it restarts.
+      - ${LVA_SENDSPIN_CONTROL_DIR:-/run/local-audio}:/sendspin
     depends_on:
       - fix-permissions
     # Health check for process
