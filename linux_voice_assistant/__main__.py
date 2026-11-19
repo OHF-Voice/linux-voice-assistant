@@ -80,7 +80,7 @@ async def main() -> None:
     parser.add_argument(
         "--sendspin-control-socket",
         default=DEFAULT_CONTROL_SOCKET,
-        help="Control socket of a Sendspin player (sendspin-cli); LVA ducks it during conversations and pauses it during announcements. "
+        help="Control socket of a Sendspin player (sendspin-cli); LVA ducks it during conversations and announcements and mirrors its state in the media player. "
         "Nothing happens while the socket does not exist, an empty value turns it off (default: %(default)s)",
     )
     parser.add_argument(

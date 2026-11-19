@@ -88,7 +88,7 @@ usage: __main__.py [-h] [--name NAME] [--audio-input-device AUDIO_INPUT_DEVICE] 
 | `--audio-input-block-size`      | Audio input block size in samples                                                      | 1024                                 |
 | `--audio-output-device`         | mpv name for output device, use a `pulse/...` name from `--list-output-devices`        | `pulse`                              |
 | `--music-output-device`         | mpv name for the music/media output device                                             | `--audio-output-device`              |
-| `--sendspin-control-socket`     | Control socket of a Sendspin player, ducked and paused like the music player (empty: off) | `/sendspin/control.sock`             |
+| `--sendspin-control-socket`     | Control socket of a Sendspin player, ducked like the music player, state shown in the media player (empty: off)| `/sendspin/control.sock`             |
 | `--mic-volume`                  | Control microphone volume                                                              | 100                                  |
 | `--mic-auto-gain`               | Add WebRTC Gain to Mic                                                                 | 0                                    |
 | `--mic-noise-suppression`       | Add WebRTC Noise Suppression to Mic                                                    | 0                                    |
