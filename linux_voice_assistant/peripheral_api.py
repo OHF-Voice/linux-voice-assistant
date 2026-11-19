@@ -381,32 +381,7 @@ class PeripheralAPIServer:
 
         elif command in (LVACommand.VOLUME_UP, LVACommand.VOLUME_DOWN):
             delta = self._volume_step if command == LVACommand.VOLUME_UP else -self._volume_step
-            new_vol = max(0.0, min(1.0, state.volume + delta))
-            vol_pct = int(round(new_vol * 100))
-
-            state.music_player.set_volume(vol_pct)
-            state.tts_player.set_volume(vol_pct)
-
-            if state.media_player_entity is not None:
-                state.media_player_entity.volume = new_vol
-                state.media_player_entity.previous_volume = new_vol
-
-                # Push the new volume to HA so its media player entity updates in real time
-                if satellite is not None:
-
-                    satellite.send_messages(
-                        [
-                            MediaPlayerStateResponse(
-                                key=state.media_player_entity.key,
-                                state=state.media_player_entity.state,
-                                volume=new_vol,
-                                muted=state.media_player_entity.muted,
-                            )
-                        ]
-                    )
-
-            # persist_volume also emits VOLUME_CHANGED via models.py
-            state.persist_volume(new_vol)
+            self._set_volume(state, satellite, max(0.0, min(1.0, state.volume + delta)))
 
         elif command == LVACommand.SET_VOLUME:
             data = msg.get("data", {})
@@ -415,32 +390,7 @@ class PeripheralAPIServer:
                 _LOGGER.warning("Peripheral: invalid volume in set_volume command: %s", volume)
                 return
 
-            new_vol = max(0.0, min(1.0, float(volume)))
-            vol_pct = int(round(new_vol * 100))
-
-            state.music_player.set_volume(vol_pct)
-            state.tts_player.set_volume(vol_pct)
-
-            if state.media_player_entity is not None:
-                state.media_player_entity.volume = new_vol
-                state.media_player_entity.previous_volume = new_vol
-
-                # Push the new volume to HA so its media player entity updates in real time
-                if satellite is not None:
-
-                    satellite.send_messages(
-                        [
-                            MediaPlayerStateResponse(
-                                key=state.media_player_entity.key,
-                                state=state.media_player_entity.state,
-                                volume=new_vol,
-                                muted=state.media_player_entity.muted,
-                            )
-                        ]
-                    )
-
-            # persist_volume also emits VOLUME_CHANGED via models.py
-            state.persist_volume(new_vol)
+            self._set_volume(state, satellite, max(0.0, min(1.0, float(volume))))
 
         elif command == LVACommand.STOP_TIMER_RINGING:
             if satellite is None:
@@ -452,27 +402,8 @@ class PeripheralAPIServer:
                 satellite.unduck()
                 await self.emit_event(LVAEvent.IDLE)
 
-        elif command == LVACommand.STOP_MEDIA_PLAYER:
-            state.music_player.stop()
-            if state.media_player_entity is not None:
-
-                state.media_player_entity.state = MediaPlayerState.IDLE
-                if satellite is not None:
-                    satellite.send_messages([self._create_media_player_response(MediaPlayerState.IDLE)])
-
-        elif command == LVACommand.PAUSE_MEDIA_PLAYER:
-            state.music_player.pause()
-            if state.media_player_entity is not None:
-                state.media_player_entity.state = MediaPlayerState.PAUSED
-                if satellite is not None:
-                    satellite.send_messages([self._create_media_player_response(MediaPlayerState.PAUSED)])
-
-        elif command == LVACommand.RESUME_MEDIA_PLAYER:
-            state.music_player.resume()
-            if state.media_player_entity is not None:
-                state.media_player_entity.state = MediaPlayerState.PLAYING
-                if satellite is not None:
-                    satellite.send_messages([self._create_media_player_response(MediaPlayerState.PLAYING)])
+        elif command in (LVACommand.STOP_MEDIA_PLAYER, LVACommand.PAUSE_MEDIA_PLAYER, LVACommand.RESUME_MEDIA_PLAYER):
+            self._control_media_player(state, satellite, command)
 
         elif command == LVACommand.BUTTON_SINGLE_PRESS:
             if state.button_event_sensor_entity is not None:
@@ -765,6 +696,52 @@ class PeripheralAPIServer:
         if loop is None or loop.is_closed():
             return
         asyncio.run_coroutine_threadsafe(self.emit_event(event, data), loop)
+
+    def _set_volume(self, state: "ServerState", satellite: Any, volume: float) -> None:
+        """
+        Set the volume on behalf of a peripheral. It goes through the media player entity, which also sets a Sendspin player.
+        :param state: The server state.
+        :param satellite: The satellite that Home Assistant is connected to, None if there is none.
+        :param volume: Volume 0.0 to 1.0.
+        """
+        entity = state.media_player_entity
+        if entity is None:
+            volume_percent = int(round(volume * 100))
+            state.music_player.set_volume(volume_percent)
+            state.tts_player.set_volume(volume_percent)
+            # persist_volume also emits VOLUME_CHANGED via models.py
+            state.persist_volume(volume)
+            return
+
+        entity.set_volume(volume)
+        if satellite is not None:
+            # Push the new volume to HA so its media player entity updates in real time
+            satellite.send_messages([MediaPlayerStateResponse(key=entity.key, state=entity.state, volume=volume, muted=entity.muted)])
+
+    def _control_media_player(self, state: "ServerState", satellite: Any, command: str) -> None:
+        """
+        Stop, pause or resume the media on behalf of a peripheral. It goes through the media player entity, which also controls a Sendspin player.
+        :param state: The server state.
+        :param satellite: The satellite that Home Assistant is connected to, None if there is none.
+        :param command: ``stop_media_player``, ``pause_media_player`` or ``resume_media_player``.
+        """
+        command_name = LVACommand(command)
+        entity = state.media_player_entity
+        if entity is None:
+            {
+                LVACommand.STOP_MEDIA_PLAYER: state.music_player.stop,
+                LVACommand.PAUSE_MEDIA_PLAYER: state.music_player.pause,
+                LVACommand.RESUME_MEDIA_PLAYER: state.music_player.resume,
+            }[command_name]()
+            return
+
+        response = {
+            LVACommand.STOP_MEDIA_PLAYER: entity.stop,
+            LVACommand.PAUSE_MEDIA_PLAYER: entity.pause,
+            LVACommand.RESUME_MEDIA_PLAYER: entity.resume,
+        }[command_name]()
+        if satellite is not None:
+            satellite.send_messages([response])
 
     def _create_media_player_response(self, state: MediaPlayerState) -> MediaPlayerStateResponse:
         """Create a MediaPlayerStateResponse with current entity state."""

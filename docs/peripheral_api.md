@@ -187,9 +187,9 @@ For HA to see your entity, your peripheral must register before HA enumerates th
 
 | Command | Data | Description |
 |---------|------|-------------|
-| `volume_up` | — | Increase speaker volume by one step (default 5 %, configurable with `--peripheral-volume-step`). Updates HA, persists the value, and emits `volume_changed`. |
+| `volume_up` | — | Increase speaker volume by one step (default 5 %, configurable with `--peripheral-volume-step`). Updates HA, persists the value, and emits `volume_changed`. Also sets the group volume of a Sendspin player (`--sendspin-control-socket`). |
 | `volume_down` | — | Decrease speaker volume by one step. |
-| `set_volume` | `{"volume": float}` | Set the speaker volume to an exact value between 0.0 and 1.0. Values outside this range are clamped. Updates HA, persists, and emits `volume_changed`. Example: `{"command": "set_volume", "data": {"volume": 0.6}}` |
+| `set_volume` | `{"volume": float}` | Set the speaker volume to an exact value between 0.0 and 1.0. Values outside this range are clamped. Updates HA, persists, and emits `volume_changed`. Also sets the group volume of a Sendspin player. Example: `{"command": "set_volume", "data": {"volume": 0.6}}` |
 
 ### Timer
 
@@ -201,9 +201,9 @@ For HA to see your entity, your peripheral must register before HA enumerates th
 
 | Command | Data | Description |
 |---------|------|-------------|
-| `stop_media_player` | — | Stop background music / media playback. Updates the HA media player entity state to Idle. |
-| `pause_media_player` | — | Pause background music. Updates HA state to Paused. |
-| `resume_media_player` | — | Resume paused music. Updates HA state to Playing. |
+| `stop_media_player` | — | Stop background music / media playback, or the Sendspin player (`--sendspin-control-socket`) if it plays. Updates the HA media player entity state to Idle. |
+| `pause_media_player` | — | Pause background music, or the Sendspin player if it plays (HA state is then Idle, Sendspin has no paused state). Otherwise updates HA state to Paused. |
+| `resume_media_player` | — | Resume paused music. If LVA has nothing to resume it plays the Sendspin player. Updates HA state to Playing. |
 
 ### Button events (sent to Home Assistant)
 

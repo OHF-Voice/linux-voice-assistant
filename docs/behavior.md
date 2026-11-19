@@ -114,7 +114,7 @@ Announcements work like on ESPHome devices (the media is not stopped, the entity
 - The state is read from the player once a second, so a change shows up in Home Assistant after up to about a second.
 - Whether Sendspin is supported and the Sendspin pairing token are not announced to Home Assistant: `aioesphomeapi` 45.3.1 has no Sendspin messages. The handlers are prepared (commented out) in `satellite.py`.
 - The default socket is the one that the Docker Compose file mounts. Without a Sendspin player the socket does not exist and nothing happens. If the socket is missing, unreadable or the player does not answer within 1 s, nothing is ducked, paused or mirrored and the entity reports `idle` for Sendspin. LVA logs a warning once when a configured socket becomes unreachable (including at startup) and an info message once when it is reachable again.
-- Commands of peripherals (`volume_up`, `volume_down`, `set_volume`, `stop_media_player`, `pause_media_player`, `resume_media_player`) apply to LVA's own music player only and do not reach the Sendspin player.
+- Commands of peripherals (`volume_up`, `volume_down`, `set_volume`, `stop_media_player`, `pause_media_player`, `resume_media_player`) work like the same commands from Home Assistant: the volume commands also set the group volume of the Sendspin player, and stop, pause and resume go to the Sendspin player while it plays (resume also when LVA's own music has nothing to resume).
 
 #### Control socket protocol
 
