@@ -176,6 +176,18 @@ VS Code development uses a local Python virtual environment (`.venv/`):
 - `Ctrl+Shift+T` - Run Tests
 - `Ctrl+Shift+P` → "Tasks: Run Task" - Show all tasks (Setup, Linter, Tests, Run App)
 
+### Docker Compose for development
+
+`docker-compose.dev.yml` runs the pre-built development image (`linux-voice-assistant-pr`) with the source code of the working tree mounted into the container.
+
+```sh
+docker compose -f docker-compose.dev.yml up
+```
+
+It also contains **Local Audio**, the Sendspin player of Music Assistant, for testing `--sendspin-control-socket`. It is in the Compose profile `local-audio`, so it does not start with a plain `up` (a player that already runs on the machine would collide with it). Start it with `docker compose -f docker-compose.dev.yml --profile local-audio up`, or set `COMPOSE_PROFILES=local-audio` in the `.env`. The player uses the variables of LVA (`LVA_USER_ID`, `LVA_PULSE_SERVER`, `LVA_SENDSPIN_CONTROL_DIR`, `CLIENT_NAME`, ...). Its other options (`LOCAL_AUDIO_*`) are declared at the top of the file. The control socket is `/run/local-audio/control.sock` on the host and `/sendspin/control.sock` in the LVA container.
+
+> **Note:** The player announces itself through the Avahi of the host. On hosts with AppArmor enabled (for example Ubuntu) the Docker profile `docker-default` blocks that, and the log of `local-audio` shows `could not register _sendspin._tcp: dns_sd error -65553`. The service therefore sets `security_opt: apparmor=unconfined`, keep it on such hosts.
+
 ### Code Quality Checks
 
 The project uses the following tools to ensure code quality:

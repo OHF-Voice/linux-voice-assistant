@@ -323,6 +323,10 @@ The following variables can be configured in the `.env` or in the service file:
 
 💡 **Note:** For the systemd installation some variables set in the service need to be without `LVA_` prefix.
 
+### Sendspin player in Docker (AppArmor)
+
+💡 **Note:** If you run a Sendspin player such as the Music Assistant Local Audio add-on in Docker on a host with AppArmor enabled (for example Ubuntu), its log may show `could not register _sendspin._tcp: dns_sd error -65553`. The player announces itself through the Avahi of the host over the D-Bus socket, and the default Docker AppArmor profile blocks that. Run the player container with `security_opt: - apparmor=unconfined` (this removes the AppArmor protection of that container), or point the player at the server instead of announcing it. On systems that do not enforce AppArmor (for example the PiCompose Raspberry Pi OS image, where it was not active when checked) the problem does not occur.
+
 ### Feature: Listen During Wake Sound
 
 By default, LVA waits until the wake sound has finished playing before it starts listening for your spoken command. This can force a short pause between saying the wake word and the rest of your request. For example:  `Okay Nabu <pause until wake sound finishes> turn on the kitchen lights`.
