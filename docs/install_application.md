@@ -323,9 +323,39 @@ The following variables can be configured in the `.env` or in the service file:
 
 💡 **Note:** For the systemd installation some variables set in the service need to be without `LVA_` prefix.
 
-### Sendspin player in Docker (AppArmor)
+### Sendspin player in Docker (Local Audio add-on)
 
-💡 **Note:** If you run a Sendspin player such as the Music Assistant Local Audio add-on in Docker on a host with AppArmor enabled (for example Ubuntu), its log may show `could not register _sendspin._tcp: dns_sd error -65553`. The player announces itself through the Avahi of the host over the D-Bus socket, and the default Docker AppArmor profile blocks that. Run the player container with `security_opt: - apparmor=unconfined` (this removes the AppArmor protection of that container), or point the player at the server instead of announcing it. On systems that do not enforce AppArmor (for example the PiCompose Raspberry Pi OS image, where it was not active when checked) the problem does not occur.
+LVA can duck, announce around and show a Sendspin player such as the [Music Assistant Local Audio add-on](https://github.com/music-assistant/local-audio-addon), see [behavior.md](behavior.md#sendspin-player). It talks to the player through the **control socket** of `sendspin-cli`, a Unix socket file. There is no network variant: the documentation of `sendspin-cli` describes the control channel as a Unix socket only, so both containers have to run on the same host and share the socket file.
+
+You do not create the socket file. The player creates it when it starts. What you share is the **directory** that holds it, so that the player can create the socket again when it restarts.
+
+**1. Pick a directory on the host**, for example `/run/local-audio` (Docker creates it when a container starts).
+
+**2. Mount it into the player.** The Local Audio add-on image keeps its control socket at `/run/sendspin-cli/control.sock`. Add to your existing deployment of the add-on:
+
+```yaml
+services:
+  local-audio:
+    # ... your existing configuration ...
+    volumes:
+      - /run/local-audio:/run/sendspin-cli
+```
+
+**3. Mount it into LVA.** In the `.env` of the LVA Compose project set `LVA_SENDSPIN_CONTROL_DIR="/run/local-audio"` (this is the default of `docker-compose.yml`), which mounts the directory to `/sendspin`. LVA looks for `/sendspin/control.sock` by default (`SENDSPIN_CONTROL_SOCKET`, `--sendspin-control-socket`). With your own Compose file add the volume `/run/local-audio:/sendspin`.
+
+**4. Make the socket reachable for LVA.** The add-on image runs as root, so the socket belongs to root with mode `0600` (check with `docker exec <player> ls -l /run/sendspin-cli/control.sock`), and LVA, which runs as the user `LVA_USER_ID` (1000 by default), cannot open it. Choose one:
+
+- **Run the player as the same user as LVA.** This is the clean way. The [PiCompose package](https://github.com/florian-asche/PiCompose-Package-Software-HA-Satellite) does it: its `local-audio` Compose project replaces the entrypoint of the image, so that only `sendspin-cli` runs without s6-overlay, as `user: 1000:1000`. You can take that Compose file as a template.
+- **Open the socket after every start of the player**, for example with `docker exec <player> chmod 666 /run/sendspin-cli/control.sock`. This is good for a test only: the mode is lost when the player restarts, and every local user can then control the player.
+- **Run LVA as root** (`LVA_USER_ID=0`, `LVA_USER_GROUP=0`). This works, but it is not recommended.
+
+**5. Check.** `docker logs linux-voice-assistant 2>&1 | grep -i sendspin` shows `Sendspin control socket /sendspin/control.sock is reachable`. If it shows a warning instead (`is not reachable`), the socket is missing (is the directory mounted into both containers?) or LVA may not open it (step 4). Nothing happens while the socket does not exist, LVA then works as without a Sendspin player. `docker exec <player> sendspin-cli status --control-socket /run/sendspin-cli/control.sock` shows what the player reports.
+
+This setup is derived from the sources of the add-on and was tested with the player as non-root user (PiCompose) only. The stock image with a mounted directory was not tested.
+
+#### AppArmor
+
+💡 **Note:** If you run the player in Docker on a host with AppArmor enabled (for example Ubuntu), its log may show `could not register _sendspin._tcp: dns_sd error -65553`. The player announces itself through the Avahi of the host over the D-Bus socket, and the default Docker AppArmor profile blocks that. Run the player container with `security_opt: - apparmor=unconfined` (this removes the AppArmor protection of that container), or point the player at the server instead of announcing it. On systems that do not enforce AppArmor (for example the PiCompose Raspberry Pi OS image, where it was not active when checked) the problem does not occur.
 
 ### Feature: Listen During Wake Sound
 
