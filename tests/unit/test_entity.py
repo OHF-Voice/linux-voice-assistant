@@ -282,12 +282,12 @@ class TestMediaPlayerEntityAnnouncement:
         entity.music_player.is_playing = True
 
         msgs, done_callback = self._announce(entity)
-        entity.music_player.duck.assert_called_once()
+        entity.music_player.duck.assert_called_once_with(owner="media_announcement")
         entity.music_player.pause.assert_not_called()
         assert msgs[-1].state == MediaPlayerState.ANNOUNCING
 
         done_callback()
-        entity.music_player.unduck.assert_called_once()
+        entity.music_player.unduck.assert_called_once_with(owner="media_announcement")
         entity.music_player.resume.assert_not_called()
         assert entity.state == MediaPlayerState.PLAYING
 
@@ -497,7 +497,7 @@ class TestMediaPlayerEntitySendspinAnnouncement:
         entity = self._make("playing")
 
         msgs, done_callback = self._announce(entity)
-        entity.sendspin_player.duck.assert_called_once_with(owner="announcement")
+        entity.sendspin_player.duck.assert_called_once_with(owner="media_announcement")
         assert msgs[-1].state == MediaPlayerState.ANNOUNCING
         entity.sendspin_player.stop.assert_not_called()
 
@@ -505,7 +505,7 @@ class TestMediaPlayerEntitySendspinAnnouncement:
         assert entity.state == MediaPlayerState.ANNOUNCING
 
         done_callback()
-        entity.sendspin_player.unduck.assert_called_once_with(owner="announcement")
+        entity.sendspin_player.unduck.assert_called_once_with(owner="media_announcement")
         assert entity.state == MediaPlayerState.PLAYING
 
     def test_announcement_over_stopped_sendspin_ends_idle(self):

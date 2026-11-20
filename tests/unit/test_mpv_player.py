@@ -249,6 +249,17 @@ class TestVolume:
         player.duck()
         player._mock.duck.assert_called_once_with(0.5)
 
+    def test_volume_is_restored_when_the_last_owner_unducks(self):
+        player = make_player()
+        player.duck(owner="assistant")
+        player.duck(owner="announcement")
+
+        player.unduck(owner="announcement")
+        player._mock.unduck.assert_not_called()
+
+        player.unduck(owner="assistant")
+        player._mock.unduck.assert_called_once()
+
     def test_unduck_delegates_to_lib_player(self):
         player = make_player()
         player.unduck()

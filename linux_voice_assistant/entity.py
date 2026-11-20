@@ -208,10 +208,10 @@ class MediaPlayerEntity(ESPHomeEntity):
 
         self._ducked_music = self.music_player.is_playing and not self.music_player.is_paused
         if self._ducked_music:
-            self.music_player.duck()
+            self.music_player.duck(owner="media_announcement")
 
         if self.sendspin_player is not None:
-            self.sendspin_player.duck(owner="announcement")
+            self.sendspin_player.duck(owner="media_announcement")
             self._ducked_sendspin = True
 
         return lambda: call_all(self._announcement_finished, done_callback)
@@ -224,10 +224,10 @@ class MediaPlayerEntity(ESPHomeEntity):
         self._log.debug("Announcement over, restoring (ducked music: %s, ducked Sendspin: %s)", self._ducked_music, self._ducked_sendspin)
         if self._ducked_music:
             self._ducked_music = False
-            self.music_player.unduck()
+            self.music_player.unduck(owner="media_announcement")
         if self._ducked_sendspin and self.sendspin_player is not None:
             self._ducked_sendspin = False
-            self.sendspin_player.unduck(owner="announcement")
+            self.sendspin_player.unduck(owner="media_announcement")
 
         if self.music_player.is_paused:
             new_state = MediaPlayerState.PAUSED

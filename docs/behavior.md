@@ -152,6 +152,8 @@ Triggered by a `media_player.play_media` call with `announce: true` on the LVA m
 | **Paused** (by you) | The announcement plays, the music stays paused. The media player reports `announcing` meanwhile and `paused` afterwards. |
 | **Not playing** | The announcement plays. The media player reports `announcing` meanwhile and `idle` afterwards. |
 
+The music stays ducked as long as something still wants it ducked. A conversation, a ringing timer, a voice announcement and a media player announcement ask for it separately, so the music returns to full volume only when all of them are over. For example, a timer that is stopped during a conversation does not end the ducking of the conversation, and a media player announcement that ends during a voice announcement does not end its ducking. A second announcement replaces the first one.
+
 ---
 
 ## Timers
