@@ -44,6 +44,7 @@ class DetectionResult:
     wake_word_id: str
     slot: int
     score: Optional[float] = None
+    cutoff: Optional[float] = None
 
 
 @dataclass

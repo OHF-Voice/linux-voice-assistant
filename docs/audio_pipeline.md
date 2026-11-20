@@ -29,7 +29,7 @@ flowchart TD
     end
 ```
 
-Nothing is buffered before the wake word: audio is only sent from the moment `_is_streaming_audio` is set (right after the wake word, or after the wake sound unless `listen_during_wake_sound` is enabled). HA events such as `STT_VAD_END` arrive on the event loop and clear the flag again.
+Audio is only sent from the moment `_is_streaming_audio` is set (right after the wake word, or after the wake sound unless `listen_during_wake_sound` is enabled). HA events such as `STT_VAD_END` arrive on the event loop and clear the flag again. The one exception is wake word audio verification (see "Wake word audio verification" below): while Home Assistant asks for it, the last 1.5 s before a microWakeWord detection are buffered and sent together with the start request.
 
 The same flow as plain text:
 
@@ -191,6 +191,8 @@ Audio is sent in these windows only:
 
 Outside these windows nothing is sent. Wake word and stop word detection run locally on every block and send no audio to HA. Muting also stops the stream immediately.
 
+While Home Assistant asks for wake word audio, the loop additionally keeps the most recent 1.5 s of both channels in memory (see below). That audio never leaves the device unless a microWakeWord detection follows.
+
 If nobody speaks, LVA keeps sending until HA's own speech timeout ends the run. That timeout is not configurable in LVA.
 
 ### 7. Wake word and stop word detection (same loop, same chunk)
@@ -206,9 +208,38 @@ After `handle_audio()`, the processed `audio_chunk` feeds the detectors:
 
 The wake word runs on the same audio as the stream. Attenuation from Mic Volume and the WebRTC result therefore also change detection.
 
+## Wake word audio verification
+
+Home Assistant can verify a microWakeWord detection on the server. LVA supports this the way the Home Assistant Voice PE does. It applies to microWakeWord only; openWakeWord detections always use the normal flow.
+
+**Negotiation.** LVA advertises `VoiceAssistantFeature.WAKE_WORD_AUDIO` in `supported_features`. Home Assistant requests the audio by setting `VoiceAssistantSubscriptionFlag.WAKE_WORD_AUDIO` in `SubscribeVoiceAssistantRequest`. LVA remembers the flag per connection (`wake_word_audio_requested`) and resets it when the connection is lost or Home Assistant unsubscribes.
+
+**Buffer.** While the flag is set and the device is not muted, `process_audio()` appends every block (`data` and `data2`, after the WebRTC skip check) to a `WakeWordAudioBuffer` that keeps about 1.5 s per channel. The block that triggers the detection is part of the buffer, because the buffer is filled before the wake word models run. When the device is muted or the flag is not set, the buffer is cleared.
+
+**Start.** On a detection, `wakeup()` receives a snapshot of the buffer and, instead of ducking and playing the wake sound, sends in one `send_messages()` call:
+
+1. `VoiceAssistantRequest(start=True, wake_word_phrase, wake_word_id, wake_word_probability, wake_word_probability_cutoff, wake_word_audio_bytes, wake_word_audio_bytes2)`. The byte counts are the sizes of the buffered audio of `data` and `data2`.
+2. One `VoiceAssistantAudio(data, data2)` per buffered block, oldest first.
+
+The live blocks follow as usual, because `_is_streaming_audio` is set right after.
+
+**Verdict.** Home Assistant answers with a pipeline event:
+
+| Event from HA | LVA reaction |
+|---------------|--------------|
+| `WAKE_WORD_END` | The wake word is accepted. Music is ducked. The run continues as usual. |
+| `WAKE_WORD_REJECTED` | Streaming stops, music is unducked and peripherals receive `idle`. No sound is played, and the `RUN_END` that may follow is ignored. |
+| none within 2 s | LVA sends `VoiceAssistantRequest(start=False)`, emits `pipeline_error` and `idle`, and ignores a late `RUN_END`. |
+
+`WAKE_WORD_REJECTED` is handled in every run, also when LVA did not ask for verification (for example when Home Assistant rejects a duplicate wake up).
+
+**Not covered.** The thresholds of the microWakeWord models are not lowered while verification is active, so Home Assistant only gets the detections that pass the normal sensitivity setting.
+
+**Status: not tested on audio hardware or against a Home Assistant release that sends the flag.** The behavior follows the aioesphomeapi 46.27.0 protocol and the Voice PE implementation.
+
 ## How Home Assistant and aioesphomeapi treat `data2`
 
-**Status: derived from reading the code, not reproduced on a running system.** Sources: the `aioesphomeapi` repository (`origin/main`, 46.22.0; LVA pins 45.3.1, whose installed package also contains the `data2` field and the flag) and Home Assistant Core (`homeassistant/components/esphome/assist_satellite.py`, `stt/models.py`, `wyoming/stt.py`, `cloud/stt.py`; commit not recorded). Behavior may differ in other Home Assistant versions.
+**Status: derived from reading the code, not reproduced on a running system.** Sources: the `aioesphomeapi` repository (`origin/main`, 46.22.0; LVA pins 46.27.0, whose installed package also contains the `data2` field and the flag) and Home Assistant Core (`homeassistant/components/esphome/assist_satellite.py`, `stt/models.py`, `wyoming/stt.py`, `cloud/stt.py`; commit not recorded). Behavior may differ in other Home Assistant versions.
 
 **Protocol (aioesphomeapi)**
 

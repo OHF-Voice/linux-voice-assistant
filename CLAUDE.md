@@ -8,7 +8,7 @@ Dense codebase map for AI agents. `AGENTS.md` (imported above) holds the rules; 
 
 | Task | Command | Time |
 |------|---------|------|
-| All unit tests | `./script/tests` | ~2 s (386 tests) |
+| All unit tests | `./script/tests` | ~2 s (494 tests) |
 | One file / one test | `.venv/bin/python -m pytest tests/unit/test_satellite.py -k timer -q` | <1 s |
 | All lint | `./script/lint` | ~15 s |
 | Auto-format | `./script/lint_black --auto && ./script/lint_isort --auto` | |
@@ -58,6 +58,7 @@ Thread-safety rules:
 | `models.py` | `WakeWordType`, `AvailableWakeWord` (`.load()`), `LightRegistration`, `Preferences`, `ServerState`, `initial_stop_word_threshold()` | |
 | `mpv_player.py` | `MpvMediaPlayer`: playlist (list of URLs), done_callback, duck/unduck | `stop()` **invokes** the pending done_callback. |
 | `player/libmpv.py` | `LibMpvPlayer`: real mpv wrapper, effective volume = user × duck factor | Only an `end-file` with reason 0 (EOF) fires the callback. `stop(for_replacement=True)` drops the callback. Many debug logs wrongly say "unduck() called", so don't rely on them. |
+| `wake_word_audio.py` | `WakeWordAudioBuffer`: rolling 1.5 s buffer of both streamed channels, `WakeWordAudio` snapshot | Filled by `process_audio()` only while HA asked for wake word audio and the device is not muted. |
 | `webrtc.py` | `WebRTCProcessor`: 10 ms (320 byte) framing for `webrtc_noise_gain` | Can return `b""` while buffering. The audio loop then skips the chunk. |
 | `zeroconf.py` | mDNS registration | |
 | `util.py` | `get_version()` (reads `version.txt`), `get_esphome_version()`, `call_all()`, interface/IP detection | |
@@ -79,6 +80,8 @@ Flow: `wakeup()` (audio thread) → blocked if `state.muted` or `_pipeline_activ
 
 `_tts_finished()` sends `VoiceAssistantAnnounceFinished`, removes the stop word from the active set, then either restarts listening after `continue_conversation_delay` (via `threading.Timer`) or unducks and emits `idle`.
 
+**Wake word audio verification (microWakeWord only):** HA sets `VoiceAssistantSubscriptionFlag.WAKE_WORD_AUDIO` in `SubscribeVoiceAssistantRequest` (`wake_word_audio_requested`). The audio thread then passes a `WakeWordAudio` snapshot to `wakeup()`, which sends the start request with `wake_word_audio_bytes*`, score and cutoff plus the buffered blocks, with no wake sound and no ducking, and starts a 2 s verdict timer (`_verifying_wake_word`). `WAKE_WORD_END` ducks and clears the timer. `WAKE_WORD_REJECTED` (handled in every run) stops streaming, unducks, emits `idle` and sets `_wake_word_rejected`, which makes the following `RUN_END` a no-op until the next `RUN_START`. On timeout LVA sends `VoiceAssistantRequest(start=False)`, emits `pipeline_error` and `idle`. The verdict state is shared by the audio, event-loop and timer threads, so it is only changed through `_finish_wake_word_verification()` (lock).
+
 **Stop word gating:** the stop word only triggers when `state.stop_word.id in state.active_wake_words`. It is added during TTS, announcements and timer ringing, and removed in `stop()` / `_tts_finished()` / timer stop. Forgetting the removal leaves "stop" live forever.
 
 Timers: `FINISHED` starts the `_play_timer_finished()` loop, which re-plays the sound with a 1 s gap and auto-stops after `--timer-max-ring-seconds`. `CANCELLED` emits `timer_updated` with `seconds_left: 0` and then `idle`.
@@ -95,7 +98,7 @@ Wake word slots: HA can activate up to 2 wake words. `preferences.active_wake_wo
 
 **HA quirk:** `ButtonEventSensorEntity` must not yield an `EventResponse` with an empty `event_type`. HA then fails the whole config entry.
 
-**Feature detection on aioesphomeapi:** `_HAS_AUDIO_DATA2` checks the protobuf descriptor. Do this for newer proto fields, because `aioesphomeapi` is pinned (`==45.3.1`).
+**Feature detection on aioesphomeapi:** `_HAS_AUDIO_DATA2` checks the protobuf descriptor. Do this for newer proto fields, because `aioesphomeapi` is pinned (`==46.27.0`).
 
 ## Change checklists
 

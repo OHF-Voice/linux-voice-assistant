@@ -22,7 +22,7 @@ classifiers = [
 ]
 requires-python = ">=3.11.0"
 dependencies = [
-    "aioesphomeapi==45.3.1",
+    "aioesphomeapi==46.27.0",
     "netifaces2==0.0.22",
     "soundcard<1",
     "numpy>=2,<3",

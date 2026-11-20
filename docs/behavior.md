@@ -10,6 +10,7 @@ For the list of Home Assistant entities see [configuration.md](configuration.md)
 
 - [Basics: two audio channels](#basics-two-audio-channels)
 - [Talking to the assistant](#talking-to-the-assistant)
+- [Wake word verification by Home Assistant](#wake-word-verification-by-home-assistant)
 - [Music and media playback](#music-and-media-playback)
 - [Announcements](#announcements)
 - [Timers](#timers)
@@ -62,6 +63,27 @@ Details:
 - **Starting by button.** A peripheral button can start listening without a wake word. Instead of the wake sound, the start-listening sound (`--start-listening-sound`) plays; everything else is identical. This also silences a ringing timer.
 - **Errors.** If the pipeline reports an error, peripherals receive a `pipeline_error` event. See [peripheral_api.md](peripheral_api.md).
 - **Two wake words.** Home Assistant can activate up to two wake words at once. Each has its own sensitivity setting (*Wake Word 1/2 Sensitivity*).
+- **Rejected wake word.** If Home Assistant rejects the wake word (it was a false detection, or another satellite already handles the same wake word), the assistant stops streaming, restores music and returns to idle. No sound is played, in particular not the pipeline ended sound. Peripherals receive `idle`.
+
+---
+
+## Wake word verification by Home Assistant
+
+Home Assistant can check a microWakeWord detection on its server before the conversation goes on. It asks for this when it connects, and only then does LVA behave differently. Wake words of the openWakeWord type are not verified and always use the normal flow described above. Without a request from Home Assistant nothing changes.
+
+| # | What happens | What you hear / music |
+|---|--------------|-----------------------|
+| 1 | The wake word is detected locally. LVA sends the last 1.5 s of microphone audio, which includes the wake word, to Home Assistant, followed by the live audio. | **No wake sound.** Music is not ducked yet. |
+| 2a | Home Assistant **accepts** the wake word. The conversation continues as usual with listening, thinking and speaking. | Music is ducked to 50 % as soon as the wake word is accepted. |
+| 2b | Home Assistant **rejects** the wake word. | Nothing is played and the music volume is unchanged. The assistant goes back to idle. |
+| 2c | Home Assistant gives **no answer within 2 seconds**. LVA aborts the run. | Nothing is played. Peripherals receive `pipeline_error` (reason `wake-word-verification-timeout`) followed by `idle`. |
+
+Details:
+
+- **Peripherals.** `wake_word_detected` and `listening` are sent right after the detection, without waiting for the verdict. If the wake word is rejected or times out, `idle` follows, so a peripheral should be prepared to leave its listening animation at any time.
+- **Muting.** Audio recorded while the microphone is muted is never buffered. Muting during the verification ends it.
+- **Starting by button, follow-up questions, announcements and timers** do not involve a wake word and are not verified.
+- **Sensitivity.** The sensitivity setting of the wake word is unchanged. LVA reports the detection score and the threshold to Home Assistant together with the audio.
 
 ---
 
@@ -227,6 +249,7 @@ The *Disable button controls* switch (if the peripheral provides it) lets you lo
 | Situation | Music |
 |-----------|-------|
 | Wake word detected / button starts listening | Ducked to 50 % |
+| Wake word detected, Home Assistant verifies it | Ducked to 50 % once Home Assistant accepts it. Unchanged if it is rejected |
 | Listening, thinking, speaking | Stays ducked |
 | Conversation finished | Restored to 100 % of the set volume |
 | Follow-up question (continued conversation) | Stays ducked until the conversation ends |
