@@ -1136,7 +1136,7 @@ class VoiceSatelliteProtocol(APIServer):
         Duck the music (LVA's own and a Sendspin player). It stays ducked until every owner has called :meth:`unduck`.
         :param owner: ``conversation``, ``timer`` or ``announce`` (voice announcements).
         """
-        _LOGGER.debug("Ducking music (owner: %s)", owner)
+        _LOGGER.debug("Duck requested by %s (Sendspin: %s)", owner, self.state.sendspin_player is not None)
         self.state.music_player.duck(owner=owner)
         if self.state.sendspin_player is not None:
             self.state.sendspin_player.duck(owner=owner)
@@ -1146,7 +1146,7 @@ class VoiceSatelliteProtocol(APIServer):
         End the ducking of an owner. The volume is restored when no owner is left.
         :param owner: The owner that called :meth:`duck`.
         """
-        _LOGGER.debug("Unducking music (owner: %s)", owner)
+        _LOGGER.debug("Unduck requested by %s", owner)
         self.state.music_player.unduck(owner=owner)
         if self.state.sendspin_player is not None:
             self.state.sendspin_player.unduck(owner=owner)
