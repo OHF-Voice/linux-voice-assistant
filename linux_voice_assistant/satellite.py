@@ -74,6 +74,10 @@ _DUPLICATE_WAKE_UP_CODE = "duplicate_wake_up_detected"
 
 PROTO_TO_MESSAGE_TYPE = {v: k for k, v in MESSAGE_TYPE_TO_PROTO.items()}
 
+# SENDSPIN_FEATURE_PAIRING_TOKEN = 1 << 0
+DUCK_OWNER_CONVERSATION = "conversation"
+DUCK_OWNER_TIMER = "timer"
+DUCK_OWNER_ANNOUNCE = "announce"
 _HAS_AUDIO_DATA2 = "data2" in {f.name for f in VoiceAssistantAudio.DESCRIPTOR.fields}
 
 
@@ -120,6 +124,7 @@ class VoiceSatelliteProtocol(APIServer):
                 object_id="linux_voice_assistant_media_player",
                 music_player=state.music_player,
                 announce_player=state.tts_player,
+                sendspin_player=state.sendspin_player,
                 initial_volume=state.volume,
             )
             self.state.entities.append(self.state.media_player_entity)
@@ -354,6 +359,7 @@ class VoiceSatelliteProtocol(APIServer):
         self._intent_started = False
         self._stt_text_received = False
         self._continue_conversation = False
+        self._announce_ducking = False
         # Phrase that started the conversation. HA selects the pipeline from it, so a
         # follow-up request without it would run the first pipeline instead of the one
         # the user woke up. Empty after a button press or an HA announcement.
@@ -368,6 +374,14 @@ class VoiceSatelliteProtocol(APIServer):
     # ------------------------------------------------------------------
     # Peripheral API helper
     # ------------------------------------------------------------------
+
+    def emit_media_playing(self, during_conversation: bool = True) -> None:
+        """
+        Tell the peripherals that background media plays (LVA's music player or a Sendspin player).
+        :param during_conversation: False to skip the event while a conversation is running, so it does not replace its state.
+        """
+        if during_conversation or not self._pipeline_active:
+            self._emit(LVAEvent.MEDIA_PLAYER_PLAYING)
 
     def _emit(
         self,
@@ -694,7 +708,7 @@ class VoiceSatelliteProtocol(APIServer):
                 self.state.active_wake_words.add(self.state.stop_word.id)
                 self._timer_finished = True
                 self._timer_ring_start = time.monotonic()
-                self.duck()
+                self.duck(owner=DUCK_OWNER_TIMER)
                 self._emit(LVAEvent.TIMER_RINGING, timer_data)
                 self._play_timer_finished()
 
@@ -725,7 +739,8 @@ class VoiceSatelliteProtocol(APIServer):
             self._continue_conversation = msg.start_conversation
             self._wake_word_phrase = ""
 
-            self.duck()
+            self._announce_ducking = True
+            self.duck(owner=DUCK_OWNER_ANNOUNCE)
             self._emit(LVAEvent.TTS_SPEAKING)
             self.state.tts_player.play(urls, done_callback=self._tts_finished)
 
@@ -748,6 +763,22 @@ class VoiceSatelliteProtocol(APIServer):
                 voice_assistant_feature_flags=self.supported_features,
                 api_encryption_supported=self.state.noise_psk is not None,
             )
+        # Prepared for an aioesphomeapi release that has the Sendspin messages (missing in 45.3.1, Home Assistant uses 46.x).
+        # Needs DeviceCapabilitiesRequest/-Response, SendspinCapabilities, SendspinPairingTokenRequest/-Response and
+        # SendspinPairingTokenStatus from aioesphomeapi.api_pb2, and a SendspinPlayer method that returns the "client id"
+        # line of `status` and the output of `pair-token` (the reply format of `pair-token` still has to be checked).
+        # ESPHome only defines the feature flag SENDSPIN_FEATURE_PAIRING_TOKEN = 1 << 0: Home Assistant shows Sendspin as
+        # supported when the flags are not 0 and then asks for the pairing token with SendspinPairingTokenRequest.
+        # elif isinstance(msg, DeviceCapabilitiesRequest) and self.state.sendspin_player is not None:
+        #     yield DeviceCapabilitiesResponse(
+        #         sendspin=SendspinCapabilities(feature_flags=SENDSPIN_FEATURE_PAIRING_TOKEN, client_id=self.state.sendspin_player.client_id() or ""),
+        #     )
+        # elif isinstance(msg, SendspinPairingTokenRequest) and self.state.sendspin_player is not None:
+        #     token = self.state.sendspin_player.pair_token()
+        #     yield SendspinPairingTokenResponse(
+        #         status=SendspinPairingTokenStatus.SENDSPIN_PAIRING_TOKEN_STATUS_OK if token else SendspinPairingTokenStatus.SENDSPIN_PAIRING_TOKEN_STATUS_NOT_READY,
+        #         token=token or "",
+        #     )
         elif isinstance(msg, SubscribeStatesRequest):
             # Standard ESPHome state subscription. Replay current entity state to
             # the subscribing client. (Entities answer SubscribeHomeAssistantStatesRequest;
@@ -767,7 +798,7 @@ class VoiceSatelliteProtocol(APIServer):
             if isinstance(msg, MediaPlayerCommandRequest) and msg.has_media_url:
                 is_announcement = msg.has_announcement and msg.announcement
                 if not is_announcement:
-                    self._emit(LVAEvent.MEDIA_PLAYER_PLAYING)
+                    self.emit_media_playing()
 
             if isinstance(msg, ListEntitiesRequest):
                 yield ListEntitiesDoneResponse()
@@ -1018,7 +1049,7 @@ class VoiceSatelliteProtocol(APIServer):
         if self._timer_finished:
             self._timer_finished = False
             self._timer_ring_start = None
-            self.unduck()
+            self.unduck(owner=DUCK_OWNER_TIMER)
             self.state.tts_player.stop()
             self._emit(LVAEvent.IDLE)
             _LOGGER.debug("Stopping timer finished sound")
@@ -1052,6 +1083,13 @@ class VoiceSatelliteProtocol(APIServer):
         self.state.active_wake_words.discard(self.state.stop_word.id)
         self.send_messages([VoiceAssistantAnnounceFinished()])
         self._emit(LVAEvent.TTS_FINISHED)
+
+        if self._announce_ducking:
+            self._announce_ducking = False
+            if self._continue_conversation:
+                # The conversation takes over the ducking of an announcement without a gap
+                self.duck(owner=DUCK_OWNER_CONVERSATION)
+            self.unduck(owner=DUCK_OWNER_ANNOUNCE)
 
         if self._continue_conversation:
             self._continue_conversation = False
@@ -1093,13 +1131,25 @@ class VoiceSatelliteProtocol(APIServer):
     # Ducking
     # ------------------------------------------------------------------
 
-    def duck(self) -> None:
-        _LOGGER.debug("Ducking music")
-        self.state.music_player.duck()
+    def duck(self, owner: str = DUCK_OWNER_CONVERSATION) -> None:
+        """
+        Duck the music (LVA's own and a Sendspin player). It stays ducked until every owner has called :meth:`unduck`.
+        :param owner: ``conversation``, ``timer`` or ``announce`` (voice announcements).
+        """
+        _LOGGER.debug("Duck requested by %s (Sendspin: %s)", owner, self.state.sendspin_player is not None)
+        self.state.music_player.duck(owner=owner)
+        if self.state.sendspin_player is not None:
+            self.state.sendspin_player.duck(owner=owner)
 
-    def unduck(self) -> None:
-        _LOGGER.debug("Unducking music")
-        self.state.music_player.unduck()
+    def unduck(self, owner: str = DUCK_OWNER_CONVERSATION) -> None:
+        """
+        End the ducking of an owner. The volume is restored when no owner is left.
+        :param owner: The owner that called :meth:`duck`.
+        """
+        _LOGGER.debug("Unduck requested by %s", owner)
+        self.state.music_player.unduck(owner=owner)
+        if self.state.sendspin_player is not None:
+            self.state.sendspin_player.unduck(owner=owner)
 
     # ------------------------------------------------------------------
     # Timer finished loop
@@ -1108,7 +1158,7 @@ class VoiceSatelliteProtocol(APIServer):
     def _play_timer_finished(self) -> None:
         if not self._timer_finished:
             _LOGGER.debug("Timer finished sound stopped")
-            self.unduck()
+            self.unduck(owner=DUCK_OWNER_TIMER)
             self._timer_ring_start = None
             return
 
@@ -1124,7 +1174,7 @@ class VoiceSatelliteProtocol(APIServer):
                 self._timer_finished = False
                 self._timer_ring_start = None
                 self.state.active_wake_words.discard(self.state.stop_word.id)
-                self.unduck()
+                self.unduck(owner=DUCK_OWNER_TIMER)
                 return
 
         self.state.tts_player.play(
@@ -1154,6 +1204,7 @@ class VoiceSatelliteProtocol(APIServer):
         self._tts_url = None
         self._tts_played = False
         self._continue_conversation = False
+        self._announce_ducking = False
         self._timer_finished = False
         self._pipeline_active = False
 

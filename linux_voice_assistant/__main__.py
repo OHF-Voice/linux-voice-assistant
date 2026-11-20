@@ -22,6 +22,7 @@ from .models import DetectionResult, Preferences, ServerState, WakeWordType, ini
 from .mpv_player import MpvMediaPlayer
 from .peripheral_api import LVAEvent, PeripheralAPIServer
 from .satellite import VoiceSatelliteProtocol
+from .sendspin_player import DEFAULT_CONTROL_SOCKET, SendspinPlayer
 from .util import (
     get_default_interface,
     get_default_ipv4,
@@ -75,6 +76,12 @@ async def main() -> None:
     parser.add_argument(
         "--music-output-device",
         help="mpv name for the music/media output device (defaults to --audio-output-device)",
+    )
+    parser.add_argument(
+        "--sendspin-control-socket",
+        default=DEFAULT_CONTROL_SOCKET,
+        help="Control socket of a Sendspin player (sendspin-cli); LVA ducks it during conversations and announcements and mirrors its state in the media player. "
+        "Nothing happens while the socket does not exist, an empty value turns it off (default: %(default)s)",
     )
     parser.add_argument(
         "--list-output-devices",
@@ -501,8 +508,9 @@ async def main() -> None:
         wake_words=wake_models,
         active_wake_words=active_wake_words,
         stop_word=stop_model,
-        music_player=MpvMediaPlayer(device=args.music_output_device or args.audio_output_device),
-        tts_player=MpvMediaPlayer(device=args.audio_output_device),
+        music_player=MpvMediaPlayer(device=args.music_output_device or args.audio_output_device, name="music"),
+        tts_player=MpvMediaPlayer(device=args.audio_output_device, name="tts"),
+        sendspin_player=SendspinPlayer(args.sendspin_control_socket) if args.sendspin_control_socket else None,
         wakeup_sound=args.wakeup_sound,
         start_listening_sound=args.start_listening_sound,
         timer_finished_sound=args.timer_finished_sound,
@@ -546,6 +554,16 @@ async def main() -> None:
     initial_volume_percent = int(round(initial_volume * 100))
     state.music_player.set_volume(initial_volume_percent)
     state.tts_player.set_volume(initial_volume_percent)
+
+    if state.sendspin_player is not None:
+
+        def save_duck(volume_from: Optional[int], volume_to: Optional[int]) -> None:
+            state.preferences.sendspin_ducked_from = volume_from
+            state.preferences.sendspin_ducked_to = volume_to
+            state.save_preferences()
+
+        state.sendspin_player.set_duck_persistence(save_duck, (state.preferences.sendspin_ducked_from, state.preferences.sendspin_ducked_to))
+        state.sendspin_player.start_polling(lambda status: state.media_player_entity.on_sendspin_status(status) if state.media_player_entity else None)
 
     # ------------------------------------------------------------------
     # Peripheral API (optional – LEDs, buttons, HAT boards)

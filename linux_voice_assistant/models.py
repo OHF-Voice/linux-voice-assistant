@@ -28,6 +28,7 @@ if TYPE_CHECKING:
     )
     from .mpv_player import MpvMediaPlayer
     from .satellite import VoiceSatelliteProtocol
+    from .sendspin_player import SendspinPlayer
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -103,6 +104,10 @@ class Preferences:
     mic_noise_suppression: int = 0
     mic_volume: int = 100  # 1–100, default maximum
 
+    # Group volume of a Sendspin player before and after ducking. Set only while ducked, so that a restart can restore it.
+    sendspin_ducked_from: Optional[int] = None
+    sendspin_ducked_to: Optional[int] = None
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "Preferences":
         """
@@ -146,6 +151,7 @@ class ServerState:
     preferences: Preferences
     preferences_path: Path
     download_dir: Path
+    sendspin_player: "Optional[SendspinPlayer]" = None
     continue_conversation_delay: float = 0.5  # seconds to wait after TTS before opening mic
     # ESPHome API encryption key (32 bytes); None serves plaintext only.
     noise_psk: Optional[bytes] = None

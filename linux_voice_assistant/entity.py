@@ -1,4 +1,5 @@
 import logging
+import time
 from abc import abstractmethod
 from collections.abc import Iterable
 from typing import Callable, List, Optional, Union
@@ -37,7 +38,11 @@ from google.protobuf import message
 
 from .api_server import APIServer
 from .mpv_player import MpvMediaPlayer
+from .sendspin_player import SendspinPlayer, SendspinStatus
 from .util import call_all
+
+SENDSPIN_URI_PREFIX = "sendspin://"
+_SENDSPIN_VOLUME_GUARD_SECONDS = 2.0
 
 SUPPORTED_MEDIA_PLAYER_FEATURES = (
     MediaPlayerEntityFeature.PLAY
@@ -71,6 +76,7 @@ class MediaPlayerEntity(ESPHomeEntity):
         object_id: str,
         music_player: MpvMediaPlayer,
         announce_player: MpvMediaPlayer,
+        sendspin_player: Optional[SendspinPlayer] = None,
         initial_volume: float = 1.0,
         on_volume_changed: Optional[Callable[[float], None]] = None,
     ) -> None:
@@ -85,9 +91,151 @@ class MediaPlayerEntity(ESPHomeEntity):
         self.previous_volume = 1.0
         self.music_player = music_player
         self.announce_player = announce_player
+        self.sendspin_player = sendspin_player
+        self._sendspin_state = "idle"
+        self._sendspin_volume_guard_until = 0.0
+        self._sendspin_ignore_until = 0.0
+        self._announcing = False
+        self._ducked_music = False
+        self._ducked_sendspin = False
         self._on_volume_changed = on_volume_changed
         self.apply_volume_from_state(initial_volume)
         self._log = logging.getLogger(f"{self.__class__.__name__}[{self.key}]")
+
+    def _set_playback_state(self, new_state: MediaPlayerState) -> bool:
+        """
+        Set the playback state that comes from the Sendspin player and tell the peripherals when playback starts.
+        :param new_state: The new state.
+        :return: True if the state changed.
+        """
+        if new_state == self.state:
+            return False
+
+        started = new_state == MediaPlayerState.PLAYING
+        self._log.debug("Playback state from Sendspin: %s => %s", self.state.name, new_state.name)
+        self.state = new_state
+
+        satellite = getattr(getattr(self.server, "state", None), "satellite", None)
+        if started and satellite is not None:
+            satellite.emit_media_playing(during_conversation=False)
+
+        return True
+
+    def _sendspin_is_active(self) -> bool:
+        """Whether Sendspin is what the entity currently plays: it plays and the own music player does not."""
+        return self._sendspin_state == "playing" and not (self.music_player.is_playing or self.music_player.is_paused)
+
+    def _stop_sendspin_for_music(self) -> None:
+        """Stop a playing Sendspin player, because music started from Home Assistant replaces it."""
+        player = self.sendspin_player
+        if player is None:
+            return
+
+        status = player.status()
+        if status is not None and status.state == "playing":
+            self._log.debug("Stopping Sendspin player, music replaces it")
+            player.stop()
+            self._sendspin_state = "idle"
+            self._sendspin_ignore_until = time.monotonic() + _SENDSPIN_VOLUME_GUARD_SECONDS
+
+    def _play_sendspin_uri(self, uri: str) -> None:
+        """
+        Handle a ``sendspin://`` media URL. Only ``sendspin://current`` is supported, it resumes the Sendspin player.
+        :param uri: The media URL from Home Assistant.
+        """
+        if self.sendspin_player is None:
+            self._log.warning("Ignoring %s: no --sendspin-control-socket configured", uri)
+        elif uri == f"{SENDSPIN_URI_PREFIX}current":
+            self.sendspin_player.play()
+        else:
+            self._log.warning("Ignoring %s: connecting to a Sendspin server is not supported, the player announces itself", uri)
+
+    def _set_muted(self, muted: bool, forward: bool = True) -> None:
+        """
+        :param muted: True to mute.
+        :param forward: Also mute the Sendspin player. False when the change came from the Sendspin player.
+        """
+        if muted != self.muted:
+            if muted:
+                self.previous_volume = self.volume
+                self.volume = 0
+                self.music_player.set_volume(0)
+                self.announce_player.set_volume(0)
+            else:
+                self.volume = self.previous_volume
+                self.music_player.set_volume(int(self.volume * 100))
+                self.announce_player.set_volume(int(self.volume * 100))
+            self.muted = muted
+            if hasattr(self.server, "state") and getattr(self.server, "state", None) is not None:
+                self.server.state.persist_volume(self.volume)
+
+        if forward and self.sendspin_player is not None:
+            self._sendspin_volume_guard_until = time.monotonic() + _SENDSPIN_VOLUME_GUARD_SECONDS
+            self.sendspin_player.set_muted(muted)
+
+    def _sync_volume_from_sendspin(self, status: SendspinStatus) -> bool:
+        """
+        Take over the group volume and mute of the Sendspin player. Skipped while it is ducked or just set by us.
+        :return: True if the entity changed.
+        """
+        player = self.sendspin_player
+        if player is None or player.is_ducked or time.monotonic() < self._sendspin_volume_guard_until or self._sendspin_state == "idle":
+            return False
+
+        changed = False
+        if status.muted != self.muted:
+            self._log.debug("Taking over mute %s from Sendspin", status.muted)
+            self._set_muted(status.muted, forward=False)
+            changed = True
+
+        if status.volume is not None and not self.muted and status.volume != int(round(self.volume * 100)):
+            self._log.debug("Taking over group volume %d from Sendspin (was %d)", status.volume, int(round(self.volume * 100)))
+            self._apply_volume(status.volume / 100, persist=True)
+            if hasattr(self.server, "state") and getattr(self.server, "state", None) is not None:
+                self.server.state.persist_volume(self.volume)
+            changed = True
+
+        return changed
+
+    def _begin_announcement(self, done_callback: Optional[Callable[[], None]]) -> Callable[[], None]:
+        """
+        Duck the music (LVA's own and a Sendspin player) while an announcement plays and report ``announcing``.
+        :param done_callback: Callback of the announcement.
+        :return: The callback, extended to restore the volume and the state when the announcement is over.
+        """
+        self._announcing = True
+        self._log.debug("Announcement starts (music playing: %s, paused: %s, Sendspin: %s)", self.music_player.is_playing, self.music_player.is_paused, self._sendspin_state)
+
+        self._ducked_music = self.music_player.is_playing and not self.music_player.is_paused
+        if self._ducked_music:
+            self.music_player.duck(owner="media_announcement")
+
+        if self.sendspin_player is not None:
+            self.sendspin_player.duck(owner="media_announcement")
+            self._ducked_sendspin = True
+
+        return lambda: call_all(self._announcement_finished, done_callback)
+
+    def _announcement_finished(self) -> None:
+        if not self._announcing:
+            return
+
+        self._announcing = False
+        self._log.debug("Announcement over, restoring (ducked music: %s, ducked Sendspin: %s)", self._ducked_music, self._ducked_sendspin)
+        if self._ducked_music:
+            self._ducked_music = False
+            self.music_player.unduck(owner="media_announcement")
+        if self._ducked_sendspin and self.sendspin_player is not None:
+            self._ducked_sendspin = False
+            self.sendspin_player.unduck(owner="media_announcement")
+
+        if self.music_player.is_paused:
+            new_state = MediaPlayerState.PAUSED
+        elif self.music_player.is_playing or self._sendspin_state == "playing":
+            new_state = MediaPlayerState.PLAYING
+        else:
+            new_state = MediaPlayerState.IDLE
+        self._broadcast_state([self._update_state(new_state)])
 
     def _broadcast_state(self, msgs: Iterable[message.Message]) -> None:
         """Push an asynchronous state change to all connected clients.
@@ -110,33 +258,10 @@ class MediaPlayerEntity(ESPHomeEntity):
     ) -> Iterable[message.Message]:
         if announcement:
             self._log.debug("PLAY: announcement true")
-            if self.music_player.is_paused:
-                # Announce, keep music paused
-                self.announce_player.play(
-                    url,
-                    done_callback=lambda: call_all(
-                        lambda: self._broadcast_state([self._update_state(MediaPlayerState.PAUSED)]),
-                        done_callback,
-                    ),
-                )
-            elif self.music_player.is_playing:
-                # Announce, resume music
-                self.music_player.pause()
-                self.announce_player.play(
-                    url,
-                    done_callback=lambda: call_all(self.music_player.resume, done_callback),
-                )
-            else:
-                # Announce, idle
-                self.announce_player.play(
-                    url,
-                    done_callback=lambda: call_all(
-                        lambda: self._broadcast_state([self._update_state(MediaPlayerState.IDLE)]),
-                        done_callback,
-                    ),
-                )
+            self.announce_player.play(url, done_callback=self._begin_announcement(done_callback))
         else:
             self._log.debug("PLAY: announcement false")
+            self._stop_sendspin_for_music()
             # Music
             self.music_player.play(
                 url,
@@ -146,7 +271,85 @@ class MediaPlayerEntity(ESPHomeEntity):
                 ),
             )
 
-        yield self._update_state(MediaPlayerState.PLAYING)
+        yield self._update_state(MediaPlayerState.ANNOUNCING if announcement else MediaPlayerState.PLAYING)
+
+    def pause(self) -> MediaPlayerStateResponse:
+        """Pause LVA's music, or pause the Sendspin player if it is what plays. Also used for peripheral commands."""
+        self._log.debug("Executing PAUSE (Sendspin active: %s)", self._sendspin_is_active())
+        if self._sendspin_is_active() and self.sendspin_player is not None:
+            self.sendspin_player.pause_playback()
+            self._sendspin_state = "idle"
+            return self._update_state(MediaPlayerState.IDLE)
+
+        self.music_player.pause()
+        return self._update_state(MediaPlayerState.PAUSED)
+
+    def resume(self) -> MediaPlayerStateResponse:
+        """Resume LVA's music. If it has nothing to resume, play the Sendspin player. Also used for peripheral commands."""
+        self._log.debug(
+            "Executing PLAY / RESUME (Sendspin configured: %s, own music playing: %s, paused: %s)", self.sendspin_player is not None, self.music_player.is_playing, self.music_player.is_paused
+        )
+        if self.sendspin_player is not None and not (self.music_player.is_playing or self.music_player.is_paused):
+            # Nothing of LVA to resume, so PLAY goes to Sendspin like on ESPHome devices; the poll reports the result
+            self.sendspin_player.play()
+            return self._get_state_message()
+
+        self.music_player.resume()
+        return self._update_state(MediaPlayerState.PLAYING)
+
+    def stop(self) -> MediaPlayerStateResponse:
+        """Stop LVA's music, or stop the Sendspin player if it is what plays. Also used for peripheral commands."""
+        self._log.debug("Executing STOP (Sendspin active: %s)", self._sendspin_is_active())
+        if self._sendspin_is_active() and self.sendspin_player is not None:
+            self.sendspin_player.stop()
+            self._sendspin_state = "idle"
+        else:
+            self.music_player.stop()
+        return self._update_state(MediaPlayerState.IDLE)
+
+    def set_volume(self, volume: float) -> None:
+        """
+        Set the volume of LVA's players, save it and send it to the Sendspin player as its group volume. Also used for peripheral commands.
+        :param volume: Volume 0.0 to 1.0.
+        """
+        self._apply_volume(volume, persist=True)
+        if hasattr(self.server, "state") and getattr(self.server, "state", None) is not None:
+            self._log.debug("Persisting volume to preferences")
+            self.server.state.persist_volume(self.volume)
+        else:
+            self._log.warning("Cannot persist volume - server.state not available")
+        if self.sendspin_player is not None:
+            self._sendspin_volume_guard_until = time.monotonic() + _SENDSPIN_VOLUME_GUARD_SECONDS
+            self.sendspin_player.set_volume(int(round(self.volume * 100)))
+
+    def on_sendspin_status(self, status: Optional[SendspinStatus]) -> None:
+        """
+        Mirror the Sendspin player into the entity. Called about once a second from the polling thread.
+        :param status: Status of the Sendspin player, None if it is unreachable.
+        """
+        previous = self._sendspin_state
+        self._sendspin_state = status.state if status is not None else "idle"
+        if time.monotonic() < self._sendspin_ignore_until:
+            self._sendspin_state = "idle"
+        if self._sendspin_state != previous:
+            self._log.debug("Sendspin state %s => %s (own music playing: %s, announcing: %s)", previous, self._sendspin_state, self.music_player.is_playing, self._announcing)
+
+        changed = False
+
+        if self._sendspin_state == "playing" and previous != "playing" and (self.music_player.is_playing or self.music_player.is_paused):
+            # Like on ESPHome devices, a source that starts replaces the active one
+            self._log.debug("Stopping LVA music, Sendspin replaces it")
+            self.music_player.stop()
+
+        if not (self.music_player.is_playing or self.music_player.is_paused) and not self._announcing:
+            new_state = MediaPlayerState.PLAYING if self._sendspin_state == "playing" else MediaPlayerState.IDLE
+            changed = self._set_playback_state(new_state)
+
+        if status is not None and self._sync_volume_from_sendspin(status):
+            changed = True
+
+        if changed:
+            self._broadcast_state([self._get_state_message()])
 
     def handle_message(self, msg: message.Message) -> Iterable[message.Message]:
         self._log.debug("handle_message called with msg: %s", msg)
@@ -158,7 +361,11 @@ class MediaPlayerEntity(ESPHomeEntity):
         if isinstance(msg, MediaPlayerCommandRequest) and (msg.key == self.key):
             self._log.debug("MediaPlayerCommandRequest matched for this key")
 
-            if msg.has_media_url:
+            if msg.has_media_url and msg.media_url.startswith(SENDSPIN_URI_PREFIX):
+                self._play_sendspin_uri(msg.media_url)
+                yield self._get_state_message()
+
+            elif msg.has_media_url:
                 self._log.debug("Executing PLAY")
                 self._log.debug("Message has media URL: %s", msg.media_url)
                 announcement = msg.has_announcement and msg.announcement
@@ -169,51 +376,27 @@ class MediaPlayerEntity(ESPHomeEntity):
                 command = MediaPlayerCommand(msg.command)
 
                 if msg.command == MediaPlayerCommand.PAUSE:
-                    self._log.debug("Executing PAUSE")
-                    self.music_player.pause()
-                    yield self._update_state(MediaPlayerState.PAUSED)
+                    yield self.pause()
 
                 elif msg.command == MediaPlayerCommand.PLAY:
-                    self._log.debug("Executing PLAY / RESUME")
-                    self.music_player.resume()
-                    yield self._update_state(MediaPlayerState.PLAYING)
+                    yield self.resume()
 
                 elif command == MediaPlayerCommand.STOP:
-                    self._log.debug("Executing STOP")
-                    self.music_player.stop()
-                    yield self._update_state(MediaPlayerState.IDLE)
+                    yield self.stop()
 
                 elif command == MediaPlayerCommand.MUTE:
                     self._log.debug("Executing MUTE")
-                    if not self.muted:
-                        self.previous_volume = self.volume
-                        self.volume = 0
-                        self.music_player.set_volume(0)
-                        self.announce_player.set_volume(0)
-                        self.muted = True
-                        if hasattr(self.server, "state") and getattr(self.server, "state", None) is not None:
-                            self.server.state.persist_volume(self.volume)
+                    self._set_muted(True)
                     yield self._update_state(self.state)
 
                 elif command == MediaPlayerCommand.UNMUTE:
                     self._log.debug("Executing UNMUTE")
-                    if self.muted:
-                        self.volume = self.previous_volume
-                        self.music_player.set_volume(int(self.volume * 100))
-                        self.announce_player.set_volume(int(self.volume * 100))
-                        self.muted = False
-                        if hasattr(self.server, "state") and getattr(self.server, "state", None) is not None:
-                            self.server.state.persist_volume(self.volume)
+                    self._set_muted(False)
                     yield self._update_state(self.state)
 
             elif msg.has_volume:
                 self._log.debug("Message has volume: %.2f", msg.volume)
-                self._apply_volume(msg.volume, persist=True)
-                if hasattr(self.server, "state") and getattr(self.server, "state", None) is not None:
-                    self._log.debug("Persisting volume to preferences")
-                    self.server.state.persist_volume(self.volume)
-                else:
-                    self._log.warning("Cannot persist volume - server.state not available")
+                self.set_volume(msg.volume)
                 yield self._update_state(self.state)
 
         elif isinstance(msg, ListEntitiesRequest):

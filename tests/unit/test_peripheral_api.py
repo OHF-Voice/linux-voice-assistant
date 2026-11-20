@@ -573,16 +573,64 @@ class TestDispatchMediaPlayer:
         state.music_player.resume.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_stop_media_player_updates_entity_state(self, tmp_path):
-        from aioesphomeapi.model import MediaPlayerState  # pylint: disable=import-outside-toplevel
-
+    async def test_media_commands_go_through_the_entity(self, tmp_path):
         state = make_state(tmp_path)
         state.media_player_entity = make_media_entity()
+        satellite = MagicMock()
+        state.satellite = satellite
         server = make_server(state)
 
         await dispatch(server, LVACommand.STOP_MEDIA_PLAYER.value)
+        await dispatch(server, LVACommand.PAUSE_MEDIA_PLAYER.value)
+        await dispatch(server, LVACommand.RESUME_MEDIA_PLAYER.value)
 
-        assert state.media_player_entity.state == MediaPlayerState.IDLE
+        state.media_player_entity.stop.assert_called_once()
+        state.media_player_entity.pause.assert_called_once()
+        state.media_player_entity.resume.assert_called_once()
+        state.music_player.stop.assert_not_called()
+        assert satellite.send_messages.call_count == 3
+
+    @pytest.mark.asyncio
+    async def test_media_commands_reach_a_sendspin_player(self, tmp_path):
+        from linux_voice_assistant.entity import MediaPlayerEntity  # pylint: disable=import-outside-toplevel
+        from linux_voice_assistant.sendspin_player import SendspinPlayer  # pylint: disable=import-outside-toplevel
+
+        state = make_state(tmp_path)
+        sendspin = MagicMock(spec=SendspinPlayer)
+        entity = MediaPlayerEntity(MagicMock(state=state), 1, "Media Player", "mp", state.music_player, state.tts_player, sendspin_player=sendspin)
+        entity.music_player.is_playing = False
+        entity.music_player.is_paused = False
+        entity._sendspin_state = "playing"  # pylint: disable=protected-access
+        state.media_player_entity = entity
+        server = make_server(state)
+
+        await dispatch(server, LVACommand.PAUSE_MEDIA_PLAYER.value)
+        sendspin.pause_playback.assert_called_once()
+
+        entity._sendspin_state = "playing"  # pylint: disable=protected-access
+        await dispatch(server, LVACommand.STOP_MEDIA_PLAYER.value)
+        sendspin.stop.assert_called_once()
+
+        await dispatch(server, LVACommand.RESUME_MEDIA_PLAYER.value)
+        sendspin.play.assert_called_once()
+        state.music_player.pause.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_volume_commands_reach_a_sendspin_player(self, tmp_path):
+        from linux_voice_assistant.entity import MediaPlayerEntity  # pylint: disable=import-outside-toplevel
+        from linux_voice_assistant.sendspin_player import SendspinPlayer  # pylint: disable=import-outside-toplevel
+
+        state = make_state(tmp_path, volume=0.5)
+        sendspin = MagicMock(spec=SendspinPlayer)
+        state.media_player_entity = MediaPlayerEntity(MagicMock(state=state), 1, "Media Player", "mp", state.music_player, state.tts_player, sendspin_player=sendspin)
+        server = make_server(state)
+
+        await dispatch(server, LVACommand.SET_VOLUME.value, {"volume": 0.8})
+        sendspin.set_volume.assert_called_with(80)
+
+        await dispatch(server, LVACommand.VOLUME_DOWN.value)
+        sendspin.set_volume.assert_called_with(75)
+        assert state.volume == pytest.approx(0.75)
 
 
 # ---------------------------------------------------------------------------

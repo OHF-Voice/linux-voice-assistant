@@ -1,6 +1,7 @@
 # mpv_player.py
 import logging
-from typing import Callable, List, Optional, Union
+import threading
+from typing import Callable, List, Optional, Set, Union
 
 from .player.libmpv import LibMpvPlayer
 from .player.state import PlayerState
@@ -14,11 +15,17 @@ class MpvMediaPlayer:
     delegates all playback logic to LibMpvPlayer.
     """
 
-    def __init__(self, device: str | None = None) -> None:
-        self._log = logging.getLogger(self.__class__.__name__)
-        self._player = LibMpvPlayer(device=device)
+    def __init__(self, device: str | None = None, name: str = "mpv") -> None:
+        """
+        :param device: mpv audio device name, None for the default.
+        :param name: Name of the player in the log, for example ``music`` or ``tts``.
+        """
+        self._log = logging.getLogger(f"{self.__class__.__name__}[{name}]")
+        self._player = LibMpvPlayer(device=device, name=name)
         self._done_callback: Optional[Callable[[], None]] = None
         self._playlist: List[str] = []
+        self._duck_lock = threading.Lock()
+        self._duck_owners: Set[str] = set()
 
         self._log.debug("MpvMediaPlayer initialized (device=%s)", device)
 
@@ -119,18 +126,28 @@ class MpvMediaPlayer:
         Set playback volume.
         :param volume: Volume in percent (0.0-100.0).
         """
-        self._log.debug("set_volume(volume=%.2f)", volume)
         self._player.set_volume(volume)
 
-    def duck(self, factor: float = 0.5) -> None:
+    def duck(self, factor: float = 0.5, owner: str = "assistant") -> None:
         """
         Temporarily reduce volume.
         :param factor: Volume multiplier (0.0-1.0).
+        :param owner: Who asks. The volume is restored when every owner has called :meth:`unduck`.
         """
-        self._log.debug("duck(factor=%.2f)", factor)
-        self._player.duck(factor)
+        with self._duck_lock:
+            self._duck_owners.add(owner)
+            self._log.debug("Duck requested by %s, factor %.2f (owners: %s)", owner, factor, sorted(self._duck_owners))
+            self._player.duck(factor)
 
-    def unduck(self) -> None:
-        """Restore volume after ducking."""
-        self._log.debug("unduck() called")
-        self._player.unduck()
+    def unduck(self, owner: str = "assistant") -> None:
+        """
+        Restore volume after ducking, once no owner wants it ducked any more.
+        :param owner: The owner that called :meth:`duck`.
+        """
+        with self._duck_lock:
+            self._duck_owners.discard(owner)
+            self._log.debug("Unduck by %s (owners left: %s)", owner, sorted(self._duck_owners))
+            if not self._duck_owners:
+                self._player.unduck()
+            else:
+                self._log.debug("Stays ducked, still requested by %s", sorted(self._duck_owners))

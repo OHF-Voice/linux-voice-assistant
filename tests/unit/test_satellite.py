@@ -386,6 +386,58 @@ class TestDuckUnduck:
         sat.unduck()
         sat.state.music_player.unduck.assert_called_once()
 
+    def test_conversation_is_the_default_owner(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        sat.state.sendspin_player = MagicMock()
+        sat.duck()
+        sat.unduck()
+        sat.state.music_player.duck.assert_called_once_with(owner="conversation")
+        sat.state.music_player.unduck.assert_called_once_with(owner="conversation")
+        sat.state.sendspin_player.duck.assert_called_once_with(owner="conversation")
+        sat.state.sendspin_player.unduck.assert_called_once_with(owner="conversation")
+
+    def test_timer_ducks_and_unducks_as_its_own_owner(self, tmp_path):
+        from aioesphomeapi import VoiceAssistantTimerEventType
+
+        sat = make_satellite(tmp_path)
+        sat.handle_timer_event(VoiceAssistantTimerEventType.VOICE_ASSISTANT_TIMER_FINISHED, MagicMock(id="t1", name="Tea", total_seconds=60, seconds_left=0, is_active=False))
+        sat.state.music_player.duck.assert_called_once_with(owner="timer")
+
+        sat.stop()
+        sat.state.music_player.unduck.assert_called_once_with(owner="timer")
+
+    def test_voice_announcement_is_its_own_owner(self, tmp_path):
+        from aioesphomeapi.api_pb2 import VoiceAssistantAnnounceRequest  # pylint: disable=import-outside-toplevel,no-name-in-module
+
+        sat = make_satellite(tmp_path)
+        sat.state.media_player_entity = MagicMock()
+        list(sat.handle_message(VoiceAssistantAnnounceRequest(media_id="http://x/a.mp3", text="hi")))
+        sat.state.music_player.duck.assert_called_once_with(owner="announce")
+
+        sat._tts_finished()  # pylint: disable=protected-access
+        owners = [c.kwargs["owner"] for c in sat.state.music_player.unduck.call_args_list]
+        assert owners == ["announce", "conversation"]
+
+    def test_announcement_with_conversation_hands_the_ducking_over(self, tmp_path):
+        from aioesphomeapi.api_pb2 import VoiceAssistantAnnounceRequest  # pylint: disable=import-outside-toplevel,no-name-in-module
+
+        sat = make_satellite(tmp_path)
+        sat.state.media_player_entity = MagicMock()
+        list(sat.handle_message(VoiceAssistantAnnounceRequest(media_id="http://x/a.mp3", text="hi", start_conversation=True)))
+        sat._tts_finished()  # pylint: disable=protected-access
+
+        calls = [(c[0], c.kwargs["owner"]) for c in sat.state.music_player.method_calls if c[0] in ("duck", "unduck")]
+        assert calls == [("duck", "announce"), ("duck", "conversation"), ("unduck", "announce")]
+
+    def test_timer_stop_leaves_the_conversation_ducking_alone(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        sat._timer_finished = True  # pylint: disable=protected-access
+        sat.duck()
+        sat.stop()
+
+        owners = [c.kwargs["owner"] for c in sat.state.music_player.unduck.call_args_list]
+        assert owners == ["timer"]
+
 
 # ---------------------------------------------------------------------------
 # pipeline ended sound
@@ -668,3 +720,20 @@ class TestSetConfiguration:
 
         assert list(sat.state.wake_words) == ["okay_nabu"]
         assert sat.state.active_wake_words == set()
+
+
+class TestEmitMediaPlaying:
+    def test_emits_event(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        sat._emit = MagicMock()
+        sat.emit_media_playing()
+        sat._emit.assert_called_once_with(LVAEvent.MEDIA_PLAYER_PLAYING)
+
+    def test_skipped_during_conversation_when_asked(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        sat._emit = MagicMock()
+        sat._pipeline_active = True
+        sat.emit_media_playing(during_conversation=False)
+        sat._emit.assert_not_called()
+        sat.emit_media_playing()
+        sat._emit.assert_called_once()

@@ -57,7 +57,8 @@ Thread-safety rules:
 | `wake_word.py` | `find_available_wake_words()` (globs `*.json` top-level only), `load_wake_models()` (fallback chain: requested → `--wake-model` → `okay_nabu` → first available), `load_stop_model()` | openWakeWord ids are versioned (`hey_jarvis_v0.1`). Prefix matching handles them. |
 | `models.py` | `WakeWordType`, `AvailableWakeWord` (`.load()`), `LightRegistration`, `Preferences`, `ServerState`, `initial_stop_word_threshold()` | |
 | `mpv_player.py` | `MpvMediaPlayer`: playlist (list of URLs), done_callback, duck/unduck | `stop()` **invokes** the pending done_callback. |
-| `player/libmpv.py` | `LibMpvPlayer`: real mpv wrapper, effective volume = user × duck factor | Only an `end-file` with reason 0 (EOF) fires the callback. `stop(for_replacement=True)` drops the callback. Many debug logs wrongly say "unduck() called", so don't rely on them. |
+| `player/libmpv.py` | `LibMpvPlayer`: real mpv wrapper, effective volume = user × duck factor | Only an `end-file` with reason 0 (EOF) fires the callback. `stop(for_replacement=True)` drops the callback. Both mpv players have a name (`music`, `tts`) that is part of the logger name; `Volume (<reason>): set X x duck Y = Z` shows the effective volume. |
+| `sendspin_player.py` | `SendspinPlayer`: client for the control socket of a Sendspin player (`--sendspin-control-socket`, default `/sendspin/control.sock`): duck/unduck (also for announcements), play/pause/stop/vol/mute, 1 s status polling thread | One line per connection, reply `ok`/`error`. `vol` is the **group** volume. Status is mirrored by `MediaPlayerEntity.on_sendspin_status()`; Sendspin has priority only while LVA's own music is idle. See behavior.md "Sendspin player". |
 | `webrtc.py` | `WebRTCProcessor`: 10 ms (320 byte) framing for `webrtc_noise_gain` | Can return `b""` while buffering. The audio loop then skips the chunk. |
 | `zeroconf.py` | mDNS registration | |
 | `util.py` | `get_version()` (reads `version.txt`), `get_esphome_version()`, `call_all()`, interface/IP detection | |
@@ -76,6 +77,8 @@ Flow: `wakeup()` (audio thread) → blocked if `state.muted` or `_pipeline_activ
 - `INTENT_END` with `continue_conversation=1`: remember it
 - `TTS_END`: `play_tts()`, which is idempotent via `_tts_played`
 - `RUN_END`: if no TTS was played, call `_tts_finished()` now. Otherwise `_pipeline_active` stays True until playback ends, so speaker audio can't trigger the wake word.
+
+Ducking has owners (`duck(owner=...)`/`unduck(owner=...)` on the satellite and on both players): `conversation` (default), `timer` (ringing), `announce` (voice announcements, handed over to `conversation` when `start_conversation` is set) and `media_announcement` (media player announcements, in `MediaPlayerEntity`). The volume is restored when the last owner has unducked.
 
 `_tts_finished()` sends `VoiceAssistantAnnounceFinished`, removes the stop word from the active set, then either restarts listening after `continue_conversation_delay` (via `threading.Timer`) or unducks and emits `idle`.
 
