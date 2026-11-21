@@ -18,6 +18,10 @@ services:
     container_name: ${LOCAL_AUDIO_CONTAINER_NAME:-local-audio}
     image: "${LOCAL_AUDIO_IMAGE:-ghcr.io/music-assistant/local-audio-addon}:${LOCAL_AUDIO_IMAGE_TAG:-latest}"
     restart: unless-stopped
+    # The player announces itself through the Avahi of the host over the D-Bus socket below. On hosts with AppArmor
+    # enabled (for example Ubuntu) the profile docker-default stops that ("could not register _sendspin._tcp").
+    security_opt:
+      - apparmor=unconfined
     # mDNS discovery and the port 8928 that the server connects back to need the network of the host
     network_mode: "host"
     user: "${LOCAL_AUDIO_USER_ID:-1000}:${LOCAL_AUDIO_USER_GROUP:-1000}"
