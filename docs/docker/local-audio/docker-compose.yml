@@ -52,8 +52,9 @@ services:
         condition: service_completed_successfully
     # What /etc/s6-overlay/s6-rc.d/sendspin-cli/run of the image does, without s6-overlay: only options
     # that have a value are written, because a key that is present counts (an empty `server` would
-    # turn the mDNS advertisement off). `id` and `allow-unpaired` are each only known to one generation
-    # of the player, so they are written only when they are set. The `$$` is Compose escaping, the shell sees a single `$`.
+    # turn the mDNS advertisement off). `id` is only known to the player up to 0.3.x, so it is only written when it is set.
+    # `allow-unpaired` is written unless LOCAL_AUDIO_ALLOW_UNPAIRED is set to something else than true, so by default every server
+    # may play without pairing. The `$$` is Compose escaping, the shell sees a single `$`.
     entrypoint: ["/bin/bash", "-c"]
     command:
       - |
@@ -73,7 +74,7 @@ services:
           [ -z "$${LOCAL_AUDIO_BUFFER_MS:-}" ] || printf 'buffer-ms = %s\n' "$$LOCAL_AUDIO_BUFFER_MS"
           [ -z "$${LOCAL_AUDIO_AUDIO_FORMAT:-}" ] || printf 'audio-format = %s\n' "$$LOCAL_AUDIO_AUDIO_FORMAT"
           [ -z "$${LOCAL_AUDIO_ID:-}" ] || printf 'id = %s\n' "$$LOCAL_AUDIO_ID"
-          [ "$${LOCAL_AUDIO_ALLOW_UNPAIRED:-}" != true ] || printf 'allow-unpaired = true\n'
+          [ "$${LOCAL_AUDIO_ALLOW_UNPAIRED:-true}" != true ] || printf 'allow-unpaired = true\n'
           [ -z "$${LOCAL_AUDIO_HOOK_START:-}" ] || printf 'hook-start = %s\n' "$$LOCAL_AUDIO_HOOK_START"
           [ -z "$${LOCAL_AUDIO_HOOK_STOP:-}" ] || printf 'hook-stop = %s\n' "$$LOCAL_AUDIO_HOOK_STOP"
         } > "$$conf"
