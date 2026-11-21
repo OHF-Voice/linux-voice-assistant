@@ -111,6 +111,12 @@ Wake word slots: HA can activate up to 2 wake words. `preferences.active_wake_wo
 
 Existing env quirk: `REFACTORY_SECONDS` is misspelled on purpose (it's the public name). Don't "fix" it.
 
+**Change to `docker-compose.yml` (or the `.env.example` next to it) in the repository root**
+1. Make the same change in `docs/docker/lva/docker-compose.yml` (and `docs/docker/lva/.env.example`). The projects in `docs/docker` are the extended examples, see `docs/docker/README.md`.
+2. Make the change in the Compose project `lva` of the [PiCompose package](https://github.com/florian-asche/PiCompose-Package-Software-HA-Satellite) too (`files/usr/share/picompose/compose/lva/docker-compose.yml` and `.env`). That is another repository: work on a branch of its own and read its `CLAUDE.md` first. Nothing is pushed or posted there without the explicit consent of the developer.
+3. The same applies the other way round for the `local-audio` project: `docs/docker/local-audio/` and the `local-audio` project of the package belong together.
+4. Say in the pull request which of these files were changed, and which were not and why.
+
 **New peripheral event or command**
 1. Add a member to the `LVAEvent`/`LVACommand` enum and a branch in `_dispatch_command`.
 2. Update the module docstring in `peripheral_api.py` and `docs/peripheral_api.md`.

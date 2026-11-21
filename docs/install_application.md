@@ -46,6 +46,8 @@ cp .env.example .env
 
 You can change the used version in the docker-compose.yml.
 
+💡 **Extended examples:** [docs/docker](docker/README.md) has Docker Compose examples that go beyond this installation, for example LVA together with the Local Audio (Sendspin) player.
+
 ### Docker Image Tags
 
 | Tag | Description | Example |

@@ -1,0 +1,86 @@
+---
+services:
+  # Fix permissions for the state volume, which is created owned by root
+  fix-permissions:
+    image: "${LOCAL_AUDIO_IMAGE:-ghcr.io/music-assistant/local-audio-addon}:${LOCAL_AUDIO_IMAGE_TAG:-latest}"
+    entrypoint: []
+    user: "0:0"
+    command: "chown -R ${LOCAL_AUDIO_USER_ID:-1000}:${LOCAL_AUDIO_USER_GROUP:-1000} /data /control"
+    volumes:
+      - data:/data
+      - /run/${LOCAL_AUDIO_CONTAINER_NAME:-local-audio}:/control
+    restart: "no"
+
+  # Music Assistant Local Audio (Sendspin player)
+  # The image starts s6-overlay with its own dbus and avahi-daemon. The entrypoint is replaced here,
+  # so only sendspin-cli runs. It announces itself through the Avahi of the host (D-Bus socket below).
+  local-audio:
+    container_name: ${LOCAL_AUDIO_CONTAINER_NAME:-local-audio}
+    image: "${LOCAL_AUDIO_IMAGE:-ghcr.io/music-assistant/local-audio-addon}:${LOCAL_AUDIO_IMAGE_TAG:-latest}"
+    restart: unless-stopped
+    # mDNS discovery and the port 8928 that the server connects back to need the network of the host
+    network_mode: "host"
+    user: "${LOCAL_AUDIO_USER_ID:-1000}:${LOCAL_AUDIO_USER_GROUP:-1000}"
+    environment:
+      # Pulseaudio
+      - XDG_RUNTIME_DIR=${LOCAL_AUDIO_XDG_RUNTIME_DIR:-/run/user/1000}
+      - PULSE_SERVER=${LOCAL_AUDIO_PULSE_SERVER:-unix:/run/user/1000/pulse/native}
+    env_file: ${ENV_FILE:-.env}
+    group_add:
+      - audio
+    # Priority for audio process
+    cap_add:
+      - SYS_NICE
+    volumes:
+      # Identity, pairings and rendered configuration
+      - data:/data
+      # Control socket of the player, on the host as /run/<container name>/control.sock
+      - /run/${LOCAL_AUDIO_CONTAINER_NAME:-local-audio}:/control
+      # Time and zone
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+      # Pulseaudio
+      - ${LOCAL_AUDIO_XDG_RUNTIME_DIR:-/run/user/1000}:${LOCAL_AUDIO_XDG_RUNTIME_DIR:-/run/user/1000}
+      # Avahi of the host
+      - /var/run/dbus:/var/run/dbus:ro
+    depends_on:
+      fix-permissions:
+        condition: service_completed_successfully
+    # What /etc/s6-overlay/s6-rc.d/sendspin-cli/run of the image does, without s6-overlay: only options
+    # that have a value are written, because a key that is present counts (an empty `server` would
+    # turn the mDNS advertisement off). `id` and `allow-unpaired` are each only known to one generation
+    # of the player, so they are written only when they are set. The `$$` is Compose escaping, the shell sees a single `$`.
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        set -euo pipefail
+        conf=/data/sendspin-cli.conf
+        mkdir -p /data/state
+        rm -f /control/control.sock
+        umask 077
+        {
+          printf 'output = %s\n' "$${LOCAL_AUDIO_OUTPUT:-pulse}"
+          printf 'log-level = %s\n' "$${LOCAL_AUDIO_LOG_LEVEL:-info}"
+          printf 'manufacturer = Music Assistant\n'
+          printf 'product-name = Local Audio\n'
+          [ -z "$${LOCAL_AUDIO_PORT:-}" ] || printf 'port = %s\n' "$$LOCAL_AUDIO_PORT"
+          [ -z "$${LOCAL_AUDIO_NAME:-}" ] || printf 'name = %s\n' "$$LOCAL_AUDIO_NAME"
+          [ -z "$${LOCAL_AUDIO_SERVER:-}" ] || printf 'server = %s\n' "$$LOCAL_AUDIO_SERVER"
+          [ -z "$${LOCAL_AUDIO_BUFFER_MS:-}" ] || printf 'buffer-ms = %s\n' "$$LOCAL_AUDIO_BUFFER_MS"
+          [ -z "$${LOCAL_AUDIO_AUDIO_FORMAT:-}" ] || printf 'audio-format = %s\n' "$$LOCAL_AUDIO_AUDIO_FORMAT"
+          [ -z "$${LOCAL_AUDIO_ID:-}" ] || printf 'id = %s\n' "$$LOCAL_AUDIO_ID"
+          [ "$${LOCAL_AUDIO_ALLOW_UNPAIRED:-}" != true ] || printf 'allow-unpaired = true\n'
+          [ -z "$${LOCAL_AUDIO_HOOK_START:-}" ] || printf 'hook-start = %s\n' "$$LOCAL_AUDIO_HOOK_START"
+          [ -z "$${LOCAL_AUDIO_HOOK_STOP:-}" ] || printf 'hook-stop = %s\n' "$$LOCAL_AUDIO_HOOK_STOP"
+        } > "$$conf"
+        exec sendspin-cli --config "$$conf" --state-dir /data/state --control-socket /control/control.sock
+    # Health check for process
+    healthcheck:
+      test: ["CMD", "sendspin-cli", "status", "--control-socket", "/control/control.sock"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
+
+volumes:
+  data:

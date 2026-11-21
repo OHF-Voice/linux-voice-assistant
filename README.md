@@ -12,6 +12,9 @@ Because it runs on a full Linux system and offers access significantly more loca
 
 [![A project from the Open Home Foundation](https://www.openhomefoundation.org/badges/ohf-project.png)](https://www.openhomefoundation.org/)
 
+> [!TIP]
+> **Extended Docker examples:** [docs/docker](docs/docker/README.md) has Docker Compose examples that go beyond the standard installation, for example LVA together with the Local Audio (Sendspin) player.
+
 ## Features
 
 - Works with [Home Assistant](https://www.home-assistant.io/integrations/esphome/) using the [ESPHome](https://esphome.io/) protocol/API (via [aioesphomeapi](https://github.com/esphome/aioesphomeapi))
@@ -69,7 +72,7 @@ For Raspberry Pi users, we provide a prebuild image that can be flashed to a SD 
 
 **Docker / bare metal**
 
-For all other users, we have different installation methods available (Docker, systemd), each with its own dedicated instructions. See [Linux-Voice-Assistant - Installation](docs/install.md). 
+For all other users, we have different installation methods available (Docker, systemd), each with its own dedicated instructions. See [Linux-Voice-Assistant - Installation](docs/install.md). Extended Docker Compose examples (LVA together with the Local Audio player) are in [docs/docker](docs/docker/README.md).
 
 ### Parameter overview
 
