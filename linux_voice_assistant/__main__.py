@@ -711,9 +711,12 @@ def _create_sendspin_player(args: argparse.Namespace) -> Optional[SendspinPlayer
     :return: The client, or None if the Sendspin bridge is off.
     """
     if args.enable_sendspin_bridge != 1:
+        _LOGGER.debug("Sendspin bridge is off")
         return None
 
-    return SendspinPlayer(Path(args.sendspin_control_dir) / CONTROL_SOCKET_NAME)
+    socket_path = Path(args.sendspin_control_dir) / CONTROL_SOCKET_NAME
+    _LOGGER.debug("Sendspin bridge is on, control socket: %s", socket_path)
+    return SendspinPlayer(socket_path)
 
 
 def _output_device_exists(device: str) -> bool:
