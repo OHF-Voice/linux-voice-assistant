@@ -22,7 +22,7 @@ from .models import DetectionResult, Preferences, ServerState, WakeWordType, ini
 from .mpv_player import MpvMediaPlayer
 from .peripheral_api import LVAEvent, PeripheralAPIServer
 from .satellite import VoiceSatelliteProtocol
-from .sendspin_player import CONTROL_SOCKET_NAME, DEFAULT_CONTROL_DIR, SendspinPlayer
+from .sendspin_player import CONTROL_SOCKET_NAME, SendspinPlayer
 from .util import (
     get_default_interface,
     get_default_ipv4,
@@ -86,7 +86,7 @@ async def main() -> None:
     )
     parser.add_argument(
         "--sendspin-control-dir",
-        default=DEFAULT_CONTROL_DIR,
+        default="/run/sendspin-cli",
         help="Directory that holds control.sock, the control socket of a Sendspin player (sendspin-cli). " "Nothing happens while the socket does not exist (default: %(default)s)",
     )
     parser.add_argument(
