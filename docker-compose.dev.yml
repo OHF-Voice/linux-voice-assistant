@@ -117,6 +117,7 @@ services:
   # start, but with the D-Bus socket of the host mounted (below) they are not needed: the player announces itself
   # through the Avahi of the host, which has to run on the host.
   local-audio:
+    container_name: local-audio
     image: "${LOCAL_AUDIO_IMAGE:-ghcr.io/music-assistant/local-audio-addon}:${LOCAL_AUDIO_IMAGE_TAG:-latest}"
     restart: unless-stopped
     profiles: ["local-audio"]
