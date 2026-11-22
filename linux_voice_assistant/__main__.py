@@ -103,6 +103,11 @@ async def main() -> None:
         help="File name of the first active wake model",
     )
     parser.add_argument(
+        "--wake-model-2",
+        default=None,
+        help="File name of the second active wake model (optional, only used if no wake words are stored in the preferences)",
+    )
+    parser.add_argument(
         "--stop-model",
         default="stop",
         help="File name of the stop model",
@@ -482,6 +487,7 @@ async def main() -> None:
         [word for word in preferences.active_wake_words if word is not None],
         args.wake_model,
         preferred_type=preferred_wake_word_type,
+        default_wake_word_id_2=args.wake_model_2,
     )
 
     # TODO: allow openWakeWord for "stop"
@@ -534,7 +540,7 @@ async def main() -> None:
     if fallback_used:
         # Fallback to the default model was used, save as active wake words
         _LOGGER.debug("Fallback was used, save default wake words in Preferences.")
-        state.preferences.active_wake_words = list(active_wake_words)
+        state.preferences.active_wake_words = [wake_word_id for wake_word_id in wake_models if wake_word_id in active_wake_words]
         state.active_wake_words = active_wake_words
         state.wake_words = wake_models
         state.save_preferences()

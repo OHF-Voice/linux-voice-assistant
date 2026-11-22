@@ -222,6 +222,65 @@ class TestLoadWakeModels:
         models, active, _ = load_wake_models({"okay_nabu": available}, ["okay_nabu"], "okay_nabu")
         assert set(models.keys()) == active
 
+    def test_second_default_wake_word_loaded_after_first(self, tmp_path):
+        available1, _ = self._make_available(tmp_path, "okay_nabu")
+        available2, _ = self._make_available(tmp_path, "hey_jarvis")
+        from linux_voice_assistant.wake_word import load_wake_models
+
+        models, active, fallback = load_wake_models(
+            {"okay_nabu": available1, "hey_jarvis": available2},
+            [],
+            "okay_nabu",
+            default_wake_word_id_2="hey_jarvis",
+        )
+        assert list(models) == ["okay_nabu", "hey_jarvis"]
+        assert active == {"okay_nabu", "hey_jarvis"}
+        assert fallback is True
+
+    def test_second_default_ignored_when_requested_models_loaded(self, tmp_path):
+        available1, _ = self._make_available(tmp_path, "okay_nabu")
+        available2, _ = self._make_available(tmp_path, "hey_jarvis")
+        from linux_voice_assistant.wake_word import load_wake_models
+
+        models, _, _ = load_wake_models(
+            {"okay_nabu": available1, "hey_jarvis": available2},
+            ["okay_nabu"],
+            "okay_nabu",
+            default_wake_word_id_2="hey_jarvis",
+        )
+        assert list(models) == ["okay_nabu"]
+
+    def test_unknown_second_default_is_skipped(self, tmp_path):
+        available, _ = self._make_available(tmp_path)
+        from linux_voice_assistant.wake_word import load_wake_models
+
+        models, active, _ = load_wake_models({"okay_nabu": available}, [], "okay_nabu", default_wake_word_id_2="missing")
+        assert list(models) == ["okay_nabu"]
+        assert active == {"okay_nabu"}
+
+    def test_second_default_equal_to_first_is_skipped(self, tmp_path):
+        available, _ = self._make_available(tmp_path)
+        from linux_voice_assistant.wake_word import load_wake_models
+
+        models, _, _ = load_wake_models({"okay_nabu": available}, [], "okay_nabu", default_wake_word_id_2="okay_nabu")
+        assert list(models) == ["okay_nabu"]
+        available.load.assert_called_once()
+
+    def test_failing_second_default_keeps_first(self, tmp_path):
+        available1, _ = self._make_available(tmp_path, "okay_nabu")
+        available2, _ = self._make_available(tmp_path, "hey_jarvis")
+        available2.load.side_effect = RuntimeError("boom")
+        from linux_voice_assistant.wake_word import load_wake_models
+
+        models, active, _ = load_wake_models(
+            {"okay_nabu": available1, "hey_jarvis": available2},
+            [],
+            "okay_nabu",
+            default_wake_word_id_2="hey_jarvis",
+        )
+        assert list(models) == ["okay_nabu"]
+        assert active == {"okay_nabu"}
+
     def test_load_called_once_per_model(self, tmp_path):
         available, _ = self._make_available(tmp_path)
         from linux_voice_assistant.wake_word import load_wake_models

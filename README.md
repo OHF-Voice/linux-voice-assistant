@@ -77,7 +77,7 @@ For all other users, we have different installation methods available (Docker, s
 
 ```sh
 usage: __main__.py [-h] [--name NAME] [--audio-input-device AUDIO_INPUT_DEVICE] [--list-input-devices] [--audio-input-block-size AUDIO_INPUT_BLOCK_SIZE] [--audio-output-device AUDIO_OUTPUT_DEVICE] [--music-output-device MUSIC_OUTPUT_DEVICE] [--list-output-devices] [--wake-word-dir WAKE_WORD_DIR]  [--mic-auto-gain] [--mic-noise-suppression]
-                   [--wake-model WAKE_MODEL] [--stop-model STOP_MODEL] [--download-dir DOWNLOAD_DIR] [--refractory-seconds REFRACTORY_SECONDS] [--wakeup-sound WAKEUP_SOUND] [--timer-finished-sound TIMER_FINISHED_SOUND] [--processing-sound PROCESSING_SOUND]
+                   [--wake-model WAKE_MODEL] [--wake-model-2 WAKE_MODEL_2] [--stop-model STOP_MODEL] [--download-dir DOWNLOAD_DIR] [--refractory-seconds REFRACTORY_SECONDS] [--wakeup-sound WAKEUP_SOUND] [--timer-finished-sound TIMER_FINISHED_SOUND] [--processing-sound PROCESSING_SOUND]
                    [--mute-sound MUTE_SOUND] [--unmute-sound UNMUTE_SOUND] [--preferences-file PREFERENCES_FILE] [--host HOST] [--network-interface NETWORK_INTERFACE] [--mac-address MAC_ADDRESS] [--port PORT] [--enable-encryption] [--encryption-key-file ENCRYPTION_KEY_FILE] [--enable-thinking-sound] [--listen-during-wake-sound] [--debug]
 ```
 
@@ -94,6 +94,7 @@ usage: __main__.py [-h] [--name NAME] [--audio-input-device AUDIO_INPUT_DEVICE] 
 | `--audio-input-channels`        | Number of microphone audio channels to capture (2 = mic + AEC reference channel)       | 1                                    |
 | `--wake-word-dir`               | Directory with wake word models (.tflite) and configs (.json)                          | `wakewords/`                         |
 | `--wake-model`                  | ID of active wake word model                                                           | `okay_nabu`                          |
+| `--wake-model-2`                | ID of second active wake word model (optional)                                         | none                                 |
 | `--stop-model`                  | ID of stop model                                                                       | `stop`                               |
 | `--download-dir`                | Directory to download custom wake word models, etc.                                    | `local/`                             |
 | `--refractory-seconds`          | Seconds before wake word can be activated again                                        | 2.0                                  |
