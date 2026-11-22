@@ -156,7 +156,7 @@ def test_reachability_is_logged_once_per_change(tmp_path, caplog):
     player.status()
     player.status()
 
-    assert len([r for r in caplog.records if r.levelname == "WARNING"]) == 1
+    assert len([r for r in caplog.records if r.levelname == "CRITICAL"]) == 1
 
 
 def test_playback_that_starts_while_ducking_is_requested_gets_ducked(tmp_path, fake):

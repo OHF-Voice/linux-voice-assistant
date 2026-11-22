@@ -261,7 +261,7 @@ class SendspinPlayer:
                     chunks.append(chunk)
         except OSError as err:
             if self._reachable is not False:
-                _LOGGER.warning(
+                _LOGGER.critical(
                     "Sendspin control socket %s is not reachable (%s). Check that the player runs, that the socket is mounted and that it belongs to the user of LVA",
                     self._socket_path,
                     err,
