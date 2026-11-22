@@ -144,7 +144,7 @@ class MediaPlayerEntity(ESPHomeEntity):
         :param uri: The media URL from Home Assistant.
         """
         if self.sendspin_player is None:
-            self._log.warning("Ignoring %s: no --sendspin-control-socket configured", uri)
+            self._log.warning("Ignoring %s: the Sendspin bridge is off (--enable-sendspin-bridge 0)", uri)
         elif uri == f"{SENDSPIN_URI_PREFIX}current":
             self.sendspin_player.play()
         else:

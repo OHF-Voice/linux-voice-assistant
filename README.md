@@ -79,7 +79,7 @@ For all other users, we have different installation methods available (Docker, s
 💡 **Note:** There is an [environment variable](docs/install_application.md#environment-variables-reference) for each parameter if you use docker or systemd based setup.
 
 ```sh
-usage: __main__.py [-h] [--name NAME] [--audio-input-device AUDIO_INPUT_DEVICE] [--list-input-devices] [--audio-input-block-size AUDIO_INPUT_BLOCK_SIZE] [--audio-output-device AUDIO_OUTPUT_DEVICE] [--music-output-device MUSIC_OUTPUT_DEVICE] [--sendspin-control-socket SENDSPIN_CONTROL_SOCKET] [--list-output-devices] [--wake-word-dir WAKE_WORD_DIR]  [--mic-auto-gain] [--mic-noise-suppression]
+usage: __main__.py [-h] [--name NAME] [--audio-input-device AUDIO_INPUT_DEVICE] [--list-input-devices] [--audio-input-block-size AUDIO_INPUT_BLOCK_SIZE] [--audio-output-device AUDIO_OUTPUT_DEVICE] [--music-output-device MUSIC_OUTPUT_DEVICE] [--enable-sendspin-bridge {0,1}] [--sendspin-control-dir SENDSPIN_CONTROL_DIR] [--list-output-devices] [--wake-word-dir WAKE_WORD_DIR]  [--mic-auto-gain] [--mic-noise-suppression]
                    [--wake-model WAKE_MODEL] [--stop-model STOP_MODEL] [--download-dir DOWNLOAD_DIR] [--refractory-seconds REFRACTORY_SECONDS] [--wakeup-sound WAKEUP_SOUND] [--timer-finished-sound TIMER_FINISHED_SOUND] [--processing-sound PROCESSING_SOUND]
                    [--mute-sound MUTE_SOUND] [--unmute-sound UNMUTE_SOUND] [--preferences-file PREFERENCES_FILE] [--host HOST] [--network-interface NETWORK_INTERFACE] [--mac-address MAC_ADDRESS] [--port PORT] [--enable-encryption] [--encryption-key-file ENCRYPTION_KEY_FILE] [--enable-thinking-sound] [--listen-during-wake-sound] [--debug]
 ```
@@ -91,7 +91,8 @@ usage: __main__.py [-h] [--name NAME] [--audio-input-device AUDIO_INPUT_DEVICE] 
 | `--audio-input-block-size`      | Audio input block size in samples                                                      | 1024                                 |
 | `--audio-output-device`         | mpv name for output device, use a `pulse/...` name from `--list-output-devices`        | `pulse`                              |
 | `--music-output-device`         | mpv name for the music/media output device                                             | `--audio-output-device`              |
-| `--sendspin-control-socket`     | Control socket of a Sendspin player, ducked like the music player, state shown in the media player (empty: off)| `/sendspin/control.sock`             |
+| `--enable-sendspin-bridge`      | Control a Sendspin player through the control socket (1 = on, 0 = off)| 1                                    |
+| `--sendspin-control-dir`        | Directory with `control.sock`, the control socket of a Sendspin player, ducked like the music player, state shown in the media player| `/run/sendspin-cli`                  |
 | `--mic-volume`                  | Control microphone volume                                                              | 100                                  |
 | `--mic-auto-gain`               | Add WebRTC Gain to Mic                                                                 | 0                                    |
 | `--mic-noise-suppression`       | Add WebRTC Noise Suppression to Mic                                                    | 0                                    |
@@ -187,7 +188,11 @@ VS Code development uses a local Python virtual environment (`.venv/`):
 docker compose -f docker-compose.dev.yml up
 ```
 
-It also contains **Local Audio**, the Sendspin player of Music Assistant, for testing `--sendspin-control-socket`. It is in the Compose profile `local-audio`, so it does not start with a plain `up` (a player that already runs on the machine would collide with it). Start it with `docker compose -f docker-compose.dev.yml --profile local-audio up`, or set `COMPOSE_PROFILES=local-audio` in the `.env`. The player uses the variables of LVA (`LVA_USER_ID`, `LVA_PULSE_SERVER`, `LVA_SENDSPIN_CONTROL_DIR`, `CLIENT_NAME`, ...). Its other options (`LOCAL_AUDIO_*`) are declared at the top of the file. The control socket is `/run/local-audio/control.sock` on the host and `/sendspin/control.sock` in the LVA container.
+To test audio as well, start the Local Audio player (the Sendspin player of Music Assistant) together with LVA:
+
+```sh
+docker compose -f docker-compose.dev.yml --profile local-audio up
+```
 
 > **Note:** The player announces itself through the Avahi of the host. On hosts with AppArmor enabled (for example Ubuntu) the Docker profile `docker-default` blocks that, and the log of `local-audio` shows `could not register _sendspin._tcp: dns_sd error -65553`. The service therefore sets `security_opt: apparmor=unconfined`, keep it on such hosts.
 

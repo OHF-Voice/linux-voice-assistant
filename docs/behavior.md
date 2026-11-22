@@ -84,7 +84,7 @@ If music is paused when you start talking to the assistant, it stays paused. Duc
 
 ### Sendspin player
 
-A Sendspin player (`sendspin-cli`, for example the Music Assistant Local Audio add-on) plays outside LVA, so LVA cannot control it through mpv. LVA drives it through the player's control socket (`--sendspin-control-socket`, default `/sendspin/control.sock`, an empty value turns it off) and treats it as the music of the media player entity:
+A Sendspin player (`sendspin-cli`, for example the Music Assistant Local Audio add-on) plays outside LVA, so LVA cannot control it through mpv. LVA drives it through the player's control socket (`control.sock` in `--sendspin-control-dir`, default `/run/sendspin-cli`). The whole feature is the Sendspin bridge, on by default (`--enable-sendspin-bridge`, `ENABLE_SENDSPIN_BRIDGE=1`); `--enable-sendspin-bridge 0` (`ENABLE_SENDSPIN_BRIDGE=0`) turns it off and LVA works as without a Sendspin player and treats it as the music of the media player entity:
 
 | Situation | Sendspin player / media player entity |
 |-----------|---------------------------------------|
@@ -280,7 +280,7 @@ The *Disable button controls* switch (if the peripheral provides it) lets you lo
 | Media player announcement, music paused | Stays paused |
 | Timer finishes | Ducked while ringing, restored when ringing stops |
 | Stop word said | Music is not stopped, only restored from ducking |
-| Same situations with a Sendspin player (`--sendspin-control-socket`) | Playing: group volume ducked to 50 % / ducked for announcements, see [Sendspin player](#sendspin-player) |
+| Same situations with a Sendspin player (`--enable-sendspin-bridge`) | Playing: group volume ducked to 50 % / ducked for announcements, see [Sendspin player](#sendspin-player) |
 | Mute switch toggled | Unchanged |
 | Media player stop (Home Assistant / peripheral) | Stopped |
 | Last Home Assistant client disconnects | Stopped |

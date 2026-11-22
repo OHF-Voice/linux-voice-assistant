@@ -26,16 +26,18 @@ LVA talks to the player through the **control socket** of `sendspin-cli`, a Unix
 
 | What | Setting |
 |------|---------|
-| Directory of the socket on the host | Player: `/run/<container name>` (`LOCAL_AUDIO_CONTAINER_NAME`, default `local-audio`), mounted to `/control`. LVA: `LVA_SENDSPIN_CONTROL_DIR` (default `/run/local-audio`), mounted to `/sendspin`. |
-| Socket file | `control.sock`, LVA looks for `/sendspin/control.sock` (`SENDSPIN_CONTROL_SOCKET`) |
+| Directory of the socket on the host | `LOCAL_AUDIO_CONTROL_DIR` in the `.env` of `local-audio` (mounted to `/run/sendspin-cli`, where the image of the player keeps its socket) and `SENDSPIN_CONTROL_DIR` in the `.env` of `lva` (mounted at the same path in the container). Both default to `/run/sendspin-cli`. |
+| Socket file | `control.sock`, LVA looks for it in `SENDSPIN_CONTROL_DIR` (`--sendspin-control-dir`) |
 | User | The socket has mode `0600`, so `LVA_USER_ID` and `LOCAL_AUDIO_USER_ID` have to be the same user (1000 by default) |
 | Audio server | Both need the PulseAudio/PipeWire socket of that user, see `LVA_PULSE_SERVER` and `LOCAL_AUDIO_PULSE_SERVER` |
+| Switch in LVA | `ENABLE_SENDSPIN_BRIDGE` in the `.env` of `lva`: `1` (the default of the application) controls the player through the socket, `0` turns it off |
 
-If you change `LOCAL_AUDIO_CONTAINER_NAME`, set `LVA_SENDSPIN_CONTROL_DIR` to the same `/run/<container name>`, otherwise LVA does not find the socket. Without a running player LVA works as without Sendspin.
+If you change the directory, set the same value as `LOCAL_AUDIO_CONTROL_DIR` and `SENDSPIN_CONTROL_DIR`, otherwise LVA does not find the socket. Without a running player LVA works as without Sendspin.
 
 ## Notes
 
-- The player needs the network of the host (mDNS and the port 8928 that the server connects back to) and an Avahi daemon on the host, which it reaches over the D-Bus socket of the host.
-- On hosts with AppArmor enabled (for example Ubuntu) the default Docker profile blocks that, see [AppArmor](../install_application.md#apparmor).
-- Newer images of the player require that Music Assistant pairs with it. The `.env.example` of `local-audio` explains the options.
-- The player cannot run twice on one host with these defaults (container name, port and socket directory). Give every instance its own.
+- The player runs as a regular user with the `s6-overlay` of the image. It needs the network of the host (mDNS and the port that the server connects back to, 8928 by default, `SENDSPIN_PORT`) and an Avahi daemon on the host, which it reaches over the D-Bus socket of the host.
+- On hosts with AppArmor enabled (for example Ubuntu) the default Docker profile blocks that. The compose file of `local-audio` sets `security_opt: apparmor=unconfined` for it, see [AppArmor](../install_application.md#apparmor).
+- Unless `SENDSPIN_NAME` is set in the `.env` of `local-audio`, the player is named after the host in Music Assistant.
+- Newer images of the player require that Music Assistant pairs with it. The `.env.example` of `local-audio` explains the options (`SENDSPIN_ALLOW_UNPAIRED` is set to `true` there for now).
+- The player cannot run twice on one host with these defaults: a second player needs its own `SENDSPIN_PORT` and its own `LOCAL_AUDIO_CONTROL_DIR` (which has to match the `SENDSPIN_CONTROL_DIR` of the LVA that controls it).

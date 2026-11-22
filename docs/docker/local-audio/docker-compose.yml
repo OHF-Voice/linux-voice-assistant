@@ -1,21 +1,24 @@
 ---
+# Standalone operation of the player outside the Home Assistant OS apps: a Linux host with Docker.
+# The player runs as a regular user, started by the s6-overlay of the image. It reads the same SENDSPIN_* variables
+# as docker-compose.build.yml, set them in the .env (see .env.example).
 services:
-  # Fix permissions for the state volume, which is created owned by root
+  # Fix permissions for the state volume and the control socket directory, which are created owned by root
   fix-permissions:
     image: "${LOCAL_AUDIO_IMAGE:-ghcr.io/music-assistant/local-audio-addon}:${LOCAL_AUDIO_IMAGE_TAG:-latest}"
     entrypoint: []
     user: "0:0"
-    command: "chown -R ${LOCAL_AUDIO_USER_ID:-1000}:${LOCAL_AUDIO_USER_GROUP:-1000} /data /control"
+    command: "chown -R ${LOCAL_AUDIO_USER_ID:-1000}:${LOCAL_AUDIO_USER_GROUP:-1000} /data /run/sendspin-cli"
     volumes:
       - data:/data
-      - /run/${LOCAL_AUDIO_CONTAINER_NAME:-local-audio}:/control
+      - ${LOCAL_AUDIO_CONTROL_DIR:-/run/sendspin-cli}:/run/sendspin-cli
     restart: "no"
 
   # Music Assistant Local Audio (Sendspin player)
-  # The image starts s6-overlay with its own dbus and avahi-daemon. The entrypoint is replaced here,
-  # so only sendspin-cli runs. It announces itself through the Avahi of the host (D-Bus socket below).
+  # The image starts s6-overlay, which starts the player. As a regular user the bundled dbus and avahi-daemon do not
+  # start, but with the D-Bus socket of the host mounted (below) they are not needed: the player announces itself
+  # through the Avahi of the host, which has to run on the host.
   local-audio:
-    container_name: ${LOCAL_AUDIO_CONTAINER_NAME:-local-audio}
     image: "${LOCAL_AUDIO_IMAGE:-ghcr.io/music-assistant/local-audio-addon}:${LOCAL_AUDIO_IMAGE_TAG:-latest}"
     restart: unless-stopped
     # The player announces itself through the Avahi of the host over the D-Bus socket below. On hosts with AppArmor
@@ -26,62 +29,46 @@ services:
     network_mode: "host"
     user: "${LOCAL_AUDIO_USER_ID:-1000}:${LOCAL_AUDIO_USER_GROUP:-1000}"
     environment:
-      # Pulseaudio
-      - XDG_RUNTIME_DIR=${LOCAL_AUDIO_XDG_RUNTIME_DIR:-/run/user/1000}
-      - PULSE_SERVER=${LOCAL_AUDIO_PULSE_SERVER:-unix:/run/user/1000/pulse/native}
+      # The sound server of the host: its directory is mounted below at the same path, see LOCAL_AUDIO_PULSE_SERVER,
+      # LOCAL_AUDIO_PULSE_COOKIE and PIPEWIRE_REMOTE in the .env
+      - XDG_RUNTIME_DIR=${LOCAL_AUDIO_XDG_RUNTIME_DIR:-/run/user/${LOCAL_AUDIO_USER_ID:-1000}}
+      - PULSE_SERVER=${LOCAL_AUDIO_PULSE_SERVER:-unix:/run/user/${LOCAL_AUDIO_USER_ID:-1000}/pulse/native}
+      - PULSE_COOKIE=${LOCAL_AUDIO_PULSE_COOKIE:-/run/user/${LOCAL_AUDIO_USER_ID:-1000}/pulse/cookie}
+    # The SENDSPIN_* options of the player. An option that is not set keeps the default of the image.
     env_file: ${ENV_FILE:-.env}
+    # ALSA devices, for SENDSPIN_OUTPUT=default or an ALSA device such as hw:1,0
+    devices:
+      - /dev/snd:/dev/snd
     group_add:
       - audio
     # Priority for audio process
     cap_add:
       - SYS_NICE
     volumes:
-      # Identity, pairings and rendered configuration
+      # Identity, pairings and state
       - data:/data
-      # Control socket of the player, on the host as /run/<container name>/control.sock
-      - /run/${LOCAL_AUDIO_CONTAINER_NAME:-local-audio}:/control
+      # Rendered configuration and control socket of the player. In the container the image always uses
+      # /run/sendspin-cli; the directory on the host is LOCAL_AUDIO_CONTROL_DIR, as control.sock. The directory is
+      # mounted, so that the socket is created again when the container restarts.
+      - ${LOCAL_AUDIO_CONTROL_DIR:-/run/sendspin-cli}:/run/sendspin-cli
       # Time and zone
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
       # Pulseaudio
-      - ${LOCAL_AUDIO_XDG_RUNTIME_DIR:-/run/user/1000}:${LOCAL_AUDIO_XDG_RUNTIME_DIR:-/run/user/1000}
+      - ${LOCAL_AUDIO_XDG_RUNTIME_DIR:-/run/user/${LOCAL_AUDIO_USER_ID:-1000}}:${LOCAL_AUDIO_XDG_RUNTIME_DIR:-/run/user/${LOCAL_AUDIO_USER_ID:-1000}}
       # Avahi of the host
       - /var/run/dbus:/var/run/dbus:ro
     depends_on:
       fix-permissions:
         condition: service_completed_successfully
-    # What /etc/s6-overlay/s6-rc.d/sendspin-cli/run of the image does, without s6-overlay: only options
-    # that have a value are written, because a key that is present counts (an empty `server` would
-    # turn the mDNS advertisement off). `id` is only known to the player up to 0.3.x, so it is only written when it is set.
-    # `allow-unpaired` is written unless LOCAL_AUDIO_ALLOW_UNPAIRED is set to something else than true, so by default every server
-    # may play without pairing. The `$$` is Compose escaping, the shell sees a single `$`.
-    entrypoint: ["/bin/bash", "-c"]
-    command:
-      - |
-        set -euo pipefail
-        conf=/data/sendspin-cli.conf
-        mkdir -p /data/state
-        rm -f /control/control.sock
-        umask 077
-        {
-          printf 'output = %s\n' "$${LOCAL_AUDIO_OUTPUT:-pulse}"
-          printf 'log-level = %s\n' "$${LOCAL_AUDIO_LOG_LEVEL:-info}"
-          printf 'manufacturer = Music Assistant\n'
-          printf 'product-name = Local Audio\n'
-          [ -z "$${LOCAL_AUDIO_PORT:-}" ] || printf 'port = %s\n' "$$LOCAL_AUDIO_PORT"
-          [ -z "$${LOCAL_AUDIO_NAME:-}" ] || printf 'name = %s\n' "$$LOCAL_AUDIO_NAME"
-          [ -z "$${LOCAL_AUDIO_SERVER:-}" ] || printf 'server = %s\n' "$$LOCAL_AUDIO_SERVER"
-          [ -z "$${LOCAL_AUDIO_BUFFER_MS:-}" ] || printf 'buffer-ms = %s\n' "$$LOCAL_AUDIO_BUFFER_MS"
-          [ -z "$${LOCAL_AUDIO_AUDIO_FORMAT:-}" ] || printf 'audio-format = %s\n' "$$LOCAL_AUDIO_AUDIO_FORMAT"
-          [ -z "$${LOCAL_AUDIO_ID:-}" ] || printf 'id = %s\n' "$$LOCAL_AUDIO_ID"
-          [ "$${LOCAL_AUDIO_ALLOW_UNPAIRED:-true}" != true ] || printf 'allow-unpaired = true\n'
-          [ -z "$${LOCAL_AUDIO_HOOK_START:-}" ] || printf 'hook-start = %s\n' "$$LOCAL_AUDIO_HOOK_START"
-          [ -z "$${LOCAL_AUDIO_HOOK_STOP:-}" ] || printf 'hook-stop = %s\n' "$$LOCAL_AUDIO_HOOK_STOP"
-        } > "$$conf"
-        exec sendspin-cli --config "$$conf" --state-dir /data/state --control-socket /control/control.sock
-    # Health check for process
+    # The image names the player `Local Audio` when SENDSPIN_NAME is not set. Here it is named after the host instead:
+    # with the network of the host the hostname in the container is the one of the host. Then the entrypoint of the
+    # image (/init, s6-overlay) takes over. The $$ is Compose escaping, the shell sees a single $.
+    entrypoint: ["/bin/sh", "-c", 'export SENDSPIN_NAME="$${SENDSPIN_NAME:-$$(hostname)}"; exec /init']
+    # Health check for process. It runs in the container, where the image always keeps the control socket at
+    # /run/sendspin-cli/control.sock, whatever LOCAL_AUDIO_CONTROL_DIR is on the host.
     healthcheck:
-      test: ["CMD", "sendspin-cli", "status", "--control-socket", "/control/control.sock"]
+      test: ["CMD", "sendspin-cli", "status", "--control-socket", "/run/sendspin-cli/control.sock"]
       interval: 30s
       timeout: 10s
       retries: 3

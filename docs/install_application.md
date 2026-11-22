@@ -185,7 +185,8 @@ Environment=PREFERENCES_FILE="/home/pi/linux-voice-assistant/preferences.json"
 # Environment=AUDIO_INPUT_BLOCK_SIZE="1024"
 # Environment=AUDIO_OUTPUT_DEVICE="pulse"
 # Environment=MUSIC_OUTPUT_DEVICE="pulse"
-# Environment=SENDSPIN_CONTROL_SOCKET="/run/local-audio/control.sock"
+# Environment=ENABLE_SENDSPIN_BRIDGE="1"
+# Environment=SENDSPIN_CONTROL_DIR="/run/sendspin-cli"
 # Environment=MIC_VOLUME="1.0"
 # Environment=MIC_AUTO_GAIN="0"
 # Environment=MIC_NOISE_SUPPRESSION="0"
@@ -291,7 +292,8 @@ The following variables can be configured in the `.env` or in the service file:
 | `AUDIO_INPUT_BLOCK_SIZE` | `1024` | Audio input block size in samples |
 | `AUDIO_OUTPUT_DEVICE` | `pulse` | Audio output device name, use a `pulse/...` name from the device list (see `LIST_DEVICES`) |
 | `MUSIC_OUTPUT_DEVICE` | `AUDIO_OUTPUT_DEVICE` | Music/media output device name (defaults to the voice output device) |
-| `SENDSPIN_CONTROL_SOCKET` | `/sendspin/control.sock` | Control socket of a Sendspin player (`sendspin-cli`, e.g. the Music Assistant Local Audio add-on). Enables ducking, announcement ducking and the state of the media player for it while the socket exists, an empty value turns it off, see [behavior.md](behavior.md#sendspin-player). The socket is created with mode `0600` for the user of the player, so LVA has to run as the same user (UID) and the directory of the socket has to be mounted into the LVA container |
+| `ENABLE_SENDSPIN_BRIDGE` | `1` | Controls a Sendspin player through the control socket in `SENDSPIN_CONTROL_DIR`: ducking, announcements and the state of the media player, see [behavior.md](behavior.md#sendspin-player). `1` is the default of the application, `0` turns it off |
+| `SENDSPIN_CONTROL_DIR` | `/run/sendspin-cli` | Directory that holds `control.sock`, the control socket of a Sendspin player (`sendspin-cli`, e.g. the Music Assistant Local Audio add-on). Enables ducking, announcement ducking and the state of the media player for it while the socket exists, see [behavior.md](behavior.md#sendspin-player). The socket is created with mode `0600` for the user of the player, so LVA has to run as the same user (UID) and the directory of the socket has to be mounted into the LVA container |
 | `MIC_VOLUME` | 100 | Control microphone volume |
 | `MIC_AUTO_GAIN` | 0 | Add WebRTC Gain to Mic |
 | `MIC_NOISE_SUPPRESSION` | 0 | Add WebRTC Noise Suppression to Mic |
@@ -331,7 +333,7 @@ LVA can duck, announce around and show a Sendspin player such as the [Music Assi
 
 You do not create the socket file. The player creates it when it starts. What you share is the **directory** that holds it, so that the player can create the socket again when it restarts.
 
-**1. Pick a directory on the host**, for example `/run/local-audio` (Docker creates it when a container starts).
+**1. Pick a directory on the host**, `/run/sendspin-cli` is the default of `SENDSPIN_CONTROL_DIR` (Docker creates it when a container starts).
 
 **2. Mount it into the player.** The Local Audio add-on image keeps its control socket at `/run/sendspin-cli/control.sock`. Add to your existing deployment of the add-on:
 
@@ -340,20 +342,20 @@ services:
   local-audio:
     # ... your existing configuration ...
     volumes:
-      - /run/local-audio:/run/sendspin-cli
+      - /run/sendspin-cli:/run/sendspin-cli
 ```
 
-**3. Mount it into LVA.** In the `.env` of the LVA Compose project set `LVA_SENDSPIN_CONTROL_DIR="/run/local-audio"` (this is the default of `docker-compose.yml`), which mounts the directory to `/sendspin`. LVA looks for `/sendspin/control.sock` by default (`SENDSPIN_CONTROL_SOCKET`, `--sendspin-control-socket`). With your own Compose file add the volume `/run/local-audio:/sendspin`.
+**3. Mount it into LVA.** In the `.env` of the LVA Compose project set `SENDSPIN_CONTROL_DIR="/run/sendspin-cli"` (this is the default of `docker-compose.yml`), which mounts the directory at the same path in the container. LVA looks for `control.sock` in it (`--sendspin-control-dir`, default `/run/sendspin-cli`). The bridge is on by default in the application, `ENABLE_SENDSPIN_BRIDGE="0"` turns it off. With your own Compose file add the volume `/run/sendspin-cli:/run/sendspin-cli`.
 
 **4. Make the socket reachable for LVA.** The add-on image runs as root, so the socket belongs to root with mode `0600` (check with `docker exec <player> ls -l /run/sendspin-cli/control.sock`), and LVA, which runs as the user `LVA_USER_ID` (1000 by default), cannot open it. Choose one:
 
-- **Run the player as the same user as LVA.** This is the clean way. The [PiCompose package](https://github.com/florian-asche/PiCompose-Package-Software-HA-Satellite) does it: its `local-audio` Compose project replaces the entrypoint of the image, so that only `sendspin-cli` runs without s6-overlay, as `user: 1000:1000`. You can take that Compose file as a template.
+- **Run the player as the same user as LVA.** This is the clean way. The Compose project in [docs/docker/local-audio](docker/local-audio/) does it: it runs the image with its own `s6-overlay` as `user: 1000:1000` and mounts the D-Bus socket of the host, so that the bundled `dbus` and `avahi-daemon` (which need root) are not needed. You can take that Compose file as a template.
 - **Open the socket after every start of the player**, for example with `docker exec <player> chmod 666 /run/sendspin-cli/control.sock`. This is good for a test only: the mode is lost when the player restarts, and every local user can then control the player.
 - **Run LVA as root** (`LVA_USER_ID=0`, `LVA_USER_GROUP=0`). This works, but it is not recommended.
 
-**5. Check.** `docker logs linux-voice-assistant 2>&1 | grep -i sendspin` shows `Sendspin control socket /sendspin/control.sock is reachable`. If it shows a warning instead (`is not reachable`), the socket is missing (is the directory mounted into both containers?) or LVA may not open it (step 4). Nothing happens while the socket does not exist, LVA then works as without a Sendspin player. `docker exec <player> sendspin-cli status --control-socket /run/sendspin-cli/control.sock` shows what the player reports.
+**5. Check.** `docker logs linux-voice-assistant 2>&1 | grep -i sendspin` shows `Sendspin control socket /run/sendspin-cli/control.sock is reachable`. If it shows a warning instead (`is not reachable`), the socket is missing (is the directory mounted into both containers?) or LVA may not open it (step 4). Nothing happens while the socket does not exist, LVA then works as without a Sendspin player. `docker exec <player> sendspin-cli status --control-socket /run/sendspin-cli/control.sock` shows what the player reports.
 
-This setup is derived from the sources of the add-on and was tested with the player as non-root user (PiCompose) only. The stock image with a mounted directory was not tested.
+This setup is derived from the sources of the add-on. The Compose project in [docs/docker/local-audio](docker/local-audio/) was only tested in an isolated container, without real Avahi and audio, and the stock image with a mounted directory was not tested.
 
 #### AppArmor
 

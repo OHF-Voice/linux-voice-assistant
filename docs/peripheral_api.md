@@ -139,7 +139,7 @@ These are all the events LVA emits. Your peripheral script receives them and rea
 
 | Event | Data | Description |
 |-------|------|-------------|
-| `media_player_playing` | — | HA started streaming music or media to the background music player (non-announcement), or a Sendspin player (`--sendspin-control-socket`) started playing (not while a conversation is running). Show a "media playing" indicator. Not emitted for TTS or announcements — those use `tts_speaking`. |
+| `media_player_playing` | — | HA started streaming music or media to the background music player (non-announcement), or a Sendspin player (`--enable-sendspin-bridge`) started playing (not while a conversation is running). Show a "media playing" indicator. Not emitted for TTS or announcements — those use `tts_speaking`. |
 | `volume_changed` | `{"volume": float}` | The speaker volume changed (0.0–1.0). Update any volume display or indicator ring. |
 | `volume_muted` | `{"muted": bool}` | The media player mute state changed. Distinct from microphone mute (`muted` event). |
 
@@ -187,7 +187,7 @@ For HA to see your entity, your peripheral must register before HA enumerates th
 
 | Command | Data | Description |
 |---------|------|-------------|
-| `volume_up` | — | Increase speaker volume by one step (default 5 %, configurable with `--peripheral-volume-step`). Updates HA, persists the value, and emits `volume_changed`. Also sets the group volume of a Sendspin player (`--sendspin-control-socket`). |
+| `volume_up` | — | Increase speaker volume by one step (default 5 %, configurable with `--peripheral-volume-step`). Updates HA, persists the value, and emits `volume_changed`. Also sets the group volume of a Sendspin player (`--enable-sendspin-bridge`). |
 | `volume_down` | — | Decrease speaker volume by one step. |
 | `set_volume` | `{"volume": float}` | Set the speaker volume to an exact value between 0.0 and 1.0. Values outside this range are clamped. Updates HA, persists, and emits `volume_changed`. Also sets the group volume of a Sendspin player. Example: `{"command": "set_volume", "data": {"volume": 0.6}}` |
 
@@ -201,7 +201,7 @@ For HA to see your entity, your peripheral must register before HA enumerates th
 
 | Command | Data | Description |
 |---------|------|-------------|
-| `stop_media_player` | — | Stop background music / media playback, or the Sendspin player (`--sendspin-control-socket`) if it plays. Updates the HA media player entity state to Idle. |
+| `stop_media_player` | — | Stop background music / media playback, or the Sendspin player (`--enable-sendspin-bridge`) if it plays. Updates the HA media player entity state to Idle. |
 | `pause_media_player` | — | Pause background music, or the Sendspin player if it plays (HA state is then Idle, Sendspin has no paused state). Otherwise updates HA state to Paused. |
 | `resume_media_player` | — | Resume paused music. If LVA has nothing to resume it plays the Sendspin player. Updates HA state to Playing. |
 

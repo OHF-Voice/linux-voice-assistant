@@ -393,3 +393,39 @@ class TestReconnectingRecorder:
         main_mod._ReconnectingRecorder(mic, 1, 1024)._refresh_mic()
 
         get_mic.assert_not_called()
+
+
+class TestCreateSendspinPlayer:
+    @staticmethod
+    def _args(**overrides):
+        import argparse
+
+        values = {"enable_sendspin_bridge": 1, "sendspin_control_dir": "/run/sendspin-cli"}
+        values.update(overrides)
+        return argparse.Namespace(**values)
+
+    def test_created_by_default(self):
+        from linux_voice_assistant.__main__ import _create_sendspin_player
+
+        player = _create_sendspin_player(self._args())
+        assert player is not None
+
+    def test_not_created_when_the_bridge_is_off(self):
+        from linux_voice_assistant.__main__ import _create_sendspin_player
+
+        assert _create_sendspin_player(self._args(enable_sendspin_bridge=0)) is None
+
+    def test_socket_is_in_the_control_dir(self):
+        from linux_voice_assistant.__main__ import _create_sendspin_player
+
+        player = _create_sendspin_player(self._args(sendspin_control_dir="/run/other"))
+        assert player is not None
+        assert player._socket_path == "/run/other/control.sock"  # pylint: disable=protected-access
+
+    def test_switch_defaults_to_on_and_can_be_turned_off(self):
+        import argparse
+
+        parser = argparse.ArgumentParser()
+        parser.add_argument("--enable-sendspin-bridge", type=int, default=1, choices=(0, 1))
+        assert parser.parse_args([]).enable_sendspin_bridge == 1
+        assert parser.parse_args(["--enable-sendspin-bridge", "0"]).enable_sendspin_bridge == 0

@@ -22,7 +22,7 @@ from .models import DetectionResult, Preferences, ServerState, WakeWordType, ini
 from .mpv_player import MpvMediaPlayer
 from .peripheral_api import LVAEvent, PeripheralAPIServer
 from .satellite import VoiceSatelliteProtocol
-from .sendspin_player import DEFAULT_CONTROL_SOCKET, SendspinPlayer
+from .sendspin_player import CONTROL_SOCKET_NAME, DEFAULT_CONTROL_DIR, SendspinPlayer
 from .util import (
     get_default_interface,
     get_default_ipv4,
@@ -78,10 +78,16 @@ async def main() -> None:
         help="mpv name for the music/media output device (defaults to --audio-output-device)",
     )
     parser.add_argument(
-        "--sendspin-control-socket",
-        default=DEFAULT_CONTROL_SOCKET,
-        help="Control socket of a Sendspin player (sendspin-cli); LVA ducks it during conversations and announcements and mirrors its state in the media player. "
-        "Nothing happens while the socket does not exist, an empty value turns it off (default: %(default)s)",
+        "--enable-sendspin-bridge",
+        type=int,
+        default=1,
+        choices=(0, 1),
+        help="1 controls a Sendspin player through its control socket: duck it, stop it for music and announcements, mirror its state in the media player. " "0 turns it off (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--sendspin-control-dir",
+        default=DEFAULT_CONTROL_DIR,
+        help="Directory that holds control.sock, the control socket of a Sendspin player (sendspin-cli). " "Nothing happens while the socket does not exist (default: %(default)s)",
     )
     parser.add_argument(
         "--list-output-devices",
@@ -510,7 +516,7 @@ async def main() -> None:
         stop_word=stop_model,
         music_player=MpvMediaPlayer(device=args.music_output_device or args.audio_output_device, name="music"),
         tts_player=MpvMediaPlayer(device=args.audio_output_device, name="tts"),
-        sendspin_player=SendspinPlayer(args.sendspin_control_socket) if args.sendspin_control_socket else None,
+        sendspin_player=_create_sendspin_player(args),
         wakeup_sound=args.wakeup_sound,
         start_listening_sound=args.start_listening_sound,
         timer_finished_sound=args.timer_finished_sound,
@@ -696,6 +702,18 @@ def _list_output_devices() -> list:
     from mpv import MPV
 
     return list(MPV().audio_device_list)  # type: ignore
+
+
+def _create_sendspin_player(args: argparse.Namespace) -> Optional[SendspinPlayer]:
+    """
+    Create the client of the Sendspin player.
+    :param args: Parsed arguments.
+    :return: The client, or None if the Sendspin bridge is off.
+    """
+    if args.enable_sendspin_bridge != 1:
+        return None
+
+    return SendspinPlayer(Path(args.sendspin_control_dir) / CONTROL_SOCKET_NAME)
 
 
 def _output_device_exists(device: str) -> bool:

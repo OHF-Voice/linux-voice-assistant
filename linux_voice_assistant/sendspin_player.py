@@ -8,7 +8,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Dict, Optional, Set, Tuple, Union
 
-DEFAULT_CONTROL_SOCKET = "/sendspin/control.sock"
+DEFAULT_CONTROL_DIR = "/run/sendspin-cli"
+CONTROL_SOCKET_NAME = "control.sock"
 
 _LOGGER = logging.getLogger(__name__)
 
