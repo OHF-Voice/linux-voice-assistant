@@ -238,7 +238,8 @@ class PeripheralAPIServer:
 
         # Safeguarded HA reconnect trigger for late entity registrations.
         self._pending_entity_reconnect_task: Optional[asyncio.Task] = None
-        self._last_ha_reconnect_at: float = 0.0
+        # -inf, not 0.0: time.monotonic() can be below the cooldown right after boot.
+        self._last_ha_reconnect_at: float = float("-inf")
 
     # ------------------------------------------------------------------
     # Lifecycle
