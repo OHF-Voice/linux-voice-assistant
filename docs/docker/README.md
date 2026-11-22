@@ -6,7 +6,6 @@ Each project has a `docker-compose.yml` and a `.env.example` that describes ever
 
 | Directory | Contents |
 |-----------|----------|
-| [lva/](lva/) | `docker-compose.yml` and `.env.example` of linux-voice-assistant |
 | [local-audio/](local-audio/) | `docker-compose.yml` and `.env.example` of the Local Audio player |
 
 ## Usage
