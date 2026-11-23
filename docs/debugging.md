@@ -129,6 +129,8 @@ AUDIO_OUTPUT_DEVICE="pulse"
 
 The output list contains the same device several times, once per mpv audio driver (`pipewire/...`, `pulse/...`, `alsa/...`). Use the `pulse/...` entry, for example `AUDIO_OUTPUT_DEVICE="pulse/alsa_output.usb-Example.analog-stereo"`. `AUDIO_OUTPUT_DEVICE="pulse"` selects the default PulseAudio output without a device name.
 
+To play music and media on a different device than voice and TTS, set `MUSIC_OUTPUT_DEVICE` to another entry from the same list. If it is unset, music uses `AUDIO_OUTPUT_DEVICE`.
+
 
 ## Pipewire runtime directory (Optional):
 
