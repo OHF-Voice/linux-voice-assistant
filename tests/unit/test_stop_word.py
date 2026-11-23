@@ -26,20 +26,20 @@ class TestStopWordLifecycle:
 
     def test_inactive_does_not_infer(self, tmp_path):
         state = make_state(tmp_path)
-        state.stop_word.process_streaming.return_value = True
+        state.stop_word.process_streaming_prob.return_value = 0.99
         deactivate(state)
 
         stopped, running = process_stop_word(state, make_inputs(), running=False)
 
         assert stopped is False
         assert running is False
-        state.stop_word.process_streaming.assert_not_called()
+        state.stop_word.process_streaming_prob.assert_not_called()
         state.stop_word.reset.assert_not_called()
 
     def test_activation_resets_once_and_infers(self, tmp_path):
         state = make_state(tmp_path)
         deactivate(state)
-        state.stop_word.process_streaming.return_value = False
+        state.stop_word.process_streaming_prob.return_value = 0.0
 
         activate(state)
         stopped, running = process_stop_word(state, make_inputs(3), running=False)
@@ -47,11 +47,11 @@ class TestStopWordLifecycle:
         assert stopped is False
         assert running is True
         state.stop_word.reset.assert_called_once()
-        assert state.stop_word.process_streaming.call_count == 3
+        assert state.stop_word.process_streaming_prob.call_count == 3
 
     def test_continued_inference_does_not_reset_again(self, tmp_path):
         state = make_state(tmp_path)
-        state.stop_word.process_streaming.return_value = False
+        state.stop_word.process_streaming_prob.return_value = 0.0
         activate(state)
 
         _, running = process_stop_word(state, make_inputs(), running=False)
@@ -60,11 +60,11 @@ class TestStopWordLifecycle:
 
         assert running is True
         state.stop_word.reset.assert_called_once()
-        assert state.stop_word.process_streaming.call_count == 6
+        assert state.stop_word.process_streaming_prob.call_count == 6
 
     def test_detection_reports_stopped(self, tmp_path):
         state = make_state(tmp_path)
-        state.stop_word.process_streaming.side_effect = [False, True]
+        state.stop_word.process_streaming_prob.side_effect = [0.0, 0.99]
         activate(state)
 
         stopped, running = process_stop_word(state, make_inputs(2), running=True)
@@ -74,21 +74,21 @@ class TestStopWordLifecycle:
 
     def test_deactivation_stops_inference(self, tmp_path):
         state = make_state(tmp_path)
-        state.stop_word.process_streaming.return_value = True
+        state.stop_word.process_streaming_prob.return_value = 0.99
         activate(state)
         _, running = process_stop_word(state, make_inputs(), running=False)
-        calls_while_active = state.stop_word.process_streaming.call_count
+        calls_while_active = state.stop_word.process_streaming_prob.call_count
 
         deactivate(state)
         stopped, running = process_stop_word(state, make_inputs(), running=running)
 
         assert stopped is False
         assert running is False
-        assert state.stop_word.process_streaming.call_count == calls_while_active
+        assert state.stop_word.process_streaming_prob.call_count == calls_while_active
 
     def test_reactivation_resets_again(self, tmp_path):
         state = make_state(tmp_path)
-        state.stop_word.process_streaming.return_value = False
+        state.stop_word.process_streaming_prob.return_value = 0.0
         activate(state)
         _, running = process_stop_word(state, make_inputs(), running=False)
 
@@ -103,7 +103,7 @@ class TestStopWordLifecycle:
 
     def test_configured_threshold_is_applied(self, tmp_path):
         state = make_state(tmp_path)
-        state.stop_word.process_streaming.return_value = False
+        state.stop_word.process_streaming_prob.return_value = 0.0
         state.stop_word_threshold = 0.7
         activate(state)
 
@@ -126,35 +126,35 @@ class TestStopWordSequence:
     def test_full_cycle(self, tmp_path):
         """inactive → active → active → inactive → active, as one sequence."""
         state = make_state(tmp_path)
-        state.stop_word.process_streaming.return_value = False
+        state.stop_word.process_streaming_prob.return_value = 0.0
         state.stop_word.reset = MagicMock(wraps=state.stop_word.reset)
         running = False
 
         # inactive: nothing runs
         _, running = process_stop_word(state, make_inputs(), running=running)
         assert state.stop_word.reset.call_count == 0
-        assert state.stop_word.process_streaming.call_count == 0
+        assert state.stop_word.process_streaming_prob.call_count == 0
 
         # active: one reset, inference starts
         activate(state)
         _, running = process_stop_word(state, make_inputs(), running=running)
         assert state.stop_word.reset.call_count == 1
-        assert state.stop_word.process_streaming.call_count == 2
+        assert state.stop_word.process_streaming_prob.call_count == 2
 
         # still active: inference continues, no second reset
         _, running = process_stop_word(state, make_inputs(), running=running)
         assert state.stop_word.reset.call_count == 1
-        assert state.stop_word.process_streaming.call_count == 4
+        assert state.stop_word.process_streaming_prob.call_count == 4
 
         # inactive again: nothing runs
         deactivate(state)
         _, running = process_stop_word(state, make_inputs(), running=running)
         assert running is False
-        assert state.stop_word.process_streaming.call_count == 4
+        assert state.stop_word.process_streaming_prob.call_count == 4
 
         # active again: one more reset, inference resumes
         activate(state)
         _, running = process_stop_word(state, make_inputs(), running=running)
         assert running is True
         assert state.stop_word.reset.call_count == 2
-        assert state.stop_word.process_streaming.call_count == 6
+        assert state.stop_word.process_streaming_prob.call_count == 6

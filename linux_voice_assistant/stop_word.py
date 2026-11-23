@@ -6,12 +6,15 @@ model at other times costs a full inference per audio frame for a result that is
 discarded, which matters on a single-core board.
 """
 
+import logging
 from typing import TYPE_CHECKING, List, Tuple
 
 import numpy as np
 
 if TYPE_CHECKING:
     from .models import ServerState
+
+_LOGGER = logging.getLogger(__name__)
 
 
 def process_stop_word(state: "ServerState", micro_inputs: List[np.ndarray], running: bool) -> Tuple[bool, bool]:
@@ -36,7 +39,9 @@ def process_stop_word(state: "ServerState", micro_inputs: List[np.ndarray], runn
         # Apply the configured stop word sensitivity threshold
         state.stop_word.probability_cutoff = state.stop_word_threshold
         for micro_input in micro_inputs:
-            if state.stop_word.process_streaming(micro_input):
+            prob = state.stop_word.process_streaming_prob(micro_input)
+            if prob is not None and prob > state.stop_word_threshold:
+                _LOGGER.debug("Stop word '%s' activated (probability %.3f exceeded threshold %.3f)", state.stop_word.wake_word, prob, state.stop_word_threshold)
                 stopped = True
 
     return stopped, stop_active
