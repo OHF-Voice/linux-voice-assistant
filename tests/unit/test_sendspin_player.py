@@ -261,3 +261,18 @@ def test_stop_mode_starts_after_the_last_owner(tmp_path, fake):
     assert "play" not in fake.requests
     player.unduck(owner="timer")
     assert fake.requests[-1] == "play"
+
+
+def test_volume_set_while_ducked_stays_ducked_and_is_restored(tmp_path, fake):
+    changes = []
+    player = SendspinPlayer(tmp_path / "control.sock", duck_mode="duck")
+    player.set_duck_persistence(lambda before, after: changes.append((before, after)), (None, None))
+    player.duck()
+    player.set_volume(60)
+    assert fake.requests[-1] == "vol 30"
+    assert player.is_ducked
+    assert changes[-1] == (60, 30)
+
+    player.unduck()
+    assert fake.requests[-1] == "vol 60"
+    assert not player.is_ducked

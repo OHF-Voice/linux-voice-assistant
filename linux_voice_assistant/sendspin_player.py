@@ -75,7 +75,7 @@ class SendspinPlayer:
 
     @property
     def is_ducked(self) -> bool:
-        """Whether the group volume is currently lowered or the player stopped by :meth:`duck`."""
+        """Whether the group volume is currently lowered or the player stopped by :meth:`duck`. The volume of the player is then not the real volume."""
         return self._ducked_from is not None or self._stopped_by_duck
 
     def start_polling(self, callback: Callable[[Optional[SendspinStatus]], None]) -> None:
@@ -133,14 +133,19 @@ class SendspinPlayer:
 
     def set_volume(self, percent: int) -> None:
         """
-        Set the group volume.
+        Set the group volume. While ducked, ``percent`` is the real volume that is restored afterwards, the player stays ducked relative to it.
         :param percent: Volume 0-100.
         """
+        percent = max(0, min(100, percent))
         with self._lock:
             if self._ducked_from is not None:
-                self._ducked_from = None
-                self._notify_duck(None, None)
-            self._send(f"vol {max(0, min(100, percent))}")
+                ducked = max(0, min(100, int(percent * self._duck_factor)))
+                if self._send(f"vol {ducked}"):
+                    self._ducked_from = percent
+                    self._notify_duck(percent, ducked)
+                return
+
+            self._send(f"vol {percent}")
 
     def set_muted(self, muted: bool) -> None:
         """
