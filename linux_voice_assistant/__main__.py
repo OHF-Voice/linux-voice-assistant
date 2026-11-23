@@ -590,6 +590,7 @@ async def main() -> None:
                 lambda: VoiceSatelliteProtocol(state),
                 host=host_ip_address,
                 port=args.port,
+                start_serving=False,
             )
             break  # connection successful, exit the loop
         except OSError as err:
@@ -646,9 +647,9 @@ async def main() -> None:
 
         # Give peripherals a window to connect and register their Light
         # entities before HA enumerates over the ESPHome native API. The
-        # ESPHome server is bound but not yet serving (serve_forever runs
-        # below), so any HA connection sits queued in the kernel for the
-        # duration of this wait. Peripherals that register later still
+        # ESPHome server is bound with start_serving=False and only starts
+        # listening in serve_forever below, so HA cannot connect during this
+        # wait and retries afterwards. Peripherals that register later still
         # work, but the new entities only show up in HA after the
         # integration reconnects.
         if args.peripheral_startup_wait > 0:
