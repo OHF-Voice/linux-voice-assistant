@@ -159,6 +159,38 @@ def test_reachability_is_logged_once_per_change(tmp_path, caplog):
     assert len([r for r in caplog.records if r.levelname == "CRITICAL"]) == 1
 
 
+@pytest.mark.parametrize(
+    "unreachable_for, interval",
+    [(0, 1.0), (29, 1.0), (30, 5.0), (119, 5.0), (120, 30.0), (599, 30.0), (600, 60.0), (3600, 60.0)],
+)
+def test_poll_interval_grows_while_the_socket_is_unreachable(tmp_path, monkeypatch, unreachable_for, interval):
+    now = 1000.0
+    monkeypatch.setattr("linux_voice_assistant.sendspin_player.time.monotonic", lambda: now)
+    player = SendspinPlayer(tmp_path / "missing.sock")
+    assert player._poll_interval() == 1.0  # pylint: disable=protected-access
+    player.status()
+
+    now += unreachable_for
+    assert player._poll_interval() == interval  # pylint: disable=protected-access
+
+
+def test_poll_interval_is_reset_when_the_socket_is_reachable_again(tmp_path, monkeypatch):
+    now = 1000.0
+    monkeypatch.setattr("linux_voice_assistant.sendspin_player.time.monotonic", lambda: now)
+    path = tmp_path / "control.sock"
+    player = SendspinPlayer(path)
+    player.status()
+    now += 700
+    assert player._poll_interval() == 60.0  # pylint: disable=protected-access
+
+    fake = FakePlayer(path)
+    try:
+        player.status()
+    finally:
+        fake.close()
+    assert player._poll_interval() == 1.0  # pylint: disable=protected-access
+
+
 def test_playback_that_starts_while_ducking_is_requested_gets_ducked(tmp_path, fake):
     fake.state = "idle"
     player = SendspinPlayer(tmp_path / "control.sock")

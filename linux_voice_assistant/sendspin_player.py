@@ -14,6 +14,8 @@ _LOGGER = logging.getLogger(__name__)
 
 _TIMEOUT_SECONDS = 1.0
 _POLL_INTERVAL_SECONDS = 1.0
+# (unreachable for at least this many seconds, poll interval in seconds), longest first
+_UNREACHABLE_POLL_STEPS = ((600.0, 60.0), (120.0, 30.0), (30.0, 5.0))
 
 
 @dataclass(frozen=True)
@@ -49,6 +51,7 @@ class SendspinPlayer:
         self._ducked_from: Optional[int] = None
         self._poll_thread: Optional[threading.Thread] = None
         self._reachable: Optional[bool] = None
+        self._unreachable_since: Optional[float] = None
         self._on_duck_changed: Optional[Callable[[Optional[int], Optional[int]], None]] = None
         self._recover: Optional[Tuple[int, int]] = None
         self._duck_owners: Set[str] = set()
@@ -80,7 +83,7 @@ class SendspinPlayer:
         def poll() -> None:
             last: Optional[SendspinStatus] = None
             while True:
-                time.sleep(_POLL_INTERVAL_SECONDS)
+                time.sleep(self._poll_interval())
                 try:
                     self._recover_duck()
                     self._duck_if_requested()
@@ -175,6 +178,18 @@ class SendspinPlayer:
             status = self._status()
             return (status is not None) and (status.get("state") == "playing")
 
+    def _poll_interval(self) -> float:
+        """Seconds to wait before the next poll: the longer the socket is unreachable, the less often it is tried."""
+        if self._unreachable_since is None:
+            return _POLL_INTERVAL_SECONDS
+
+        unreachable_for = time.monotonic() - self._unreachable_since
+        for threshold, interval in _UNREACHABLE_POLL_STEPS:
+            if unreachable_for >= threshold:
+                return interval
+
+        return _POLL_INTERVAL_SECONDS
+
     def _status(self) -> Optional[Dict[str, str]]:
         reply = self._request("status")
         if reply is None:
@@ -266,12 +281,17 @@ class SendspinPlayer:
                     self._socket_path,
                     err,
                 )
+            else:
+                _LOGGER.debug("Sendspin control socket %s is still not reachable (%s)", self._socket_path, err)
             self._reachable = False
+            if self._unreachable_since is None:
+                self._unreachable_since = time.monotonic()
             return None
 
         if not self._reachable:
             _LOGGER.info("Sendspin control socket %s is reachable", self._socket_path)
         self._reachable = True
+        self._unreachable_since = None
 
         lines = b"".join(chunks).decode("utf-8", errors="replace").splitlines()
         if command != "status":

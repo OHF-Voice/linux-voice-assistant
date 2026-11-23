@@ -353,7 +353,7 @@ services:
 - **Open the socket after every start of the player**, for example with `docker exec <player> chmod 666 /run/sendspin-cli/control.sock`. This is good for a test only: the mode is lost when the player restarts, and every local user can then control the player.
 - **Run LVA as root** (`LVA_USER_ID=0`, `LVA_USER_GROUP=0`). This works, but it is not recommended.
 
-**5. Check.** `docker logs linux-voice-assistant 2>&1 | grep -i sendspin` shows `Sendspin control socket /run/sendspin-cli/control.sock is reachable`. If it shows a warning instead (`is not reachable`), the socket is missing (is the directory mounted into both containers?) or LVA may not open it (step 4). Nothing happens while the socket does not exist, LVA then works as without a Sendspin player. `docker exec <player> sendspin-cli status --control-socket /run/sendspin-cli/control.sock` shows what the player reports.
+**5. Check.** `docker logs linux-voice-assistant 2>&1 | grep -i sendspin` shows `Sendspin control socket /run/sendspin-cli/control.sock is reachable`. If it shows a critical message instead (`is not reachable`), the socket is missing (is the directory mounted into both containers?) or LVA may not open it (step 4). Nothing happens while the socket does not exist, LVA then works as without a Sendspin player. `docker exec <player> sendspin-cli status --control-socket /run/sendspin-cli/control.sock` shows what the player reports.
 
 This setup is derived from the sources of the add-on. The Compose project in [docs/docker/local-audio](docker/local-audio/) was only tested in an isolated container, without real Avahi and audio, and the stock image with a mounted directory was not tested.
 
