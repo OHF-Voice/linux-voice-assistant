@@ -78,6 +78,12 @@ async def main() -> None:
         help="mpv name for the music/media output device (defaults to --audio-output-device)",
     )
     parser.add_argument(
+        "--mpv-player-duck-mode",
+        default="duck",
+        choices=("duck", "pause"),
+        help="What the music player does while the assistant talks or an announcement plays: duck lowers the volume, pause pauses and resumes afterwards (default: %(default)s)",
+    )
+    parser.add_argument(
         "--enable-sendspin-bridge",
         type=int,
         default=1,
@@ -88,6 +94,12 @@ async def main() -> None:
         "--sendspin-control-dir",
         default="/run/sendspin-cli",
         help="Directory that holds control.sock, the control socket of a Sendspin player (sendspin-cli). " "Nothing happens while the socket does not exist (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--sendspin-player-duck-mode",
+        default="stop",
+        choices=("duck", "stop"),
+        help="What a Sendspin player does while the assistant talks or an announcement plays: stop stops it and starts it again afterwards, " "duck lowers the group volume (default: %(default)s)",
     )
     parser.add_argument(
         "--list-output-devices",
@@ -501,6 +513,8 @@ async def main() -> None:
     stop_model = load_stop_model(wake_word_dirs, args.stop_model)
     assert stop_model is not None
 
+    _LOGGER.debug("Duck mode of the mpv player: %s, of the Sendspin player: %s", args.mpv_player_duck_mode, args.sendspin_player_duck_mode)
+
     state = ServerState(
         name=device_name,
         friendly_name=friendly_name,
@@ -514,7 +528,7 @@ async def main() -> None:
         wake_words=wake_models,
         active_wake_words=active_wake_words,
         stop_word=stop_model,
-        music_player=MpvMediaPlayer(device=args.music_output_device or args.audio_output_device, name="music"),
+        music_player=MpvMediaPlayer(device=args.music_output_device or args.audio_output_device, name="music", duck_mode=args.mpv_player_duck_mode),
         tts_player=MpvMediaPlayer(device=args.audio_output_device, name="tts"),
         sendspin_player=_create_sendspin_player(args),
         wakeup_sound=args.wakeup_sound,
@@ -716,7 +730,7 @@ def _create_sendspin_player(args: argparse.Namespace) -> Optional[SendspinPlayer
 
     socket_path = Path(args.sendspin_control_dir) / CONTROL_SOCKET_NAME
     _LOGGER.debug("Sendspin bridge is on, control socket: %s", socket_path)
-    return SendspinPlayer(socket_path)
+    return SendspinPlayer(socket_path, duck_mode=args.sendspin_player_duck_mode)
 
 
 def _output_device_exists(device: str) -> bool:

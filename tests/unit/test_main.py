@@ -400,7 +400,7 @@ class TestCreateSendspinPlayer:
     def _args(**overrides):
         import argparse
 
-        values = {"enable_sendspin_bridge": 1, "sendspin_control_dir": "/run/sendspin-cli"}
+        values = {"enable_sendspin_bridge": 1, "sendspin_control_dir": "/run/sendspin-cli", "sendspin_player_duck_mode": "stop"}
         values.update(overrides)
         return argparse.Namespace(**values)
 

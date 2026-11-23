@@ -79,7 +79,7 @@ For all other users, we have different installation methods available (Docker, s
 💡 **Note:** There is an [environment variable](docs/install_application.md#environment-variables-reference) for each parameter if you use docker or systemd based setup.
 
 ```sh
-usage: __main__.py [-h] [--name NAME] [--audio-input-device AUDIO_INPUT_DEVICE] [--list-input-devices] [--audio-input-block-size AUDIO_INPUT_BLOCK_SIZE] [--audio-output-device AUDIO_OUTPUT_DEVICE] [--music-output-device MUSIC_OUTPUT_DEVICE] [--enable-sendspin-bridge {0,1}] [--sendspin-control-dir SENDSPIN_CONTROL_DIR] [--list-output-devices] [--wake-word-dir WAKE_WORD_DIR]  [--mic-auto-gain] [--mic-noise-suppression]
+usage: __main__.py [-h] [--name NAME] [--audio-input-device AUDIO_INPUT_DEVICE] [--list-input-devices] [--audio-input-block-size AUDIO_INPUT_BLOCK_SIZE] [--audio-output-device AUDIO_OUTPUT_DEVICE] [--music-output-device MUSIC_OUTPUT_DEVICE] [--mpv-player-duck-mode {duck,pause}] [--enable-sendspin-bridge {0,1}] [--sendspin-control-dir SENDSPIN_CONTROL_DIR] [--sendspin-player-duck-mode {duck,stop}] [--list-output-devices] [--wake-word-dir WAKE_WORD_DIR]  [--mic-auto-gain] [--mic-noise-suppression]
                    [--wake-model WAKE_MODEL] [--stop-model STOP_MODEL] [--download-dir DOWNLOAD_DIR] [--refractory-seconds REFRACTORY_SECONDS] [--wakeup-sound WAKEUP_SOUND] [--timer-finished-sound TIMER_FINISHED_SOUND] [--processing-sound PROCESSING_SOUND]
                    [--mute-sound MUTE_SOUND] [--unmute-sound UNMUTE_SOUND] [--preferences-file PREFERENCES_FILE] [--host HOST] [--network-interface NETWORK_INTERFACE] [--mac-address MAC_ADDRESS] [--port PORT] [--enable-encryption] [--encryption-key-file ENCRYPTION_KEY_FILE] [--enable-thinking-sound] [--listen-during-wake-sound] [--debug]
 ```
@@ -91,8 +91,10 @@ usage: __main__.py [-h] [--name NAME] [--audio-input-device AUDIO_INPUT_DEVICE] 
 | `--audio-input-block-size`      | Audio input block size in samples                                                      | 1024                                 |
 | `--audio-output-device`         | mpv name for output device, use a `pulse/...` name from `--list-output-devices`        | `pulse`                              |
 | `--music-output-device`         | mpv name for the music/media output device                                             | `--audio-output-device`              |
+| `--mpv-player-duck-mode`        | What the mpv music player does while the assistant talks or an announcement plays: `duck` (lower the volume) or `pause` (pause and resume afterwards) | `duck`                               |
 | `--enable-sendspin-bridge`      | Control a Sendspin player through the control socket (1 = on, 0 = off)| 1                                    |
 | `--sendspin-control-dir`        | Directory with `control.sock`, the control socket of a Sendspin player, ducked like the music player, state shown in the media player| `/run/sendspin-cli`                  |
+| `--sendspin-player-duck-mode`   | What a Sendspin player does while the assistant talks or an announcement plays: `stop` (stop and start again afterwards) or `duck` (lower the group volume), see the note below | `stop`                               |
 | `--mic-volume`                  | Control microphone volume                                                              | 100                                  |
 | `--mic-auto-gain`               | Add WebRTC Gain to Mic                                                                 | 0                                    |
 | `--mic-noise-suppression`       | Add WebRTC Noise Suppression to Mic                                                    | 0                                    |
@@ -110,6 +112,8 @@ usage: __main__.py [-h] [--name NAME] [--audio-input-device AUDIO_INPUT_DEVICE] 
 | `--processing-sound`            | Sound played while assistant is processing                                             | `sounds/processing.wav`              |
 | `--mute-sound`                  | Sound played when muting the assistant                                                 | `sounds/mute_switch_on.flac`         |
 | `--unmute-sound`                | Sound played when unmuting the assistant                                               | `sounds/mute_switch_off.flac`        |
+
+> **Note on `--sendspin-player-duck-mode duck`:** Sendspin has no volume per device, so the volume of the whole Sendspin group is lowered and synchronised through Sendspin. While it is lowered, it is not protected against changes: a volume change made by someone else in the meantime (Music Assistant, another player, the media player card) is overwritten when the volume is restored. The default `stop` does not touch the volume.
 | `--button-double-press-sound`   | Sound played on button double press                                                    | `sounds/button_double_press.flac`    |
 | `--button-triple-press-sound`   | Sound played on button triple press                                                    | `sounds/button_triple_press.flac`    |
 | `--button-long-press-sound`     | Sound played on button long press                                                      | `sounds/button_long_press.flac`      |

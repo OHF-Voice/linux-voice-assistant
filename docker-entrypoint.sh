@@ -64,6 +64,14 @@ if [ -n "${MUSIC_OUTPUT_DEVICE}" ]; then
   EXTRA_ARGS+=( "--music-output-device" "$MUSIC_OUTPUT_DEVICE" )
 fi
 
+if [ -n "${MPV_PLAYER_DUCK_MODE}" ]; then
+  EXTRA_ARGS+=( "--mpv-player-duck-mode" "$MPV_PLAYER_DUCK_MODE" )
+fi
+
+if [ -n "${SENDSPIN_PLAYER_DUCK_MODE}" ]; then
+  EXTRA_ARGS+=( "--sendspin-player-duck-mode" "$SENDSPIN_PLAYER_DUCK_MODE" )
+fi
+
 if [ -n "${ENABLE_SENDSPIN_BRIDGE}" ]; then
   EXTRA_ARGS+=( "--enable-sendspin-bridge" "$ENABLE_SENDSPIN_BRIDGE" )
 fi

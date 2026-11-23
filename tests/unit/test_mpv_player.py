@@ -285,3 +285,47 @@ class TestIsPaused:
         player = make_player()
         player._mock.state.return_value = PlayerState.PLAYING
         assert player.is_paused is False
+
+
+class TestPauseDuckMode:
+    def make(self, state):
+        from linux_voice_assistant.player.state import PlayerState
+
+        mock_lib_player = MagicMock()
+        mock_lib_player.state.return_value = state
+        with patch("linux_voice_assistant.mpv_player.LibMpvPlayer", return_value=mock_lib_player):
+            from linux_voice_assistant.mpv_player import MpvMediaPlayer
+
+            player = MpvMediaPlayer(duck_mode="pause")
+        return player, mock_lib_player, PlayerState
+
+    def test_duck_pauses_and_unduck_resumes(self):
+        player, lib, state = self.make(None)
+        lib.state.return_value = state.PLAYING
+        player.duck()
+        lib.pause.assert_called_once()
+        lib.duck.assert_not_called()
+
+        lib.state.return_value = state.PAUSED
+        player.unduck()
+        lib.resume.assert_called_once()
+        lib.unduck.assert_not_called()
+
+    def test_music_that_was_paused_stays_paused(self):
+        player, lib, state = self.make(None)
+        lib.state.return_value = state.PAUSED
+        player.duck()
+        player.unduck()
+        lib.pause.assert_not_called()
+        lib.resume.assert_not_called()
+
+    def test_resumes_only_after_the_last_owner(self):
+        player, lib, state = self.make(None)
+        lib.state.return_value = state.PLAYING
+        player.duck(owner="conversation")
+        lib.state.return_value = state.PAUSED
+        player.duck(owner="timer")
+        player.unduck(owner="conversation")
+        lib.resume.assert_not_called()
+        player.unduck(owner="timer")
+        lib.resume.assert_called_once()

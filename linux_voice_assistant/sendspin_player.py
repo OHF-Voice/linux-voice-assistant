@@ -9,6 +9,8 @@ from pathlib import Path
 from typing import Callable, Dict, Optional, Set, Tuple, Union
 
 CONTROL_SOCKET_NAME = "control.sock"
+DUCK_MODE_DUCK = "duck"
+DUCK_MODE_STOP = "stop"
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -34,17 +36,19 @@ class SendspinStatus:
 
 class SendspinPlayer:
     """
-    Ducks, pauses and resumes a Sendspin player through its control socket.
+    Ducks, stops and resumes a Sendspin player through its control socket.
 
     The protocol is one request line per connection. The first reply line is ``ok`` or ``error <kind>: <reason>``,
     a ``status`` reply continues with ``key: value`` lines. The player has no per-endpoint duck, so ducking sets the
-    **group** volume (``vol``) and restores the value that ``status`` reported before. All methods are thread-safe and
+    **group** volume (``vol``) and restores the value that ``status`` reported before. In ``stop`` mode ducking stops the
+    player instead and starts it again afterwards, the volume is not touched. All methods are thread-safe and
     never raise: an unreachable player only means that nothing is ducked.
     """
 
-    def __init__(self, socket_path: Union[str, Path]) -> None:
+    def __init__(self, socket_path: Union[str, Path], duck_mode: str = DUCK_MODE_STOP) -> None:
         """
         :param socket_path: Path of the control socket of the player (``--control-socket`` of ``sendspin-cli``).
+        :param duck_mode: ``stop`` stops the player while ducked and starts it afterwards, ``duck`` lowers the group volume.
         """
         self._socket_path = str(socket_path)
         self._lock = threading.Lock()
@@ -56,6 +60,8 @@ class SendspinPlayer:
         self._recover: Optional[Tuple[int, int]] = None
         self._duck_owners: Set[str] = set()
         self._duck_factor = 0.5
+        self._duck_mode = duck_mode
+        self._stopped_by_duck = False
 
     def set_duck_persistence(self, on_duck_changed: Callable[[Optional[int], Optional[int]], None], saved: Tuple[Optional[int], Optional[int]]) -> None:
         """
@@ -69,8 +75,8 @@ class SendspinPlayer:
 
     @property
     def is_ducked(self) -> bool:
-        """Whether the group volume is currently lowered by :meth:`duck`."""
-        return self._ducked_from is not None
+        """Whether the group volume is currently lowered or the player stopped by :meth:`duck`."""
+        return self._ducked_from is not None or self._stopped_by_duck
 
     def start_polling(self, callback: Callable[[Optional[SendspinStatus]], None]) -> None:
         """
@@ -145,9 +151,9 @@ class SendspinPlayer:
 
     def duck(self, factor: float = 0.5, owner: str = "assistant") -> None:
         """
-        Request ducking: lower the group volume to ``factor`` of its current value while the player is playing.
+        Request ducking: lower the group volume to ``factor`` of its current value (or stop the player in ``stop`` mode) while the player is playing.
         The request stays until :meth:`unduck`, so playback that starts later is ducked too.
-        :param factor: Fraction of the current group volume, 0.0 to 1.0.
+        :param factor: Fraction of the current group volume, 0.0 to 1.0, not used in ``stop`` mode.
         :param owner: Who asks. The volume is restored when every owner has called :meth:`unduck`.
         """
         with self._lock:
@@ -158,13 +164,22 @@ class SendspinPlayer:
 
     def unduck(self, owner: str = "assistant") -> None:
         """
-        End a ducking request. The group volume saved by :meth:`duck` is restored when no owner is left.
+        End a ducking request. The group volume saved by :meth:`duck` is restored (or the player started in ``stop`` mode) when no owner is left.
         :param owner: The owner that called :meth:`duck`.
         """
         with self._lock:
             self._duck_owners.discard(owner)
-            _LOGGER.debug("Sendspin duck released by %s (owners left: %s, ducked: %s)", owner, sorted(self._duck_owners), self._ducked_from is not None)
-            if self._duck_owners or self._ducked_from is None:
+            _LOGGER.debug("Sendspin duck released by %s (owners left: %s, ducked: %s)", owner, sorted(self._duck_owners), self.is_ducked)
+            if self._duck_owners:
+                return
+
+            if self._stopped_by_duck:
+                self._stopped_by_duck = False
+                _LOGGER.debug("Sendspin started again")
+                self._send("play")
+                return
+
+            if self._ducked_from is None:
                 return
 
             volume, self._ducked_from = self._ducked_from, None
@@ -213,8 +228,15 @@ class SendspinPlayer:
         return int(words[0]) if words and words[0].isdigit() else None
 
     def _apply_duck(self) -> None:
-        """Lower the group volume if ducking is requested and the player plays. Expects the lock to be held."""
-        if self._ducked_from is not None:
+        """Lower the group volume (or stop the player) if ducking is requested and the player plays. Expects the lock to be held."""
+        if self._ducked_from is not None or self._stopped_by_duck:
+            return
+
+        if self._duck_mode == DUCK_MODE_STOP:
+            status = self._status()
+            if (status is not None) and (status.get("state") == "playing") and self._send("stop"):
+                _LOGGER.debug("Sendspin stopped for ducking (owners: %s)", sorted(self._duck_owners))
+                self._stopped_by_duck = True
             return
 
         status = self._status()

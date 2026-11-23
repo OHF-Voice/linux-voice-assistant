@@ -185,8 +185,10 @@ Environment=PREFERENCES_FILE="/home/pi/linux-voice-assistant/preferences.json"
 # Environment=AUDIO_INPUT_BLOCK_SIZE="1024"
 # Environment=AUDIO_OUTPUT_DEVICE="pulse"
 # Environment=MUSIC_OUTPUT_DEVICE="pulse"
+# Environment=MPV_PLAYER_DUCK_MODE="duck"
 # Environment=ENABLE_SENDSPIN_BRIDGE="1"
 # Environment=SENDSPIN_CONTROL_DIR="/run/sendspin-cli"
+# Environment=SENDSPIN_PLAYER_DUCK_MODE="stop"
 # Environment=MIC_VOLUME="1.0"
 # Environment=MIC_AUTO_GAIN="0"
 # Environment=MIC_NOISE_SUPPRESSION="0"
@@ -292,8 +294,10 @@ The following variables can be configured in the `.env` or in the service file:
 | `AUDIO_INPUT_BLOCK_SIZE` | `1024` | Audio input block size in samples |
 | `AUDIO_OUTPUT_DEVICE` | `pulse` | Audio output device name, use a `pulse/...` name from the device list (see `LIST_DEVICES`) |
 | `MUSIC_OUTPUT_DEVICE` | `AUDIO_OUTPUT_DEVICE` | Music/media output device name (defaults to the voice output device) |
+| `MPV_PLAYER_DUCK_MODE` | `duck` | What the music player does while the assistant talks or an announcement plays: `duck` lowers the volume, `pause` pauses the music and resumes it afterwards, see [behavior.md](behavior.md#talking-to-the-assistant) |
 | `ENABLE_SENDSPIN_BRIDGE` | `1` | Controls a Sendspin player through the control socket in `SENDSPIN_CONTROL_DIR`: ducking, announcements and the state of the media player, see [behavior.md](behavior.md#sendspin-player). `1` is the default of the application, `0` turns it off |
 | `SENDSPIN_CONTROL_DIR` | `/run/sendspin-cli` | Directory that holds `control.sock`, the control socket of a Sendspin player (`sendspin-cli`, e.g. the Music Assistant Local Audio add-on). Enables ducking, announcement ducking and the state of the media player for it while the socket exists, see [behavior.md](behavior.md#sendspin-player). The socket is created with mode `0600` for the user of the player, so LVA has to run as the same user (UID) and the directory of the socket has to be mounted into the LVA container |
+| `SENDSPIN_PLAYER_DUCK_MODE` | `stop` | What a Sendspin player does while the assistant talks or an announcement plays: `stop` stops it and starts it again afterwards, `duck` lowers the group volume. With `duck` the volume is synchronised through Sendspin and is not protected against changes while it is lowered, see [behavior.md](behavior.md#sendspin-player) |
 | `MIC_VOLUME` | 100 | Control microphone volume |
 | `MIC_AUTO_GAIN` | 0 | Add WebRTC Gain to Mic |
 | `MIC_NOISE_SUPPRESSION` | 0 | Add WebRTC Noise Suppression to Mic |

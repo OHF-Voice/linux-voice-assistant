@@ -48,7 +48,7 @@ def fixture_fake(tmp_path):
 
 
 def test_duck_and_unduck_restore_volume(tmp_path, fake):
-    player = SendspinPlayer(tmp_path / "control.sock")
+    player = SendspinPlayer(tmp_path / "control.sock", duck_mode="duck")
     player.duck()
     player.duck()  # second duck must not re-read the ducked volume
     player.unduck()
@@ -60,7 +60,7 @@ def test_duck_and_unduck_restore_volume(tmp_path, fake):
 
 def test_duck_skips_player_that_is_not_playing(tmp_path, fake):
     fake.state = "paused"
-    player = SendspinPlayer(tmp_path / "control.sock")
+    player = SendspinPlayer(tmp_path / "control.sock", duck_mode="duck")
     player.duck()
     player.unduck()
 
@@ -69,7 +69,7 @@ def test_duck_skips_player_that_is_not_playing(tmp_path, fake):
 
 def test_duck_parses_muted_volume(tmp_path, fake):
     fake.volume = "60 (muted)"
-    SendspinPlayer(tmp_path / "control.sock").duck()
+    SendspinPlayer(tmp_path / "control.sock", duck_mode="duck").duck()
 
     assert "vol 30" in fake.requests
 
@@ -97,7 +97,7 @@ def test_status_unknown_state_is_idle_and_unreachable_is_none(tmp_path, fake):
 
 
 def test_commands_are_sent(tmp_path, fake):
-    player = SendspinPlayer(tmp_path / "control.sock")
+    player = SendspinPlayer(tmp_path / "control.sock", duck_mode="duck")
     player.play()
     player.stop()
     player.pause_playback()
@@ -110,7 +110,7 @@ def test_commands_are_sent(tmp_path, fake):
 
 @pytest.mark.usefixtures("fake")
 def test_duck_state_is_reported_for_persistence(tmp_path):
-    player = SendspinPlayer(tmp_path / "control.sock")
+    player = SendspinPlayer(tmp_path / "control.sock", duck_mode="duck")
     changes = []
     player.set_duck_persistence(lambda a, b: changes.append((a, b)), (None, None))
     player.duck()
@@ -121,7 +121,7 @@ def test_duck_state_is_reported_for_persistence(tmp_path):
 
 def test_recover_restores_volume_left_ducked(tmp_path, fake):
     fake.volume = "40"
-    player = SendspinPlayer(tmp_path / "control.sock")
+    player = SendspinPlayer(tmp_path / "control.sock", duck_mode="duck")
     changes = []
     player.set_duck_persistence(lambda a, b: changes.append((a, b)), (80, 40))
     player._recover_duck()  # pylint: disable=protected-access
@@ -132,7 +132,7 @@ def test_recover_restores_volume_left_ducked(tmp_path, fake):
 
 def test_recover_leaves_volume_changed_since_alone(tmp_path, fake):
     fake.volume = "55"
-    player = SendspinPlayer(tmp_path / "control.sock")
+    player = SendspinPlayer(tmp_path / "control.sock", duck_mode="duck")
     changes = []
     player.set_duck_persistence(lambda a, b: changes.append((a, b)), (80, 40))
     player._recover_duck()  # pylint: disable=protected-access
@@ -193,7 +193,7 @@ def test_poll_interval_is_reset_when_the_socket_is_reachable_again(tmp_path, mon
 
 def test_playback_that_starts_while_ducking_is_requested_gets_ducked(tmp_path, fake):
     fake.state = "idle"
-    player = SendspinPlayer(tmp_path / "control.sock")
+    player = SendspinPlayer(tmp_path / "control.sock", duck_mode="duck")
     player.duck()
     assert not player.is_ducked
 
@@ -209,7 +209,7 @@ def test_playback_that_starts_while_ducking_is_requested_gets_ducked(tmp_path, f
 
 def test_no_late_ducking_after_unduck(tmp_path, fake):
     fake.state = "idle"
-    player = SendspinPlayer(tmp_path / "control.sock")
+    player = SendspinPlayer(tmp_path / "control.sock", duck_mode="duck")
     player.duck()
     player.unduck()
     fake.state = "playing"
@@ -220,7 +220,7 @@ def test_no_late_ducking_after_unduck(tmp_path, fake):
 
 
 def test_volume_is_restored_when_the_last_owner_unducks(tmp_path, fake):
-    player = SendspinPlayer(tmp_path / "control.sock")
+    player = SendspinPlayer(tmp_path / "control.sock", duck_mode="duck")
     player.duck(owner="assistant")
     player.duck(owner="announcement")
     player.unduck(owner="announcement")
@@ -230,3 +230,34 @@ def test_volume_is_restored_when_the_last_owner_unducks(tmp_path, fake):
     player.unduck(owner="assistant")
     assert not player.is_ducked
     assert fake.requests[-1] == "vol 80"
+
+
+def test_stop_mode_stops_and_starts_without_touching_the_volume(tmp_path, fake):
+    player = SendspinPlayer(tmp_path / "control.sock", duck_mode="stop")
+    player.duck()
+    assert "stop" in fake.requests
+    assert not any(request.startswith("vol") for request in fake.requests)
+    assert player.is_ducked
+
+    player.unduck()
+    assert fake.requests[-1] == "play"
+    assert not player.is_ducked
+
+
+def test_stop_mode_leaves_a_player_that_is_not_playing_alone(tmp_path, fake):
+    fake.state = "idle"
+    player = SendspinPlayer(tmp_path / "control.sock", duck_mode="stop")
+    player.duck()
+    player.unduck()
+    assert "stop" not in fake.requests
+    assert "play" not in fake.requests
+
+
+def test_stop_mode_starts_after_the_last_owner(tmp_path, fake):
+    player = SendspinPlayer(tmp_path / "control.sock", duck_mode="stop")
+    player.duck(owner="conversation")
+    player.duck(owner="timer")
+    player.unduck(owner="conversation")
+    assert "play" not in fake.requests
+    player.unduck(owner="timer")
+    assert fake.requests[-1] == "play"
