@@ -313,7 +313,7 @@ class VoiceSatelliteProtocol(APIServer):
                 key=len(self.state.entities),
                 name="Mic Volume",
                 object_id="mic_volume",
-                min_value=1.0,
+                min_value=0.0,
                 max_value=100.0,
                 get_value=lambda: float(self.state.mic_volume),
                 set_value=lambda val: self.state.persist_mic_volume(float(val)),
@@ -509,12 +509,12 @@ class VoiceSatelliteProtocol(APIServer):
         else:
             _LOGGER.debug("Thinking sound disabled")
             pass
-        self.state.save_preferences()
+        self.state.preferences.save(self.state.preferences_path)
 
     def _set_button_controls_locked(self, new_state: bool) -> None:
         self.state.button_controls_locked = bool(new_state)
         self.state.preferences.button_controls_locked = 1 if self.state.button_controls_locked else 0
-        self.state.save_preferences()
+        self.state.preferences.save(self.state.preferences_path)
 
         if self.state.button_controls_locked:
             _LOGGER.debug("On-board button controls locked")
@@ -529,7 +529,7 @@ class VoiceSatelliteProtocol(APIServer):
     def _set_sensitivity_1(self, new_value: float) -> None:
         self.state.wake_word_1_threshold = float(new_value)
         self.state.preferences.wake_word_1_sensitivity = float(new_value)
-        self.state.save_preferences()
+        self.state.preferences.save(self.state.preferences_path)
         _LOGGER.debug("Wake Word 1 Sensitivity value set to: %s", new_value)
         # Sync entity state
         if self.state.sensitivity_1_number_entity is not None:
@@ -538,7 +538,7 @@ class VoiceSatelliteProtocol(APIServer):
     def _set_sensitivity_2(self, new_value: float) -> None:
         self.state.wake_word_2_threshold = float(new_value)
         self.state.preferences.wake_word_2_sensitivity = float(new_value)
-        self.state.save_preferences()
+        self.state.preferences.save(self.state.preferences_path)
         _LOGGER.debug("Wake Word 2 Sensitivity value set to: %s", new_value)
         # Sync entity state
         if self.state.sensitivity_2_number_entity is not None:
@@ -547,7 +547,7 @@ class VoiceSatelliteProtocol(APIServer):
     def _set_stop_sensitivity(self, new_value: float) -> None:
         self.state.stop_word_threshold = float(new_value)
         self.state.preferences.stop_word_sensitivity = float(new_value)
-        self.state.save_preferences()
+        self.state.preferences.save(self.state.preferences_path)
         _LOGGER.debug("Stop Word Sensitivity value set to: %s", new_value)
         # Sync entity state
         if self.state.stop_sensitivity_number_entity is not None:
@@ -889,7 +889,7 @@ class VoiceSatelliteProtocol(APIServer):
             _LOGGER.debug("Wake word positions: [0]=%s, [1]=%s", new_wake_words[0], new_wake_words[1])
 
             self.state.preferences.active_wake_words = new_wake_words
-            self.state.save_preferences()
+            self.state.preferences.save(self.state.preferences_path)
             self.state.wake_words_changed = True
 
     # ------------------------------------------------------------------
@@ -910,6 +910,11 @@ class VoiceSatelliteProtocol(APIServer):
     # ------------------------------------------------------------------
     # Wake word / stop
     # ------------------------------------------------------------------
+
+    @property
+    def pipeline_active(self) -> bool:
+        """Whether a voice pipeline is running, in which case wake words are ignored."""
+        return self._pipeline_active
 
     def wakeup(self, wake_word: Union[MicroWakeWord, OpenWakeWord], detection: Optional[DetectionResult] = None) -> None:
         """

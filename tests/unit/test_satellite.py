@@ -668,3 +668,14 @@ class TestSetConfiguration:
 
         assert list(sat.state.wake_words) == ["okay_nabu"]
         assert sat.state.active_wake_words == set()
+
+
+class TestPipelineActiveProperty:
+    def test_reflects_internal_flag(self, tmp_path):
+        satellite = make_satellite(tmp_path)
+
+        satellite._pipeline_active = False
+        assert satellite.pipeline_active is False
+
+        satellite._pipeline_active = True
+        assert satellite.pipeline_active is True
