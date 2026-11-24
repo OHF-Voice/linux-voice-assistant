@@ -2,12 +2,6 @@
 
 What users have to change when updating. Entries are added automatically when a pull request labelled `breaking-change` is merged, newest first, and grouped under the release that shipped them.
 
-## Unreleased
-
-### #587 Show the Mute switch under Controls in Home Assistant
-
-The Mute switch is announced in Home Assistant under "Controls" instead of "Configuration" (entity keys, names and object ids are unchanged). Dashboards or automations that select entities by entity category have to be adjusted. This was reverted in #588 before any release, so no action is needed.
-
 ## v1.1.16 (2026-10-24)
 
 ### #451 Dual audio channel enhancement
