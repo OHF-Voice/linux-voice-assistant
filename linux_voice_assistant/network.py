@@ -3,7 +3,8 @@
 Home Assistant reaches LVA over one TCP connection and finds it by the IPv4 address of the network interface, announced over mDNS.
 A Wi-Fi drop or a DHCP renewal breaks both: the connection can stay half open without anybody noticing, and the interface can get
 another address, so the listener and the announcement point to an address nobody uses any more. This module closes dead connections
-(TCP keepalive) and, whenever a client disconnected, moves the listener and the announcement to the interface's current address.
+(TCP keepalive) and moves the listener and the announcement to the interface's current address, checked whenever a client
+disconnected and every 30 seconds as a fallback for changes that cause no disconnect.
 """
 
 import asyncio
@@ -20,6 +21,7 @@ if TYPE_CHECKING:
 
 _LOGGER = logging.getLogger(__name__)
 
+ADDRESS_CHECK_INTERVAL_SECONDS = 30.0
 RETRY_DELAY_INITIAL_SECONDS = 1.0
 RETRY_DELAY_CAP_SECONDS = 60.0
 
@@ -121,26 +123,32 @@ def read_interface_ipv4(interface: str) -> Optional[str]:
     return address if isinstance(address, str) else None
 
 
-async def refresh_address_after_disconnect(
+async def follow_interface_address(
     *,
     interface: str,
     bound_ip: str,
     client_disconnected: asyncio.Event,
     apply: Callable[[str], Awaitable[None]],
     observe: Callable[[str], Optional[str]] = read_interface_ipv4,
+    check_interval: float = ADDRESS_CHECK_INTERVAL_SECONDS,
 ) -> None:
     """
-    After every client disconnect, check the interface address and apply it if it changed. Runs until cancelled.
+    Check the interface address after every client disconnect and every ``check_interval`` seconds, and apply it if it changed. Runs until cancelled.
     :param interface: Interface the listener address was taken from.
     :param bound_ip: Address the listener is bound to at the start.
     :param client_disconnected: Set whenever a client disconnected.
     :param apply: Moves the listener and the announcement to the given address. If it raises, it is tried again with a growing delay.
     :param observe: Returns the interface's IPv4 address, or None when it has none.
+    :param check_interval: Seconds without a disconnect after which the address is checked anyway.
 
     While the interface has no address, or applying fails, the check is repeated after 1 s, 2 s, 4 s and so on up to 60 s.
     """
     while True:
-        await client_disconnected.wait()
+        try:
+            await asyncio.wait_for(client_disconnected.wait(), timeout=check_interval)
+            reason = "Client disconnected"
+        except asyncio.TimeoutError:
+            reason = "Periodic check"
         client_disconnected.clear()
         delay = 0.0
         while True:
@@ -148,9 +156,9 @@ async def refresh_address_after_disconnect(
             if observed_ip is not None:
                 new_ip = changed_address(bound_ip=bound_ip, observed_ip=observed_ip)
                 if new_ip is None:
-                    _LOGGER.debug("Client disconnected: interface %s still has %s", interface, bound_ip)
+                    _LOGGER.debug("%s: interface %s still has %s", reason, interface, bound_ip)
                     break
-                _LOGGER.info("Client disconnected: interface %s has %s now, listener is on %s", interface, new_ip, bound_ip)
+                _LOGGER.info("%s: interface %s has %s now, listener is on %s", reason, interface, new_ip, bound_ip)
                 try:
                     await apply(new_ip)
                     bound_ip = new_ip

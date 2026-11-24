@@ -62,7 +62,7 @@ flowchart LR
 Notes:
 
 - A connection that goes silent without being closed (for example after a Wi-Fi drop) is ended by TCP keepalive after 10 s: probes start after 4 s without traffic, and the connection is dropped after 3 unanswered probes (2 s apart) or 10 s of unacknowledged data. This is fixed, there is no option for it.
-- Whenever a Home Assistant client disconnects, LVA reads the IPv4 address of the network interface again. If it changed, the ESPHome listener moves and the new address is announced over mDNS. See [Connection to Home Assistant](behavior.md#connection-to-home-assistant).
+- Whenever a Home Assistant client disconnects, and every 30 s as a fallback, LVA reads the IPv4 address of the network interface again. If it changed, the ESPHome listener moves and the new address is announced over mDNS. See [Connection to Home Assistant](behavior.md#connection-to-home-assistant).
 - The ESPHome API connection is opened by **Home Assistant**, so an inbound rule on the LVA host for `6053` is needed. LVA itself opens no outgoing connection for it.
 - The media URLs are chosen by Home Assistant (internal/external URL setting). LVA must be able to reach exactly that address, otherwise the connection works but replies and music stay silent. Music can also point to other servers, so the target port is not always the Home Assistant port.
 - Without mDNS (different VLAN, multicast blocked, or `--enable-zeroconf 0`), add the device manually in Home Assistant with the LVA host's IP address and port `6053`.
@@ -187,7 +187,7 @@ The full protocol, all event and command names and examples are in [peripheral_a
 4. Start the audio thread.
 5. Register the mDNS service (skipped with `--enable-zeroconf 0`).
 6. Start the peripheral API, send the `zeroconf` event (`getting_started`) and wait `--peripheral-startup-wait` seconds.
-7. Start serving the ESPHome API. From now on every client disconnect checks the interface address (see above).
+7. Start serving the ESPHome API. From now on every client disconnect and a 30 s timer check the interface address (see above).
 
 ## Threads
 

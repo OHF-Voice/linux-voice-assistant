@@ -20,7 +20,7 @@ from pyopen_wakeword import OpenWakeWord, OpenWakeWordFeatures
 from .api_server import create_encryption_key_file, load_encryption_key_file
 from .models import Preferences, ServerState, WakeWordType, initial_stop_word_threshold
 from .mpv_player import MpvMediaPlayer
-from .network import EsphomeEndpoint, refresh_address_after_disconnect
+from .network import EsphomeEndpoint, follow_interface_address
 from .peripheral_api import LVAEvent, PeripheralAPIServer
 from .satellite import VoiceSatelliteProtocol
 from .stop_word import process_stop_word
@@ -700,7 +700,7 @@ async def main() -> None:
     try:
         _LOGGER.info("Server started (host=%s, port=%s)", host_ip_address, args.port)
         if network_interface and not args.host:
-            await refresh_address_after_disconnect(
+            await follow_interface_address(
                 interface=network_interface,
                 bound_ip=host_ip_address,
                 client_disconnected=state.client_disconnected,

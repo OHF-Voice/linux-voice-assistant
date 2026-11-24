@@ -13,10 +13,10 @@ from linux_voice_assistant.network import (
     KeepaliveSettings,
     apply_keepalive,
     changed_address,
+    follow_interface_address,
     keepalive_socket_options,
     next_retry_delay,
     read_interface_ipv4,
-    refresh_address_after_disconnect,
 )
 
 SETTINGS = KeepaliveSettings(idle_seconds=7, interval_seconds=3, probe_count=2, user_timeout_ms=15_000)
@@ -135,11 +135,11 @@ async def run_refresh(observations, apply, *, sleep_calls=None, disconnects=1):
         await real_sleep(0)
 
     with patch("linux_voice_assistant.network.asyncio.sleep", no_wait):
-        task = asyncio.create_task(refresh_address_after_disconnect(interface="wlan0", bound_ip=BOUND, client_disconnected=client_disconnected, apply=apply, observe=observe))
+        task = asyncio.create_task(follow_interface_address(interface="wlan0", bound_ip=BOUND, client_disconnected=client_disconnected, apply=apply, observe=observe))
         for _ in range(disconnects):
             client_disconnected.set()
-            await real_sleep(0)
-            await real_sleep(0)
+            for _ in range(5):
+                await real_sleep(0)
         await asyncio.wait_for(finished.wait(), 1)
         for _ in range(10):
             await real_sleep(0)
@@ -147,7 +147,7 @@ async def run_refresh(observations, apply, *, sleep_calls=None, disconnects=1):
         await asyncio.gather(task, return_exceptions=True)
 
 
-class TestRefreshAddressAfterDisconnect:
+class TestFollowInterfaceAddress:
     async def test_applies_new_address(self):
         apply = AsyncMock()
         await run_refresh([OTHER, OTHER], apply)
@@ -158,11 +158,31 @@ class TestRefreshAddressAfterDisconnect:
         with caplog.at_level(logging.DEBUG, logger="linux_voice_assistant.network"):
             await run_refresh([BOUND, BOUND], apply)
         apply.assert_not_awaited()
-        assert "interface wlan0 still has 192.168.1.10" in caplog.text
+        assert "Client disconnected: interface wlan0 still has 192.168.1.10" in caplog.text
 
-    async def test_nothing_happens_without_a_disconnect(self):
+    async def test_checks_periodically_without_a_disconnect(self, caplog):
         apply = AsyncMock()
-        task = asyncio.create_task(refresh_address_after_disconnect(interface="wlan0", bound_ip=BOUND, client_disconnected=asyncio.Event(), apply=apply, observe=lambda _i: OTHER))
+        task = asyncio.create_task(follow_interface_address(interface="wlan0", bound_ip=BOUND, client_disconnected=asyncio.Event(), apply=apply, observe=lambda _i: OTHER, check_interval=0.01))
+        with caplog.at_level(logging.INFO, logger="linux_voice_assistant.network"):
+            await asyncio.sleep(0.1)
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+        apply.assert_awaited_once_with(OTHER)
+        assert "Periodic check: interface wlan0 has 192.168.1.20 now, listener is on 192.168.1.10" in caplog.text
+
+    async def test_periodic_check_with_unchanged_address_does_nothing(self, caplog):
+        apply = AsyncMock()
+        task = asyncio.create_task(follow_interface_address(interface="wlan0", bound_ip=BOUND, client_disconnected=asyncio.Event(), apply=apply, observe=lambda _i: BOUND, check_interval=0.01))
+        with caplog.at_level(logging.DEBUG, logger="linux_voice_assistant.network"):
+            await asyncio.sleep(0.1)
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+        apply.assert_not_awaited()
+        assert "Periodic check: interface wlan0 still has 192.168.1.10" in caplog.text
+
+    async def test_does_not_check_before_the_interval_without_a_disconnect(self):
+        apply = AsyncMock()
+        task = asyncio.create_task(follow_interface_address(interface="wlan0", bound_ip=BOUND, client_disconnected=asyncio.Event(), apply=apply, observe=lambda _i: OTHER))
         await asyncio.sleep(0.01)
         task.cancel()
         await asyncio.gather(task, return_exceptions=True)
