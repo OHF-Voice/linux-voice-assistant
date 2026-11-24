@@ -299,5 +299,5 @@ class TestWarnAboutRemovedOptions:
 
         with caplog.at_level("WARNING"):
             warn_about_removed_options(None, "/app/local")
-        assert "--download-dir (DOWNLOAD_DIR) '/app/local' is ignored" in caplog.text
+        assert "--download-dir '/app/local' is ignored" in caplog.text
         assert "--wake-word-dir" not in caplog.text

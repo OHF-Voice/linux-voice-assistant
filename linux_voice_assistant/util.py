@@ -136,4 +136,4 @@ def warn_about_removed_options(wake_word_dir: Optional[str], download_dir: Optio
         )
 
     if download_dir is not None:
-        _LOGGER.warning("--download-dir (DOWNLOAD_DIR) '%s' is ignored. Downloaded wake words are stored in <wake word root>/downloaded", download_dir)
+        _LOGGER.warning("--download-dir '%s' is ignored. Downloaded wake words are stored in <wake word root>/downloaded", download_dir)
