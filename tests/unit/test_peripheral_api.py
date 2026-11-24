@@ -516,7 +516,7 @@ class TestDispatchStopTimerRinging:
         assert satellite._timer_finished is False  # pylint: disable=protected-access
         assert state.stop_word.id not in state.active_wake_words
         state.tts_player.stop.assert_called_once()
-        satellite.unduck.assert_called_once()
+        satellite.unduck.assert_called_once_with(owner="timer")
 
     @pytest.mark.asyncio
     async def test_noop_when_not_ringing(self, tmp_path):

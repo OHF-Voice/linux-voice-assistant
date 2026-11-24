@@ -1,8 +1,9 @@
 """Unit tests for VoiceSatelliteProtocol logic."""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import pytest
+from aioesphomeapi.api_pb2 import VoiceAssistantAnnounceRequest  # type: ignore[attr-defined]  # pylint: disable=no-name-in-module
 
 from linux_voice_assistant.models import DetectionResult
 from linux_voice_assistant.peripheral_api import LVAEvent
@@ -379,12 +380,102 @@ class TestDuckUnduck:
     def test_duck_calls_music_player_duck(self, tmp_path):
         sat = make_satellite(tmp_path)
         sat.duck()
-        sat.state.music_player.duck.assert_called_once()
+        sat.state.music_player.duck.assert_called_once_with(owner="conversation")
 
     def test_unduck_calls_music_player_unduck(self, tmp_path):
         sat = make_satellite(tmp_path)
         sat.unduck()
-        sat.state.music_player.unduck.assert_called_once()
+        sat.state.music_player.unduck.assert_called_once_with(owner="conversation")
+
+    def test_duck_passes_owner(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        sat.duck(owner="timer")
+        sat.unduck(owner="timer")
+        sat.state.music_player.duck.assert_called_once_with(owner="timer")
+        sat.state.music_player.unduck.assert_called_once_with(owner="timer")
+
+
+class TestDuckOwnersInSatellite:
+    def test_timer_finished_ducks_for_timer(self, tmp_path):
+        from aioesphomeapi.model import VoiceAssistantTimerEventType
+
+        sat = make_satellite(tmp_path)
+        sat.state.peripheral_api = MagicMock()
+        sat.handle_timer_event(VoiceAssistantTimerEventType.VOICE_ASSISTANT_TIMER_FINISHED, _timer_msg())
+        sat.state.music_player.duck.assert_called_once_with(owner="timer")
+
+    def test_stop_while_ringing_unducks_timer_only(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        sat._timer_finished = True
+        sat.stop()
+        sat.state.music_player.unduck.assert_called_once_with(owner="timer")
+
+    def test_wakeup_while_ringing_hands_ducking_to_conversation(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        sat._timer_finished = True
+        sat.state.music_player.reset_mock()
+        sat.wakeup(MagicMock(wake_word="Hey Jarvis"))
+
+        assert sat.state.music_player.mock_calls == [call.duck(owner="conversation"), call.unduck(owner="timer")]
+
+    def test_button_while_ringing_hands_ducking_to_conversation(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        sat.state.wake_words = {"okay_nabu": MagicMock()}
+        sat.state.active_wake_words = {"okay_nabu"}
+        sat._timer_finished = True
+        sat.state.music_player.reset_mock()
+        sat.start_listening()
+
+        assert sat.state.music_player.mock_calls == [call.duck(owner="conversation"), call.unduck(owner="timer")]
+
+    def test_wakeup_without_ringing_timer_does_not_unduck_timer(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        sat.state.music_player.reset_mock()
+        sat.wakeup(MagicMock(wake_word="Hey Jarvis"))
+
+        assert sat.state.music_player.mock_calls == [call.duck(owner="conversation")]
+
+    def test_button_without_ringing_timer_does_not_unduck_timer(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        sat.state.wake_words = {"okay_nabu": MagicMock()}
+        sat.state.active_wake_words = {"okay_nabu"}
+        sat.state.music_player.reset_mock()
+        sat.start_listening()
+
+        assert sat.state.music_player.mock_calls == [call.duck(owner="conversation")]
+
+    def test_announcement_ducks_for_announce(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        list(sat.handle_message(VoiceAssistantAnnounceRequest(media_id="http://x/a.mp3")))
+        sat.state.music_player.duck.assert_called_once_with(owner="announce")
+
+    def test_announcement_end_unducks_announce_and_conversation(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        list(sat.handle_message(VoiceAssistantAnnounceRequest(media_id="http://x/a.mp3")))
+        sat.state.tts_player.play.call_args.kwargs["done_callback"]()
+
+        assert call.unduck(owner="announce") in sat.state.music_player.mock_calls
+        assert sat._announce_ducking is False
+
+    def test_announcement_with_start_conversation_hands_over_without_gap(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        list(sat.handle_message(VoiceAssistantAnnounceRequest(media_id="http://x/a.mp3", start_conversation=True)))
+        sat.state.music_player.reset_mock()
+        with patch("linux_voice_assistant.satellite.threading.Timer"):
+            sat.state.tts_player.play.call_args.kwargs["done_callback"]()
+
+        assert sat.state.music_player.mock_calls == [call.duck(owner="conversation"), call.unduck(owner="announce")]
+
+    def test_tts_finished_without_announcement_does_not_touch_announce_owner(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        sat._tts_finished()
+        assert call.unduck(owner="announce") not in sat.state.music_player.mock_calls
+
+    def test_last_client_lost_releases_every_owner(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        sat.connection_lost(None)
+        for owner in ("conversation", "timer", "announce"):
+            assert call.unduck(owner=owner) in sat.state.music_player.mock_calls
 
 
 # ---------------------------------------------------------------------------
