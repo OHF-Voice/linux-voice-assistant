@@ -1234,7 +1234,7 @@ class VoiceSatelliteProtocol(APIServer):
     # ------------------------------------------------------------------
 
     def _download_external_wake_word(self, external_wake_word: VoiceAssistantExternalWakeWord) -> Optional[AvailableWakeWord]:
-        eww_dir = self.state.download_dir / "external_wake_words"
+        eww_dir = self.state.wake_word_root / "downloaded" / "openwakeword"
         eww_dir.mkdir(parents=True, exist_ok=True)
 
         config_path = eww_dir / f"{external_wake_word.id}.json"

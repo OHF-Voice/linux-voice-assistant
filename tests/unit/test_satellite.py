@@ -612,7 +612,7 @@ class TestDownloadExternalWakeWord:
 
         sat = make_satellite(tmp_path)
         model_bytes = b"tflite-model"
-        eww_dir = sat.state.download_dir / "external_wake_words"
+        eww_dir = sat.state.wake_word_root / "downloaded" / "openwakeword"
         eww_dir.mkdir(parents=True)
         (eww_dir / "custom.json").write_text("{}")
         (eww_dir / "custom.tflite").write_bytes(model_bytes)

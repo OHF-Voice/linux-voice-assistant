@@ -104,10 +104,6 @@ if [ -n "${STOP_MODEL}" ]; then
   EXTRA_ARGS+=( "--stop-model" "$STOP_MODEL" )
 fi
 
-if [ -n "${DOWNLOAD_DIR}" ]; then
-  EXTRA_ARGS+=( "--download-dir" "$DOWNLOAD_DIR" )
-fi
-
 if [ -n "${REFACTORY_SECONDS}" ]; then
   EXTRA_ARGS+=( "--refractory-seconds" "$REFACTORY_SECONDS" )
 fi

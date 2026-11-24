@@ -155,7 +155,7 @@ class ServerState:
     button_long_press_sound: str
     preferences: Preferences
     preferences_path: Path
-    download_dir: Path
+    wake_word_root: Path
     continue_conversation_delay: float = 0.5  # seconds to wait after TTS before opening mic
     # ESPHome API encryption key (32 bytes); None serves plaintext only.
     noise_psk: Optional[bytes] = None

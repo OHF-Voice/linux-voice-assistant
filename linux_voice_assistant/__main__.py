@@ -18,7 +18,7 @@ from pymicro_wakeword import MicroWakeWordFeatures
 from pyopen_wakeword import OpenWakeWord, OpenWakeWordFeatures
 
 from .api_server import create_encryption_key_file, load_encryption_key_file
-from .models import Preferences, ServerState, WakeWordType, initial_stop_word_threshold
+from .models import Preferences, ServerState, initial_stop_word_threshold
 from .mpv_player import MpvMediaPlayer
 from .peripheral_api import LVAEvent, PeripheralAPIServer
 from .satellite import VoiceSatelliteProtocol
@@ -101,9 +101,8 @@ async def main() -> None:
     )
     parser.add_argument(
         "--wake-word-dir",
-        default=[_WAKEWORDS_DIR],
-        action="append",
-        help="Directory with wake word models (.tflite) and configuration (.json)",
+        default=_WAKEWORDS_DIR,
+        help="Root directory of the wake word layout: <origin>/<engine> with origin internal, downloaded or custom and engine microwakeword or openwakeword",
     )
     parser.add_argument(
         "--wake-model",
@@ -119,11 +118,6 @@ async def main() -> None:
         "--stop-model",
         default="stop",
         help="File name of the stop model",
-    )
-    parser.add_argument(
-        "--download-dir",
-        default=_REPO_DIR / "local",
-        help="Directory to download custom wake word models to",
     )
     parser.add_argument(
         "--refractory-seconds",
@@ -395,10 +389,6 @@ async def main() -> None:
     esphome_version = get_esphome_version()
     _LOGGER.info("ESPHome api version: %s", esphome_version)
 
-    # Resolve download dir
-    args.download_dir = Path(args.download_dir)
-    args.download_dir.mkdir(parents=True, exist_ok=True)
-
     # Resolve microphone
     if args.audio_input_device is not None:
         try:
@@ -427,27 +417,12 @@ async def main() -> None:
             sys.exit(1)
 
     # Load available wake words
-    wake_word_dirs = [Path(ww_dir) for ww_dir in args.wake_word_dir]
+    wake_word_root = Path(args.wake_word_dir)
+    # Lowest priority first: a wake word id found in a later directory replaces the same id found earlier
+    wake_word_dirs = [wake_word_root / origin / engine for origin in ("internal", "downloaded", "custom") for engine in ("microwakeword", "openwakeword")]
+    for wake_word_dir in wake_word_dirs:
+        wake_word_dir.mkdir(parents=True, exist_ok=True)
 
-    # If the operator explicitly pointed --wake-word-dir (or the WAKE_WORD_DIR
-    # env var) at the openWakeWord subdirectory, prefer resolving --wake-model
-    # to an openWakeWord model of the same name instead of a same-named
-    # microWakeWord one. Checked before the automatic dirs below are appended,
-    # since those always include the openWakeWord path and would otherwise
-    # make every configuration look like an openWakeWord preference.
-    preferred_wake_word_type = WakeWordType.OPEN_WAKE_WORD if any("openwakeword" in str(ww_dir).lower() for ww_dir in wake_word_dirs) else None
-
-    # openWakeWord models ship in their own subdirectory under the default
-    # wakewords dir. find_available_wake_words() only globs the top level of
-    # each directory it's given, so this must be added explicitly or the OWW
-    # models never get discovered (and never show up in the HA dropdown).
-    # Appended after the user-specified dirs so OWW entries are inserted
-    # (and therefore displayed) after the microWakeWord ones.
-    oww_dir = _WAKEWORDS_DIR / "openWakeWord"
-    if oww_dir not in wake_word_dirs:
-        wake_word_dirs.append(oww_dir)
-
-    wake_word_dirs.append(args.download_dir / "external_wake_words")
     available_wake_words = find_available_wake_words(wake_word_dirs, args.stop_model)
 
     # Load preferences
@@ -504,11 +479,10 @@ async def main() -> None:
         [word for word in preferences.active_wake_words if word is not None],
         first_default_wake_word_id=args.wake_model,
         second_default_wake_word_id=args.wake_model_2,
-        preferred_type=preferred_wake_word_type,
     )
 
     # TODO: allow openWakeWord for "stop"
-    stop_model = load_stop_model(wake_word_dirs, args.stop_model)
+    stop_model = load_stop_model(list(reversed(wake_word_dirs)), args.stop_model)
     assert stop_model is not None
 
     state = ServerState(
@@ -542,7 +516,7 @@ async def main() -> None:
         refractory_seconds=args.refractory_seconds,
         continue_conversation_delay=args.continue_conversation_delay,
         output_only=args.output_only,
-        download_dir=args.download_dir,
+        wake_word_root=wake_word_root,
         volume=initial_volume,
         stop_word_threshold=initial_threshold,
         button_controls_locked=initial_button_controls_locked,

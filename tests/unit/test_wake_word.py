@@ -179,17 +179,6 @@ class TestLoadWakeModelsSecondDefault:
         _, slots, _ = self._load(available, "hey_jarvis")
         assert slots == ["okay_nabu", "hey_jarvis_v0.1"]
 
-    def test_prefers_open_wake_word_type_when_given(self):
-        from linux_voice_assistant.models import WakeWordType
-
-        available = {
-            "okay_nabu": _make_available_word("okay_nabu"),
-            "alexa": _make_available_word("alexa", WakeWordType.MICRO_WAKE_WORD),
-            "alexa_v0.1": _make_available_word("alexa_v0.1", WakeWordType.OPEN_WAKE_WORD),
-        }
-        _, slots, _ = self._load(available, "alexa", preferred_type=WakeWordType.OPEN_WAKE_WORD)
-        assert slots == ["okay_nabu", "alexa_v0.1"]
-
     def test_unknown_id_is_skipped_with_warning(self, caplog):
         with caplog.at_level("WARNING"):
             _, slots, _ = self._load({"okay_nabu": _make_available_word("okay_nabu")}, "nope")
