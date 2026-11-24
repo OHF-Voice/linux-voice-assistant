@@ -189,7 +189,8 @@ Environment=PREFERENCES_FILE="/home/pi/linux-voice-assistant/preferences.json"
 # Environment=AUDIO_INPUT_CHANNELS=1
 # Environment=ENABLE_THINKING_SOUND="1"
 # Environment=WAKE_WORD_DIR="app/wakewords"
-# Environment=WAKE-MODEL="okay_nabu"
+# Environment=WAKE_MODEL="okay_nabu"
+# Environment=WAKE_MODEL_2="hey_jarvis"
 # Environment=STOP_MODEL="stop"
 # Environment=DOWNLOAD_DIR="/home/pi/linux-voice-assistant/local"
 # Environment=TIMER_MAX_RING_SECONDS="900"
@@ -295,6 +296,7 @@ The following variables can be configured in the `.env` or in the service file:
 | `ENABLE_THINKING_SOUND` | false | Set to "1" to enable thinking sound |
 | `WAKE_WORD_DIR` | `app/wakewords` | Path to the wake word directory |
 | `WAKE_MODEL` | `okay_nabu` | Wake word model to use |
+| `WAKE_MODEL_2` | empty | Wake word model for the second slot (empty = no second wake word). Used only when no wake words are stored yet, see [Custom Wake Word](#custom-wake-word) |
 | `STOP_MODEL` | `stop` | Stop model to use |
 | `DOWNLOAD_DIR` | `/app/local` | Directory to download custom wake word models to |
 | `TIMER_MAX_RING_SECONDS` | `900` | Seconds after which the timer stops ringing |
@@ -390,6 +392,8 @@ The `stop` wake word is used to stop the current process (response, announcement
 If you want to use your own wakewords, you can add them to the `wakewords/custom` aka `/var/lib/docker/volumes/lva_wakeword_custom/_data` directory and reference them in the `.env` file.
 
 Change the default wake word with `WAKE_MODEL <id>` where `<id>` is the name of a model in the `wakewords` directory. For example, `WAKE_MODEL hey_jarvis` will load `app/wakewords/hey_jarvis.tflite` by default.
+
+Set `WAKE_MODEL_2 <id>` to also activate a second wake word by default. It is looked up like `WAKE_MODEL`; if it is empty, unknown or the same as the first one, only the first wake word is active. Both defaults apply only while no wake words are stored yet (first start, or after the preferences file was removed). After that, the wake words chosen in Home Assistant are kept and `WAKE_MODEL` / `WAKE_MODEL_2` are ignored.
 
 You can include more wakeword directories by adding `WAKE_WORD_DIR <DIR>` where `<DIR>` contains either [microWakeWord][] or [openWakeWord][] config files and `.tflite` models. For example, `WAKE_WORD_DIR app/wakewords/openWakeWord` will include the default wake words for openWakeWord.
 

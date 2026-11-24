@@ -64,6 +64,7 @@ Details:
 - **Starting by button.** A peripheral button can start listening without a wake word. Instead of the wake sound, the start-listening sound (`--start-listening-sound`) plays; everything else is identical. This also silences a ringing timer.
 - **Errors.** If the pipeline reports an error, peripherals receive a `pipeline_error` event. See [peripheral_api.md](peripheral_api.md).
 - **Two wake words.** Home Assistant can activate up to two wake words at once. Each has its own sensitivity setting (*Wake Word 1/2 Sensitivity*). A word keeps its slot while the other one changes, and always uses the sensitivity of its own slot, also when it is the only active word.
+- **Default wake words.** `--wake-model` fills the first slot and `--wake-model-2` the second one, but only while no wake words are stored yet (first start, or after the preferences file was removed). Once the active wake words are stored, the choice made in Home Assistant is kept and both options are ignored. Without `--wake-model-2` (the default), only one wake word is active. If it is unknown, fails to load or is the same as the first wake word, it is skipped with a log message and the assistant starts with one wake word.
 
 ---
 
