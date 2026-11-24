@@ -103,14 +103,14 @@ LVA identifies a wake word in two ways, and Home Assistant uses them for differe
 
 | Name | Source | Sent where | Used for |
 |------|--------|------------|----------|
-| `id` | Model file name (for example `okay_nabu`) | `VoiceAssistantConfigurationResponse` (`available_wake_words`, `active_wake_words`), `VoiceAssistantSetConfiguration` | Choosing which model is active in which slot |
-| `wake_word` (the phrase) | Field `wake_word` in the model JSON (for example `Okay Nabu`) | `VoiceAssistantConfigurationResponse` (`available_wake_words`) and `VoiceAssistantRequest(wake_word_phrase)` | Naming the word that started a run |
+| `id` | Name of the wake word: origin, engine and phrase (for example `Internal - MWW - Okay Nabu`) | `VoiceAssistantConfigurationResponse` (`available_wake_words`, `active_wake_words`), `VoiceAssistantSetConfiguration` | Choosing which model is active in which slot |
+| `wake_word` (the phrase) | The name of the wake word, the same text as the `id` | `VoiceAssistantConfigurationResponse` (`available_wake_words`) and `VoiceAssistantRequest(wake_word_phrase)` | Naming the word that started a run |
 
-- **Only the phrase starts a run.** LVA sends `wake_word_phrase` in `VoiceAssistantRequest`. It does not send the model `id` or the engine (microWakeWord or openWakeWord) in the request, and it does not send the optional `wake_word_audio` field.
+- **Only the phrase starts a run.** LVA sends `wake_word_phrase` in `VoiceAssistantRequest`. It is the name of the wake word, for example `Internal - MWW - Okay Nabu`, the same text as in the wake word select. LVA does not send the optional `wake_word_audio` field.
 - **Devices that send `wake_word_audio` instead (for example Voice PE).** They report only a model `id`. Home Assistant looks it up in `available_wake_words` and uses its `wake_word` field as the phrase, with the raw `id` as fallback. This path is not used by LVA.
 - **Pipeline selection.** Home Assistant compares the phrase with the state of each wake word select entity of the satellite and runs the pipeline of the first match. An empty phrase (button press, announcement) runs the first pipeline. A follow-up conversation sends the phrase of the original wake word again.
-- **Wake word verification by an app.** For a run with a phrase, Home Assistant passes it as `wake_word_phrase` in the `run-start` message to the Voice Support app. The app compares it with its own wake word ids after normalising both (lower case, `-` and spaces become `_`, other special characters are dropped). The match is by name only. The engine is not part of it.
-- **Consequence for model files.** The `wake_word` value of a model JSON decides whether such an app recognises the word. The file name does not.
+- **Wake word verification by an app.** For a run with a phrase, Home Assistant passes it as `wake_word_phrase` in the `run-start` message to the Voice Support app. The app compares it with its own wake word ids after normalising both (lower case, `-` and spaces become `_`, other special characters are dropped). Its comparison is exact, so it does not recognise a name with origin and engine in front of the phrase, unless the app is changed to accept text around the wake word.
+- **Why the phrase is the name.** Home Assistant builds the wake word select from the `wake_word` field and chooses the pipeline by comparing the phrase with the select, so both have to be the same text. A plain phrase in the select would show the same entry for the microWakeWord and the openWakeWord model of one phrase, and Home Assistant offers only one of them.
 
 This description comes from reading the source of the Home Assistant `esphome` and `voice_support` integrations and of the Voice Support app. It was not tested against a running Voice Support app.
 
