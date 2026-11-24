@@ -66,6 +66,7 @@ from .models import AvailableWakeWord, DetectionResult, ServerState, WakeWordTyp
 from .peripheral_api import LVAEvent
 from .util import call_all
 from .wake_word import find_matching_wake_word_id, wake_word_display_name, wake_word_ids_for_selections, wake_word_selections_for_ids
+from .wake_word_detection import has_active_wake_word
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -993,6 +994,10 @@ class VoiceSatelliteProtocol(APIServer):
         button-press sound instead of the wake-word chime. Also stops ringing timer.
         """
         if self.state.muted:
+            return
+
+        if not has_active_wake_word(self.state):
+            _LOGGER.debug("Ignoring start_listening - no wake word is active")
             return
 
         if self._pipeline_active:

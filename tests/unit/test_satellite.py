@@ -376,6 +376,30 @@ class TestWakeWordPhraseSent:
         assert sat._wake_word_phrase == "Hey Jarvis"
 
 
+class TestStartListening:
+    def test_plays_the_start_listening_sound_with_an_active_wake_word(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        sat.state.wake_words = {"Internal - MWW - Hey Jarvis": MagicMock()}
+        sat.state.active_wake_words = {"Internal - MWW - Hey Jarvis"}
+
+        sat.start_listening()
+
+        sat.state.tts_player.play.assert_called_once()
+        assert sat._pipeline_active is True
+
+    def test_is_ignored_without_an_active_wake_word(self, tmp_path, caplog):
+        sat = make_satellite(tmp_path)
+        sat.state.wake_words = {"Internal - MWW - Hey Jarvis": MagicMock()}
+        sat.state.active_wake_words = set()
+
+        with caplog.at_level("DEBUG"):
+            sat.start_listening()
+
+        sat.state.tts_player.play.assert_not_called()
+        assert sat._pipeline_active is False
+        assert "Ignoring start_listening - no wake word is active" in caplog.text
+
+
 class TestContinueConversation:
     def _follow_up_request(self, sat):
         sat.send_messages = MagicMock()
@@ -410,6 +434,8 @@ class TestContinueConversation:
 
     def test_follow_up_after_button_press_has_no_phrase(self, tmp_path):
         sat = make_satellite(tmp_path)
+        sat.state.wake_words = {"Internal - MWW - Hey Jarvis": MagicMock()}
+        sat.state.active_wake_words = {"Internal - MWW - Hey Jarvis"}
         sat._wake_word_phrase = "Hey Jarvis"
         sat.start_listening()
         sat._pipeline_active = False
