@@ -762,6 +762,56 @@ class TestDispatchRegistration:
 
 
 # ---------------------------------------------------------------------------
+# _schedule_ha_reconnect_for_late_entity()
+# ---------------------------------------------------------------------------
+
+
+class TestLateEntityReconnect:
+    @staticmethod
+    def make_connected_server(tmp_path):
+        state = make_state(tmp_path)
+        state.connected = True
+        state.satellite = MagicMock()
+        server = make_server(state)
+        server._loop = asyncio.get_running_loop()  # pylint: disable=protected-access
+        server.LATE_ENTITY_RECONNECT_DEBOUNCE_S = 0
+        return server, state.satellite._transport
+
+    @staticmethod
+    async def schedule_at(server, monotonic_now: float) -> None:
+        with patch("linux_voice_assistant.peripheral_api.time") as mock_time:
+            mock_time.monotonic.return_value = monotonic_now
+            server._schedule_ha_reconnect_for_late_entity("light", "leds")  # pylint: disable=protected-access
+            await server._pending_entity_reconnect_task  # pylint: disable=protected-access
+
+    @pytest.mark.asyncio
+    async def test_reconnects_within_first_cooldown_after_boot(self, tmp_path):
+        server, transport = self.make_connected_server(tmp_path)
+
+        await self.schedule_at(server, 5.0)
+
+        transport.close.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_second_reconnect_within_cooldown_is_skipped(self, tmp_path):
+        server, transport = self.make_connected_server(tmp_path)
+
+        await self.schedule_at(server, 5.0)
+        await self.schedule_at(server, 30.0)
+
+        transport.close.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_reconnects_again_after_cooldown(self, tmp_path):
+        server, transport = self.make_connected_server(tmp_path)
+
+        await self.schedule_at(server, 5.0)
+        await self.schedule_at(server, 5.0 + PeripheralAPIServer.LATE_ENTITY_RECONNECT_COOLDOWN_S)
+
+        assert transport.close.call_count == 2
+
+
+# ---------------------------------------------------------------------------
 # emit_event()
 # ---------------------------------------------------------------------------
 
