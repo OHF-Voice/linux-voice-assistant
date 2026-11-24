@@ -1,9 +1,14 @@
 # mpv_player.py
 import logging
-from typing import Callable, List, Optional, Union
+import threading
+from typing import Callable, List, Optional, Set, Union
 
 from .player.libmpv import LibMpvPlayer
 from .player.state import PlayerState
+
+DUCK_OWNER_CONVERSATION = "conversation"
+DUCK_OWNER_TIMER = "timer"
+DUCK_OWNER_ANNOUNCE = "announce"
 
 
 class MpvMediaPlayer:
@@ -19,6 +24,8 @@ class MpvMediaPlayer:
         self._player = LibMpvPlayer(device=device)
         self._done_callback: Optional[Callable[[], None]] = None
         self._playlist: List[str] = []
+        self._duck_lock = threading.Lock()
+        self._duck_owners: Set[str] = set()
 
         self._log.debug("MpvMediaPlayer initialized (device=%s)", device)
 
@@ -122,15 +129,26 @@ class MpvMediaPlayer:
         self._log.debug("set_volume(volume=%.2f)", volume)
         self._player.set_volume(volume)
 
-    def duck(self, factor: float = 0.5) -> None:
+    def duck(self, owner: str, factor: float = 0.5) -> None:
         """
         Temporarily reduce volume.
+        :param owner: Who asks. The volume is restored when every owner has called :meth:`unduck`.
         :param factor: Volume multiplier (0.0-1.0).
         """
-        self._log.debug("duck(factor=%.2f)", factor)
-        self._player.duck(factor)
+        with self._duck_lock:
+            self._duck_owners.add(owner)
+            self._log.debug("Duck requested by %s, factor %.2f (owners: %s)", owner, factor, sorted(self._duck_owners))
+            self._player.duck(factor)
 
-    def unduck(self) -> None:
-        """Restore volume after ducking."""
-        self._log.debug("unduck() called")
-        self._player.unduck()
+    def unduck(self, owner: str) -> None:
+        """
+        Restore volume after ducking, once no owner wants it ducked any more.
+        :param owner: The owner that called :meth:`duck`.
+        """
+        with self._duck_lock:
+            self._duck_owners.discard(owner)
+            if self._duck_owners:
+                self._log.debug("Unduck by %s, stays ducked for %s", owner, sorted(self._duck_owners))
+            else:
+                self._log.debug("Unduck by %s, no owner left", owner)
+                self._player.unduck()

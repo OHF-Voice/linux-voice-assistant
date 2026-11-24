@@ -36,7 +36,7 @@ The music player can be sent to a different sound card with `--music-output-devi
 Two rules apply everywhere:
 
 - **Music is never ended by the assistant on its own.** During a conversation it is lowered (*ducked*). During a TTS / announcement sent to the media player (for example `tts.speak` with `announce: true`) it is **paused** for the duration of the announcement and then resumed. Only an explicit *stop* from Home Assistant or a peripheral, or losing the connection to Home Assistant (see below), stops it for good.
-- **Ducking** means the music volume is reduced to **50 %** of the volume you set. When the interaction is over it returns to 100 % of your set volume.
+- **Ducking** means the music volume is reduced to **50 %** of the volume you set. When the interaction is over it returns to 100 % of your set volume. The music stays ducked as long as something still wants it ducked: a conversation, a ringing timer and a voice announcement ask for it separately, so the music returns to full volume only when all of them are over. For example, a timer that is stopped during a conversation does not end the ducking of the conversation. When the last Home Assistant client disconnects, all of them are released.
 
 ---
 
