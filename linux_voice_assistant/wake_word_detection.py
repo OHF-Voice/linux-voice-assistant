@@ -37,6 +37,28 @@ class ActiveWakeWord:
     model: Union[MicroWakeWord, OpenWakeWord]
 
 
+def wake_words_need_refresh(state: "ServerState", refreshed_before: bool) -> bool:
+    """
+    Tell whether the audio loop has to select the active wake words again.
+    :param state: Server state holding the loaded models and the changed flag.
+    :param refreshed_before: Whether the audio loop selected the active wake words at least once.
+    :return: True before the first selection and whenever the active wake words changed.
+
+    An empty selection is a valid result, for example when both wake word selects in Home Assistant are set to "No wake word".
+    It must not count as "not selected yet", otherwise the audio loop selects again for every audio chunk and pushes entity states to Home Assistant each time.
+    """
+    return (not refreshed_before) or (state.wake_words_changed and bool(state.wake_words))
+
+
+def has_active_wake_word(state: "ServerState") -> bool:
+    """
+    Tell whether at least one loaded wake word is active.
+    :param state: Server state holding the loaded models and the active ids.
+    :return: False when no wake word is selected, for example when both wake word selects in Home Assistant are set to "No wake word".
+    """
+    return any(ww_id in state.active_wake_words for ww_id in state.wake_words)
+
+
 def select_active_wake_words(state: "ServerState") -> List[ActiveWakeWord]:
     """
     Pick the loaded, active wake words and order them by slot.
@@ -54,6 +76,9 @@ def select_active_wake_words(state: "ServerState") -> List[ActiveWakeWord]:
             slots[ww_id] = next(free_slots)
 
     selected = [ActiveWakeWord(ww_id, slots[ww_id], state.wake_words[ww_id]) for ww_id in active_ids]
+    if not selected:
+        _LOGGER.debug("No wake word is active, nothing listens for a wake word until one is selected")
+
     return sorted(selected, key=lambda word: word.slot)
 
 

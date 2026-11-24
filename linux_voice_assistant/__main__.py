@@ -33,7 +33,7 @@ from .util import (
     warn_about_removed_options,
 )
 from .wake_word import find_available_wake_words, load_stop_model, load_wake_models, wake_word_ids_for_selections, wake_word_selections_for_ids
-from .wake_word_detection import ActiveWakeWord, apply_sensitivities, gate_wake_words, process_wake_words, select_active_wake_words
+from .wake_word_detection import ActiveWakeWord, apply_sensitivities, gate_wake_words, process_wake_words, select_active_wake_words, wake_words_need_refresh
 from .webrtc import WebRTCProcessor
 from .zeroconf import start_discovery
 
@@ -743,6 +743,7 @@ def process_audio(state: ServerState, mic, block_size: int):
     n_channels = state.audio_input_channels
 
     wake_words: List[ActiveWakeWord] = []
+    wake_words_refreshed = False
     micro_features: Optional[MicroWakeWordFeatures] = None
     micro_inputs: List[np.ndarray] = []
 
@@ -791,10 +792,11 @@ def process_audio(state: ServerState, mic, block_size: int):
                     continue
 
                 # WAKE WORD
-                if (not wake_words) or (state.wake_words_changed and state.wake_words):
+                if wake_words_need_refresh(state, wake_words_refreshed):
                     # Update list of wake word models to process
                     state.wake_words_changed = False
                     wake_words = select_active_wake_words(state)
+                    wake_words_refreshed = True
 
                     # TODO: Load default stop word value from json into state and preferences missing.
 
