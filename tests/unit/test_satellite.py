@@ -337,6 +337,26 @@ class TestWakeWordDetectionEvent:
         sat._emit.assert_called_once_with(LVAEvent.WAKE_WORD_DETECTED, None)
 
 
+class TestWakeWordPhraseLogging:
+    def test_streaming_start_logs_phrase(self, tmp_path, caplog):
+        sat = make_satellite(tmp_path)
+        sat.send_messages = MagicMock()
+
+        with caplog.at_level("DEBUG"):
+            sat._start_audio_streaming("Hey Jarvis")
+
+        assert "with wake_word_phrase 'Hey Jarvis'" in caplog.text
+
+    def test_streaming_after_wake_sound_logs_phrase(self, tmp_path, caplog):
+        sat = make_satellite(tmp_path)
+        sat.send_messages = MagicMock()
+
+        with caplog.at_level("DEBUG"):
+            sat._on_wakeup_sound_finished("Hey Jarvis")
+
+        assert "with wake_word_phrase 'Hey Jarvis'" in caplog.text
+
+
 class TestContinueConversation:
     def _follow_up_request(self, sat):
         sat.send_messages = MagicMock()
@@ -358,6 +378,16 @@ class TestContinueConversation:
 
         assert request.start
         assert request.wake_word_phrase == "Hey Jarvis"
+
+    def test_follow_up_logs_phrase(self, tmp_path, caplog):
+        sat = make_satellite(tmp_path)
+        sat.wakeup(MagicMock(wake_word="Hey Jarvis"))
+        sat._pipeline_active = False
+
+        with caplog.at_level("DEBUG"):
+            self._follow_up_request(sat)
+
+        assert "wake_word_phrase 'Hey Jarvis' (continued conversation)" in caplog.text
 
     def test_follow_up_after_button_press_has_no_phrase(self, tmp_path):
         sat = make_satellite(tmp_path)

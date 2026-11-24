@@ -964,20 +964,14 @@ class VoiceSatelliteProtocol(APIServer):
 
     def _start_audio_streaming(self, wake_word_phrase: str) -> None:
         """Start streaming audio during wake sound detection."""
-        _LOGGER.debug(
-            "Starting audio streaming for: %s",
-            wake_word_phrase,
-        )
+        _LOGGER.debug("Sending VoiceAssistantRequest to Home Assistant with wake_word_phrase '%s'", wake_word_phrase)
         self.send_messages([VoiceAssistantRequest(start=True, wake_word_phrase=wake_word_phrase)])
         self._is_streaming_audio = True
         self._emit(LVAEvent.LISTENING)
 
     def _on_wakeup_sound_finished(self, wake_word_phrase: str) -> None:
         """Callback invoked when the wakeup chime finishes; begin STT streaming."""
-        _LOGGER.debug(
-            "Wakeup sound finished, starting audio streaming for: %s",
-            wake_word_phrase,
-        )
+        _LOGGER.debug("Wakeup sound finished, sending VoiceAssistantRequest to Home Assistant with wake_word_phrase '%s'", wake_word_phrase)
         self.send_messages([VoiceAssistantRequest(start=True, wake_word_phrase=wake_word_phrase)])
         self._is_streaming_audio = True
         self._emit(LVAEvent.LISTENING)
@@ -1012,7 +1006,7 @@ class VoiceSatelliteProtocol(APIServer):
 
     def _on_start_listening_sound_finished(self) -> None:
         """Callback invoked when the start-listening chime finishes; begin STT streaming."""
-        _LOGGER.debug("Start-listening sound finished, starting audio streaming")
+        _LOGGER.debug("Start-listening sound finished, sending VoiceAssistantRequest to Home Assistant with an empty wake_word_phrase")
         self.send_messages([VoiceAssistantRequest(start=True, wake_word_phrase="")])
         self._is_streaming_audio = True
         self._emit(LVAEvent.LISTENING)
@@ -1073,6 +1067,7 @@ class VoiceSatelliteProtocol(APIServer):
                     self._pipeline_active = False
                     self.unduck()
                     return
+                _LOGGER.debug("Sending VoiceAssistantRequest to Home Assistant with wake_word_phrase '%s' (continued conversation)", self._wake_word_phrase)
                 self.send_messages([VoiceAssistantRequest(start=True, wake_word_phrase=self._wake_word_phrase)])
                 self._is_streaming_audio = True
                 _LOGGER.debug("Continued conversation started")
