@@ -62,6 +62,7 @@ Thread-safety rules:
 | `player/libmpv.py` | `LibMpvPlayer`: real mpv wrapper, effective volume = user × duck factor | Only an `end-file` with reason 0 (EOF) fires the callback. `stop(for_replacement=True)` drops the callback. Both mpv players have a name (`music`, `tts`) that is part of the logger name; `Volume (<reason>): set X x duck Y = Z` shows the effective volume. |
 | `webrtc.py` | `WebRTCProcessor`: 10 ms (320 byte) framing for `webrtc_noise_gain` | Can return `b""` while buffering. The audio loop then skips the chunk. |
 | `zeroconf.py` | mDNS registration | |
+| `tcp_keepalive.py` | `apply_keepalive()` on every accepted socket (called from `APIServer.connection_made`) | Fixed timings, no CLI option. Ends half-open connections after 10 s. |
 | `util.py` | `get_version()` (reads `version.txt`), `get_esphome_version()`, `call_all()`, interface/IP detection | |
 
 Two mpv players share the volume: `state.tts_player` (announcements, chimes, TTS, timer) and `state.music_player` (media, can use `--music-output-device`). The pipeline ducks only `music_player`.

@@ -1,6 +1,6 @@
 # Communication and Process Overview
 
-This document explains who talks to whom in Linux Voice Assistant (LVA), over which interface, and in which order things happen during a voice request. It is the entry point; details live in the linked documents. The code is the source of truth: [`__main__.py`](../linux_voice_assistant/__main__.py), [`api_server.py`](../linux_voice_assistant/api_server.py), [`satellite.py`](../linux_voice_assistant/satellite.py), [`peripheral_api.py`](../linux_voice_assistant/peripheral_api.py) and [`zeroconf.py`](../linux_voice_assistant/zeroconf.py).
+This document explains who talks to whom in Linux Voice Assistant (LVA), over which interface, and in which order things happen during a voice request. It is the entry point; details live in the linked documents. The code is the source of truth: [`__main__.py`](../linux_voice_assistant/__main__.py), [`api_server.py`](../linux_voice_assistant/api_server.py), [`satellite.py`](../linux_voice_assistant/satellite.py), [`peripheral_api.py`](../linux_voice_assistant/peripheral_api.py) and [`zeroconf.py`](../linux_voice_assistant/zeroconf.py) and [`tcp_keepalive.py`](../linux_voice_assistant/tcp_keepalive.py).
 
 ## Interfaces at a glance
 
@@ -61,6 +61,7 @@ flowchart LR
 
 Notes:
 
+- A connection that goes silent without being closed (for example after a Wi-Fi drop) is ended by TCP keepalive after 10 s: probes start after 4 s without traffic, and the connection is dropped after 3 unanswered probes (2 s apart) or 10 s of unacknowledged data. This is fixed, there is no option for it.
 - The ESPHome API connection is opened by **Home Assistant**, so an inbound rule on the LVA host for `6053` is needed. LVA itself opens no outgoing connection for it.
 - The media URLs are chosen by Home Assistant (internal/external URL setting). LVA must be able to reach exactly that address, otherwise the connection works but replies and music stay silent. Music can also point to other servers, so the target port is not always the Home Assistant port.
 - Without mDNS (different VLAN, multicast blocked, or `--enable-zeroconf 0`), add the device manually in Home Assistant with the LVA host's IP address and port `6053`.
