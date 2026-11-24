@@ -162,6 +162,7 @@ Existing env quirk: `REFACTORY_SECONDS` is misspelled on purpose (it's the publi
 | `docs/behavior.md` | User-visible behavior (phases, ducking, stop word, timers, announcements). Binding for code changes, see AGENTS.md |
 | `docs/configuration.md` | Every HA device-page entity, from the user's view |
 | `docs/peripheral_api.md` | Full WebSocket protocol for peripheral authors |
+| `docs/communication.md` | Overview of the ESPHome API, mDNS and peripheral WebSocket interfaces, the voice request sequence, startup order, threads |
 | `docs/audio_pipeline.md` | Mic input to HA streaming: capture, Mic Volume scalar, WebRTC, wake/stop word, `VoiceAssistantAudio` data/data2 |
 | `docs/enabling_aec.md` | Echo cancellation via PulseAudio/PipeWire |
 | `docs/debugging.md` | Audio stack / container socket troubleshooting |
