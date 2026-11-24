@@ -9,6 +9,7 @@ The process is straight-forward.
 - Ensure tests pass and linting succeeds (`./script/lint` and `./script/tests`).
 - Write docstrings in Sphinx style with `:param:` (see the Code Quality Checks section in the README).
 - Create a Pull Request against the `main` branch.
+- For a breaking change, tick "Breaking change" and fill the "Breaking change migration" section of the PR description. It is copied to `breaking_change.md` on merge and into the release notes.
 
 ## Feature suggestions
 

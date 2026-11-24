@@ -52,6 +52,16 @@ Builds images for pull requests using the PR number as tag.
 ghcr.io/ohf-voice/linux-voice-assistant:pr-<pr-number>
 ```
 
+## Breaking change log
+
+Migration notes for breaking changes are collected in `breaking_change.md` (never edited by hand). The helper is `.github/scripts/breaking_change.py`.
+
+| Workflow | Trigger | What it does |
+|----------|---------|--------------|
+| [pr-labels.yaml](.github/workflows/pr-labels.yaml) | PR opened/edited | When the PR gets the `breaking-change` label, fails the check unless the "Breaking change migration" section of the PR description has text. |
+| [breaking-change-log.yml](.github/workflows/breaking-change-log.yml) | PR merged with label `breaking-change` | Adds `#<number> <title>` and the migration text at the top of the `## Unreleased` section and pushes to `main`. A PR that is already listed is not added twice. |
+| [gen_changelog.yml](.github/workflows/gen_changelog.yml) | Release published (not prereleases) | Renames `## Unreleased` to `## <tag> (<date>)`, appends the entries as `## Breaking change migration` to the release notes (before `CHANGELOG.md` is generated from them) and pushes the file to `main`. |
+
 ## Multi-Architecture Support
 
 All workflows build for multiple architectures:
