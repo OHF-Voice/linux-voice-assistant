@@ -9,16 +9,16 @@ import sys
 import threading
 import time
 from pathlib import Path
-from typing import Any, List, Optional, Union
+from typing import Any, List, Optional
 
 import numpy as np
 import soundcard as sc
 from aioesphomeapi.api_pb2 import NumberStateResponse  # type: ignore  # pylint: disable=no-name-in-module
-from pymicro_wakeword import MicroWakeWord, MicroWakeWordFeatures
+from pymicro_wakeword import MicroWakeWordFeatures
 from pyopen_wakeword import OpenWakeWord, OpenWakeWordFeatures
 
 from .api_server import create_encryption_key_file, load_encryption_key_file
-from .models import DetectionResult, Preferences, ServerState, WakeWordType, initial_stop_word_threshold
+from .models import Preferences, ServerState, WakeWordType, initial_stop_word_threshold
 from .mpv_player import MpvMediaPlayer
 from .peripheral_api import LVAEvent, PeripheralAPIServer
 from .satellite import VoiceSatelliteProtocol
@@ -31,6 +31,7 @@ from .util import (
     resolve_mac_address,
 )
 from .wake_word import find_available_wake_words, load_stop_model, load_wake_models
+from .wake_word_detection import ActiveWakeWord, apply_sensitivities, gate_wake_words, process_wake_words, select_active_wake_words
 from .webrtc import WebRTCProcessor
 from .zeroconf import HomeAssistantZeroconf
 
@@ -115,9 +116,9 @@ async def main() -> None:
     )
     parser.add_argument(
         "--refractory-seconds",
-        default=2.0,
+        default=0.0,
         type=float,
-        help="Seconds before wake word can be activated again",
+        help="Seconds after an accepted wake word during which further detections are blocked (0 = off)",
     )
     parser.add_argument(
         "--continue-conversation-delay",
@@ -728,7 +729,7 @@ def process_audio(state: ServerState, mic, block_size: int):
     """Process audio chunks from the microphone."""
     n_channels = state.audio_input_channels
 
-    wake_words: List[Union[MicroWakeWord, OpenWakeWord]] = []
+    wake_words: List[ActiveWakeWord] = []
     micro_features: Optional[MicroWakeWordFeatures] = None
     micro_inputs: List[np.ndarray] = []
 
@@ -739,6 +740,7 @@ def process_audio(state: ServerState, mic, block_size: int):
     last_active: Optional[float] = None
     webrtc: Optional[WebRTCProcessor] = None
     stop_word_running = False
+    wake_word_running = False
 
     try:
         _LOGGER.debug("Opening audio input device: %s", mic.name)
@@ -779,37 +781,12 @@ def process_audio(state: ServerState, mic, block_size: int):
                 if (not wake_words) or (state.wake_words_changed and state.wake_words):
                     # Update list of wake word models to process
                     state.wake_words_changed = False
-                    wake_words = [ww for ww_id, ww in state.wake_words.items() if ww_id in state.active_wake_words]
+                    wake_words = select_active_wake_words(state)
 
                     # TODO: Load default stop word value from json into state and preferences missing.
 
-                    has_oww = False
-                    for idx, wake_word in enumerate(wake_words):
-
-                        # Load default threshold from model json
-                        wake_word_id = next((ww_id for ww_id, ww in state.wake_words.items() if ww is wake_word), "")
-                        available_word = state.available_wake_words.get(wake_word_id)
-                        # _LOGGER.debug("word= %s", state.available_wake_words.get(wake_word_id))
-                        default_threshold = available_word.probability_cutoff if available_word else 0.7
-                        _LOGGER.debug("Using default threshold %.3f for wake word '%s' from model config", default_threshold, wake_word_id)
-                        # Check preferences override
-                        if idx == 0:
-                            old_val = state.wake_word_1_threshold
-                            if state.preferences.wake_word_1_sensitivity is not None:
-                                state.wake_word_1_threshold = state.preferences.wake_word_1_sensitivity
-                            else:
-                                state.wake_word_1_threshold = default_threshold
-                            _LOGGER.debug("Wake Word 1 threshold set to %.3f (was %.3f, preferences: %s)", state.wake_word_1_threshold, old_val, state.preferences.wake_word_1_sensitivity)
-                        elif idx == 1:
-                            old_val = state.wake_word_2_threshold
-                            if state.preferences.wake_word_2_sensitivity is not None:
-                                state.wake_word_2_threshold = state.preferences.wake_word_2_sensitivity
-                            else:
-                                state.wake_word_2_threshold = default_threshold
-                            _LOGGER.debug("Wake Word 2 threshold set to %.3f (was %.3f, preferences: %s)", state.wake_word_2_threshold, old_val, state.preferences.wake_word_2_sensitivity)
-
-                        if isinstance(wake_word, OpenWakeWord):
-                            has_oww = True
+                    apply_sensitivities(state, wake_words)
+                    has_oww = any(isinstance(word.model, OpenWakeWord) for word in wake_words)
 
                     # Sync entity states after threshold values were updated
                     if state.satellite is not None:
@@ -867,47 +844,17 @@ def process_audio(state: ServerState, mic, block_size: int):
                     micro_inputs.clear()
                     micro_inputs.extend(micro_features.process_streaming(audio_chunk))
 
-                    if has_oww:
-                        assert oww_features is not None
-                        oww_inputs.clear()
-                        oww_inputs.extend(oww_features.process_streaming(audio_chunk))
+                    wake_word_running = gate_wake_words(wake_words, oww_features, state.satellite.pipeline_active, wake_word_running)
+                    if wake_word_running:
+                        if has_oww:
+                            assert oww_features is not None
+                            oww_inputs.clear()
+                            oww_inputs.extend(oww_features.process_streaming(audio_chunk))
 
-                    for wake_word_index, wake_word in enumerate(wake_words):
-                        activated: Optional[float] = None
-
-                        # Set dynamic threshold depending on wake word index
-                        if wake_word_index == 0:
-                            threshold = state.wake_word_1_threshold
-                            # _LOGGER.debug("Set wake word %d probability cutoff to %.3f", wake_word_index+1, state.wake_word_1_threshold)
-                        elif wake_word_index == 1:
-                            threshold = state.wake_word_2_threshold
-                            # _LOGGER.debug("Set wake word %d probability cutoff to %.3f", wake_word_index+1, state.wake_word_2_threshold)
-                        else:
-                            threshold = 0.7
-                            # _LOGGER.debug("Set wake word %d probability cutoff to fallback value 0.7", wake_word_index+1)
-
-                        if isinstance(wake_word, MicroWakeWord):
-                            # set microWakeWord cutoff
-                            wake_word.probability_cutoff = threshold
-
-                            for micro_input in micro_inputs:
-                                prob = wake_word.process_streaming_prob(micro_input)
-                                if prob is not None and prob > threshold:
-                                    _LOGGER.debug("Wake word '%s' activated (probability %.3f exceeded threshold %.3f)", wake_word.wake_word, prob, threshold)
-                                    activated = prob if activated is None else max(activated, prob)
-                        elif isinstance(wake_word, OpenWakeWord):
-                            for oww_input in oww_inputs:
-                                for prob in wake_word.process_streaming(oww_input):
-                                    if prob > threshold:
-                                        _LOGGER.debug("Wake word '%s' activated (probability %.3f exceeded threshold %.3f)", wake_word.wake_word, prob, threshold)  # type: ignore[attr-defined]
-                                        activated = prob if activated is None else max(activated, prob)
-
-                        if activated is not None and not state.muted:
-                            # Check refractory
-                            now = time.monotonic()
-                            if (last_active is None) or ((now - last_active) > state.refractory_seconds):
-                                state.satellite.wakeup(wake_word, DetectionResult(wake_word.id, wake_word_index, activated))
-                                last_active = now
+                        now = time.monotonic()
+                        detections, last_active = process_wake_words(state, wake_words, micro_inputs, oww_inputs, last_active, now)
+                        for wake_word, detection in detections:
+                            state.satellite.wakeup(wake_word, detection)
 
                     stopped, stop_word_running = process_stop_word(state, micro_inputs, stop_word_running)
 

@@ -189,7 +189,7 @@ class ServerState:
     mic_noise_suppression_entity: "Optional[MicSettingEntity]" = None
     mic_volume_entity: "Optional[MicSettingEntity]" = None
     wake_words_changed: bool = False
-    refractory_seconds: float = 2.0
+    refractory_seconds: float = 0.0
     thinking_sound_enabled: bool = False
     button_controls_locked: bool = False
     output_only: bool = False

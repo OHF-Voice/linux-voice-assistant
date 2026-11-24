@@ -198,8 +198,8 @@ If nobody speaks, LVA keeps sending until HA's own speech timeout ends the run. 
 After `handle_audio()`, the processed `audio_chunk` feeds the detectors:
 
 1. `MicroWakeWordFeatures.process_streaming()` (and the openWakeWord equivalent) turns the PCM into feature windows.
-2. Each active wake word model evaluates the windows against its threshold (slot 0 uses `wake_word_1_threshold`, slot 1 `wake_word_2_threshold`).
-3. If a model fires, the device is not muted and the refractory time (`state.refractory_seconds`) has passed, `satellite.wakeup(wake_word)` runs.
+2. Each active wake word model evaluates the windows against its threshold of its slot (slot 0 uses `wake_word_1_threshold`, slot 1 `wake_word_2_threshold`). The models only run while no voice pipeline is active (`satellite.pipeline_active`). They are reset when detection resumes. See `linux_voice_assistant/wake_word_detection.py`.
+3. If a model fires, the device is not muted and the optional refractory time (`state.refractory_seconds`, default 0 = off, counted from the last accepted detection) has passed, `satellite.wakeup(wake_word)` runs. A detection inside the refractory time is discarded and logged at debug level.
 4. The stop word model runs on every block to keep its state correct. It only acts if `state.stop_word.id` is in `state.active_wake_words` (during TTS, announcements and ringing timers) and the device is not muted. Then `satellite.stop()` is called.
 
 `wakeup()` returns early when muted or when a pipeline is already active. Otherwise it ducks music, plays the wake sound and sends `VoiceAssistantRequest(start=True)`. With `listen_during_wake_sound` the request is sent right away; otherwise after the wake sound has finished. This is what turns streaming on in step 6.
