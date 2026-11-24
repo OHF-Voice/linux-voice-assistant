@@ -6,7 +6,6 @@
 !/docker-entrypoint.sh
 !/linux_voice_assistant/*
 !/sounds/*
-!/wakewords/*
-!/wakewords/openWakeWord/*
+!/wakewords/**
 !/version.txt
 !/version_githash.txt
