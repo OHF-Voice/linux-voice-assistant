@@ -193,7 +193,7 @@ Environment=PREFERENCES_FILE="/home/pi/linux-voice-assistant/preferences.json"
 # Environment=STOP_MODEL="stop"
 # Environment=DOWNLOAD_DIR="/home/pi/linux-voice-assistant/local"
 # Environment=TIMER_MAX_RING_SECONDS="900"
-# Environment=REFACTORY_SECONDS="2"
+# Environment=REFACTORY_SECONDS="0"
 # Environment=CONTINUE_CONVERSATION_DELAY="0.5"
 # Environment=WAKEUP_SOUND="sounds/wake_word_triggered.flac"
 # Environment=START_LISTENING_SOUND="sounds/start_listening_button.flac"
@@ -298,7 +298,7 @@ The following variables can be configured in the `.env` or in the service file:
 | `STOP_MODEL` | `stop` | Stop model to use |
 | `DOWNLOAD_DIR` | `/app/local` | Directory to download custom wake word models to |
 | `TIMER_MAX_RING_SECONDS` | `900` | Seconds after which the timer stops ringing |
-| `REFACTORY_SECONDS` | `2` | Refractory period in seconds after wake word |
+| `REFACTORY_SECONDS` | `0` | Seconds after an accepted wake word during which further detections of any wake word are blocked and discarded (logged at debug level). `0` turns it off. See [behavior](behavior.md#talking-to-the-assistant) |
 | `CONTINUE_CONVERSATION_DELAY` | `0.5` | Delay before mic opens for continued conversation |
 | `WAKEUP_SOUND` | `sounds/wake_word_triggered.flac` | Sound file for wake word triggered |
 | `START_LISTENING_SOUND` | `sounds/start_listening_button.flac` | Sound file for pressing button to talk |

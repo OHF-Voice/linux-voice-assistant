@@ -911,6 +911,11 @@ class VoiceSatelliteProtocol(APIServer):
     # Wake word / stop
     # ------------------------------------------------------------------
 
+    @property
+    def pipeline_active(self) -> bool:
+        """Whether a voice pipeline is running, in which case wake words are ignored."""
+        return self._pipeline_active
+
     def wakeup(self, wake_word: Union[MicroWakeWord, OpenWakeWord], detection: Optional[DetectionResult] = None) -> None:
         """
         Start the voice pipeline after a wake word detection.
