@@ -12,10 +12,10 @@ The device page exposes one or two wake word selects (**Wake Word 1**, **Wake Wo
 
 ![Wake word select](./images/wake_word.png)
 
-💡 **Note:** Models suffixed with **(OWW)** in the dropdown are [openWakeWord](https://github.com/dscripka/openWakeWord) models; everything else is a [microWakeWord](https://github.com/kahrendt/microWakeWord) model. Both engines can be mixed and matched, but keep in mind:
+💡 **Note:** Each name in the dropdown shows where the wake word comes from (`Internal`, `Download` or `Custom`) and its engine, for example `Internal - OWW - Hey Jarvis`. **OWW** is [openWakeWord](https://github.com/dscripka/openWakeWord) and **MWW** is [microWakeWord](https://github.com/kahrendt/microWakeWord). Both engines can be mixed and matched, but keep in mind:
 
-- **microWakeWord** models are lighter-weight and use engine that can run on lower-end devices and are located in the `wakewords` directory.
-- **openWakeWord** models use higher engine with more accuracy and are located in the `wakewords/openWakeWord` directory.
+- **microWakeWord** models are lighter-weight and use engine that can run on lower-end devices and are located in the `wakewords/<origin>/microwakeword` directories.
+- **openWakeWord** models use higher engine with more accuracy and are located in the `wakewords/<origin>/openwakeword` directories.
 
 See the [Wake Word section](install_application.md#wake-word) of the installation guide for the full list of bundled models and how to add custom ones.
 

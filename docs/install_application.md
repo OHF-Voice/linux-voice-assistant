@@ -188,11 +188,10 @@ Environment=PREFERENCES_FILE="/home/pi/linux-voice-assistant/preferences.json"
 # Environment=MIC_NOISE_SUPPRESSION="0"
 # Environment=AUDIO_INPUT_CHANNELS=1
 # Environment=ENABLE_THINKING_SOUND="1"
-# Environment=WAKE_WORD_DIR="app/wakewords"
+# Environment=WAKE_WORD_ROOT_DIR="/home/pi/linux-voice-assistant/wakewords"
 # Environment=WAKE_MODEL="okay_nabu"
 # Environment=WAKE_MODEL_2="hey_jarvis"
 # Environment=STOP_MODEL="stop"
-# Environment=DOWNLOAD_DIR="/home/pi/linux-voice-assistant/local"
 # Environment=TIMER_MAX_RING_SECONDS="900"
 # Environment=REFACTORY_SECONDS="0"
 # Environment=CONTINUE_CONVERSATION_DELAY="0.5"
@@ -295,11 +294,10 @@ The following variables can be configured in the `.env` or in the service file:
 | `MIC_NOISE_SUPPRESSION` | 0 | Add WebRTC Noise Suppression to Mic |
 | `AUDIO_INPUT_CHANNELS` | 1 | Number of audio input channels to capture (2 for devices with a hardware AEC reference channel). Does not change what is sent to Home Assistant |
 | `ENABLE_THINKING_SOUND` | false | Set to "1" to enable thinking sound |
-| `WAKE_WORD_DIR` | `app/wakewords` | Path to the wake word directory |
+| `WAKE_WORD_ROOT_DIR` | `/app/wakewords` | Root directory of the wake word layout (`internal`, `downloaded`, `custom`), see [Wake Word](#wake-word) |
 | `WAKE_MODEL` | `okay_nabu` | Wake word model to use |
 | `WAKE_MODEL_2` | empty | Wake word model for the second slot (empty = no second wake word). Used only when no wake words are stored yet, see [Custom Wake Word](#custom-wake-word) |
 | `STOP_MODEL` | `stop` | Stop model to use |
-| `DOWNLOAD_DIR` | `/app/local` | Directory to download custom wake word models to |
 | `TIMER_MAX_RING_SECONDS` | `900` | Seconds after which the timer stops ringing |
 | `REFACTORY_SECONDS` | `0` | Seconds after an accepted wake word during which further detections of any wake word are blocked and discarded (logged at debug level). `0` turns it off. See [behavior](behavior.md#talking-to-the-assistant) |
 | `CONTINUE_CONVERSATION_DELAY` | `0.5` | Delay before mic opens for continued conversation |
@@ -387,17 +385,50 @@ The following wake word models are available:
 
 ### Stop Word:
 
-The `stop` wake word is used to stop the current process (response, announcement, or timer). It is available in the `wakewords` directory (using the microWakeWord engine) and can be referenced in the `.env` file with `STOP_MODEL=stop`.
+The `stop` wake word is used to stop the current process (response, announcement, or timer). It is available in the `wakewords/internal/microwakeword` directory (using the microWakeWord engine) and can be referenced in the `.env` file with `STOP_MODEL=stop`.
+
+### Wake Word Directories:
+
+All wake word models live below one root directory, set with `WAKE_WORD_ROOT_DIR` (`--wake-word-root-dir`, default `wakewords/`, in Docker `/app/wakewords`). Below it, models are sorted by origin and by engine:
+
+```text
+wakewords/
+├── internal/        bundled with LVA, not changed by you
+│   ├── microwakeword/
+│   └── openwakeword/
+├── downloaded/      wake words that Home Assistant sends to the satellite
+│   ├── microwakeword/
+│   └── openwakeword/
+└── custom/          your own wake words
+    ├── microwakeword/
+    └── openwakeword/
+```
+
+`downloaded` and `custom` are created at startup. In Docker they are volumes (`wakeword_downloaded` and `wakeword_custom`), `internal` is part of the image. The engine of a model is taken from the `type` in its `.json` file, the engine directory is only for keeping things tidy.
+
+The directories are searched in the order `internal`, `downloaded`, `custom`. If the same id exists more than once, the later one is used, so a model in `custom` replaces a bundled one with the same id. This also applies to the stop word.
+
+In the wake word selection in Home Assistant, the name of a wake word shows where it comes from and which engine it uses, for example `Internal - MWW - Hey Jarvis`, `Download - OWW - Hey Jarvis` or `Custom - MWW - Hey Jarvis` (MWW = microWakeWord, OWW = openWakeWord). The phrase that is sent to Home Assistant when the wake word is detected is the plain phrase from the `.json` file, for example `Hey Jarvis`.
 
 ### Custom Wake Word:
 
-If you want to use your own wakewords, you can add them to the `wakewords/custom` aka `/var/lib/docker/volumes/lva_wakeword_custom/_data` directory and reference them in the `.env` file.
+If you want to use your own wakewords, you can add them to `wakewords/custom/microwakeword` (microWakeWord models) or `wakewords/custom/openwakeword` (openWakeWord models). Restart LVA after adding files.
 
-Change the default wake word with `WAKE_MODEL <id>` where `<id>` is the name of a model in the `wakewords` directory. For example, `WAKE_MODEL hey_jarvis` will load `app/wakewords/hey_jarvis.tflite` by default.
+With Docker, `wakewords/custom` is the volume `wakeword_custom`. Docker stores it on the host, for example in `/var/lib/docker/volumes/lva_wakeword_custom/_data` (`lva` is the name of the compose project, check it with `docker volume ls`). The folders `microwakeword` and `openwakeword` are created there when LVA starts. Copy your files into one of them, for example:
+
+```sh
+sudo cp glados.json glados.tflite /var/lib/docker/volumes/lva_wakeword_custom/_data/openwakeword/
+```
+
+LVA does not run as root in the container, so the files must be readable by the user from `LVA_USER_ID` and `LVA_USER_GROUP` (default 1000:1000). The `fix-permissions` service in the compose file does this on every `docker compose up`. If you copied files as root and LVA does not find them, run `docker compose up -d` again or set the owner by hand:
+
+```sh
+sudo chown -R 1000:1000 /var/lib/docker/volumes/lva_wakeword_custom/_data
+```
+
+Change the default wake word with `WAKE_MODEL <id>` where `<id>` is the name of a model in one of the wake word directories. For example, `WAKE_MODEL hey_jarvis` will load `wakewords/internal/microwakeword/hey_jarvis.tflite` by default.
 
 Set `WAKE_MODEL_2 <id>` to also activate a second wake word by default. It is looked up like `WAKE_MODEL`; if it is empty, unknown or the same as the first one, only the first wake word is active. Both defaults apply only while no wake words are stored yet (first start, or after the preferences file was removed). After that, the wake words chosen in Home Assistant are kept and `WAKE_MODEL` / `WAKE_MODEL_2` are ignored.
-
-You can include more wakeword directories by adding `WAKE_WORD_DIR <DIR>` where `<DIR>` contains either [microWakeWord][] or [openWakeWord][] config files and `.tflite` models. For example, `WAKE_WORD_DIR app/wakewords/openWakeWord` will include the default wake words for openWakeWord.
 
 If you want to add [other wakewords][wakewords-collection], make sure to create a small JSON config file to identify it as an openWakeWord model. For example, download the [GLaDOS][glados] model to `glados.tflite` and create `glados.json` with:
 
@@ -409,7 +440,7 @@ If you want to add [other wakewords][wakewords-collection], make sure to create 
 }
 ```
 
-Add `WAKE_WORD_DIR <DIR>` with the directory containing `glados.tflite` and `glados.json` to your command-line.
+Put `glados.tflite` and `glados.json` into `wakewords/custom/openwakeword`.
 
 #### Additional Wakewords:
 
