@@ -173,7 +173,7 @@ For HA to see your entity, your peripheral must register before HA enumerates th
 
 | Command | Data | Description |
 |---------|------|-------------|
-| `start_listening` | — | Play the start-listening chime and begin a voice pipeline run, as if the user pressed the action button. No-op if already muted or pipeline already active. |
+| `start_listening` | — | Play the start-listening chime and begin a voice pipeline run, as if the user pressed the action button. No-op if already muted, if no wake word is active or if a pipeline is already active. |
 | `stop_pipeline` | — | Abort the active voice pipeline at any phase (listening, thinking, or TTS speaking). Cleans up STT streaming, sends `AnnounceFinished` to HA, unducking music, and emits `idle`. |
 
 ### Microphone

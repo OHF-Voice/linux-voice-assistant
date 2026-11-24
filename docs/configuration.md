@@ -17,6 +17,10 @@ The device page exposes one or two wake word selects (**Wake Word 1**, **Wake Wo
 - **microWakeWord** models are lighter-weight and use engine that can run on lower-end devices and are located in the `wakewords/<origin>/microwakeword` directories.
 - **openWakeWord** models use higher engine with more accuracy and are located in the `wakewords/<origin>/openwakeword` directories.
 
+**After updating from an older version.** Home Assistant remembers the text of each wake word select itself, and the names of the wake words changed (for example `Hey Jarvis` is now `Internal - MWW - Hey Jarvis`). LVA keeps your stored wake words, but a select that remembers an old name shows *No wake word*, or one select shows a wake word and the other none, although LVA has both active. LVA cannot change what Home Assistant remembers. Choose the wake word again in each select. If a select keeps showing the old name, set it to *No wake word* once and then choose the wake word.
+
+**No wake word.** If you set both selects to *No wake word*, no wake word starts the assistant, and a button cannot start listening either. After a restart LVA uses the default wake words again, because none are stored.
+
 See the [Wake Word section](install_application.md#wake-word) of the installation guide for the full list of bundled models and how to add custom ones.
 
 ## Mute Switch
