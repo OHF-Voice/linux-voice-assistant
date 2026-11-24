@@ -29,6 +29,7 @@ from .util import (
     get_esphome_version,
     get_version,
     resolve_mac_address,
+    warn_about_removed_options,
 )
 from .wake_word import find_available_wake_words, load_stop_model, load_wake_models
 from .wake_word_detection import ActiveWakeWord, apply_sensitivities, gate_wake_words, process_wake_words, select_active_wake_words
@@ -103,6 +104,16 @@ async def main() -> None:
         "--wake-word-root-dir",
         default=_WAKEWORDS_DIR,
         help="Root directory of the wake word layout: <origin>/<engine> with origin internal, downloaded or custom and engine microwakeword or openwakeword",
+    )
+    parser.add_argument(
+        "--wake-word-dir",
+        default=None,
+        help="Removed and ignored, use --wake-word-root-dir",
+    )
+    parser.add_argument(
+        "--download-dir",
+        default=None,
+        help="Removed and ignored, downloaded wake words are stored in <--wake-word-root-dir>/downloaded",
     )
     parser.add_argument(
         "--wake-model",
@@ -384,6 +395,7 @@ async def main() -> None:
     # Resolve version
     version = get_version()
     _LOGGER.info("Version: %s", version)
+    warn_about_removed_options(args.wake_word_dir, args.download_dir)
 
     # Resolve esphome version
     esphome_version = get_esphome_version()

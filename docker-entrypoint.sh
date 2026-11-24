@@ -92,6 +92,14 @@ if [ -n "${WAKE_WORD_ROOT_DIR}" ]; then
   EXTRA_ARGS+=( "--wake-word-root-dir" "$WAKE_WORD_ROOT_DIR" )
 fi
 
+if [ -n "${WAKE_WORD_DIR}" ]; then
+  EXTRA_ARGS+=( "--wake-word-dir" "$WAKE_WORD_DIR" )
+fi
+
+if [ -n "${DOWNLOAD_DIR}" ]; then
+  EXTRA_ARGS+=( "--download-dir" "$DOWNLOAD_DIR" )
+fi
+
 if [ -n "${WAKE_MODEL}" ]; then
   EXTRA_ARGS+=( "--wake-model" "$WAKE_MODEL" )
 fi
