@@ -545,11 +545,11 @@ async def main() -> None:
         state.preferences.active_wake_words = list(wake_word_slots)
         state.active_wake_words = set(wake_word_slots)
         state.wake_words = wake_models
-        state.save_preferences()
+        state.preferences.save(state.preferences_path)
         state.wake_words_changed = True
 
     if args.enable_thinking_sound or args.mic_auto_gain or args.mic_noise_suppression:
-        state.save_preferences()
+        state.preferences.save(state.preferences_path)
 
     initial_volume_percent = int(round(initial_volume * 100))
     state.music_player.set_volume(initial_volume_percent)

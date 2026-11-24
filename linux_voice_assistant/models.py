@@ -116,6 +116,16 @@ class Preferences:
 
         return cls(**{key: value for key, value in data.items() if key in known_keys})
 
+    def save(self, path: Path) -> None:
+        """
+        Write the preferences as JSON, creating missing parent directories.
+        :param path: Preferences file to write.
+        """
+        _LOGGER.debug("Saving preferences: %s", path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "w", encoding="utf-8") as preferences_file:
+            json.dump(asdict(self), preferences_file, ensure_ascii=False, indent=4)
+
 
 @dataclass
 class ServerState:
@@ -224,18 +234,6 @@ class ServerState:
         for connection in list(self.connections):
             connection.send_messages(messages)
 
-    def save_preferences(self) -> None:
-        """Save preferences as JSON."""
-        _LOGGER.debug("Saving preferences: %s", self.preferences_path)
-        self.preferences_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(self.preferences_path, "w", encoding="utf-8") as preferences_file:
-            json.dump(
-                asdict(self.preferences),
-                preferences_file,
-                ensure_ascii=False,
-                indent=4,
-            )
-
     def persist_volume(self, volume: float) -> None:
         """Persist the normalized media volume (0.0 - 1.0)."""
         clamped_volume = max(0.0, min(1.0, volume))
@@ -254,7 +252,7 @@ class ServerState:
         self.volume = clamped_volume
         self.preferences.volume = clamped_volume
         _LOGGER.info("Saving volume %s to %s", clamped_volume, self.preferences_path)
-        self.save_preferences()
+        self.preferences.save(self.preferences_path)
         _LOGGER.info("Volume saved successfully")
 
         # Notify peripheral container (thread-safe; may be called from mpv callbacks)
@@ -276,7 +274,7 @@ class ServerState:
 
         self.mic_auto_gain = gain_int
         self.preferences.mic_auto_gain = gain_int
-        self.save_preferences()
+        self.preferences.save(self.preferences_path)
 
     def persist_mic_noise(self, noise: float) -> None:
         """Persist the microphone noise suppression value."""
@@ -286,7 +284,7 @@ class ServerState:
 
         self.mic_noise_suppression = noise_int
         self.preferences.mic_noise_suppression = noise_int
-        self.save_preferences()
+        self.preferences.save(self.preferences_path)
 
     def persist_mic_volume(self, volume: float) -> None:
         """Persist the microphone input volume (0–100)."""
@@ -297,7 +295,7 @@ class ServerState:
         self.mic_volume = volume_int
         self.preferences.mic_volume = volume_int
         _LOGGER.info("Saving mic_volume %s to %s", volume_int, self.preferences_path)
-        self.save_preferences()
+        self.preferences.save(self.preferences_path)
 
 
 def initial_stop_word_threshold(saved_sensitivity: Optional[float]) -> float:

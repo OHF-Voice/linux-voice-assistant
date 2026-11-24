@@ -123,26 +123,44 @@ class TestPreferencesFromDict:
 
 
 # ---------------------------------------------------------------------------
-# ServerState.save_preferences()
+# Preferences.save() via ServerState
 # ---------------------------------------------------------------------------
+
+
+class TestPreferencesSave:
+    def test_creates_missing_parent_directories(self, tmp_path):
+        from linux_voice_assistant.models import Preferences
+
+        path = tmp_path / "nested" / "preferences.json"
+        Preferences().save(path)
+        assert path.exists()
+
+    def test_round_trips_through_from_dict(self, tmp_path):
+        from linux_voice_assistant.models import Preferences
+
+        path = tmp_path / "preferences.json"
+        preferences = Preferences(volume=0.5, mic_volume=40)
+        preferences.save(path)
+        with open(path, encoding="utf-8") as f:
+            assert Preferences.from_dict(json.load(f)) == preferences
 
 
 class TestSavePreferences:
     def test_creates_preferences_file(self, tmp_path):
         state = make_server_state(tmp_path)
-        state.save_preferences()
+        state.preferences.save(state.preferences_path)
         assert state.preferences_path.exists()
 
     def test_saved_json_is_valid(self, tmp_path):
         state = make_server_state(tmp_path)
-        state.save_preferences()
+        state.preferences.save(state.preferences_path)
         with open(state.preferences_path) as f:
             data = json.load(f)
         assert isinstance(data, dict)
 
     def test_saved_json_contains_expected_keys(self, tmp_path):
         state = make_server_state(tmp_path)
-        state.save_preferences()
+        state.preferences.save(state.preferences_path)
         with open(state.preferences_path) as f:
             data = json.load(f)
         assert "mic_auto_gain" in data
@@ -155,7 +173,7 @@ class TestSavePreferences:
 
         prefs = Preferences(volume=0.75, mic_auto_gain=3, mic_noise_suppression=1)
         state = make_server_state(tmp_path, preferences=prefs)
-        state.save_preferences()
+        state.preferences.save(state.preferences_path)
         with open(state.preferences_path) as f:
             data = json.load(f)
         assert data["volume"] == 0.75
@@ -165,7 +183,7 @@ class TestSavePreferences:
     def test_creates_parent_directory_if_missing(self, tmp_path):
         nested_path = tmp_path / "nested" / "dir" / "preferences.json"
         state = make_server_state(tmp_path, preferences_path=nested_path)
-        state.save_preferences()
+        state.preferences.save(state.preferences_path)
         assert nested_path.exists()
 
 
@@ -208,7 +226,7 @@ class TestPersistVolume:
         prefs = Preferences(volume=0.5)
         state = make_server_state(tmp_path, preferences=prefs, volume=0.5)
 
-        with patch.object(state, "save_preferences") as mock_save:
+        with patch.object(state.preferences, "save") as mock_save:
             state.persist_volume(0.5)
             mock_save.assert_not_called()
 
@@ -218,7 +236,7 @@ class TestPersistVolume:
         prefs = Preferences(volume=0.5)
         state = make_server_state(tmp_path, preferences=prefs, volume=0.5)
 
-        with patch.object(state, "save_preferences") as mock_save:
+        with patch.object(state.preferences, "save") as mock_save:
             state.persist_volume(0.8)
             mock_save.assert_called_once()
 
@@ -270,7 +288,7 @@ class TestPersistMicGain:
         state.mic_auto_gain = 3
         state.preferences.mic_auto_gain = 3
 
-        with patch.object(state, "save_preferences") as mock_save:
+        with patch.object(state.preferences, "save") as mock_save:
             state.persist_mic_gain(3.0)
             mock_save.assert_not_called()
 
@@ -279,7 +297,7 @@ class TestPersistMicGain:
         state.mic_auto_gain = 3
         state.preferences.mic_auto_gain = 3
 
-        with patch.object(state, "save_preferences") as mock_save:
+        with patch.object(state.preferences, "save") as mock_save:
             state.persist_mic_gain(10.0)
             mock_save.assert_called_once()
 
@@ -310,7 +328,7 @@ class TestPersistMicNoise:
         state.mic_noise_suppression = 2
         state.preferences.mic_noise_suppression = 2
 
-        with patch.object(state, "save_preferences") as mock_save:
+        with patch.object(state.preferences, "save") as mock_save:
             state.persist_mic_noise(2.0)
             mock_save.assert_not_called()
 
@@ -319,7 +337,7 @@ class TestPersistMicNoise:
         state.mic_noise_suppression = 2
         state.preferences.mic_noise_suppression = 2
 
-        with patch.object(state, "save_preferences") as mock_save:
+        with patch.object(state.preferences, "save") as mock_save:
             state.persist_mic_noise(4.0)
             mock_save.assert_called_once()
 
