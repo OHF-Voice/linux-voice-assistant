@@ -83,7 +83,13 @@ async def main() -> None:
         action="store_true",
         help="List audio output devices and exit",
     )
-    parser.add_argument("--mic-volume", type=int, default=100, choices=list(range(1, 101)), help="Microphone volume level (1 to 100)")
+    parser.add_argument(
+        "--mic-volume",
+        type=int,
+        default=None,
+        choices=list(range(101)),
+        help="Microphone volume level (0 to 100), overrides the stored value on every start. If not given, the stored value is used, or 100 if none is stored",
+    )
     parser.add_argument("--mic-auto-gain", type=int, default=0, choices=list(range(32)))
     parser.add_argument("--mic-noise-suppression", type=int, default=0, choices=(0, 1, 2, 3, 4))
     parser.add_argument(
@@ -477,7 +483,7 @@ async def main() -> None:
             _LOGGER.exception("Extras for webrtc are not installed")
             sys.exit(1)
 
-    if args.mic_volume > 0.0:
+    if args.mic_volume is not None:
         preferences.mic_volume = args.mic_volume
     if args.mic_auto_gain > 0:
         preferences.mic_auto_gain = args.mic_auto_gain
@@ -550,7 +556,7 @@ async def main() -> None:
         state.preferences.save(state.preferences_path)
         state.wake_words_changed = True
 
-    if args.enable_thinking_sound or args.mic_auto_gain or args.mic_noise_suppression:
+    if args.enable_thinking_sound or args.mic_volume is not None or args.mic_auto_gain or args.mic_noise_suppression:
         state.preferences.save(state.preferences_path)
 
     initial_volume_percent = int(round(initial_volume * 100))

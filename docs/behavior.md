@@ -186,10 +186,10 @@ Do not confuse this with the **media player mute**, which sets the shared volume
 
 - There is **one shared volume** for music and for all assistant sounds (chimes, replies, timer). Changing it on the media player entity or with a peripheral's volume buttons changes both.
 - The volume is saved in `preferences.json` and restored after a restart.
-- **First start.** If the preferences file does not exist yet, it is created right at startup with the defaults and an info message is logged, instead of on the first change. Startup may write the file again, for example when the default wake words are stored or when `--enable-thinking-sound`, `--mic-auto-gain` or `--mic-noise-suppression` is set.
+- **First start.** If the preferences file does not exist yet, it is created right at startup with the defaults and an info message is logged, instead of on the first change. Startup may write the file again, for example when the default wake words are stored or when `--enable-thinking-sound`, `--mic-volume`, `--mic-auto-gain` or `--mic-noise-suppression` is set.
 - **Media player mute** (the speaker icon on the media player card) sets the volume to 0 and remembers the previous value. Unmuting restores it.
 - **Ducking** is temporary and independent of the set volume: it always means 50 % of the current volume.
-- A separate **Mic Volume** controls the microphone level. It does not affect playback, see [configuration.md](configuration.md).
+- A separate **Mic Volume** controls the microphone level. It does not affect playback, see [configuration.md](configuration.md). It is saved in `preferences.json` and restored after a restart. Only an explicitly given `--mic-volume` (0 to 100) overrides the stored value on start. Without it, the stored value is used, or 100 if none is stored yet.
 
 ---
 

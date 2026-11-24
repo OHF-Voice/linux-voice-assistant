@@ -128,7 +128,7 @@ The float32 format is fixed in `soundcard` (version 0.4.6, PulseAudio backend: `
 
 The result is `channel_chunks`, one `bytes` object per channel, each `B * 2` bytes (2048 bytes for the default block size).
 
-`state.mic_volume` is the Home Assistant entity "Mic Volume" (1 to 100, `--mic-volume`, persisted in the preferences). Values from 1 to 10 all give the same 0.1 factor.
+`state.mic_volume` is the Home Assistant entity "Mic Volume" (0 to 100, `--mic-volume`, persisted in the preferences). Values from 0 to 10 all give the same 0.1 factor.
 
 ### 3. Optional WebRTC processing (channel 0 only)
 
