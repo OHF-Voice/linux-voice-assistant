@@ -13,7 +13,50 @@ jobs:
       - uses: actions/checkout@v7
         with:
           ref: main
+
+      - name: Close the unreleased breaking changes
+        id: breaking
+        if: github.event.release.prerelease == false
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          python3 .github/scripts/breaking_change.py release \
+            --version "$TAG" --date "$(date -u +%F)" --notes-out "$RUNNER_TEMP/breaking_notes.md"
+          if [ -f "$RUNNER_TEMP/breaking_notes.md" ]; then
+            echo "has_notes=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Add the migration notes to the release notes
+        if: steps.breaking.outputs.has_notes == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          gh release view "$TAG" --json body --jq .body > "$RUNNER_TEMP/release_body.md"
+          if grep -q '^## Breaking change migration' "$RUNNER_TEMP/release_body.md"; then
+            echo "Release notes already contain the migration notes."
+            exit 0
+          fi
+          printf '\n\n' >> "$RUNNER_TEMP/release_body.md"
+          cat "$RUNNER_TEMP/breaking_notes.md" >> "$RUNNER_TEMP/release_body.md"
+          gh release edit "$TAG" --notes-file "$RUNNER_TEMP/release_body.md"
+
       - uses: rhysd/changelog-from-release/action@v3
         with:
           file: CHANGELOG.md
           github_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Commit the closed breaking change section
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          if git diff --quiet -- breaking_change.md; then
+            echo "breaking_change.md unchanged."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add breaking_change.md
+          git commit -m "Close breaking changes for ${TAG}"
+          git pull --rebase origin main
+          git push origin HEAD:main
