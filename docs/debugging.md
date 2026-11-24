@@ -155,6 +155,17 @@ If the container cannot access audio devices, ensure:
 
 tbd
 
+### "Incorrect preamble" in the log:
+
+The ESPHome API port (`--port`, default 6053) only accepts ESPHome plaintext frames, which start with the byte `0x00`. If another client connects, LVA logs `Incorrect preamble: <byte>` and a hint:
+
+| Byte | Meaning | What to check |
+|------|---------|---------------|
+| `1` | Client expects an encrypted connection | Start LVA with `--enable-encryption`, or remove the key from the client |
+| `22` | TLS handshake | The ESPHome API port does not use TLS |
+| `123` (`{`) | JSON | A peripheral client is connected to the wrong port: use `--peripheral-port` (default 6055) |
+| `71` (`G`), `80` (`P`), `72` (`H`), ... | HTTP or WebSocket request | Same as above: peripherals use `--peripheral-port` (default 6055) |
+
 ### Low Audio Quality:
 
 If you experience audio quality issues:
