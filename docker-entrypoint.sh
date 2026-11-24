@@ -96,6 +96,10 @@ if [ -n "${WAKE_MODEL}" ]; then
   EXTRA_ARGS+=( "--wake-model" "$WAKE_MODEL" )
 fi
 
+if [ -n "${WAKE_MODEL_2}" ]; then
+  EXTRA_ARGS+=( "--wake-model-2" "$WAKE_MODEL_2" )
+fi
+
 if [ -n "${STOP_MODEL}" ]; then
   EXTRA_ARGS+=( "--stop-model" "$STOP_MODEL" )
 fi

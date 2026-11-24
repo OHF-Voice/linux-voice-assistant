@@ -105,6 +105,11 @@ async def main() -> None:
         help="File name of the first active wake model",
     )
     parser.add_argument(
+        "--wake-model-2",
+        default="",
+        help="File name of the second active wake model, used only when no wake words are stored yet (empty = no second wake word)",
+    )
+    parser.add_argument(
         "--stop-model",
         default="stop",
         help="File name of the stop model",
@@ -479,10 +484,11 @@ async def main() -> None:
         preferences.mic_noise_suppression = args.mic_noise_suppression
 
     # Load wake/stop models
-    wake_models, active_wake_words, fallback_used = load_wake_models(
+    wake_models, wake_word_slots, fallback_used = load_wake_models(
         available_wake_words,
         [word for word in preferences.active_wake_words if word is not None],
-        args.wake_model,
+        first_default_wake_word_id=args.wake_model,
+        second_default_wake_word_id=args.wake_model_2,
         preferred_type=preferred_wake_word_type,
     )
 
@@ -501,7 +507,7 @@ async def main() -> None:
         entities=[],
         available_wake_words=available_wake_words,
         wake_words=wake_models,
-        active_wake_words=active_wake_words,
+        active_wake_words=set(wake_word_slots),
         stop_word=stop_model,
         music_player=MpvMediaPlayer(device=args.music_output_device or args.audio_output_device),
         tts_player=MpvMediaPlayer(device=args.audio_output_device),
@@ -536,8 +542,8 @@ async def main() -> None:
     if fallback_used:
         # Fallback to the default model was used, save as active wake words
         _LOGGER.debug("Fallback was used, save default wake words in Preferences.")
-        state.preferences.active_wake_words = list(active_wake_words)
-        state.active_wake_words = active_wake_words
+        state.preferences.active_wake_words = list(wake_word_slots)
+        state.active_wake_words = set(wake_word_slots)
         state.wake_words = wake_models
         state.save_preferences()
         state.wake_words_changed = True
