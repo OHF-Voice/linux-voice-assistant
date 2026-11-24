@@ -330,7 +330,7 @@ class MuteSwitchEntity(ESPHomeEntity):
                 object_id=self.object_id,
                 key=self.key,
                 name=self.name,
-                entity_category=EntityCategory.NONE,
+                entity_category=EntityCategory.CONFIG,
                 icon="mdi:microphone-off",
             )
         elif isinstance(msg, SubscribeHomeAssistantStatesRequest):
