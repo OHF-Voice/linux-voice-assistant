@@ -30,6 +30,43 @@ flowchart LR
 | Microphone capture | Sound server → LVA | Audio for wake word detection and speech to text | `--audio-input-device` | [audio_pipeline.md](audio_pipeline.md) |
 | Media URLs over HTTP | Home Assistant server → LVA | TTS replies, music and announcement audio. LVA plays the URL, Home Assistant does not push audio data | | below |
 
+## Network connections and firewall rules
+
+Only the connections that cross the network matter for a firewall. The arrows point from the side that opens the connection to the side that listens.
+
+```mermaid
+flowchart LR
+    subgraph HAH["Home Assistant host"]
+        HA["Home Assistant"]
+    end
+    subgraph LVAH["LVA host"]
+        LVA["LVA<br/>listens on 6053 and 6055"]
+    end
+    subgraph PER["Peripheral (same host or container, or another host)"]
+        P["Peripheral script"]
+    end
+
+    HA -->|"TCP 6053<br/>ESPHome API"| LVA
+    P -->|"TCP 6055<br/>WebSocket"| LVA
+    LVA -->|"HTTP/HTTPS, port of the URL<br/>(HA: usually 8123)<br/>TTS, music, announcements, wake word models"| HA
+    LVA <-.->|"UDP 5353 to 224.0.0.251<br/>mDNS multicast"| HA
+```
+
+| From | To | Protocol and port | Needed for | Required |
+|------|----|-------------------|------------|----------|
+| Home Assistant | LVA host | TCP `6053` (`--port`) | ESPHome API: voice pipeline, entities, timers | yes |
+| LVA host | Home Assistant | HTTP/HTTPS, port from the URL Home Assistant sends (usually `8123`, or the external URL's port) | Fetching TTS replies, music, announcement audio and external wake word models | yes |
+| LVA host and Home Assistant host | multicast `224.0.0.251` | UDP `5353` | mDNS discovery (`_esphomelib._tcp`) | only for automatic discovery |
+| Peripheral | LVA host | TCP `6055` (`--peripheral-port`) | WebSocket API | only if peripherals are used from another host |
+
+Notes:
+
+- The ESPHome API connection is opened by **Home Assistant**, so an inbound rule on the LVA host for `6053` is needed. LVA itself opens no outgoing connection for it.
+- The media URLs are chosen by Home Assistant (internal/external URL setting). LVA must be able to reach exactly that address, otherwise the connection works but replies and music stay silent. Music can also point to other servers, so the target port is not always the Home Assistant port.
+- Without mDNS (different VLAN, multicast blocked), add the device manually in Home Assistant with the LVA host's IP address and port `6053`.
+- The peripheral API has no authentication. Restrict `6055` to trusted hosts, or bind it to localhost with `--peripheral-host 127.0.0.1` when the peripheral runs on the same host. Peripherals in Docker containers need to reach the host's port accordingly.
+- Ports follow `--port` and `--peripheral-port`. In Docker the container usually uses host networking, so these are the ports on the host.
+
 ## Home Assistant: the ESPHome native API
 
 LVA pretends to be an ESPHome device. Home Assistant connects **to** LVA (LVA is the server), so the ESPHome integration must be able to reach the LVA host on the configured port.
