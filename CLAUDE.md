@@ -79,7 +79,7 @@ Flow: `wakeup()` (audio thread) → blocked if `state.muted` or `_pipeline_activ
 - `TTS_END`: `play_tts()`, which is idempotent via `_tts_played`
 - `RUN_END`: if no TTS was played, call `_tts_finished()` now. Otherwise `_pipeline_active` stays True until playback ends, so speaker audio can't trigger the wake word.
 
-Ducking has owners (`duck(owner=...)`/`unduck(owner=...)` on the satellite and on `MpvMediaPlayer`; the names are the `DUCK_OWNER_*` constants in `mpv_player.py`): `conversation` (default), `timer` (ringing) and `announce` (voice announcements, handed over to `conversation` when `start_conversation` is set). The volume is restored when the last owner has unducked. A new reason to duck gets its own owner, and whoever ducks must unduck with the same owner.
+Ducking has owners (`duck(owner=...)`/`unduck(owner=...)` on the satellite and on `MpvMediaPlayer`; free text, but `MpvMediaPlayer` accepts only the known owners and raises `ValueError` otherwise): `conversation` (default), `timer` (ringing) and `announce` (voice announcements, handed over to `conversation` when `start_conversation` is set). The volume is restored when the last owner has unducked. A new reason to duck gets its own owner, and whoever ducks must unduck with the same owner.
 
 `_tts_finished()` sends `VoiceAssistantAnnounceFinished`, removes the stop word from the active set, then either restarts listening after `continue_conversation_delay` (via `threading.Timer`) or unducks and emits `idle`.
 

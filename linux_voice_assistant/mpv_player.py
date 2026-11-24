@@ -6,9 +6,7 @@ from typing import Callable, List, Optional, Set, Union
 from .player.libmpv import LibMpvPlayer
 from .player.state import PlayerState
 
-DUCK_OWNER_CONVERSATION = "conversation"
-DUCK_OWNER_TIMER = "timer"
-DUCK_OWNER_ANNOUNCE = "announce"
+_DUCK_OWNERS = ("conversation", "timer", "announce")
 
 
 class MpvMediaPlayer:
@@ -132,9 +130,11 @@ class MpvMediaPlayer:
     def duck(self, owner: str, factor: float = 0.5) -> None:
         """
         Temporarily reduce volume.
-        :param owner: Who asks. The volume is restored when every owner has called :meth:`unduck`.
+        :param owner: Who asks: ``conversation``, ``timer`` or ``announce``. The volume is restored when every owner has called :meth:`unduck`.
         :param factor: Volume multiplier (0.0-1.0).
+        :raises ValueError: If the owner is not a known one.
         """
+        self._check_duck_owner(owner)
         with self._duck_lock:
             self._duck_owners.add(owner)
             self._log.debug("Duck requested by %s, factor %.2f (owners: %s)", owner, factor, sorted(self._duck_owners))
@@ -144,7 +144,9 @@ class MpvMediaPlayer:
         """
         Restore volume after ducking, once no owner wants it ducked any more.
         :param owner: The owner that called :meth:`duck`.
+        :raises ValueError: If the owner is not a known one.
         """
+        self._check_duck_owner(owner)
         with self._duck_lock:
             self._duck_owners.discard(owner)
             if self._duck_owners:
@@ -152,3 +154,7 @@ class MpvMediaPlayer:
             else:
                 self._log.debug("Unduck by %s, no owner left", owner)
                 self._player.unduck()
+
+    def _check_duck_owner(self, owner: str) -> None:
+        if owner not in _DUCK_OWNERS:
+            raise ValueError(f"Unknown duck owner {owner!r}, expected one of {_DUCK_OWNERS}")

@@ -2,6 +2,8 @@
 
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -290,6 +292,15 @@ class TestDuckOwners:
         player = make_player()
         player.duck(owner="conversation")
         player.unduck(owner="timer")
+        player._mock.unduck.assert_not_called()
+
+    def test_unknown_owner_is_rejected(self):
+        player = make_player()
+        with pytest.raises(ValueError, match="Unknown duck owner 'music'"):
+            player.duck(owner="music")
+        with pytest.raises(ValueError, match="Unknown duck owner 'music'"):
+            player.unduck(owner="music")
+        player._mock.duck.assert_not_called()
         player._mock.unduck.assert_not_called()
 
     def test_duck_logs_owners(self, caplog):

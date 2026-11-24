@@ -129,8 +129,6 @@ from typing import TYPE_CHECKING, Any, Dict, Optional, Set
 from aioesphomeapi.api_pb2 import MediaPlayerStateResponse  # type: ignore[attr-defined]  # pylint: disable=no-name-in-module
 from aioesphomeapi.model import MediaPlayerState  # type: ignore[import]
 
-from .mpv_player import DUCK_OWNER_TIMER
-
 if TYPE_CHECKING:
     from .models import ServerState
 
@@ -451,7 +449,7 @@ class PeripheralAPIServer:
                 satellite._timer_finished = False  # pylint: disable=protected-access
                 state.active_wake_words.discard(state.stop_word.id)
                 state.tts_player.stop()
-                satellite.unduck(owner=DUCK_OWNER_TIMER)
+                satellite.unduck(owner="timer")
                 await self.emit_event(LVAEvent.IDLE)
 
         elif command == LVACommand.STOP_MEDIA_PLAYER:
