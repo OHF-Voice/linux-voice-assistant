@@ -54,14 +54,17 @@ A normal voice interaction runs through these phases:
 
 Details:
 
-- **Ignored wake words.** While a conversation is running (phases 1–4) further wake words are ignored. This prevents the assistant from triggering itself on its own voice. After a detection the same wake word cannot trigger again for `--refractory-seconds` (default 2 s).
+- **No wake word during a conversation.** While a conversation is running (phases 1–4, including the delay before a follow-up and the pipeline ended sound) the wake word models are paused and do not listen at all. This prevents the assistant from triggering itself on its own voice and saves CPU. They are reset when the conversation ends, so audio from before the pause is never scored. See the dead zone below.
+- **Dead zone after a conversation (about 0.2 s).** When the wake word models resume, they have to refill their sliding windows before they can score anything. For about 0.2 s after a conversation ended, a wake word is therefore not detected. The same applies when the assistant is started. Only a wake word spoken in this short time is affected; everything after that is detected as usual. This is the same behavior as the stop word has after it becomes active (see [The stop word](#the-stop-word)).
+- **Refractory period (`--refractory-seconds`, default 0 = off).** Optional extra block. When set above 0, every detection after an accepted wake word, of any wake word, is blocked for this many seconds and discarded. By default it is off, because the wake word models are already paused while a conversation runs, which prevents repeated triggers. It can still help with a very short conversation or a wake word that is detected again right after the pause ends. The wake word models keep running during that time; only their result is dropped. Each blocked detection is logged at debug level (`blocked by refractory period`, with the probability, the threshold and the time left). Setting it to `0` (the default) turns the block off. The period is counted from the accepted detection, not from the end of the conversation, so it matters mostly for very short conversations.
 - **Early speech.** If Home Assistant streams the reply (the response starts before it is complete), playback starts as soon as the first part is available.
 - **No spoken reply.** If the pipeline finishes without any speech (for example no speech was detected, an error, or a command with no reply), the pipeline ended sound (`--pipeline-ended-sound`) plays. Afterwards the assistant goes back to idle and music is restored. The sound is not played after announcements, when the reply is stopped with the stop word, when another satellite heard the same wake word and Home Assistant gave the run to it (`duplicate_wake_up_detected`), or when Home Assistant ends the run right after speech recognition because something else handles the transcript (for example the answer to a question asked by an automation).
 - **Continued conversation.** If Home Assistant asks a follow-up question, the assistant listens again after the reply, without a wake word. It waits `--continue-conversation-delay` (default 0.5 s) after the reply so the microphone does not record the tail of its own voice. Music stays ducked through the whole conversation and is restored only when the conversation ends. The follow-up runs on the same pipeline as the wake word that started the conversation. After a button press or an announcement from Home Assistant there is no wake word, so the first pipeline is used. If you mute the assistant during that delay, the follow-up is skipped and music is restored.
 - **Wake word while a timer rings.** Saying the wake word silences the ringing timer and starts a normal interaction.
 - **Starting by button.** A peripheral button can start listening without a wake word. Instead of the wake sound, the start-listening sound (`--start-listening-sound`) plays; everything else is identical. This also silences a ringing timer.
 - **Errors.** If the pipeline reports an error, peripherals receive a `pipeline_error` event. See [peripheral_api.md](peripheral_api.md).
-- **Two wake words.** Home Assistant can activate up to two wake words at once. Each has its own sensitivity setting (*Wake Word 1/2 Sensitivity*).
+- **Two wake words.** Home Assistant can activate up to two wake words at once. Each has its own sensitivity setting (*Wake Word 1/2 Sensitivity*). A word keeps its slot while the other one changes, and always uses the sensitivity of its own slot, also when it is the only active word.
+- **Default wake words.** `--wake-model` fills the first slot and `--wake-model-2` the second one, but only while no wake words are stored yet (first start, or after the preferences file was removed). Once the active wake words are stored, the choice made in Home Assistant is kept and both options are ignored. Without `--wake-model-2` (the default), only one wake word is active. If it is unknown, fails to load or is the same as the first wake word, it is skipped with a log message and the assistant starts with one wake word.
 
 ---
 
@@ -143,6 +146,10 @@ The stop word (default model `stop`, configurable with `--stop-model`) is a safe
 
 At all other times it is ignored, so saying "stop" in a normal conversation does nothing. This avoids accidental triggers.
 
+The stop model is reset each time it becomes active again, so a word said in the
+first fraction of a second (about 0.2 s) of a reply, announcement or ringing timer
+may not be heard. Anything after that is detected as usual.
+
 What it does:
 
 | Situation | Effect |
@@ -179,9 +186,10 @@ Do not confuse this with the **media player mute**, which sets the shared volume
 
 - There is **one shared volume** for music and for all assistant sounds (chimes, replies, timer). Changing it on the media player entity or with a peripheral's volume buttons changes both.
 - The volume is saved in `preferences.json` and restored after a restart.
+- **First start.** If the preferences file does not exist yet, it is created right at startup with the defaults and an info message is logged, instead of on the first change. Startup may write the file again, for example when the default wake words are stored or when `--enable-thinking-sound`, `--mic-volume`, `--mic-auto-gain` or `--mic-noise-suppression` is set.
 - **Media player mute** (the speaker icon on the media player card) sets the volume to 0 and remembers the previous value. Unmuting restores it.
 - **Ducking** is temporary and independent of the set volume: it always means 50 % of the current volume.
-- A separate **Mic Volume** controls the microphone level. It does not affect playback, see [configuration.md](configuration.md).
+- A separate **Mic Volume** controls the microphone level. It does not affect playback, see [configuration.md](configuration.md). It is saved in `preferences.json` and restored after a restart. Only an explicitly given `--mic-volume` (0 to 100) overrides the stored value on start. Without it, the stored value is used, or 100 if none is stored yet.
 
 ---
 
@@ -214,6 +222,7 @@ The *Disable button controls* switch (if the peripheral provides it) lets you lo
 ## Connection to Home Assistant
 
 - LVA is discovered by Home Assistant via mDNS (ESPHome integration). Several clients can be connected at the same time.
+- **Without mDNS.** With `--enable-zeroconf 0`, LVA announces nothing on the network, so Home Assistant does not discover it. Add it manually in the ESPHome integration with the host IP address and port `6053` (`--port`). Everything else (ESPHome API, peripheral API, `zeroconf` peripheral events) works as before.
 - **Identity.** Home Assistant knows the device by its MAC address, which is also in its name (`lva-<mac>`): by default the network interface's. With `--mac-address` it is that one instead, so the device stays the same in Home Assistant when the machine uses another interface, and several instances on one machine get one identity each.
 - **Encryption.** With `--enable-encryption`, the connection is encrypted as on ESPHome devices with an API encryption key. The key is read from `--encryption-key-file` (default: `encryption.key` next to the preferences file): Home Assistant asks for it when adding the device, and clients without it (or with a different one) are refused. Without `--enable-encryption` the connection is plaintext, as before. LVA warns if the key file is accessible by other users (group/other permission bits set), If the key file does not exist, LVA creates it with a new random key (readable only by its user) and logs a warning with the path of the file. The key itself is never logged: read it from the file to enter it in Home Assistant. LVA refuses to start if the key file cannot be read or does not hold 32 bytes of base64.
 - When Home Assistant **reconnects** (for example after a restart), settings and entities are kept. Playback is not interrupted as long as at least one client is still connected.

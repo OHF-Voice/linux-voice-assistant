@@ -8,7 +8,11 @@ The Linux-Voice-Assistant container connects to the PulseAudio(PipeWire-Pulse) s
 
 ## A) Pipewire (recommended):
 
-PipeWire is a multimedia server that provides low-latency audio/video handling. Install it with the following commands:
+PipeWire is a multimedia server that provides low-latency audio/video handling. 
+
+#### Install packages:
+
+Install it with the following commands:
 
 ```sh
 # Update package database
@@ -18,11 +22,15 @@ sudo apt update
 sudo apt install -y pipewire wireplumber pipewire-audio-client-libraries libspa-0.2-bluetooth pipewire-audio pipewire-pulse dfu-util pulseaudio-utils
 ```
 
+#### Configure Alsa:
+
 Link the PipeWire configuration for ALSA applications:
 
 ```sh
-sudo ln -s /usr/share/alsa/alsa.conf.d/50-pipewire.conf /etc/alsa/conf.d/
+sudo ln -sf /usr/share/alsa/alsa.conf.d/50-pipewire.conf /etc/alsa/conf.d/
 ```
+
+#### Setup linger:
 
 Allow services to run without an active user session. This step is **required on headless systems** (e.g. Raspberry Pi OS Lite), since PipeWire runs under the user's systemd session and only starts while someone is logged in. Without it, LVA will silently stop working after you close your SSH session.
 
@@ -40,19 +48,42 @@ loginctl show-user $USER | grep Linger
 # Expected: Linger=yes
 ```
 
-### Configure PipeWire (optional):
+#### Configure WirePlumber - output devices:
 
-💡 **Note:** If you are not on a desktop system, which is already configured for PipeWire, you can configure it manually.
+💡 **Note:** WirePlumber is the session manager of PipeWire. It decides how sound cards are set up, for example which volume they start with and when they are put to sleep. The following two files make sure that the output device starts at 100 % volume, so that LVA's own volume control (and not a low stored default) decides how loud it is, and that the output device is not suspended when it is idle.
 
-💡 **Note:** LVA records audio at 16kHz. By default PipeWire may run at a different sample rate (typically 48kHz) and will resample automatically. Setting `default.clock.rate = 16000` avoids this resampling overhead, which is particularly beneficial on low-power hardware such as a Raspberry Pi.
+- `audio.volume = 1.0` sets the volume of every `alsa_output.*` device to 100 %.
+- `session.suspend-timeout-seconds = 0` and `node.pause-on-idle = false` keep the output device open instead of suspending it when nothing is playing. This should avoid that the start of a sound is cut off while the device wakes up. This effect is not verified.
+- `device.routes.default-sink-volume = 1.0` sets the volume that WirePlumber gives a sound card that has no stored state. A state stored in `~/.local/state/wireplumber` wins over it, so it does not change a card that was already set up.
 
-LVA is meant to be configured system wide. So only that method has been documented.
-
-#### System-wide Configuration
 ```sh
-sudo mkdir -p /etc/pipewire/pipewire.conf.d
-sudo vi /etc/pipewire/pipewire.conf.d/linux-voice-assistant.conf
+sudo mkdir -p /etc/wireplumber/wireplumber.conf.d
+sudo tee /etc/wireplumber/wireplumber.conf.d/50-alsa-output.conf > /dev/null << 'EOF'
+monitor.alsa.rules = [
+    {
+        matches = [
+            {
+                node.name = "~alsa_output.*"
+            }
+        ]
+        actions = {
+            update-props = {
+                audio.volume = 1.0
+                session.suspend-timeout-seconds = 0
+                node.pause-on-idle = false
+            }
+        }
+    }
+]
+EOF
+sudo tee /etc/wireplumber/wireplumber.conf.d/51-default-volume.conf > /dev/null << 'EOF'
+wireplumber.settings = {
+    device.routes.default-sink-volume = 1.0
+}
+EOF
 ```
+
+#### Configure PipeWire - process priority:
 
 💡 **Note:** On constrained hardware like a Raspberry Pi 3B, audio
 processing can be interrupted by other system activity, causing
@@ -64,12 +95,17 @@ silently skipped rather than causing a startup failure on systems
 where realtime scheduling isn't available (e.g. some containers or
 restricted kernels).
 
-Add the following content:
-```
-context.properties = {
-    default.clock.rate = 16000
-}
+On Debian and Raspberry Pi OS the realtime priority is only granted to members of the `pipewire` group. Add the user that runs the voice assistant to it:
 
+```sh
+sudo usermod -aG pipewire $USER
+```
+
+The new group membership takes effect after the next login. Restart the system at the end of this section so that it is applied.
+
+```sh
+sudo mkdir -p /etc/pipewire/pipewire.conf.d
+sudo tee /etc/pipewire/pipewire.conf.d/linux-voice-assistant.conf > /dev/null << 'EOF'
 context.modules = [
     {   name = libpipewire-module-rt
         args = {
@@ -79,16 +115,35 @@ context.modules = [
         flags = [ ifexists nofail ]
     }
 ]
+EOF
 ```
 
-#### Applying the Changes
+LVA is meant to be configured system wide. So only that method has been documented.
+
+### Configure PipeWire - Clock-Rate fix (optional):
+
+💡 **Note:** LVA records audio at 16kHz. By default PipeWire may run at a different sample rate (typically 48kHz) and will resample automatically. Setting `default.clock.rate = 16000` (optional, see below) avoids this resampling overhead, which is particularly beneficial on low-power hardware such as a Raspberry Pi.
+
+💡 **Note:** Some devices have a problem with PipeWire's default clock rate (48000). The Jabra SPEAK 510, for example, is a USB conference device with restricted sample rates. The rate PipeWire negotiates probably does not match the device cleanly, and the result sounds wrong, for example with a shifted pitch or speed (see [issue #233](https://github.com/OHF-Voice/linux-voice-assistant/issues/233)). Explicitly setting `default.clock.rate` forces PipeWire onto a rate the device can handle cleanly. This cause is not verified.
+
+The rate is not part of the default configuration above. If you need it, put it into a separate file:
+
+```sh
+sudo tee /etc/pipewire/pipewire.conf.d/10-clock-rate.conf > /dev/null << 'EOF'
+context.properties = {
+    default.clock.rate = 16000
+}
+EOF
+```
+
+### Applying the Changes
 PipeWire runs as a systemd user service under the user session (e.g., UID 1000). When executing commands as root, systemctl --user cannot connect to the user's DBus session unless the required environment variables are set. But as recommend at the end of this documentation part it is better and we recommend to restart the whole system.
+
 ```sh
 sudo -u pi XDG_RUNTIME_DIR=/run/user/1000 systemctl --user restart pipewire pipewire-pulse wireplumber
-
 ```
 
-💡 **Note:** In certain cases where hardware drivers need to be installed, a system reboot may be required. For hardware such as the Seeed 2-Mic Voice Card, multiple reboots may be needed to ensure the driver is installed and loaded and installed correctly. More about that in the PiCompose documentation within the Ready-to-use Image.
+💡 **Note:** In certain cases where hardware drivers need to be installed, a system reboot may be required. 
 
 ## B) PulseAudio:
 

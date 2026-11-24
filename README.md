@@ -77,8 +77,8 @@ For all other users, we have different installation methods available (Docker, s
 
 ```sh
 usage: __main__.py [-h] [--name NAME] [--audio-input-device AUDIO_INPUT_DEVICE] [--list-input-devices] [--audio-input-block-size AUDIO_INPUT_BLOCK_SIZE] [--audio-output-device AUDIO_OUTPUT_DEVICE] [--music-output-device MUSIC_OUTPUT_DEVICE] [--list-output-devices] [--wake-word-dir WAKE_WORD_DIR]  [--mic-auto-gain] [--mic-noise-suppression]
-                   [--wake-model WAKE_MODEL] [--stop-model STOP_MODEL] [--download-dir DOWNLOAD_DIR] [--refractory-seconds REFRACTORY_SECONDS] [--wakeup-sound WAKEUP_SOUND] [--timer-finished-sound TIMER_FINISHED_SOUND] [--processing-sound PROCESSING_SOUND]
-                   [--mute-sound MUTE_SOUND] [--unmute-sound UNMUTE_SOUND] [--preferences-file PREFERENCES_FILE] [--host HOST] [--network-interface NETWORK_INTERFACE] [--mac-address MAC_ADDRESS] [--port PORT] [--enable-encryption] [--encryption-key-file ENCRYPTION_KEY_FILE] [--enable-thinking-sound] [--listen-during-wake-sound] [--debug]
+                   [--wake-model WAKE_MODEL] [--wake-model-2 WAKE_MODEL_2] [--stop-model STOP_MODEL] [--download-dir DOWNLOAD_DIR] [--refractory-seconds REFRACTORY_SECONDS] [--wakeup-sound WAKEUP_SOUND] [--timer-finished-sound TIMER_FINISHED_SOUND] [--processing-sound PROCESSING_SOUND]
+                   [--mute-sound MUTE_SOUND] [--unmute-sound UNMUTE_SOUND] [--preferences-file PREFERENCES_FILE] [--host HOST] [--network-interface NETWORK_INTERFACE] [--mac-address MAC_ADDRESS] [--port PORT] [--enable-encryption] [--encryption-key-file ENCRYPTION_KEY_FILE] [--enable-thinking-sound] [--enable-zeroconf {0,1}] [--listen-during-wake-sound] [--debug]
 ```
 
 | Parameter                       | Description                                                                            | Default                              |
@@ -88,15 +88,16 @@ usage: __main__.py [-h] [--name NAME] [--audio-input-device AUDIO_INPUT_DEVICE] 
 | `--audio-input-block-size`      | Audio input block size in samples                                                      | 1024                                 |
 | `--audio-output-device`         | mpv name for output device, use a `pulse/...` name from `--list-output-devices`        | `pulse`                              |
 | `--music-output-device`         | mpv name for the music/media output device                                             | `--audio-output-device`              |
-| `--mic-volume`                  | Control microphone volume                                                              | 100                                  |
+| `--mic-volume`                  | Microphone volume 0 to 100, overrides the stored value on every start                  | stored value, else 100               |
 | `--mic-auto-gain`               | Add WebRTC Gain to Mic                                                                 | 0                                    |
 | `--mic-noise-suppression`       | Add WebRTC Noise Suppression to Mic                                                    | 0                                    |
 | `--audio-input-channels`        | Number of microphone audio channels to capture (2 = mic + AEC reference channel)       | 1                                    |
 | `--wake-word-dir`               | Directory with wake word models (.tflite) and configs (.json)                          | `wakewords/`                         |
 | `--wake-model`                  | ID of active wake word model                                                           | `okay_nabu`                          |
+| `--wake-model-2`                | ID of the second active wake word model, empty = none. Only used while no wake words are stored | empty                       |
 | `--stop-model`                  | ID of stop model                                                                       | `stop`                               |
 | `--download-dir`                | Directory to download custom wake word models, etc.                                    | `local/`                             |
-| `--refractory-seconds`          | Seconds before wake word can be activated again                                        | 2.0                                  |
+| `--refractory-seconds`          | Seconds after an accepted wake word during which further detections are blocked (0 = off) | 0.0                                  |
 | `--continue-conversation-delay` | Delay before mic opens for continued conversation                                      | 0.5                                  |
 | `--timer-max-ring-seconds`      | Seconds after which the timer stops ringing                                            | 900.0                                |
 | `--wakeup-sound`                | Sound file played when wake word is detected                                           | `sounds/wake_word_triggered.flac`    |
@@ -123,6 +124,7 @@ usage: __main__.py [-h] [--name NAME] [--audio-input-device AUDIO_INPUT_DEVICE] 
 | `--peripheral-volume-step`      | Volume change per button press, 0.0–1.0                                                | %(default)s                          |
 | `--peripheral-startup-wait`     | Seconds to wait for peripherals to register entities                                   | 2.0                                  |
 | `--disable-peripheral-api`      | Disable the peripheral WebSocket API entirely                                          | False                                |
+| `--enable-zeroconf`             | Announce LVA via mDNS; `0` turns it off, then add it manually in Home Assistant (host IP and `--port`) | 1                                    |
 | `--debug`                       | Print DEBUG messages to console                                                        | False                                |
 | `--colored-debug`               | Print colored DEBUG messages to console                                                | False                                |
 | `--output-only`                 | Enable output only mode                                                                | False                                |
@@ -130,6 +132,8 @@ usage: __main__.py [-h] [--name NAME] [--audio-input-device AUDIO_INPUT_DEVICE] 
 💡 **Note:** There are detailed explanations on the controlled entities from device page in the [configuration](docs/configuration.md) file.
 
 💡 **Note:** How the assistant behaves in everyday situations (music ducking during conversations, announcements, timers, stop word, mute, volume) is described in the [behavior guide](docs/behavior.md).
+
+💡 **Note:** How LVA communicates with Home Assistant and peripherals, and what happens during a voice request, is described in the [communication overview](docs/communication.md).
 
 ## Build Information
 
