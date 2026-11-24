@@ -268,6 +268,63 @@ class TestMediaPlayerEntityPlayback:
         entity.music_player.resume.assert_called_once()
 
 
+class TestMediaPlayerEntityDirectControl:
+    def test_pause_returns_paused_state(self):
+        entity = make_media_player()
+        response = entity.pause()
+        entity.music_player.pause.assert_called_once()
+        assert response.state == MediaPlayerState.PAUSED
+        assert entity.state == MediaPlayerState.PAUSED
+
+    def test_resume_returns_playing_state(self):
+        entity = make_media_player()
+        response = entity.resume()
+        entity.music_player.resume.assert_called_once()
+        assert response.state == MediaPlayerState.PLAYING
+
+    def test_stop_returns_idle_state(self):
+        entity = make_media_player()
+        entity.state = MediaPlayerState.PLAYING
+        response = entity.stop()
+        entity.music_player.stop.assert_called_once()
+        assert response.state == MediaPlayerState.IDLE
+
+    def test_set_volume_sets_players_and_persists(self):
+        entity = make_media_player(initial_volume=1.0)
+        entity.set_volume(0.4)
+        entity.music_player.set_volume.assert_called_with(40)
+        entity.announce_player.set_volume.assert_called_with(40)
+        entity.server.state.persist_volume.assert_called_once_with(0.4)
+        assert entity.volume == 0.4
+        assert entity.previous_volume == 0.4
+
+    def test_set_volume_without_server_state_warns(self, caplog):
+        entity = make_media_player()
+        entity.server = MagicMock(spec=[])
+        with caplog.at_level("WARNING"):
+            entity.set_volume(0.4)
+        assert "Cannot persist volume" in caplog.text
+        assert entity.volume == 0.4
+
+    def test_mute_persists_zero_volume(self):
+        entity = make_media_player(initial_volume=0.8)
+        entity._set_muted(True)
+        entity.server.state.persist_volume.assert_called_once_with(0)
+
+    def test_unmute_persists_restored_volume(self):
+        entity = make_media_player(initial_volume=0.8)
+        entity._set_muted(True)
+        entity.server.state.persist_volume.reset_mock()
+        entity._set_muted(False)
+        entity.server.state.persist_volume.assert_called_once_with(0.8)
+        entity.music_player.set_volume.assert_called_with(80)
+
+    def test_setting_the_current_mute_state_changes_nothing(self):
+        entity = make_media_player(initial_volume=0.8)
+        entity._set_muted(False)
+        entity.server.state.persist_volume.assert_not_called()
+
+
 class TestMediaPlayerEntityAnnouncement:
     @staticmethod
     def _announce(entity):
