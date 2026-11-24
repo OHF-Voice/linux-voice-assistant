@@ -141,6 +141,93 @@ class TestFindAvailableWakeWords:
 # ---------------------------------------------------------------------------
 
 
+def _make_available_word(model_id: str, word_type=None):
+    from linux_voice_assistant.models import AvailableWakeWord, WakeWordType
+
+    available = MagicMock(spec=AvailableWakeWord)
+    available.id = model_id
+    available.wake_word = model_id.replace("_", " ")
+    available.type = word_type or WakeWordType.MICRO_WAKE_WORD
+    available.load.return_value = MagicMock(name=f"model_{model_id}")
+    return available
+
+
+class TestLoadWakeModelsSecondDefault:
+    def _load(self, available, second_id, first_id="okay_nabu", **kwargs):
+        from linux_voice_assistant.wake_word import load_wake_models
+
+        return load_wake_models(available, [], first_id, second_default_wake_word_id=second_id, **kwargs)
+
+    def test_empty_id_means_no_second_wake_word(self):
+        available = {"okay_nabu": _make_available_word("okay_nabu"), "hey_jarvis": _make_available_word("hey_jarvis")}
+        models, slots, _ = self._load(available, "")
+        assert slots == ["okay_nabu"]
+        assert list(models) == ["okay_nabu"]
+        available["hey_jarvis"].load.assert_not_called()
+
+    def test_loads_second_wake_word_after_first(self):
+        available = {"hey_jarvis": _make_available_word("hey_jarvis"), "okay_nabu": _make_available_word("okay_nabu")}
+        models, slots, fallback = self._load(available, "hey_jarvis")
+        assert slots == ["okay_nabu", "hey_jarvis"]
+        assert set(models) == {"okay_nabu", "hey_jarvis"}
+        assert fallback is True
+
+    def test_resolves_versioned_open_wake_word_id(self):
+        from linux_voice_assistant.models import WakeWordType
+
+        available = {"okay_nabu": _make_available_word("okay_nabu"), "hey_jarvis_v0.1": _make_available_word("hey_jarvis_v0.1", WakeWordType.OPEN_WAKE_WORD)}
+        _, slots, _ = self._load(available, "hey_jarvis")
+        assert slots == ["okay_nabu", "hey_jarvis_v0.1"]
+
+    def test_prefers_open_wake_word_type_when_given(self):
+        from linux_voice_assistant.models import WakeWordType
+
+        available = {
+            "okay_nabu": _make_available_word("okay_nabu"),
+            "alexa": _make_available_word("alexa", WakeWordType.MICRO_WAKE_WORD),
+            "alexa_v0.1": _make_available_word("alexa_v0.1", WakeWordType.OPEN_WAKE_WORD),
+        }
+        _, slots, _ = self._load(available, "alexa", preferred_type=WakeWordType.OPEN_WAKE_WORD)
+        assert slots == ["okay_nabu", "alexa_v0.1"]
+
+    def test_unknown_id_is_skipped_with_warning(self, caplog):
+        with caplog.at_level("WARNING"):
+            _, slots, _ = self._load({"okay_nabu": _make_available_word("okay_nabu")}, "nope")
+        assert slots == ["okay_nabu"]
+        assert "Second wake word 'nope' not found" in caplog.text
+
+    def test_same_as_first_is_skipped_with_warning(self, caplog):
+        nabu = _make_available_word("okay_nabu")
+        with caplog.at_level("WARNING"):
+            _, slots, _ = self._load({"okay_nabu": nabu}, "okay_nabu")
+        assert slots == ["okay_nabu"]
+        assert "same as the first one" in caplog.text
+        nabu.load.assert_called_once()
+
+    def test_load_failure_is_skipped_with_error(self, caplog):
+        jarvis = _make_available_word("hey_jarvis")
+        jarvis.load.side_effect = RuntimeError("broken model")
+        with caplog.at_level("ERROR"):
+            models, slots, _ = self._load({"okay_nabu": _make_available_word("okay_nabu"), "hey_jarvis": jarvis}, "hey_jarvis")
+        assert slots == ["okay_nabu"]
+        assert "hey_jarvis" not in models
+        assert "Failed to load second wake word hey_jarvis" in caplog.text
+
+    def test_success_is_logged_at_debug(self, caplog):
+        with caplog.at_level("DEBUG"):
+            self._load({"okay_nabu": _make_available_word("okay_nabu"), "hey_jarvis": _make_available_word("hey_jarvis")}, "hey_jarvis")
+        assert "Successfully loaded default wake model 2: hey_jarvis" in caplog.text
+
+    def test_ignored_when_stored_wake_words_are_loaded(self):
+        from linux_voice_assistant.wake_word import load_wake_models
+
+        available = {"okay_nabu": _make_available_word("okay_nabu"), "hey_jarvis": _make_available_word("hey_jarvis")}
+        models, slots, fallback = load_wake_models(available, ["hey_jarvis"], "okay_nabu", second_default_wake_word_id="okay_nabu")
+        assert slots == ["hey_jarvis"]
+        assert list(models) == ["hey_jarvis"]
+        assert fallback is False
+
+
 class TestLoadWakeModels:
     def _make_available(self, tmp_path, model_id="okay_nabu"):
         from linux_voice_assistant.models import AvailableWakeWord, WakeWordType
@@ -215,12 +302,12 @@ class TestLoadWakeModels:
         assert "okay_nabu" in models
         assert "hey_jarvis" in models
 
-    def test_active_set_matches_loaded_models(self, tmp_path):
+    def test_active_ids_match_loaded_models(self, tmp_path):
         available, _ = self._make_available(tmp_path)
         from linux_voice_assistant.wake_word import load_wake_models
 
         models, active, _ = load_wake_models({"okay_nabu": available}, ["okay_nabu"], "okay_nabu")
-        assert set(models.keys()) == active
+        assert list(models.keys()) == active
 
     def test_load_called_once_per_model(self, tmp_path):
         available, _ = self._make_available(tmp_path)

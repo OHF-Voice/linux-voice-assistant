@@ -42,7 +42,7 @@ Thread-safety rules:
 - `state.entities` persists across reconnects. **Entity `key` = `len(state.entities)` at creation time.** Never reorder or remove entities. Append only.
 - `state.connections` lists all live protocol instances. Use `state.broadcast(msgs)` for asynchronous state changes so every client gets them. `satellite.send_messages` reaches only one client.
 - `Preferences` is loaded with `Preferences.from_dict()`, which drops unknown keys and logs a warning. Adding a field with a default is safe. **Renaming a field silently loses the stored value**, because the old key is dropped and the new one falls back to its default. Migrate the value explicitly if a rename is unavoidable.
-- Persist helpers: `save_preferences()`, `persist_volume()` (it also emits `volume_changed`/`volume_muted` to peripherals), `persist_mic_gain/noise/volume()`.
+- Persist helpers: `state.preferences.save(state.preferences_path)`, `persist_volume()` (it also emits `volume_changed`/`volume_muted` to peripherals), `persist_mic_gain/noise/volume()`.
 - `oww_*_probability_cutoff` fields are legacy and unused. The thresholds in use are `wake_word_1_threshold`, `wake_word_2_threshold` and `stop_word_threshold`.
 
 ## Module map
@@ -55,6 +55,8 @@ Thread-safety rules:
 | `entity.py` | ESPHome entities. Each implements `handle_message(msg)` and yields responses for `ListEntitiesRequest`, `SubscribeHomeAssistantStatesRequest`, and its own `*CommandRequest` filtered by `msg.key == self.key` | `MediaPlayerEntity`, `MuteSwitchEntity`, `ThinkingSoundEntity`, `MicSettingEntity` (Number, or Select if `options`), `WakeWord1/2SensitivityNumberEntity`, `StopWordSensitivityNumberEntity`, `LEDLightEntity`, `ButtonEventSensorEntity`, `ButtonLockEntity`. Old aliases are at the bottom. |
 | `peripheral_api.py` | WebSocket server. `LVAEvent` (LVA→peripheral), `LVACommand` (peripheral→LVA), snapshot + replay of the last state event on connect | The module docstring is the protocol spec and must stay in sync with `docs/peripheral_api.md`. |
 | `wake_word.py` | `find_available_wake_words()` (globs `*.json` top-level only), `load_wake_models()` (fallback chain: requested → `--wake-model` → `okay_nabu` → first available), `load_stop_model()` | openWakeWord ids are versioned (`hey_jarvis_v0.1`). Prefix matching handles them. |
+| `wake_word_detection.py` | Slot-ordered active wake words, per-slot thresholds, `gate_wake_words()` (pause while a pipeline runs, reset on resume), `process_wake_words()` (scoring, mute, refractory) | Pure functions, called once from `process_audio()`. Slot comes from `preferences.active_wake_words`, not from dict order. |
+| `stop_word.py` | `process_stop_word()`: stop model runs only while its id is in `active_wake_words`, reset on activation | Same gating pattern as wake words. |
 | `models.py` | `WakeWordType`, `AvailableWakeWord` (`.load()`), `LightRegistration`, `Preferences`, `ServerState`, `initial_stop_word_threshold()` | |
 | `mpv_player.py` | `MpvMediaPlayer`: playlist (list of URLs), done_callback, duck/unduck | `stop()` **invokes** the pending done_callback. |
 | `player/libmpv.py` | `LibMpvPlayer`: real mpv wrapper, effective volume = user × duck factor | Only an `end-file` with reason 0 (EOF) fires the callback. `stop(for_replacement=True)` drops the callback. Many debug logs wrongly say "unduck() called", so don't rely on them. |
@@ -125,7 +127,17 @@ Existing env quirk: `REFACTORY_SECONDS` is misspelled on purpose (it's the publi
 4. Persist through `Preferences` if needed.
 5. Document it in `docs/configuration.md`.
 
-**New preference**: add the field with a default to `Preferences`, read it in `main()` before `ServerState` is built, and write it through a `persist_*`/setter that calls `save_preferences()`.
+**New preference**: add the field with a default to `Preferences`, read it in `main()` before `ServerState` is built, and write it through a `persist_*`/setter that calls `state.preferences.save(state.preferences_path)`.
+
+## Code structure for new logic
+
+`process_audio()` in `__main__.py` and `satellite.py` are already large. Do not grow them.
+
+- Put new logic that can run on its own (detection, gating, filtering, state decisions) into its own module under `linux_voice_assistant/`, as a plain function that takes the state it needs as parameters and returns the result. Keep mutable state in the caller (for example a flag passed in and returned) instead of module globals.
+- Leave only a single call in `__main__.py` / `satellite.py`. Do not hide threading, I/O or hardware access in the new module, so it stays unit-testable with `make_state()` and mocks.
+- Add `tests/unit/test_<module>.py` for every new module (see Tests below).
+- Log decisions (detected, gated, reset) at debug level with the value and the threshold, in the style of the existing wake word log lines.
+- Do not refactor unrelated code in the same change. Extract only the logic you are touching.
 
 ## Tests
 
@@ -153,6 +165,7 @@ Existing env quirk: `REFACTORY_SECONDS` is misspelled on purpose (it's the publi
 | `docs/behavior.md` | User-visible behavior (phases, ducking, stop word, timers, announcements). Binding for code changes, see AGENTS.md |
 | `docs/configuration.md` | Every HA device-page entity, from the user's view |
 | `docs/peripheral_api.md` | Full WebSocket protocol for peripheral authors |
+| `docs/communication.md` | Overview of the ESPHome API, mDNS and peripheral WebSocket interfaces, the voice request sequence, startup order, threads |
 | `docs/audio_pipeline.md` | Mic input to HA streaming: capture, Mic Volume scalar, WebRTC, wake/stop word, `VoiceAssistantAudio` data/data2 |
 | `docs/enabling_aec.md` | Echo cancellation via PulseAudio/PipeWire |
 | `docs/debugging.md` | Audio stack / container socket troubleshooting |

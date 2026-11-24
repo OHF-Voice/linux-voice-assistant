@@ -183,17 +183,18 @@ Environment=PREFERENCES_FILE="/home/pi/linux-voice-assistant/preferences.json"
 # Environment=AUDIO_INPUT_BLOCK_SIZE="1024"
 # Environment=AUDIO_OUTPUT_DEVICE="pulse"
 # Environment=MUSIC_OUTPUT_DEVICE="pulse"
-# Environment=MIC_VOLUME="1.0"
+# Environment=MIC_VOLUME="100"
 # Environment=MIC_AUTO_GAIN="0"
 # Environment=MIC_NOISE_SUPPRESSION="0"
 # Environment=AUDIO_INPUT_CHANNELS=1
 # Environment=ENABLE_THINKING_SOUND="1"
 # Environment=WAKE_WORD_DIR="app/wakewords"
-# Environment=WAKE-MODEL="okay_nabu"
+# Environment=WAKE_MODEL="okay_nabu"
+# Environment=WAKE_MODEL_2="hey_jarvis"
 # Environment=STOP_MODEL="stop"
 # Environment=DOWNLOAD_DIR="/home/pi/linux-voice-assistant/local"
 # Environment=TIMER_MAX_RING_SECONDS="900"
-# Environment=REFACTORY_SECONDS="2"
+# Environment=REFACTORY_SECONDS="0"
 # Environment=CONTINUE_CONVERSATION_DELAY="0.5"
 # Environment=WAKEUP_SOUND="sounds/wake_word_triggered.flac"
 # Environment=START_LISTENING_SOUND="sounds/start_listening_button.flac"
@@ -211,6 +212,7 @@ Environment=PREFERENCES_FILE="/home/pi/linux-voice-assistant/preferences.json"
 # Environment=PERIPHERAL_VOLUME_STEP="%(default)s"
 # Environment=PERIPHERAL_STARTUP_WAIT="2.0"
 # Environment=DISABLE_PERIPHERAL_API="1"
+# Environment=ENABLE_ZEROCONF="1"
 # Environment=ENABLE_OUTPUT_ONLY="1"
 ExecStart=/home/pi/linux-voice-assistant/docker-entrypoint.sh
 # ExecStart=/home/pi/linux-voice-assistant/docker-entrypoint.sh --additional-parameter-if-you-want
@@ -288,17 +290,18 @@ The following variables can be configured in the `.env` or in the service file:
 | `AUDIO_INPUT_BLOCK_SIZE` | `1024` | Audio input block size in samples |
 | `AUDIO_OUTPUT_DEVICE` | `pulse` | Audio output device name, use a `pulse/...` name from the device list (see `LIST_DEVICES`) |
 | `MUSIC_OUTPUT_DEVICE` | `AUDIO_OUTPUT_DEVICE` | Music/media output device name (defaults to the voice output device) |
-| `MIC_VOLUME` | 100 | Control microphone volume |
+| `MIC_VOLUME` | Stored value, else 100 | Microphone volume 0 to 100, overrides the stored Mic Volume on every start. Leave it unset or empty to keep the stored value |
 | `MIC_AUTO_GAIN` | 0 | Add WebRTC Gain to Mic |
 | `MIC_NOISE_SUPPRESSION` | 0 | Add WebRTC Noise Suppression to Mic |
 | `AUDIO_INPUT_CHANNELS` | 1 | Number of audio input channels to capture (2 for devices with a hardware AEC reference channel). Does not change what is sent to Home Assistant |
 | `ENABLE_THINKING_SOUND` | false | Set to "1" to enable thinking sound |
 | `WAKE_WORD_DIR` | `app/wakewords` | Path to the wake word directory |
 | `WAKE_MODEL` | `okay_nabu` | Wake word model to use |
+| `WAKE_MODEL_2` | empty | Wake word model for the second slot (empty = no second wake word). Used only when no wake words are stored yet, see [Custom Wake Word](#custom-wake-word) |
 | `STOP_MODEL` | `stop` | Stop model to use |
 | `DOWNLOAD_DIR` | `/app/local` | Directory to download custom wake word models to |
 | `TIMER_MAX_RING_SECONDS` | `900` | Seconds after which the timer stops ringing |
-| `REFACTORY_SECONDS` | `2` | Refractory period in seconds after wake word |
+| `REFACTORY_SECONDS` | `0` | Seconds after an accepted wake word during which further detections of any wake word are blocked and discarded (logged at debug level). `0` turns it off. See [behavior](behavior.md#talking-to-the-assistant) |
 | `CONTINUE_CONVERSATION_DELAY` | `0.5` | Delay before mic opens for continued conversation |
 | `WAKEUP_SOUND` | `sounds/wake_word_triggered.flac` | Sound file for wake word triggered |
 | `START_LISTENING_SOUND` | `sounds/start_listening_button.flac` | Sound file for pressing button to talk |
@@ -316,6 +319,7 @@ The following variables can be configured in the `.env` or in the service file:
 | `PERIPHERAL_VOLUME_STEP` | %(default)s | Volume change per button press |
 | `PERIPHERAL_STARTUP_WAIT` | `2.0` | Seconds to wait for peripherals to register entities before Home Assistant enumerates them (0 to skip) |
 | `DISABLE_PERIPHERAL_API` | false | Disable the peripheral WebSocket API |
+| `ENABLE_ZEROCONF` | `1` | Set to "0" to not announce LVA via mDNS (same as `--enable-zeroconf 0`). Home Assistant then does not discover it automatically: add it manually with the host IP address and port `6053`. Does not change the ESPHome API or the peripheral API |
 | `ENABLE_OUTPUT_ONLY` | (optional) | Set to "1" to enable output-only mode |
 
 
@@ -390,6 +394,8 @@ The `stop` wake word is used to stop the current process (response, announcement
 If you want to use your own wakewords, you can add them to the `wakewords/custom` aka `/var/lib/docker/volumes/lva_wakeword_custom/_data` directory and reference them in the `.env` file.
 
 Change the default wake word with `WAKE_MODEL <id>` where `<id>` is the name of a model in the `wakewords` directory. For example, `WAKE_MODEL hey_jarvis` will load `app/wakewords/hey_jarvis.tflite` by default.
+
+Set `WAKE_MODEL_2 <id>` to also activate a second wake word by default. It is looked up like `WAKE_MODEL`; if it is empty, unknown or the same as the first one, only the first wake word is active. Both defaults apply only while no wake words are stored yet (first start, or after the preferences file was removed). After that, the wake words chosen in Home Assistant are kept and `WAKE_MODEL` / `WAKE_MODEL_2` are ignored.
 
 You can include more wakeword directories by adding `WAKE_WORD_DIR <DIR>` where `<DIR>` contains either [microWakeWord][] or [openWakeWord][] config files and `.tflite` models. For example, `WAKE_WORD_DIR app/wakewords/openWakeWord` will include the default wake words for openWakeWord.
 

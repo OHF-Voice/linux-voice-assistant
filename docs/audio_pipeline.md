@@ -128,7 +128,7 @@ The float32 format is fixed in `soundcard` (version 0.4.6, PulseAudio backend: `
 
 The result is `channel_chunks`, one `bytes` object per channel, each `B * 2` bytes (2048 bytes for the default block size).
 
-`state.mic_volume` is the Home Assistant entity "Mic Volume" (1 to 100, `--mic-volume`, persisted in the preferences). Values from 1 to 10 all give the same 0.1 factor.
+`state.mic_volume` is the Home Assistant entity "Mic Volume" (0 to 100, `--mic-volume`, persisted in the preferences). Values from 0 to 10 all give the same 0.1 factor.
 
 ### 3. Optional WebRTC processing (channel 0 only)
 
@@ -200,8 +200,8 @@ If nobody speaks, LVA keeps sending until HA's own speech timeout ends the run. 
 After `handle_audio()`, the processed `audio_chunk` feeds the detectors:
 
 1. `MicroWakeWordFeatures.process_streaming()` (and the openWakeWord equivalent) turns the PCM into feature windows.
-2. Each active wake word model evaluates the windows against its threshold (slot 0 uses `wake_word_1_threshold`, slot 1 `wake_word_2_threshold`).
-3. If a model fires, the device is not muted and the refractory time (`state.refractory_seconds`) has passed, `satellite.wakeup(wake_word)` runs.
+2. Each active wake word model evaluates the windows against its threshold of its slot (slot 0 uses `wake_word_1_threshold`, slot 1 `wake_word_2_threshold`). The models only run while no voice pipeline is active (`satellite.pipeline_active`). They are reset when detection resumes. See `linux_voice_assistant/wake_word_detection.py`.
+3. If a model fires, the device is not muted and the optional refractory time (`state.refractory_seconds`, default 0 = off, counted from the last accepted detection) has passed, `satellite.wakeup(wake_word)` runs. A detection inside the refractory time is discarded and logged at debug level.
 4. The stop word model runs on every block to keep its state correct. It only acts if `state.stop_word.id` is in `state.active_wake_words` (during TTS, announcements and ringing timers) and the device is not muted. Then `satellite.stop()` is called.
 
 `wakeup()` returns early when muted or when a pipeline is already active. Otherwise it ducks music, plays the wake sound and sends `VoiceAssistantRequest(start=True)`. With `listen_during_wake_sound` the request is sent right away; otherwise after the wake sound has finished. This is what turns streaming on in step 6.

@@ -96,6 +96,10 @@ if [ -n "${WAKE_MODEL}" ]; then
   EXTRA_ARGS+=( "--wake-model" "$WAKE_MODEL" )
 fi
 
+if [ -n "${WAKE_MODEL_2}" ]; then
+  EXTRA_ARGS+=( "--wake-model-2" "$WAKE_MODEL_2" )
+fi
+
 if [ -n "${STOP_MODEL}" ]; then
   EXTRA_ARGS+=( "--stop-model" "$STOP_MODEL" )
 fi
@@ -170,6 +174,10 @@ fi
 
 if [ -n "${PERIPHERAL_STARTUP_WAIT}" ]; then
   EXTRA_ARGS+=( "--peripheral-startup-wait" "$PERIPHERAL_STARTUP_WAIT" )
+fi
+
+if [ -n "${ENABLE_ZEROCONF}" ]; then
+  EXTRA_ARGS+=( "--enable-zeroconf" "$ENABLE_ZEROCONF" )
 fi
 
 if [ "$DISABLE_PERIPHERAL_API" = "1" ]; then
