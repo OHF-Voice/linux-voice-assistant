@@ -30,8 +30,8 @@ from cryptography.exceptions import InvalidTag
 from google.protobuf import message
 from noise.connection import NoiseConnection  # type: ignore[import-untyped]
 
+from .network import apply_keepalive
 from .preamble_hint import describe_unexpected_preamble
-from .tcp_keepalive import apply_keepalive
 
 PROTO_TO_MESSAGE_TYPE = {v: k for k, v in MESSAGE_TYPE_TO_PROTO.items()}
 

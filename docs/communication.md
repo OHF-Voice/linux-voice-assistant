@@ -1,6 +1,6 @@
 # Communication and Process Overview
 
-This document explains who talks to whom in Linux Voice Assistant (LVA), over which interface, and in which order things happen during a voice request. It is the entry point; details live in the linked documents. The code is the source of truth: [`__main__.py`](../linux_voice_assistant/__main__.py), [`api_server.py`](../linux_voice_assistant/api_server.py), [`satellite.py`](../linux_voice_assistant/satellite.py), [`peripheral_api.py`](../linux_voice_assistant/peripheral_api.py) and [`zeroconf.py`](../linux_voice_assistant/zeroconf.py), [`network_refresh.py`](../linux_voice_assistant/network_refresh.py) and [`tcp_keepalive.py`](../linux_voice_assistant/tcp_keepalive.py).
+This document explains who talks to whom in Linux Voice Assistant (LVA), over which interface, and in which order things happen during a voice request. It is the entry point; details live in the linked documents. The code is the source of truth: [`__main__.py`](../linux_voice_assistant/__main__.py), [`api_server.py`](../linux_voice_assistant/api_server.py), [`satellite.py`](../linux_voice_assistant/satellite.py), [`peripheral_api.py`](../linux_voice_assistant/peripheral_api.py), [`zeroconf.py`](../linux_voice_assistant/zeroconf.py) and [`network.py`](../linux_voice_assistant/network.py).
 
 ## Interfaces at a glance
 
