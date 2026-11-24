@@ -100,7 +100,7 @@ async def main() -> None:
         help="Number of mic channels to capture (1=mono, 2=mic + AEC reference channel); what is streamed to Home Assistant does not depend on it",
     )
     parser.add_argument(
-        "--wake-word-dir",
+        "--wake-word-root-dir",
         default=_WAKEWORDS_DIR,
         help="Root directory of the wake word layout: <origin>/<engine> with origin internal, downloaded or custom and engine microwakeword or openwakeword",
     )
@@ -417,7 +417,7 @@ async def main() -> None:
             sys.exit(1)
 
     # Load available wake words
-    wake_word_root = Path(args.wake_word_dir)
+    wake_word_root = Path(args.wake_word_root_dir)
     # Lowest priority first: a wake word id found in a later directory replaces the same id found earlier
     wake_word_dirs = [wake_word_root / origin / engine for origin in ("internal", "downloaded", "custom") for engine in ("microwakeword", "openwakeword")]
     for wake_word_dir in wake_word_dirs:
