@@ -59,7 +59,7 @@ Thread-safety rules:
 | `stop_word.py` | `process_stop_word()`: stop model runs only while its id is in `active_wake_words`, reset on activation | Same gating pattern as wake words. |
 | `models.py` | `WakeWordType`, `AvailableWakeWord` (`.load()`), `LightRegistration`, `Preferences`, `ServerState`, `initial_stop_word_threshold()` | |
 | `mpv_player.py` | `MpvMediaPlayer`: playlist (list of URLs), done_callback, duck/unduck | `stop()` **invokes** the pending done_callback. |
-| `player/libmpv.py` | `LibMpvPlayer`: real mpv wrapper, effective volume = user × duck factor | Only an `end-file` with reason 0 (EOF) fires the callback. `stop(for_replacement=True)` drops the callback. Many debug logs wrongly say "unduck() called", so don't rely on them. |
+| `player/libmpv.py` | `LibMpvPlayer`: real mpv wrapper, effective volume = user × duck factor | Only an `end-file` with reason 0 (EOF) fires the callback. `stop(for_replacement=True)` drops the callback. Both mpv players have a name (`music`, `tts`) that is part of the logger name; `Volume (<reason>): set X x duck Y = Z` shows the effective volume. |
 | `webrtc.py` | `WebRTCProcessor`: 10 ms (320 byte) framing for `webrtc_noise_gain` | Can return `b""` while buffering. The audio loop then skips the chunk. |
 | `zeroconf.py` | mDNS registration | |
 | `util.py` | `get_version()` (reads `version.txt`), `get_esphome_version()`, `call_all()`, interface/IP detection | |
@@ -78,6 +78,8 @@ Flow: `wakeup()` (audio thread) → blocked if `state.muted` or `_pipeline_activ
 - `INTENT_END` with `continue_conversation=1`: remember it
 - `TTS_END`: `play_tts()`, which is idempotent via `_tts_played`
 - `RUN_END`: if no TTS was played, call `_tts_finished()` now. Otherwise `_pipeline_active` stays True until playback ends, so speaker audio can't trigger the wake word.
+
+Ducking has owners (`duck(owner=...)`/`unduck(owner=...)` on the satellite and on `MpvMediaPlayer`; free text, but `MpvMediaPlayer` accepts only the known owners and raises `ValueError` otherwise): `conversation` (default), `timer` (ringing) and `announce` (voice announcements, handed over to `conversation` when `start_conversation` is set). The volume is restored when the last owner has unducked. A new reason to duck gets its own owner, and whoever ducks must unduck with the same owner.
 
 `_tts_finished()` sends `VoiceAssistantAnnounceFinished`, removes the stop word from the active set, then either restarts listening after `continue_conversation_delay` (via `threading.Timer`) or unducks and emits `idle`.
 
@@ -152,6 +154,10 @@ Existing env quirk: `REFACTORY_SECONDS` is misspelled on purpose (it's the publi
 - `mypy` runs non-strict with `python_version = 3.11` (`mypy.ini`). Don't use syntax newer than 3.11.
 - The Docker image is **not** built locally by compose. `docker-compose.yml` pulls `ghcr.io/ohf-voice/linux-voice-assistant:${LVA_IMAGE_TAG:-latest}` (dev file: `-pr` image, tag `nightly`). The `Dockerfile` installs the pinned `aioesphomeapi` through `./script/setup`, so a fresh build always matches `pyproject.toml`. If a user reports an `AttributeError` on an aioesphomeapi symbol that exists in `.venv`, first suspect a stale or wrong image tag (check `LVA_IMAGE_TAG` in `.env`) before changing code. `satellite.py` guards `MULTI_CHANNEL_AUDIO` with `getattr` as a safety net only.
 - Some older docstrings in modules not touched recently may still be Google style. New code must use the Sphinx `:param:` style from AGENTS.md.
+
+## Defaults of CLI options
+
+Set the default of a CLI option as a literal in its `parser.add_argument(default=...)` in `__main__.py`, not in a module constant that `__main__.py` imports. Everyone who looks for the default finds it next to the option, its help text and `%(default)s`.
 
 ## Documentation map
 

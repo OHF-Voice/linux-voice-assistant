@@ -398,7 +398,7 @@ class PeripheralAPIServer:
                 satellite._timer_finished = False  # pylint: disable=protected-access
                 state.active_wake_words.discard(state.stop_word.id)
                 state.tts_player.stop()
-                satellite.unduck()
+                satellite.unduck(owner="timer")
                 await self.emit_event(LVAEvent.IDLE)
 
         elif command in (LVACommand.STOP_MEDIA_PLAYER, LVACommand.PAUSE_MEDIA_PLAYER, LVACommand.RESUME_MEDIA_PLAYER):
