@@ -192,6 +192,30 @@ class TestSavePreferences:
 # ---------------------------------------------------------------------------
 
 
+class TestPersistMicVolume:
+    def test_accepts_zero(self, tmp_path):
+        state = make_server_state(tmp_path)
+        state.persist_mic_volume(0.0)
+        assert state.mic_volume == 0
+        assert state.preferences.mic_volume == 0
+
+    def test_clamps_below_zero(self, tmp_path):
+        state = make_server_state(tmp_path)
+        state.persist_mic_volume(-5.0)
+        assert state.mic_volume == 0
+
+    def test_clamps_above_100(self, tmp_path):
+        state = make_server_state(tmp_path)
+        state.persist_mic_volume(150.0)
+        assert state.mic_volume == 100
+
+    def test_saves_to_file(self, tmp_path):
+        state = make_server_state(tmp_path)
+        state.persist_mic_volume(0.0)
+        with open(state.preferences_path) as f:
+            assert json.load(f)["mic_volume"] == 0
+
+
 class TestPersistVolume:
     def test_updates_volume_on_state(self, tmp_path):
         state = make_server_state(tmp_path)

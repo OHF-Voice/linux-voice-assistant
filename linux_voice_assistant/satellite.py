@@ -313,7 +313,7 @@ class VoiceSatelliteProtocol(APIServer):
                 key=len(self.state.entities),
                 name="Mic Volume",
                 object_id="mic_volume",
-                min_value=1.0,
+                min_value=0.0,
                 max_value=100.0,
                 get_value=lambda: float(self.state.mic_volume),
                 set_value=lambda val: self.state.persist_mic_volume(float(val)),

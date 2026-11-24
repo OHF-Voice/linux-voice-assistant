@@ -88,7 +88,7 @@ usage: __main__.py [-h] [--name NAME] [--audio-input-device AUDIO_INPUT_DEVICE] 
 | `--audio-input-block-size`      | Audio input block size in samples                                                      | 1024                                 |
 | `--audio-output-device`         | mpv name for output device, use a `pulse/...` name from `--list-output-devices`        | `pulse`                              |
 | `--music-output-device`         | mpv name for the music/media output device                                             | `--audio-output-device`              |
-| `--mic-volume`                  | Control microphone volume                                                              | 100                                  |
+| `--mic-volume`                  | Microphone volume 0 to 100, overrides the stored value on every start                  | stored value, else 100               |
 | `--mic-auto-gain`               | Add WebRTC Gain to Mic                                                                 | 0                                    |
 | `--mic-noise-suppression`       | Add WebRTC Noise Suppression to Mic                                                    | 0                                    |
 | `--audio-input-channels`        | Number of microphone audio channels to capture (2 = mic + AEC reference channel)       | 1                                    |

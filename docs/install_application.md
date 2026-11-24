@@ -183,7 +183,7 @@ Environment=PREFERENCES_FILE="/home/pi/linux-voice-assistant/preferences.json"
 # Environment=AUDIO_INPUT_BLOCK_SIZE="1024"
 # Environment=AUDIO_OUTPUT_DEVICE="pulse"
 # Environment=MUSIC_OUTPUT_DEVICE="pulse"
-# Environment=MIC_VOLUME="1.0"
+# Environment=MIC_VOLUME="100"
 # Environment=MIC_AUTO_GAIN="0"
 # Environment=MIC_NOISE_SUPPRESSION="0"
 # Environment=AUDIO_INPUT_CHANNELS=1
@@ -289,7 +289,7 @@ The following variables can be configured in the `.env` or in the service file:
 | `AUDIO_INPUT_BLOCK_SIZE` | `1024` | Audio input block size in samples |
 | `AUDIO_OUTPUT_DEVICE` | `pulse` | Audio output device name, use a `pulse/...` name from the device list (see `LIST_DEVICES`) |
 | `MUSIC_OUTPUT_DEVICE` | `AUDIO_OUTPUT_DEVICE` | Music/media output device name (defaults to the voice output device) |
-| `MIC_VOLUME` | 100 | Control microphone volume |
+| `MIC_VOLUME` | Stored value, else 100 | Microphone volume 0 to 100, overrides the stored Mic Volume on every start. Leave it unset or empty to keep the stored value |
 | `MIC_AUTO_GAIN` | 0 | Add WebRTC Gain to Mic |
 | `MIC_NOISE_SUPPRESSION` | 0 | Add WebRTC Noise Suppression to Mic |
 | `AUDIO_INPUT_CHANNELS` | 1 | Number of audio input channels to capture (2 for devices with a hardware AEC reference channel). Does not change what is sent to Home Assistant |

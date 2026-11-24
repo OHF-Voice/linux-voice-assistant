@@ -101,7 +101,7 @@ class Preferences:
 
     mic_auto_gain: int = 0
     mic_noise_suppression: int = 0
-    mic_volume: int = 100  # 1–100, default maximum
+    mic_volume: int = 100  # 0–100, default maximum
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "Preferences":
@@ -214,7 +214,7 @@ class ServerState:
     stop_word_threshold: float = 0.5
     mic_auto_gain: int = 0
     mic_noise_suppression: int = 0
-    mic_volume: int = 100  # 1–100, default maximum
+    mic_volume: int = 100  # 0–100, default maximum
     audio_input_channels: int = 1  # number of mic channels to capture
     timer_max_ring_seconds: float = 900.0
     listen_during_wake_sound: bool = False
@@ -288,7 +288,7 @@ class ServerState:
 
     def persist_mic_volume(self, volume: float) -> None:
         """Persist the microphone input volume (0–100)."""
-        volume_int = max(1, min(100, int(round(volume))))
+        volume_int = max(0, min(100, int(round(volume))))
         if self.mic_volume == volume_int and self.preferences.mic_volume == volume_int:
             return
 
