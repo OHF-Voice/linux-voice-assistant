@@ -132,6 +132,8 @@ usage: __main__.py [-h] [--name NAME] [--audio-input-device AUDIO_INPUT_DEVICE] 
 
 💡 **Note:** How the assistant behaves in everyday situations (music ducking during conversations, announcements, timers, stop word, mute, volume) is described in the [behavior guide](docs/behavior.md).
 
+💡 **Note:** How LVA communicates with Home Assistant and peripherals, and what happens during a voice request, is described in the [communication overview](docs/communication.md).
+
 ## Build Information
 
 Image builds can be tracked in this repository's `Actions` tab, and utilize [artifact attestation](https://docs.github.com/en/actions/security-guides/using-artifact-attestations-to-establish-provenance-for-builds) to certify provenance.
