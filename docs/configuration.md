@@ -21,7 +21,7 @@ See the [Wake Word section](install_application.md#wake-word) of the installatio
 
 ## Mute Switch
 
-The **Mute** switch disables wake word detection and stops the assistant from responding to any wake word or button-triggered listening, without stopping the LVA process itself. It is listed under **Controls** on the device page, next to the media player, not under **Configuration**. Home Assistant keeps the category of an already registered entity, so on an existing installation the switch only moves after the device has been deleted in the ESPHome integration and added again (this also resets customized entity IDs and names). While muted, a configurable sound plays to confirm the mute/unmute transition (`--mute-sound` / `--unmute-sound`).
+The **Mute** switch disables wake word detection and stops the assistant from responding to any wake word or button-triggered listening, without stopping the LVA process itself. It is listed under **Controls** on the device page, next to the media player, not under **Configuration**. While muted, a configurable sound plays to confirm the mute/unmute transition (`--mute-sound` / `--unmute-sound`).
 
 ![Mute Switch](./images/mute_switch.png)
 
