@@ -406,7 +406,7 @@ wakewords/
 
 `downloaded` and `custom` are created at startup. In Docker they are volumes (`wakeword_downloaded` and `wakeword_custom`), `internal` is part of the image. The engine of a model is taken from the `type` in its `.json` file, the engine directory is only for keeping things tidy.
 
-The directories are searched in the order `internal`, `downloaded`, `custom`. If the same id exists more than once, the later one is used, so a model in `custom` replaces a bundled one with the same id. This also applies to the stop word.
+Every wake word has a name made of origin, engine and the phrase from its `.json` file, for example `Internal - MWW - Hey Jarvis` or `Custom - OWW - Hey Jarvis`. The same model in two directories is two separate wake words that you can choose from in Home Assistant. `WAKE_MODEL` and `WAKE_MODEL_2` accept the file name (`hey_jarvis`) or this name. If the file name exists in more than one origin, the directories are searched in the order `internal`, `downloaded`, `custom` and the last one is used, so a model in `custom` is chosen before a bundled one. The same applies to the stop word. The name is also the phrase LVA sends to Home Assistant with a voice request.
 
 In the wake word selection in Home Assistant, the name of a wake word shows where it comes from and which engine it uses, for example `Internal - MWW - Hey Jarvis`, `Download - OWW - Hey Jarvis` or `Custom - MWW - Hey Jarvis` (MWW = microWakeWord, OWW = openWakeWord). The phrase that is sent to Home Assistant when the wake word is detected is the plain phrase from the `.json` file, for example `Hey Jarvis`.
 
@@ -426,7 +426,7 @@ LVA does not run as root in the container, so the files must be readable by the 
 sudo chown -R 1000:1000 /var/lib/docker/volumes/lva_wakeword_custom/_data
 ```
 
-Change the default wake word with `WAKE_MODEL <id>` where `<id>` is the name of a model in one of the wake word directories. For example, `WAKE_MODEL hey_jarvis` will load `wakewords/internal/microwakeword/hey_jarvis.tflite` by default.
+Change the default wake word with `WAKE_MODEL <id>` where `<id>` is the name of a model in one of the wake word directories. For example, `WAKE_MODEL hey_jarvis` will load `wakewords/internal/microwakeword/hey_jarvis.tflite` by default, or the model with that name from `custom` if you have one.
 
 Set `WAKE_MODEL_2 <id>` to also activate a second wake word by default. It is looked up like `WAKE_MODEL`; if it is empty, unknown or the same as the first one, only the first wake word is active. Both defaults apply only while no wake words are stored yet (first start, or after the preferences file was removed). After that, the wake words chosen in Home Assistant are kept and `WAKE_MODEL` / `WAKE_MODEL_2` are ignored.
 
