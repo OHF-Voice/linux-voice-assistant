@@ -18,6 +18,7 @@ from pymicro_wakeword import MicroWakeWord
 from pyopen_wakeword import OpenWakeWord, OpenWakeWordFeatures
 
 from .models import DetectionResult
+from .wake_word import wake_word_ids_for_selections
 
 if TYPE_CHECKING:
     from .models import ServerState
@@ -43,7 +44,7 @@ def select_active_wake_words(state: "ServerState") -> List[ActiveWakeWord]:
     :return: Active wake words sorted by slot. A word missing from the stored layout takes the lowest free slot.
     """
     active_ids = [ww_id for ww_id in state.wake_words if ww_id in state.active_wake_words]
-    stored_slots = state.preferences.active_wake_words
+    stored_slots = wake_word_ids_for_selections(state.preferences.active_wake_words, state.available_wake_words)
 
     slots = {ww_id: stored_slots.index(ww_id) for ww_id in active_ids if ww_id in stored_slots}
     taken = set(slots.values())

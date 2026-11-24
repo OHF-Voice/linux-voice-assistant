@@ -46,6 +46,15 @@ class DetectionResult:
     score: Optional[float] = None
 
 
+@dataclass(frozen=True)
+class WakeWordSelection:
+    """Identifies one wake word in the preferences: the origin directory, the engine ("mww" or "oww") and the file name without extension."""
+
+    origin: str
+    engine: str
+    file_id: str
+
+
 @dataclass
 class AvailableWakeWord:
     id: str
@@ -55,6 +64,12 @@ class AvailableWakeWord:
     wake_word_path: Path
     probability_cutoff: float = 0.7
     origin: str = ""
+    file_id: str = ""
+
+    @property
+    def selection(self) -> WakeWordSelection:
+        """The entry that is stored in the preferences for this wake word."""
+        return WakeWordSelection(self.origin, "oww" if self.type == WakeWordType.OPEN_WAKE_WORD else "mww", self.file_id)
 
     def load(self) -> "Union[MicroWakeWord, OpenWakeWord]":
         if self.type == WakeWordType.MICRO_WAKE_WORD:
@@ -92,7 +107,7 @@ class LightRegistration:
 
 @dataclass
 class Preferences:
-    active_wake_words: List[Optional[str]] = field(default_factory=list)
+    active_wake_words: List[Union[WakeWordSelection, str, None]] = field(default_factory=list)  # a plain string is a value of an older version, see migrations.py
     volume: Optional[float] = None
     thinking_sound: int = 0  # 0 = disabled, 1 = enabled
     button_controls_locked: int = 0  # 0 = buttons enabled (default), 1 = buttons locked
@@ -103,6 +118,7 @@ class Preferences:
     mic_auto_gain: int = 0
     mic_noise_suppression: int = 0
     mic_volume: int = 100  # 0–100, default maximum
+    applied_migrations: List[int] = field(default_factory=list)  # numbers of the one-time migrations that already ran
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "Preferences":
@@ -115,7 +131,11 @@ class Preferences:
         if unknown_keys:
             _LOGGER.warning("Ignoring unknown preferences: %s", ", ".join(unknown_keys))
 
-        return cls(**{key: value for key, value in data.items() if key in known_keys})
+        values = {key: value for key, value in data.items() if key in known_keys}
+        if "active_wake_words" in values:
+            values["active_wake_words"] = [WakeWordSelection(**word) if isinstance(word, dict) else word for word in values["active_wake_words"]]
+
+        return cls(**values)
 
     def save(self, path: Path) -> None:
         """

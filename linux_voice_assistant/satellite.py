@@ -65,7 +65,7 @@ from .entity import (
 from .models import AvailableWakeWord, DetectionResult, ServerState, WakeWordType
 from .peripheral_api import LVAEvent
 from .util import call_all
-from .wake_word import wake_word_display_name
+from .wake_word import find_matching_wake_word_id, wake_word_display_name, wake_word_ids_for_selections, wake_word_selections_for_ids
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -780,7 +780,7 @@ class VoiceSatelliteProtocol(APIServer):
             available_wake_words = [
                 VoiceAssistantWakeWord(
                     id=ww.id,
-                    wake_word=wake_word_display_name(ww.origin, ww.type, ww.wake_word),
+                    wake_word=ww.id,
                     trained_languages=ww.trained_languages,
                 )
                 for ww in self.state.available_wake_words.values()
@@ -800,15 +800,16 @@ class VoiceSatelliteProtocol(APIServer):
                     continue
 
                 _LOGGER.debug("      → Adding to available wake words")
+                external_id = wake_word_display_name("downloaded", WakeWordType.MICRO_WAKE_WORD, eww.wake_word)
                 available_wake_words.append(
                     VoiceAssistantWakeWord(
-                        id=eww.id,
-                        wake_word=wake_word_display_name("downloaded", WakeWordType.MICRO_WAKE_WORD, eww.wake_word),
+                        id=external_id,
+                        wake_word=external_id,
                         trained_languages=eww.trained_languages,
                     )
                 )
 
-                self._external_wake_words[eww.id] = eww
+                self._external_wake_words[external_id] = eww
                 _LOGGER.debug("      → Stored in external wake words cache")
 
             active_ww_ids = [ww_id for ww_id in self.state.wake_words if ww_id in self.state.active_wake_words]
@@ -829,12 +830,17 @@ class VoiceSatelliteProtocol(APIServer):
 
             # Get old positions before modification
             old_positions: Dict[str, int] = {}
-            for idx, ww_id in enumerate(self.state.preferences.active_wake_words):
+            stored_wake_word_ids = wake_word_ids_for_selections(self.state.preferences.active_wake_words, self.state.available_wake_words)
+            for idx, ww_id in enumerate(stored_wake_word_ids):
                 if ww_id is not None and idx < 2:
                     old_positions[ww_id] = idx
 
             # Process new active wake words
-            for wake_word_id in msg.active_wake_words:
+            for requested_id in msg.active_wake_words:
+                wake_word_id = find_matching_wake_word_id(self.state.available_wake_words, requested_id) or requested_id
+                if wake_word_id != requested_id:
+                    _LOGGER.debug("Wake word id '%s' from Home Assistant resolved to '%s'", requested_id, wake_word_id)
+
                 if wake_word_id in self.state.wake_words:
                     # Already active
                     active_wake_words.add(wake_word_id)
@@ -889,7 +895,7 @@ class VoiceSatelliteProtocol(APIServer):
             _LOGGER.debug("Active wake words: %s", active_wake_words)
             _LOGGER.debug("Wake word positions: [0]=%s, [1]=%s", new_wake_words[0], new_wake_words[1])
 
-            self.state.preferences.active_wake_words = new_wake_words
+            self.state.preferences.active_wake_words = wake_word_selections_for_ids(new_wake_words, self.state.available_wake_words)
             self.state.preferences.save(self.state.preferences_path)
             self.state.wake_words_changed = True
 
@@ -932,7 +938,8 @@ class VoiceSatelliteProtocol(APIServer):
             _LOGGER.debug("Ignoring wake word - pipeline already active")
             return
 
-        wake_word_phrase = wake_word.wake_word  # type: ignore[union-attr]
+        # Home Assistant compares the phrase with the name in the wake word selection, which is the id of the wake word
+        wake_word_phrase = detection.wake_word_id if detection is not None else wake_word.wake_word  # type: ignore[union-attr]
         _LOGGER.debug("Detected wake word: %s", wake_word_phrase)
         self._wake_word_phrase = wake_word_phrase
 
@@ -1285,10 +1292,11 @@ class VoiceSatelliteProtocol(APIServer):
                     shutil.copyfileobj(request, model_file)
 
         return AvailableWakeWord(
-            id=external_wake_word.id,
+            id=wake_word_display_name("downloaded", WakeWordType.MICRO_WAKE_WORD, external_wake_word.wake_word),
             type=WakeWordType.MICRO_WAKE_WORD,
             wake_word=external_wake_word.wake_word,
             trained_languages=external_wake_word.trained_languages,
             wake_word_path=config_path,
             origin="downloaded",
+            file_id=external_wake_word.id,
         )

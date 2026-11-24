@@ -18,6 +18,7 @@ from pymicro_wakeword import MicroWakeWordFeatures
 from pyopen_wakeword import OpenWakeWord, OpenWakeWordFeatures
 
 from .api_server import create_encryption_key_file, load_encryption_key_file
+from .migrations import migrate_preferences
 from .models import Preferences, ServerState, initial_stop_word_threshold
 from .mpv_player import MpvMediaPlayer
 from .peripheral_api import LVAEvent, PeripheralAPIServer
@@ -31,7 +32,7 @@ from .util import (
     resolve_mac_address,
     warn_about_removed_options,
 )
-from .wake_word import find_available_wake_words, load_stop_model, load_wake_models
+from .wake_word import find_available_wake_words, load_stop_model, load_wake_models, wake_word_ids_for_selections, wake_word_selections_for_ids
 from .wake_word_detection import ActiveWakeWord, apply_sensitivities, gate_wake_words, process_wake_words, select_active_wake_words
 from .webrtc import WebRTCProcessor
 from .zeroconf import start_discovery
@@ -449,6 +450,11 @@ async def main() -> None:
         preferences = Preferences()
         preferences.save(preferences_path)
 
+    migrated_preferences = migrate_preferences(preferences, available_wake_words)
+    if migrated_preferences != preferences:
+        preferences = migrated_preferences
+        preferences.save(preferences_path)
+
     # Load volume from preferences on startup, and ensure it's between 0.0 and 1.0
     initial_volume = preferences.volume if preferences.volume is not None else 1.0
     initial_volume = max(0.0, min(1.0, float(initial_volume)))
@@ -488,7 +494,7 @@ async def main() -> None:
     # Load wake/stop models
     wake_models, wake_word_slots, fallback_used = load_wake_models(
         available_wake_words,
-        [word for word in preferences.active_wake_words if word is not None],
+        [word for word in wake_word_ids_for_selections(preferences.active_wake_words, available_wake_words) if word is not None],
         first_default_wake_word_id=args.wake_model,
         second_default_wake_word_id=args.wake_model_2,
     )
@@ -543,7 +549,7 @@ async def main() -> None:
     if fallback_used:
         # Fallback to the default model was used, save as active wake words
         _LOGGER.debug("Fallback was used, save default wake words in Preferences.")
-        state.preferences.active_wake_words = list(wake_word_slots)
+        state.preferences.active_wake_words = wake_word_selections_for_ids(list(wake_word_slots), available_wake_words)
         state.active_wake_words = set(wake_word_slots)
         state.wake_words = wake_models
         state.preferences.save(state.preferences_path)

@@ -7,7 +7,7 @@ from typing import Dict, List, Optional, Tuple, Union
 from pymicro_wakeword import MicroWakeWord
 from pyopen_wakeword import OpenWakeWord
 
-from .models import AvailableWakeWord, WakeWordType
+from .models import AvailableWakeWord, WakeWordSelection, WakeWordType
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -16,15 +16,72 @@ _ORIGIN_LABELS = {"internal": "Internal", "downloaded": "Download", "custom": "C
 
 def wake_word_display_name(origin: str, wake_word_type: WakeWordType, wake_word: str) -> str:
     """
-    Builds the name shown in the wake word selection in Home Assistant, for example "Download - OWW - Hey Jarvis".
+    Builds the name of a wake word, for example "Download - OWW - Hey Jarvis". It is the id of the wake word while LVA runs, the name in the wake word selection
+    in Home Assistant and the phrase sent to Home Assistant when the wake word is detected. Home Assistant compares the last two, so they must be the same.
     :param origin: Name of the origin directory (internal, downloaded or custom). Other values are left out of the name.
     :param wake_word_type: Engine of the wake word.
     :param wake_word: Phrase of the wake word as written in its configuration.
-    :return: Display name. The phrase sent to Home Assistant when the wake word is detected is the plain phrase.
+    :return: The name. It is unique as long as origin, engine and phrase are.
     """
     engine_label = "OWW" if wake_word_type == WakeWordType.OPEN_WAKE_WORD else "MWW"
     parts = [_ORIGIN_LABELS.get(origin), engine_label, wake_word]
     return " - ".join(part for part in parts if part)
+
+
+def wake_word_ids_for_selections(selections: List[Union[WakeWordSelection, str, None]], available_wake_words: Dict[str, AvailableWakeWord]) -> List[Optional[str]]:
+    """
+    Turns the wake words stored in the preferences into the ids they have while LVA runs.
+    :param selections: Wake words from the preferences in slot order. A plain string is a value of an older version and is kept as it is.
+    :param available_wake_words: Dictionary with all available wake words.
+    :return: Ids in the same order. A wake word that is not available anymore is None.
+    """
+    ids_by_selection = {wake_word.selection: wake_word_id for wake_word_id, wake_word in available_wake_words.items()}
+    wake_word_ids: List[Optional[str]] = []
+    for selection in selections:
+        if isinstance(selection, WakeWordSelection):
+            wake_word_ids.append(ids_by_selection.get(selection))
+        else:
+            wake_word_ids.append(selection)
+
+    return wake_word_ids
+
+
+def wake_word_selections_for_ids(wake_word_ids: List[Optional[str]], available_wake_words: Dict[str, AvailableWakeWord]) -> List[Union[WakeWordSelection, str, None]]:
+    """
+    Turns the ids of the wake words in the slots into what is stored in the preferences.
+    :param wake_word_ids: Wake word ids in slot order.
+    :param available_wake_words: Dictionary with all available wake words.
+    :return: Entries for the preferences in the same order. An id that is not available is None.
+    """
+    return [available_wake_words[wake_word_id].selection if wake_word_id in available_wake_words else None for wake_word_id in wake_word_ids]
+
+
+def find_matching_wake_word_id(
+    available_wake_words: Dict[str, AvailableWakeWord],
+    requested_id: str,
+) -> Optional[str]:
+    """
+    Finds the id of the wake word a requested value stands for.
+
+    Tries, in order:
+        1. An exact id match.
+        2. A model with this file name, such as "hey_jarvis". If several origins have it, the one searched last (custom) wins.
+        3. A model whose file name starts with "{requested_id}_", which covers openWakeWord's
+           versioned filenames (e.g. "hey_jarvis" -> "hey_jarvis_v0.1"). The same rule applies if there are several.
+    :param available_wake_words: Dictionary with all available wake words.
+    :param requested_id: Id or file name (or its base name) to look for.
+    :return: The matching id, or None if no match was found.
+    """
+    if requested_id in available_wake_words:
+        return requested_id
+
+    exact = [key for key, wake_word in available_wake_words.items() if wake_word.file_id == requested_id]
+    if exact:
+        return exact[-1]
+
+    prefix = f"{requested_id}_"
+    prefixed = [key for key, wake_word in available_wake_words.items() if wake_word.file_id.startswith(prefix)]
+    return prefixed[-1] if prefixed else None
 
 
 def find_available_wake_words(wake_word_dirs: List[Path], stop_model_id: str) -> Dict[str, AvailableWakeWord]:
@@ -33,7 +90,7 @@ def find_available_wake_words(wake_word_dirs: List[Path], stop_model_id: str) ->
     Loads configurations and creates AvailableWakeWord objects.
     :param wake_word_dirs: List of directories to search for wake words. The name of the parent directory is stored as origin of the wake words.
     :param stop_model_id: ID of the stop model which will not be listed as available wake word.
-    :return: Dictionary with wake word ID as key and AvailableWakeWord object as value.
+    :return: Dictionary with the id of the wake word (its display name) as key and AvailableWakeWord object as value.
     """
     available_wake_words: Dict[str, AvailableWakeWord] = {}
 
@@ -72,43 +129,26 @@ def find_available_wake_words(wake_word_dirs: List[Path], stop_model_id: str) ->
 
                 _LOGGER.debug("Type specific config for %s (%s): %s", model_id, model_type.value, type_config)
 
-                available_wake_words[model_id] = AvailableWakeWord(
-                    id=model_id,
+                origin = wake_word_dir.parent.name
+                wake_word_id = wake_word_display_name(origin, model_type, model_config["wake_word"])
+                if wake_word_id in available_wake_words:
+                    _LOGGER.warning("Wake word '%s' from %s replaces the one from %s, they have the same name", wake_word_id, model_config_path, available_wake_words[wake_word_id].wake_word_path)
+
+                available_wake_words[wake_word_id] = AvailableWakeWord(
+                    id=wake_word_id,
                     type=WakeWordType(model_type),
                     wake_word=model_config["wake_word"],
                     trained_languages=model_config.get("trained_languages", []),
                     wake_word_path=wake_word_path,
                     probability_cutoff=type_config.get("probability_cutoff", 0.7),
-                    origin=wake_word_dir.parent.name,
+                    origin=origin,
+                    file_id=model_id,
                 )
-                _LOGGER.debug("Successfully registered wake word: %s", model_id)
+                _LOGGER.debug("Successfully registered wake word: %s", wake_word_id)
 
     _LOGGER.debug("Total available wake words found: %d", len(available_wake_words))
     _LOGGER.debug("Available wake words: %s", list(sorted(available_wake_words.keys())))
     return available_wake_words
-
-
-def _find_matching_wake_word_id(
-    available_wake_words: Dict[str, AvailableWakeWord],
-    requested_id: str,
-) -> Optional[str]:
-    """
-    Finds a wake word id matching requested_id.
-
-    Tries, in order:
-        1. An exact id match.
-        2. An id that starts with "{requested_id}_", which covers openWakeWord's
-           versioned filenames (e.g. "hey_jarvis" -> "hey_jarvis_v0.1").
-    :param available_wake_words: Dictionary with all available wake words.
-    :param requested_id: ID (or base name) to look for.
-    :return: The matching id, or None if no match was found.
-    """
-    prefix = f"{requested_id}_"
-    for candidate_id in available_wake_words:
-        if candidate_id == requested_id or candidate_id.startswith(prefix):
-            return candidate_id
-
-    return None
 
 
 def load_wake_models(
@@ -218,7 +258,7 @@ def _load_first_default_wake_word(
 
     if wake_word is None:
         # Covers exact ids and versioned openWakeWord filenames like "hey_jarvis_v0.1"
-        matched_id = _find_matching_wake_word_id(available_wake_words, first_wake_word_id)
+        matched_id = find_matching_wake_word_id(available_wake_words, first_wake_word_id)
         if matched_id is not None:
             wake_word_id = matched_id
             wake_word = available_wake_words[wake_word_id]
@@ -228,7 +268,7 @@ def _load_first_default_wake_word(
 
         # Try fallback to 'okay_nabu'
         wake_word_id = "okay_nabu"
-        matched_id = _find_matching_wake_word_id(available_wake_words, wake_word_id)
+        matched_id = find_matching_wake_word_id(available_wake_words, wake_word_id)
         if matched_id is not None:
             wake_word_id = matched_id
 
@@ -272,7 +312,7 @@ def _load_second_default_wake_word(
     if not second_wake_word_id:
         return None
 
-    matched_id = _find_matching_wake_word_id(available_wake_words, second_wake_word_id)
+    matched_id = find_matching_wake_word_id(available_wake_words, second_wake_word_id)
 
     if matched_id is None:
         _LOGGER.warning("Second wake word '%s' not found - continuing without it", second_wake_word_id)
