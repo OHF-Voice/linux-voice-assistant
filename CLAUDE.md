@@ -153,6 +153,10 @@ Existing env quirk: `REFACTORY_SECONDS` is misspelled on purpose (it's the publi
 - The Docker image is **not** built locally by compose. `docker-compose.yml` pulls `ghcr.io/ohf-voice/linux-voice-assistant:${LVA_IMAGE_TAG:-latest}` (dev file: `-pr` image, tag `nightly`). The `Dockerfile` installs the pinned `aioesphomeapi` through `./script/setup`, so a fresh build always matches `pyproject.toml`. If a user reports an `AttributeError` on an aioesphomeapi symbol that exists in `.venv`, first suspect a stale or wrong image tag (check `LVA_IMAGE_TAG` in `.env`) before changing code. `satellite.py` guards `MULTI_CHANNEL_AUDIO` with `getattr` as a safety net only.
 - Some older docstrings in modules not touched recently may still be Google style. New code must use the Sphinx `:param:` style from AGENTS.md.
 
+## Defaults of CLI options
+
+Set the default of a CLI option as a literal in its `parser.add_argument(default=...)` in `__main__.py`, not in a module constant that `__main__.py` imports. Everyone who looks for the default finds it next to the option, its help text and `%(default)s`.
+
 ## Documentation map
 
 | Doc | Contents |
