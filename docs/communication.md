@@ -63,7 +63,7 @@ Notes:
 
 - The ESPHome API connection is opened by **Home Assistant**, so an inbound rule on the LVA host for `6053` is needed. LVA itself opens no outgoing connection for it.
 - The media URLs are chosen by Home Assistant (internal/external URL setting). LVA must be able to reach exactly that address, otherwise the connection works but replies and music stay silent. Music can also point to other servers, so the target port is not always the Home Assistant port.
-- Without mDNS (different VLAN, multicast blocked), add the device manually in Home Assistant with the LVA host's IP address and port `6053`.
+- Without mDNS (different VLAN, multicast blocked, or `--enable-zeroconf 0`), add the device manually in Home Assistant with the LVA host's IP address and port `6053`.
 - The peripheral API has no authentication. Restrict `6055` to trusted hosts, or bind it to localhost with `--peripheral-host 127.0.0.1` when the peripheral runs on the same host. Peripherals in Docker containers need to reach the host's port accordingly.
 - Ports follow `--port` and `--peripheral-port`. In Docker the container usually uses host networking, so these are the ports on the host.
 
@@ -73,7 +73,7 @@ LVA pretends to be an ESPHome device. Home Assistant connects **to** LVA (LVA is
 
 ### Discovery and connection
 
-1. LVA registers the service `<name>._esphomelib._tcp.local.` over mDNS with its port and MAC address. If an encryption key is configured, the service also advertises `api_encryption`, so Home Assistant asks for the key when adding the device.
+1. LVA registers the service `<name>._esphomelib._tcp.local.` over mDNS with its port and MAC address (skipped with `--enable-zeroconf 0`). If an encryption key is configured, the service also advertises `api_encryption`, so Home Assistant asks for the key when adding the device.
 2. Home Assistant connects over TCP. [`APIServer`](../linux_voice_assistant/api_server.py) answers `HelloRequest`, `AuthenticationRequest`, `PingRequest` and `DisconnectRequest` on its own. Every other message goes to `VoiceSatelliteProtocol.handle_message()`.
 3. Without an encryption key, frames are plaintext. With a key, the connection uses the ESPHome Noise handshake (`Noise_NNpsk0_25519_ChaChaPoly_SHA256`), and a client without or with a wrong key is rejected. See [API Encryption](install_application.md#feature-api-encryption).
 4. Home Assistant asks for `DeviceInfoRequest`, `ListEntitiesRequest` and `SubscribeStatesRequest` / `SubscribeHomeAssistantStatesRequest`. Every entity answers for itself (see [configuration.md](configuration.md)), and the current states are replayed.
@@ -166,7 +166,7 @@ The full protocol, all event and command names and examples are in [peripheral_a
 2. Create the shared state, then the peripheral API server (when not disabled).
 3. Test-create the satellite protocol once, so initialization errors stop the start immediately, then bind the ESPHome server on `--port` (retrying up to 15 times if the address is in use).
 4. Start the audio thread.
-5. Register the mDNS service.
+5. Register the mDNS service (skipped with `--enable-zeroconf 0`).
 6. Start the peripheral API, send the `zeroconf` event (`getting_started`) and wait `--peripheral-startup-wait` seconds.
 7. Start serving the ESPHome API.
 

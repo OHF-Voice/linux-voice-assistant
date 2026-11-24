@@ -212,6 +212,7 @@ Environment=PREFERENCES_FILE="/home/pi/linux-voice-assistant/preferences.json"
 # Environment=PERIPHERAL_VOLUME_STEP="%(default)s"
 # Environment=PERIPHERAL_STARTUP_WAIT="2.0"
 # Environment=DISABLE_PERIPHERAL_API="1"
+# Environment=ENABLE_ZEROCONF="1"
 # Environment=ENABLE_OUTPUT_ONLY="1"
 ExecStart=/home/pi/linux-voice-assistant/docker-entrypoint.sh
 # ExecStart=/home/pi/linux-voice-assistant/docker-entrypoint.sh --additional-parameter-if-you-want
@@ -318,6 +319,7 @@ The following variables can be configured in the `.env` or in the service file:
 | `PERIPHERAL_VOLUME_STEP` | %(default)s | Volume change per button press |
 | `PERIPHERAL_STARTUP_WAIT` | `2.0` | Seconds to wait for peripherals to register entities before Home Assistant enumerates them (0 to skip) |
 | `DISABLE_PERIPHERAL_API` | false | Disable the peripheral WebSocket API |
+| `ENABLE_ZEROCONF` | `1` | Set to "0" to not announce LVA via mDNS (same as `--enable-zeroconf 0`). Home Assistant then does not discover it automatically: add it manually with the host IP address and port `6053`. Does not change the ESPHome API or the peripheral API |
 | `ENABLE_OUTPUT_ONLY` | (optional) | Set to "1" to enable output-only mode |
 
 

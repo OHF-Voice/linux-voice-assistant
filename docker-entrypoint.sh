@@ -176,6 +176,10 @@ if [ -n "${PERIPHERAL_STARTUP_WAIT}" ]; then
   EXTRA_ARGS+=( "--peripheral-startup-wait" "$PERIPHERAL_STARTUP_WAIT" )
 fi
 
+if [ -n "${ENABLE_ZEROCONF}" ]; then
+  EXTRA_ARGS+=( "--enable-zeroconf" "$ENABLE_ZEROCONF" )
+fi
+
 if [ "$DISABLE_PERIPHERAL_API" = "1" ]; then
   EXTRA_ARGS+=( "--disable-peripheral-api" )
 fi

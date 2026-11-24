@@ -54,3 +54,36 @@ class HomeAssistantZeroconf:
         )
         await self._aiozc.async_register_service(service_info)
         _LOGGER.debug("Zeroconf discovery enabled: %s", service_info)
+
+
+async def start_discovery(
+    enabled: bool,
+    port: int,
+    mac_address: str,
+    host_ip_address: str,
+    name: Optional[str] = None,
+    encrypted: bool = False,
+) -> Optional[HomeAssistantZeroconf]:
+    """
+    Register the mDNS service for Home Assistant discovery, unless discovery is disabled.
+    :param enabled: False skips mDNS completely: no socket is opened and nothing is announced.
+    :param port: ESPHome API port to announce.
+    :param mac_address: MAC address to announce.
+    :param host_ip_address: IP address to announce.
+    :param name: Device name to announce, defaults to the MAC address.
+    :param encrypted: Announce that the API needs an encryption key.
+    :return: The running discovery, or None when it is disabled.
+    """
+    if not enabled:
+        _LOGGER.info("mDNS discovery disabled: add this device manually in Home Assistant with %s:%s", host_ip_address, port)
+        return None
+
+    discovery = HomeAssistantZeroconf(
+        port=port,
+        name=name,
+        mac_address=mac_address,
+        host_ip_address=host_ip_address,
+        encrypted=encrypted,
+    )
+    await discovery.register_server()
+    return discovery
