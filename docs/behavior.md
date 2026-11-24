@@ -166,7 +166,7 @@ The detection sensitivity can be adjusted with the *Stop Word Sensitivity* numbe
 
 ## Mute
 
-The **Mute** switch (Home Assistant device page) turns the assistant's ears off.
+The **Mute** switch (Home Assistant device page, section **Controls**) turns the assistant's ears off.
 
 When muted:
 
