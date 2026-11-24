@@ -85,6 +85,8 @@ class MediaPlayerEntity(ESPHomeEntity):
         self.previous_volume = 1.0
         self.music_player = music_player
         self.announce_player = announce_player
+        self._announcing = False
+        self._ducked_music = False
         self._on_volume_changed = on_volume_changed
         self.apply_volume_from_state(initial_volume)
         self._log = logging.getLogger(f"{self.__class__.__name__}[{self.key}]")
@@ -110,31 +112,7 @@ class MediaPlayerEntity(ESPHomeEntity):
     ) -> Iterable[message.Message]:
         if announcement:
             self._log.debug("PLAY: announcement true")
-            if self.music_player.is_paused:
-                # Announce, keep music paused
-                self.announce_player.play(
-                    url,
-                    done_callback=lambda: call_all(
-                        lambda: self._broadcast_state([self._update_state(MediaPlayerState.PAUSED)]),
-                        done_callback,
-                    ),
-                )
-            elif self.music_player.is_playing:
-                # Announce, resume music
-                self.music_player.pause()
-                self.announce_player.play(
-                    url,
-                    done_callback=lambda: call_all(self.music_player.resume, done_callback),
-                )
-            else:
-                # Announce, idle
-                self.announce_player.play(
-                    url,
-                    done_callback=lambda: call_all(
-                        lambda: self._broadcast_state([self._update_state(MediaPlayerState.IDLE)]),
-                        done_callback,
-                    ),
-                )
+            self.announce_player.play(url, done_callback=self._begin_announcement(done_callback))
         else:
             self._log.debug("PLAY: announcement false")
             # Music
@@ -146,7 +124,7 @@ class MediaPlayerEntity(ESPHomeEntity):
                 ),
             )
 
-        yield self._update_state(MediaPlayerState.PLAYING)
+        yield self._update_state(MediaPlayerState.ANNOUNCING if announcement else MediaPlayerState.PLAYING)
 
     def pause(self) -> MediaPlayerStateResponse:
         """Pause the music. Also used for peripheral commands."""
@@ -287,6 +265,38 @@ class MediaPlayerEntity(ESPHomeEntity):
 
         if self._on_volume_changed and persist:
             self._on_volume_changed(normalized)
+
+    def _begin_announcement(self, done_callback: Optional[Callable[[], None]]) -> Callable[[], None]:
+        """
+        Duck the music while an announcement plays and report ``announcing``.
+        :param done_callback: Callback of the announcement.
+        :return: The callback, extended to restore the volume and the state when the announcement is over.
+        """
+        self._announcing = True
+        self._ducked_music = self.music_player.is_playing and not self.music_player.is_paused
+        self._log.debug("Announcement starts (music playing: %s, paused: %s)", self.music_player.is_playing, self.music_player.is_paused)
+        if self._ducked_music:
+            self.music_player.duck(owner="media_announcement")
+
+        return lambda: call_all(self._announcement_finished, done_callback)
+
+    def _announcement_finished(self) -> None:
+        if not self._announcing:
+            return
+
+        self._announcing = False
+        self._log.debug("Announcement over, restoring (ducked music: %s)", self._ducked_music)
+        if self._ducked_music:
+            self._ducked_music = False
+            self.music_player.unduck(owner="media_announcement")
+
+        if self.music_player.is_paused:
+            new_state = MediaPlayerState.PAUSED
+        elif self.music_player.is_playing:
+            new_state = MediaPlayerState.PLAYING
+        else:
+            new_state = MediaPlayerState.IDLE
+        self._broadcast_state([self._update_state(new_state)])
 
     def _set_muted(self, muted: bool) -> None:
         """
