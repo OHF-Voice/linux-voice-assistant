@@ -95,6 +95,14 @@ silently skipped rather than causing a startup failure on systems
 where realtime scheduling isn't available (e.g. some containers or
 restricted kernels).
 
+On Debian and Raspberry Pi OS the realtime priority is only granted to members of the `pipewire` group. Add the user that runs the voice assistant to it:
+
+```sh
+sudo usermod -aG pipewire $USER
+```
+
+The new group membership takes effect after the next login. Restart the system at the end of this section so that it is applied.
+
 ```sh
 sudo mkdir -p /etc/pipewire/pipewire.conf.d
 sudo tee /etc/pipewire/pipewire.conf.d/linux-voice-assistant.conf > /dev/null << 'EOF'
