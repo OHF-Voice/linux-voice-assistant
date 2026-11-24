@@ -61,7 +61,9 @@ Thread-safety rules:
 | `mpv_player.py` | `MpvMediaPlayer`: playlist (list of URLs), done_callback, duck/unduck | `stop()` **invokes** the pending done_callback. |
 | `player/libmpv.py` | `LibMpvPlayer`: real mpv wrapper, effective volume = user × duck factor | Only an `end-file` with reason 0 (EOF) fires the callback. `stop(for_replacement=True)` drops the callback. Both mpv players have a name (`music`, `tts`) that is part of the logger name; `Volume (<reason>): set X x duck Y = Z` shows the effective volume. |
 | `webrtc.py` | `WebRTCProcessor`: 10 ms (320 byte) framing for `webrtc_noise_gain` | Can return `b""` while buffering. The audio loop then skips the chunk. |
-| `zeroconf.py` | mDNS registration | |
+| `zeroconf.py` | mDNS registration, `update_address()` announces another IP without restarting mDNS | `start_discovery()` returns None when mDNS is disabled. |
+| `network_refresh.py` | `changed_address()` (pure: new address or None), `refresh_address_after_disconnect()` loop | Triggered by `state.client_disconnected`, set in `connection_lost` for **every** client, not by polling. Retries with backoff (1 s up to 60 s) while the interface has no address or applying fails. Not started with `--host`. |
+| `esphome_endpoint.py` | `EsphomeEndpoint`: owns the listening server, `apply(ip)` binds the new listener before closing the old one and updates mDNS | Idempotent: a retry after a failed mDNS update does not bind twice. |
 | `tcp_keepalive.py` | `apply_keepalive()` on every accepted socket (called from `APIServer.connection_made`) | Fixed timings, no CLI option. Ends half-open connections after 10 s. |
 | `util.py` | `get_version()` (reads `version.txt`), `get_esphome_version()`, `call_all()`, interface/IP detection | |
 

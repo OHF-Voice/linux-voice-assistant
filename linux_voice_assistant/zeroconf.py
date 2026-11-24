@@ -33,6 +33,21 @@ class HomeAssistantZeroconf:
         self._aiozc = AsyncZeroconf()
 
     async def register_server(self) -> None:
+        service_info = self._build_service_info()
+        await self._aiozc.async_register_service(service_info)
+        _LOGGER.debug("Zeroconf discovery enabled: %s", service_info)
+
+    async def update_address(self, host_ip_address: str) -> None:
+        """
+        Announce another IP address for the already registered service, without restarting mDNS.
+        :param host_ip_address: IPv4 address Home Assistant should connect to.
+        """
+        self.host_ip_address = host_ip_address
+        service_info = self._build_service_info()
+        await self._aiozc.async_update_service(service_info)
+        _LOGGER.debug("Zeroconf discovery updated: %s", service_info)
+
+    def _build_service_info(self) -> AsyncServiceInfo:
         properties = {
             "version": "2025.9.0",
             "mac": self.mac_address,
@@ -44,7 +59,7 @@ class HomeAssistantZeroconf:
             # As ESPHome advertises it: Home Assistant then asks for the key when adding the device.
             properties["api_encryption"] = "Noise_NNpsk0_25519_ChaChaPoly_SHA256"
 
-        service_info = AsyncServiceInfo(
+        return AsyncServiceInfo(
             "_esphomelib._tcp.local.",
             f"{self.name}._esphomelib._tcp.local.",
             addresses=[socket.inet_aton(self.host_ip_address)],
@@ -52,8 +67,6 @@ class HomeAssistantZeroconf:
             properties=properties,
             server=f"{self.name}.local.",
         )
-        await self._aiozc.async_register_service(service_info)
-        _LOGGER.debug("Zeroconf discovery enabled: %s", service_info)
 
 
 async def start_discovery(

@@ -18,8 +18,10 @@ from pymicro_wakeword import MicroWakeWordFeatures
 from pyopen_wakeword import OpenWakeWord, OpenWakeWordFeatures
 
 from .api_server import create_encryption_key_file, load_encryption_key_file
+from .esphome_endpoint import EsphomeEndpoint
 from .models import Preferences, ServerState, WakeWordType, initial_stop_word_threshold
 from .mpv_player import MpvMediaPlayer
+from .network_refresh import refresh_address_after_disconnect
 from .peripheral_api import LVAEvent, PeripheralAPIServer
 from .satellite import VoiceSatelliteProtocol
 from .stop_word import process_stop_word
@@ -658,7 +660,7 @@ async def main() -> None:
     process_audio_thread.start()
 
     # Auto discovery (zeroconf, mDNS)
-    await start_discovery(
+    discovery = await start_discovery(
         enabled=args.enable_zeroconf == 1,
         port=args.port,
         name=state.name,
@@ -688,13 +690,29 @@ async def main() -> None:
             )
             await asyncio.sleep(args.peripheral_startup_wait)
 
+    endpoint = EsphomeEndpoint(
+        state=state,
+        bound_ip=host_ip_address,
+        server=server,  # type: ignore[arg-type]
+        discovery=discovery,
+        listen=lambda ip_address: loop.create_server(lambda: VoiceSatelliteProtocol(state), host=ip_address, port=args.port),
+    )
+
     try:
-        async with server:  # type: ignore[union-attr]
-            _LOGGER.info("Server started (host=%s, port=%s)", host_ip_address, args.port)
+        _LOGGER.info("Server started (host=%s, port=%s)", host_ip_address, args.port)
+        if network_interface and not args.host:
+            await refresh_address_after_disconnect(
+                interface=network_interface,
+                bound_ip=host_ip_address,
+                client_disconnected=state.client_disconnected,
+                apply=endpoint.apply,
+            )
+        else:
             await server.serve_forever()  # type: ignore[union-attr]
     except KeyboardInterrupt:
         pass
     finally:
+        await endpoint.close()
         process_audio_thread.join()
         if peripheral_api is not None:
             await peripheral_api.stop()
