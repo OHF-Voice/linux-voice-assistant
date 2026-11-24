@@ -33,7 +33,7 @@ from .util import (
 from .wake_word import find_available_wake_words, load_stop_model, load_wake_models
 from .wake_word_detection import ActiveWakeWord, apply_sensitivities, gate_wake_words, process_wake_words, select_active_wake_words
 from .webrtc import WebRTCProcessor
-from .zeroconf import HomeAssistantZeroconf
+from .zeroconf import start_discovery
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -252,6 +252,13 @@ async def main() -> None:
         "--disable-peripheral-api",
         action="store_true",
         help="Disable the peripheral WebSocket API entirely",
+    )
+    parser.add_argument(
+        "--enable-zeroconf",
+        type=int,
+        choices=(0, 1),
+        default=1,
+        help="Announce LVA via mDNS (default: %(default)s). Set 0 to not announce it: Home Assistant then no longer discovers it automatically, add it manually with the host IP address and --port.",
     )
     parser.add_argument(
         "--peripheral-startup-wait",
@@ -644,14 +651,14 @@ async def main() -> None:
     process_audio_thread.start()
 
     # Auto discovery (zeroconf, mDNS)
-    discovery = HomeAssistantZeroconf(
+    await start_discovery(
+        enabled=args.enable_zeroconf == 1,
         port=args.port,
         name=state.name,
         mac_address=state.mac_address,
         host_ip_address=host_ip_address,
         encrypted=noise_psk is not None,
     )
-    await discovery.register_server()
 
     # ------------------------------------------------------------------
     # Start peripheral API and signal "getting started" to peripherals

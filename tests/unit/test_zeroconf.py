@@ -176,3 +176,37 @@ class TestRegisterServer:
 
         addresses = captured["kwargs"].get("addresses", [])
         assert socket.inet_aton("10.0.0.5") in addresses
+
+
+# ---------------------------------------------------------------------------
+# start_discovery()
+# ---------------------------------------------------------------------------
+
+
+class TestStartDiscovery:
+    @pytest.mark.asyncio
+    async def test_disabled_opens_no_zeroconf_and_returns_none(self, caplog):
+        from linux_voice_assistant.zeroconf import start_discovery
+
+        with patch("linux_voice_assistant.zeroconf.AsyncZeroconf") as mock_cls, caplog.at_level("INFO"):
+            result = await start_discovery(enabled=False, port=6053, mac_address="aa:bb:cc:dd:ee:ff", host_ip_address="192.168.1.100")
+
+        assert result is None
+        mock_cls.assert_not_called()
+        assert "mDNS discovery disabled" in caplog.text
+        assert "192.168.1.100:6053" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_enabled_registers_service(self):
+        from linux_voice_assistant.zeroconf import start_discovery
+
+        with patch("linux_voice_assistant.zeroconf.AsyncZeroconf") as mock_cls, patch("linux_voice_assistant.zeroconf.AsyncServiceInfo"):
+            mock_zc = MagicMock()
+            mock_zc.async_register_service = AsyncMock()
+            mock_cls.return_value = mock_zc
+
+            result = await start_discovery(enabled=True, port=6053, mac_address="aa:bb:cc:dd:ee:ff", host_ip_address="192.168.1.100", name="lva-test")
+
+        assert result is not None
+        assert result.name == "lva-test"
+        mock_zc.async_register_service.assert_awaited_once()
