@@ -18,10 +18,12 @@ _LOGGER = logging.getLogger(__name__)
 
 
 def process_stop_word(state: "ServerState", micro_inputs: List[np.ndarray], running: bool) -> Tuple[bool, bool]:
-    """Run the stop word for one audio chunk and return ``(stopped, running)``.
-
-    ``running`` is the caller's record of whether the model has been reset and is
-    being fed since it became reachable, and the returned value replaces it.
+    """
+    Run the stop word for one audio chunk.
+    :param state: Server state holding the stop word model, its threshold and the active wake word ids.
+    :param micro_inputs: Micro frontend features of the current audio chunk.
+    :param running: Whether the model was already reset and fed since it became reachable.
+    :return: ``(stopped, running)``: whether the stop word was detected, and the new value for ``running``.
 
     The model keeps its feature and probability windows between invokes, so it is
     reset when it becomes reachable again rather than scoring a stale window as
