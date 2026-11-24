@@ -40,19 +40,7 @@ loginctl show-user $USER | grep Linger
 # Expected: Linger=yes
 ```
 
-### Configure PipeWire (optional):
-
-💡 **Note:** If you are not on a desktop system, which is already configured for PipeWire, you can configure it manually.
-
-💡 **Note:** LVA records audio at 16kHz. By default PipeWire may run at a different sample rate (typically 48kHz) and will resample automatically. Setting `default.clock.rate = 16000` avoids this resampling overhead, which is particularly beneficial on low-power hardware such as a Raspberry Pi.
-
-LVA is meant to be configured system wide. So only that method has been documented.
-
-#### System-wide Configuration
-```sh
-sudo mkdir -p /etc/pipewire/pipewire.conf.d
-sudo vi /etc/pipewire/pipewire.conf.d/linux-voice-assistant.conf
-```
+#### Configure PipeWire - process priority:
 
 💡 **Note:** On constrained hardware like a Raspberry Pi 3B, audio
 processing can be interrupted by other system activity, causing
@@ -64,12 +52,9 @@ silently skipped rather than causing a startup failure on systems
 where realtime scheduling isn't available (e.g. some containers or
 restricted kernels).
 
-Add the following content:
-```
-context.properties = {
-    default.clock.rate = 16000
-}
-
+```sh
+sudo mkdir -p /etc/pipewire/pipewire.conf.d
+sudo tee /etc/pipewire/pipewire.conf.d/linux-voice-assistant.conf > /dev/null << 'EOF'
 context.modules = [
     {   name = libpipewire-module-rt
         args = {
@@ -79,16 +64,36 @@ context.modules = [
         flags = [ ifexists nofail ]
     }
 ]
+EOF
 ```
 
-#### Applying the Changes
+LVA is meant to be configured system wide. So only that method has been documented.
+
+
+### Configure PipeWire - Clock-Rate fix (optional):
+
+💡 **Note:** LVA records audio at 16kHz. By default PipeWire may run at a different sample rate (typically 48kHz) and will resample automatically. Setting `default.clock.rate = 16000` (optional, see below) avoids this resampling overhead, which is particularly beneficial on low-power hardware such as a Raspberry Pi.
+
+💡 **Note:** Some devices have a problem with PipeWire's default clock rate (48000). The Jabra SPEAK 510, for example, is a USB conference device with restricted sample rates. The rate PipeWire negotiates probably does not match the device cleanly, and the result sounds wrong, for example with a shifted pitch or speed (see [issue #233](https://github.com/OHF-Voice/linux-voice-assistant/issues/233)). Explicitly setting `default.clock.rate` forces PipeWire onto a rate the device can handle cleanly. This cause is not verified.
+
+The rate is not part of the default configuration below. If you need it, put it into a separate file:
+
+```sh
+sudo tee /etc/pipewire/pipewire.conf.d/10-clock-rate.conf > /dev/null << 'EOF'
+context.properties = {
+    default.clock.rate = 16000
+}
+EOF
+```
+
+### Applying the Changes
 PipeWire runs as a systemd user service under the user session (e.g., UID 1000). When executing commands as root, systemctl --user cannot connect to the user's DBus session unless the required environment variables are set. But as recommend at the end of this documentation part it is better and we recommend to restart the whole system.
+
 ```sh
 sudo -u pi XDG_RUNTIME_DIR=/run/user/1000 systemctl --user restart pipewire pipewire-pulse wireplumber
-
 ```
 
-💡 **Note:** In certain cases where hardware drivers need to be installed, a system reboot may be required. For hardware such as the Seeed 2-Mic Voice Card, multiple reboots may be needed to ensure the driver is installed and loaded and installed correctly. More about that in the PiCompose documentation within the Ready-to-use Image.
+💡 **Note:** In certain cases where hardware drivers need to be installed, a system reboot may be required. 
 
 ## B) PulseAudio:
 
