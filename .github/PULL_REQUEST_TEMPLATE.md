@@ -22,6 +22,15 @@ Tick exactly one box. CI derives the label from the ticked box.
 - [ ] CI / workflow change — `ci`
 - [ ] Dependencies bump — `dependencies`
 
+## Breaking change migration
+
+<!--
+Only for the "Breaking change" type. Write a few plain sentences: what do users have to change
+when they update (options, env vars, files, setup)? Leave the section empty for every other type.
+This text is copied to `breaking_change.md` when the PR is merged and into the release notes.
+Not the same as "Behavior changes" below.
+-->
+
 ## Behavior changes
 
 <!--
