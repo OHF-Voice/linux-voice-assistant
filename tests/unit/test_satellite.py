@@ -428,6 +428,22 @@ class TestDuckOwnersInSatellite:
 
         assert sat.state.music_player.mock_calls == [call.duck(owner="conversation"), call.unduck(owner="timer")]
 
+    def test_wakeup_without_ringing_timer_does_not_unduck_timer(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        sat.state.music_player.reset_mock()
+        sat.wakeup(MagicMock(wake_word="Hey Jarvis"))
+
+        assert sat.state.music_player.mock_calls == [call.duck(owner="conversation")]
+
+    def test_button_without_ringing_timer_does_not_unduck_timer(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        sat.state.wake_words = {"okay_nabu": MagicMock()}
+        sat.state.active_wake_words = {"okay_nabu"}
+        sat.state.music_player.reset_mock()
+        sat.start_listening()
+
+        assert sat.state.music_player.mock_calls == [call.duck(owner="conversation")]
+
     def test_announcement_ducks_for_announce(self, tmp_path):
         sat = make_satellite(tmp_path)
         list(sat.handle_message(VoiceAssistantAnnounceRequest(media_id="http://x/a.mp3")))

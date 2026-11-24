@@ -937,13 +937,15 @@ class VoiceSatelliteProtocol(APIServer):
         _LOGGER.debug("Detected wake word: %s", wake_word_phrase)
         self._wake_word_phrase = wake_word_phrase
 
+        timer_was_ringing = self._timer_finished
         self._timer_finished = False
         self._timer_ring_start = None
         _LOGGER.debug("Stopping timer finished sound")
         self._pipeline_active = True
         self._emit(LVAEvent.WAKE_WORD_DETECTED, self._detection_event_data(detection))
         self.duck()
-        self.unduck(owner="timer")
+        if timer_was_ringing:
+            self.unduck(owner="timer")
         if self.state.listen_during_wake_sound:
             _LOGGER.debug("Starting audio streaming immediately (listen_during_wake_sound enabled)")
             self.state.tts_player.play(self.state.wakeup_sound)
@@ -1002,12 +1004,14 @@ class VoiceSatelliteProtocol(APIServer):
 
         _LOGGER.debug("Button start_listening triggered")
         self._wake_word_phrase = ""
+        timer_was_ringing = self._timer_finished
         self._timer_finished = False
         self._timer_ring_start = None
         _LOGGER.debug("Stopping timer finished sound")
         self._pipeline_active = True
         self.duck()
-        self.unduck(owner="timer")
+        if timer_was_ringing:
+            self.unduck(owner="timer")
         self.state.tts_player.play(
             self.state.start_listening_sound,
             done_callback=self._on_start_listening_sound_finished,
