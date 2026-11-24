@@ -14,9 +14,13 @@ class MpvMediaPlayer:
     delegates all playback logic to LibMpvPlayer.
     """
 
-    def __init__(self, device: str | None = None) -> None:
-        self._log = logging.getLogger(self.__class__.__name__)
-        self._player = LibMpvPlayer(device=device)
+    def __init__(self, device: str | None = None, name: str = "mpv") -> None:
+        """
+        :param device: mpv audio device name, None for the default.
+        :param name: Name of the player in the log, for example ``music`` or ``tts``.
+        """
+        self._log = logging.getLogger(f"{self.__class__.__name__}[{name}]")
+        self._player = LibMpvPlayer(device=device, name=name)
         self._done_callback: Optional[Callable[[], None]] = None
         self._playlist: List[str] = []
 
@@ -119,7 +123,6 @@ class MpvMediaPlayer:
         Set playback volume.
         :param volume: Volume in percent (0.0-100.0).
         """
-        self._log.debug("set_volume(volume=%.2f)", volume)
         self._player.set_volume(volume)
 
     def duck(self, factor: float = 0.5) -> None:

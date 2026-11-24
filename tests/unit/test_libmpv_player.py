@@ -37,6 +37,37 @@ class TestInit:
         assert mock_mpv.call_args.kwargs["demuxer_max_bytes"] == "16MiB"
 
 
+class TestVolumeLog:
+    def test_logger_name_contains_player_name(self):
+        with patch("linux_voice_assistant.player.libmpv.mpv.MPV", return_value=MagicMock()):
+            from linux_voice_assistant.player.libmpv import LibMpvPlayer
+
+            assert LibMpvPlayer(name="tts")._log.name == "LibMpvPlayer[tts]"
+
+    def test_duck_logs_effective_volume(self, player, caplog):
+        player.set_volume(80)
+        with caplog.at_level("DEBUG"):
+            player.duck(0.5)
+
+        assert "Volume (duck): set 80 x duck 0.50 = 40" in caplog.text
+        assert player._mpv.volume == 40
+
+    def test_unduck_logs_effective_volume(self, player, caplog):
+        player.set_volume(80)
+        player.duck(0.5)
+        with caplog.at_level("DEBUG"):
+            player.unduck()
+
+        assert "Volume (unduck): set 80 x duck 1.00 = 80" in caplog.text
+        assert player._mpv.volume == 80
+
+    def test_set_volume_logs_effective_volume(self, player, caplog):
+        with caplog.at_level("DEBUG"):
+            player.set_volume(30)
+
+        assert "Volume (set_volume): set 30 x duck 1.00 = 30" in caplog.text
+
+
 class TestOnEndFile:
     def test_eof_invokes_done_callback_after_drain_delay(self, player):
         cb = MagicMock()

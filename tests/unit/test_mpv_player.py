@@ -34,7 +34,7 @@ class TestInit:
             from linux_voice_assistant.mpv_player import MpvMediaPlayer
 
             MpvMediaPlayer(device="hw:1,0")
-            mock_cls.assert_called_once_with(device="hw:1,0")
+            mock_cls.assert_called_once_with(device="hw:1,0", name="mpv")
 
     def test_player_initialized_with_none_device(self):
         with patch("linux_voice_assistant.mpv_player.LibMpvPlayer") as mock_cls:
@@ -42,7 +42,16 @@ class TestInit:
             from linux_voice_assistant.mpv_player import MpvMediaPlayer
 
             MpvMediaPlayer(device=None)
-            mock_cls.assert_called_once_with(device=None)
+            mock_cls.assert_called_once_with(device=None, name="mpv")
+
+    def test_name_is_passed_to_player_and_logger(self):
+        with patch("linux_voice_assistant.mpv_player.LibMpvPlayer") as mock_cls:
+            mock_cls.return_value = MagicMock()
+            from linux_voice_assistant.mpv_player import MpvMediaPlayer
+
+            player = MpvMediaPlayer(device=None, name="music")
+            mock_cls.assert_called_once_with(device=None, name="music")
+            assert player._log.name == "MpvMediaPlayer[music]"
 
     def test_done_callback_starts_none(self):
         player = make_player()
