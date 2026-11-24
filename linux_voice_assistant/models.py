@@ -54,6 +54,7 @@ class AvailableWakeWord:
     trained_languages: List[str]
     wake_word_path: Path
     probability_cutoff: float = 0.7
+    origin: str = ""
 
     def load(self) -> "Union[MicroWakeWord, OpenWakeWord]":
         if self.type == WakeWordType.MICRO_WAKE_WORD:

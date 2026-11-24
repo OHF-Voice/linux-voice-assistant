@@ -135,6 +135,35 @@ class TestFindAvailableWakeWords:
         result = find_available_wake_words([tmp_path], stop_model_id="stop")
         assert result["okay_nabu"].type == WakeWordType.MICRO_WAKE_WORD
 
+    def test_origin_is_name_of_parent_directory(self, tmp_path):
+        from linux_voice_assistant.wake_word import find_available_wake_words
+
+        model_dir = tmp_path / "custom" / "openwakeword"
+        model_dir.mkdir(parents=True)
+        write_json(model_dir / "hey_jarvis.json", make_oww_json())
+
+        result = find_available_wake_words([model_dir], stop_model_id="stop")
+        assert result["hey_jarvis"].origin == "custom"
+        assert result["hey_jarvis"].wake_word == "hey jarvis"
+
+
+class TestWakeWordDisplayName:
+    @pytest.mark.parametrize(
+        "origin, word_type, expected",
+        [
+            ("downloaded", "openWakeWord", "Download - OWW - Hey Jarvis"),
+            ("internal", "micro", "Internal - MWW - Hey Jarvis"),
+            ("custom", "micro", "Custom - MWW - Hey Jarvis"),
+            ("unknown", "openWakeWord", "OWW - Hey Jarvis"),
+            ("", "micro", "MWW - Hey Jarvis"),
+        ],
+    )
+    def test_builds_origin_engine_and_phrase(self, origin, word_type, expected):
+        from linux_voice_assistant.models import WakeWordType
+        from linux_voice_assistant.wake_word import wake_word_display_name
+
+        assert wake_word_display_name(origin, WakeWordType(word_type), "Hey Jarvis") == expected
+
 
 # ---------------------------------------------------------------------------
 # load_wake_models()

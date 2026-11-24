@@ -11,12 +11,27 @@ from .models import AvailableWakeWord, WakeWordType
 
 _LOGGER = logging.getLogger(__name__)
 
+_ORIGIN_LABELS = {"internal": "Internal", "downloaded": "Download", "custom": "Custom"}
+
+
+def wake_word_display_name(origin: str, wake_word_type: WakeWordType, wake_word: str) -> str:
+    """
+    Builds the name shown in the wake word selection in Home Assistant, for example "Download - OWW - Hey Jarvis".
+    :param origin: Name of the origin directory (internal, downloaded or custom). Other values are left out of the name.
+    :param wake_word_type: Engine of the wake word.
+    :param wake_word: Phrase of the wake word as written in its configuration.
+    :return: Display name. The phrase sent to Home Assistant when the wake word is detected is the plain phrase.
+    """
+    engine_label = "OWW" if wake_word_type == WakeWordType.OPEN_WAKE_WORD else "MWW"
+    parts = [_ORIGIN_LABELS.get(origin), engine_label, wake_word]
+    return " - ".join(part for part in parts if part)
+
 
 def find_available_wake_words(wake_word_dirs: List[Path], stop_model_id: str) -> Dict[str, AvailableWakeWord]:
     """
     Searches all available wake words in the specified directories.
     Loads configurations and creates AvailableWakeWord objects.
-    :param wake_word_dirs: List of directories to search for wake words.
+    :param wake_word_dirs: List of directories to search for wake words. The name of the parent directory is stored as origin of the wake words.
     :param stop_model_id: ID of the stop model which will not be listed as available wake word.
     :return: Dictionary with wake word ID as key and AvailableWakeWord object as value.
     """
@@ -64,6 +79,7 @@ def find_available_wake_words(wake_word_dirs: List[Path], stop_model_id: str) ->
                     trained_languages=model_config.get("trained_languages", []),
                     wake_word_path=wake_word_path,
                     probability_cutoff=type_config.get("probability_cutoff", 0.7),
+                    origin=wake_word_dir.parent.name,
                 )
                 _LOGGER.debug("Successfully registered wake word: %s", model_id)
 

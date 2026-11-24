@@ -65,6 +65,7 @@ from .entity import (
 from .models import AvailableWakeWord, DetectionResult, ServerState, WakeWordType
 from .peripheral_api import LVAEvent
 from .util import call_all
+from .wake_word import wake_word_display_name
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -779,7 +780,7 @@ class VoiceSatelliteProtocol(APIServer):
             available_wake_words = [
                 VoiceAssistantWakeWord(
                     id=ww.id,
-                    wake_word=ww.wake_word,
+                    wake_word=wake_word_display_name(ww.origin, ww.type, ww.wake_word),
                     trained_languages=ww.trained_languages,
                 )
                 for ww in self.state.available_wake_words.values()
@@ -802,7 +803,7 @@ class VoiceSatelliteProtocol(APIServer):
                 available_wake_words.append(
                     VoiceAssistantWakeWord(
                         id=eww.id,
-                        wake_word=eww.wake_word,
+                        wake_word=wake_word_display_name("downloaded", WakeWordType.MICRO_WAKE_WORD, eww.wake_word),
                         trained_languages=eww.trained_languages,
                     )
                 )
@@ -1294,4 +1295,5 @@ class VoiceSatelliteProtocol(APIServer):
             wake_word=external_wake_word.wake_word,
             trained_languages=external_wake_word.trained_languages,
             wake_word_path=config_path,
+            origin="downloaded",
         )

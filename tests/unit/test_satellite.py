@@ -640,6 +640,27 @@ class TestDownloadExternalWakeWord:
 # ---------------------------------------------------------------------------
 
 
+class TestConfigurationRequest:
+    def test_wake_word_names_contain_origin_and_engine(self, tmp_path):
+        from aioesphomeapi.api_pb2 import VoiceAssistantConfigurationRequest, VoiceAssistantConfigurationResponse
+
+        from linux_voice_assistant.models import AvailableWakeWord, WakeWordType
+
+        sat = make_satellite(tmp_path)
+        sat.state.available_wake_words = {
+            "hey_jarvis_v0.1": AvailableWakeWord("hey_jarvis_v0.1", WakeWordType.OPEN_WAKE_WORD, "Hey Jarvis", ["en"], tmp_path / "hey_jarvis_v0.1.json", origin="internal"),
+            "okay_nabu": AvailableWakeWord("okay_nabu", WakeWordType.MICRO_WAKE_WORD, "Okay Nabu", ["en"], tmp_path / "okay_nabu.json", origin="custom"),
+        }
+
+        responses = list(sat.handle_message(VoiceAssistantConfigurationRequest()))
+
+        response = next(msg for msg in responses if isinstance(msg, VoiceAssistantConfigurationResponse))
+        assert {ww.id: ww.wake_word for ww in response.available_wake_words} == {
+            "hey_jarvis_v0.1": "Internal - OWW - Hey Jarvis",
+            "okay_nabu": "Custom - MWW - Okay Nabu",
+        }
+
+
 class TestSetConfiguration:
     def _make_sat(self, tmp_path, loaded):
         sat = make_satellite(tmp_path)
