@@ -445,7 +445,9 @@ async def main() -> None:
             preferences_dict = json.load(preferences_file)
             preferences = Preferences.from_dict(preferences_dict)
     else:
+        _LOGGER.info("No preferences file found, creating it with the defaults: %s", preferences_path)
         preferences = Preferences()
+        preferences.save(preferences_path)
 
     # Load volume from preferences on startup, and ensure it's between 0.0 and 1.0
     initial_volume = preferences.volume if preferences.volume is not None else 1.0
