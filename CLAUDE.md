@@ -124,6 +124,16 @@ Existing env quirk: `REFACTORY_SECONDS` is misspelled on purpose (it's the publi
 
 **New preference**: add the field with a default to `Preferences`, read it in `main()` before `ServerState` is built, and write it through a `persist_*`/setter that calls `save_preferences()`.
 
+## Code structure for new logic
+
+`process_audio()` in `__main__.py` and `satellite.py` are already large. Do not grow them.
+
+- Put new logic that can run on its own (detection, gating, filtering, state decisions) into its own module under `linux_voice_assistant/`, as a plain function that takes the state it needs as parameters and returns the result. Keep mutable state in the caller (for example a flag passed in and returned) instead of module globals.
+- Leave only a single call in `__main__.py` / `satellite.py`. Do not hide threading, I/O or hardware access in the new module, so it stays unit-testable with `make_state()` and mocks.
+- Add `tests/unit/test_<module>.py` for every new module (see Tests below).
+- Log decisions (detected, gated, reset) at debug level with the value and the threshold, in the style of the existing wake word log lines.
+- Do not refactor unrelated code in the same change. Extract only the logic you are touching.
+
 ## Tests
 
 - `tests/unit/conftest.py`: `make_state(tmp_path, **overrides)` auto-fills required `ServerState` fields. `make_satellite(tmp_path, state_overrides)` patches the sensitivity entities and sets `satellite._writelines = MagicMock()` so sent frames can be inspected.
