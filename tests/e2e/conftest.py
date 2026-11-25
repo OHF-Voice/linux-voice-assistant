@@ -67,12 +67,21 @@ def lva(virtual_audio: VirtualAudio, tmp_path_factory: pytest.TempPathFactory) -
         yield process
     finally:
         process.stop()
-        log_dir = os.environ.get("E2E_LOG_DIR")
-        if log_dir:
-            Path(log_dir).mkdir(parents=True, exist_ok=True)
-            (Path(log_dir) / "lva.log").write_text(process.full_log(), encoding="utf-8")
-        else:
-            print("\n----- LVA log -----\n" + process.full_log())
+        _store_log(process, "lva.log")
+
+
+@pytest.fixture(scope="session")
+def peripheral_lva(virtual_audio: VirtualAudio, tmp_path_factory: pytest.TempPathFactory) -> Iterator[LvaProcess]:
+    """A second LVA for the peripheral API tests. Peripherals register entities, which changes what Home Assistant sees and reconnects it."""
+    process = LvaProcess(_free_port(), _free_port(), tmp_path_factory.mktemp("lva-peripheral"))
+    process.start()
+    try:
+        if not process.wait_for_log("Server started", LVA_START_TIMEOUT):
+            raise RuntimeError(f"LVA did not start:\n{process.full_log()}")
+        yield process
+    finally:
+        process.stop()
+        _store_log(process, "lva-peripheral.log")
 
 
 @pytest.fixture
@@ -90,6 +99,15 @@ async def peripheral(lva: LvaProcess) -> AsyncIterator[PeripheralClient]:
     await client.connect(lva.peripheral_port)
     yield client
     await client.disconnect()
+
+
+def _store_log(process: LvaProcess, file_name: str) -> None:
+    log_dir = os.environ.get("E2E_LOG_DIR")
+    if log_dir:
+        Path(log_dir).mkdir(parents=True, exist_ok=True)
+        (Path(log_dir) / file_name).write_text(process.full_log(), encoding="utf-8")
+    else:
+        print(f"\n----- {file_name} -----\n" + process.full_log())
 
 
 def _free_port() -> int:
