@@ -30,7 +30,7 @@ Playback is verified without a microphone or speaker in two ways:
 Needs `libmpv`, `pactl`, `paplay`, `parec` and a running PulseAudio or PipeWire-Pulse server. The tests create and remove their own virtual devices and skip when no server is available.
 
 ```bash
-./script/e2e            # whole suite, about 2.5 minutes
+./script/e2e            # whole suite, about 4.5 minutes
 ./script/e2e -k stop    # selected tests
 ./script/e2e -s         # also show the LVA log
 ```
@@ -38,6 +38,10 @@ Needs `libmpv`, `pactl`, `paplay`, `parec` and a running PulseAudio or PipeWire-
 The suite is not part of `./script/tests`, which only runs the fast unit tests. In CI it runs in `.github/workflows/e2e.yml` and shows the result as a table in the job summary, annotates failed tests and uploads the LVA log and `junit.xml` as artifact `e2e-results` (set `E2E_LOG_DIR` to write the log to a directory locally, add `--junitxml=<file>` for the XML).
 
 No real microphone, speaker or Home Assistant is involved. The tests show that LVA's logic and audio paths work, not that a specific sound card does.
+
+## Peripheral API tests
+
+`peripheral_api/` tests the peripheral WebSocket API the way a peripheral uses it, modelled on `examples/Peripheral web console`: the same registrations (light, button, button lock), the same commands and the events the console reacts to. They run against a second LVA instance (`peripheral_lva`), because registering entities adds them to the device and makes LVA reconnect Home Assistant once, which would change the entity list the other tests check. Run them alone with `./script/e2e tests/e2e/peripheral_api`.
 
 ## Fixtures
 
