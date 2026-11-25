@@ -85,8 +85,8 @@ The same flow as plain text:
  VoiceAssistantAudio               |
  data  = audio_chunk               v
  data2 = unprocessed ch 0   VoiceAssistantRequest(start=True)
-         or channel 1              |
-         or none                   +--> _is_streaming_audio = True
+         or none (N = 1)           |
+                                   +--> _is_streaming_audio = True
         |
         v
  send_messages()
@@ -107,11 +107,11 @@ Everything from capture to `send_messages()` runs on one thread, the audio threa
 | Library | `soundcard`, `mic.recorder(samplerate=16000, channels=N, blocksize=B)` |
 | Device | `--audio-input-device` (name or index), otherwise the default microphone |
 | Sample rate | fixed 16 kHz |
-| Channels `N` | `--audio-input-channels` (1 or 2, default 2) |
+| Channels `N` | `--audio-input-channels` (1 or 2, default 1) |
 | Block size `B` | `--audio-input-block-size` (default 1024 samples, 64 ms at 16 kHz) |
 | Sample format | float32 (32 bit) in the range [-1, 1], shape `(B, N)` |
 
-Channel 0 is the microphone. Channel 1, when present, is a reference signal (for example the speaker feed of a hardware echo canceller). The system capture level set in PulseAudio/PipeWire/ALSA is applied before LVA sees any sample. See [`enabling_aec.md`](enabling_aec.md) for system-level echo cancellation.
+Channel 0 is the microphone. Channel 1, when present, is a reference signal for AEC (for example the speaker feed of a hardware echo canceller). It is captured but not streamed to Home Assistant; what is streamed does not depend on `N`. The system capture level set in PulseAudio/PipeWire/ALSA is applied before LVA sees any sample. See [`enabling_aec.md`](enabling_aec.md) for system-level echo cancellation.
 
 The float32 format is fixed in `soundcard` (version 0.4.6, PulseAudio backend: `PA_SAMPLE_FLOAT32LE`) and cannot be configured. The audio server (PulseAudio or PipeWire) converts whatever the device delivers to 16 kHz, `N` channels and float32. The real bit depth of the sound card is therefore decided by the audio server and the hardware. A float32 stream does not add resolution if the source only has 16 bit.
 
@@ -128,7 +128,7 @@ The float32 format is fixed in `soundcard` (version 0.4.6, PulseAudio backend: `
 
 The result is `channel_chunks`, one `bytes` object per channel, each `B * 2` bytes (2048 bytes for the default block size).
 
-`state.mic_volume` is the Home Assistant entity "Mic Volume" (1 to 100, `--mic-volume`, persisted in the preferences). Values from 1 to 10 all give the same 0.1 factor.
+`state.mic_volume` is the Home Assistant entity "Mic Volume" (0 to 100, `--mic-volume`, persisted in the preferences). Values from 0 to 10 all give the same 0.1 factor.
 
 ### 3. Optional WebRTC processing (channel 0 only)
 
@@ -162,9 +162,7 @@ If no models are loaded, or `state.wake_words_changed` is set, the loop rebuilds
 
 | Situation | `audio_chunk` (`data`) | `audio_chunk_2` (`data2`) |
 |-----------|------------------------|---------------------------|
-| WebRTC active | processed channel 0 | unprocessed channel 0 |
-| WebRTC off, 2 channels | channel 0 | channel 1 (reference) |
-| WebRTC off, 1 channel | channel 0 | none |
+| any | channel 0 (processed if WebRTC is active) | channel 1 before any WebRTC processing |
 
 `data2` is only sent if the installed `aioesphomeapi` knows the field (`_HAS_AUDIO_DATA2`). See "How Home Assistant and aioesphomeapi treat `data2`" below for what HA does with it.
 
@@ -174,13 +172,34 @@ If no models are loaded, or `state.wake_words_changed` is set, the loop rebuilds
 
 Audio flows to HA only between a wake word (or a manual start) and the end of speech. `_is_streaming_audio` is set to true when `VoiceAssistantRequest(start=True, wake_word_phrase=...)` is sent. It is set to false by HA's `STT_VAD_END` / `STT_END` events (see "Voice pipeline state" in `CLAUDE.md`).
 
+#### Who decides when streaming stops (VAD)
+
+LVA has no voice activity detection (VAD) of its own. While `_is_streaming_audio` is true, every block is sent, including silence and noise. Speech detection runs in Home Assistant on the received audio and is reported back as pipeline events (`VoiceAssistantEventResponse`, handled in `handle_voice_event()`):
+
+| Event from HA | LVA reaction |
+|---------------|--------------|
+| `STT_VAD_START` | Only logged. Streaming already runs. |
+| `STT_VAD_END` | `_is_streaming_audio = False`, streaming stops. |
+| `STT_END` | `_is_streaming_audio = False`. The transcript is emitted as `stt_text` to peripherals. |
+| `RUN_END` | `_is_streaming_audio = False` as a safety net, for example if no speech was detected. |
+
+Audio is sent in these windows only:
+
+- From the wake word (after the wake sound, or immediately with `--listen-during-wake-sound`) until HA ends the speech.
+- From a button start (`start_listening()`) until HA ends the speech.
+- During a continued conversation, from the end of the settle delay until HA ends the speech.
+
+Outside these windows nothing is sent. Wake word and stop word detection run locally on every block and send no audio to HA. Muting also stops the stream immediately.
+
+If nobody speaks, LVA keeps sending until HA's own speech timeout ends the run. That timeout is not configurable in LVA.
+
 ### 7. Wake word and stop word detection (same loop, same chunk)
 
 After `handle_audio()`, the processed `audio_chunk` feeds the detectors:
 
 1. `MicroWakeWordFeatures.process_streaming()` (and the openWakeWord equivalent) turns the PCM into feature windows.
-2. Each active wake word model evaluates the windows against its threshold (slot 0 uses `wake_word_1_threshold`, slot 1 `wake_word_2_threshold`).
-3. If a model fires, the device is not muted and the refractory time (`state.refractory_seconds`) has passed, `satellite.wakeup(wake_word)` runs.
+2. Each active wake word model evaluates the windows against its threshold of its slot (slot 0 uses `wake_word_1_threshold`, slot 1 `wake_word_2_threshold`). The models only run while no voice pipeline is active (`satellite.pipeline_active`). They are reset when detection resumes. See `linux_voice_assistant/wake_word_detection.py`.
+3. If a model fires, the device is not muted and the optional refractory time (`state.refractory_seconds`, default 0 = off, counted from the last accepted detection) has passed, `satellite.wakeup(wake_word)` runs. A detection inside the refractory time is discarded and logged at debug level.
 4. The stop word model runs on every block to keep its state correct. It only acts if `state.stop_word.id` is in `state.active_wake_words` (during TTS, announcements and ringing timers) and the device is not muted. Then `satellite.stop()` is called.
 
 `wakeup()` returns early when muted or when a pipeline is already active. Otherwise it ducks music, plays the wake sound and sends `VoiceAssistantRequest(start=True)`. With `listen_during_wake_sound` the request is sent right away; otherwise after the wake sound has finished. This is what turns streaming on in step 6.
@@ -211,13 +230,7 @@ The Home Assistant Cloud STT reports both preferences as `False`. Wyoming engine
 
 **Consequence for LVA**
 
-LVA advertises `MULTI_CHANNEL_AUDIO` whenever `audio_input_channels >= 2`. What it puts into `data2` depends on WebRTC:
-
-| WebRTC | `data2` content | Matches what Home Assistant expects? |
-|--------|-----------------|--------------------------------------|
-| active | unprocessed channel 0 | Yes |
-| off, 2 channels | channel 1 (reference signal) | No, if Home Assistant switches to channel 1 it forwards the reference signal to the STT engine instead of the microphone |
-| off, 1 channel | none | Not applicable (flag not advertised) |
+LVA always advertises `MULTI_CHANNEL_AUDIO` (unless output only), independent of `audio_input_channels`. `data2` always carries the microphone (channel 0) before any WebRTC gain or noise suppression, which is what Home Assistant expects as "non-enhanced audio". Without WebRTC, `data` and `data2` are identical. System-level processing such as echo cancellation in PulseAudio/PipeWire happens before LVA reads the samples and therefore is also contained in `data2`.
 
 This is derived from the code and has not been reproduced on a running system. Whether it triggers depends on the `prefers_*` values of the STT engine in use.
 
@@ -246,7 +259,7 @@ The AGC does not replace it:
 
 1. **Format conversion:** `soundcard` delivers float32 in the range -1 to 1. Everything downstream expects int16 PCM bytes: WebRTC (`Process10ms` takes bytes), the wake word models and `VoiceAssistantAudio` sent to Home Assistant. The AGC only receives its input from this function.
 2. **The AGC is optional:** It only runs if gain or NS is greater than 0. With the default values (both 0) WebRTC is skipped entirely and `_float_to_pcm16` is the only stage.
-3. **The AGC only handles channel 0:** Channel 1 (the reference) never goes through WebRTC but needs the same conversion.
+3. **The AGC only handles channel 0:** Channel 1 (the AEC reference, never streamed) never goes through WebRTC.
 
 The Mic Volume scalar only lives in the same function by convenience. The conversion would still be required with a scalar of 1.0. The scalar is merely a fixed, predictable control that can be set from Home Assistant. It only attenuates. For the basic input level, the system capture level (PulseAudio/PipeWire/ALSA) is usually the better place, because it acts before LVA reads the samples and can amplify.
 
@@ -272,7 +285,6 @@ The Mic Volume scalar only lives in the same function by convenience. The conver
 
 ## Things to be aware of
 
-- With two channels and WebRTC off, `data2` carries the reference channel, which Home Assistant may forward to the STT engine (details and status in "How Home Assistant and aioesphomeapi treat `data2`").
 - With WebRTC active, `data` and `data2` come from the same microphone block but can have different lengths, because only `data` goes through the 10 ms framing buffer.
 - When WebRTC returns no data for a block, that block is skipped entirely, including wake word detection.
 - Latency: one block is 64 ms, and a block is only sent once it is complete. This is the lower bound for the delay until the first audio packet. Capture buffering in the audio server, WebRTC framing and the network add to it. No measured values exist for this document.

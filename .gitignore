@@ -24,3 +24,6 @@ venv/
 dev.env
 version.txt
 version_githash.txt
+# Claude Code (local rules and notes)
+.claude/
+CLAUDE.local.md

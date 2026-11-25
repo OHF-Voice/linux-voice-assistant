@@ -1,9 +1,13 @@
 # mpv_player.py
 import logging
-from typing import Callable, List, Optional, Union
+import threading
+from typing import Callable, List, Optional, Set, Union
 
 from .player.libmpv import LibMpvPlayer
 from .player.state import PlayerState
+
+_DUCK_OWNERS = ("conversation", "timer", "announce")
+_DUCK_MODES = ("duck", "pause")
 
 
 class MpvMediaPlayer:
@@ -14,13 +18,25 @@ class MpvMediaPlayer:
     delegates all playback logic to LibMpvPlayer.
     """
 
-    def __init__(self, device: str | None = None) -> None:
-        self._log = logging.getLogger(self.__class__.__name__)
-        self._player = LibMpvPlayer(device=device)
+    def __init__(self, device: str | None = None, name: str = "mpv", duck_mode: str = "duck") -> None:
+        """
+        :param device: mpv audio device name, None for the default.
+        :param name: Name of the player in the log, for example ``music`` or ``tts``.
+        :param duck_mode: ``duck`` lowers the volume while ducked, ``pause`` pauses playback and resumes it afterwards.
+        :raises ValueError: If the duck mode is not a known one.
+        """
+        if duck_mode not in _DUCK_MODES:
+            raise ValueError(f"Unknown duck mode {duck_mode!r}, expected one of {_DUCK_MODES}")
+        self._log = logging.getLogger(f"{self.__class__.__name__}[{name}]")
+        self._player = LibMpvPlayer(device=device, name=name)
         self._done_callback: Optional[Callable[[], None]] = None
         self._playlist: List[str] = []
+        self._duck_lock = threading.Lock()
+        self._duck_owners: Set[str] = set()
+        self._duck_mode = duck_mode
+        self._paused_by_duck = False
 
-        self._log.debug("MpvMediaPlayer initialized (device=%s)", device)
+        self._log.debug("MpvMediaPlayer initialized (device=%s, duck mode=%s)", device, duck_mode)
 
     def play(
         self,
@@ -52,6 +68,7 @@ class MpvMediaPlayer:
             self._done_callback = None
 
         self._log.info("Playing %d URL(s): %s", len(urls), urls[0])
+        self._release_pause_by_duck()
 
         # Store playlist and callback
         self._playlist = urls
@@ -83,16 +100,19 @@ class MpvMediaPlayer:
     def pause(self) -> None:
         """Pause playback."""
         self._log.debug("pause() called")
+        self._release_pause_by_duck()
         self._player.pause()
 
     def resume(self) -> None:
         """Resume playback."""
         self._log.debug("resume() called")
+        self._release_pause_by_duck()
         self._player.resume()
 
     def stop(self) -> None:
         """Stop playback and invoke the done callback if present."""
         self._log.debug("stop() called")
+        self._release_pause_by_duck()
 
         self._player.stop()
 
@@ -111,26 +131,62 @@ class MpvMediaPlayer:
 
     @property
     def is_paused(self) -> bool:
-        """Check if the player is currently paused."""
-        return self._player.state() == PlayerState.PAUSED
+        """Check if the player is currently paused. A pause that only serves ducking does not count."""
+        return self._player.state() == PlayerState.PAUSED and not self._paused_by_duck
 
     def set_volume(self, volume: float) -> None:
         """
         Set playback volume.
         :param volume: Volume in percent (0.0-100.0).
         """
-        self._log.debug("set_volume(volume=%.2f)", volume)
         self._player.set_volume(volume)
 
-    def duck(self, factor: float = 0.5) -> None:
+    def duck(self, owner: str, factor: float = 0.5) -> None:
         """
-        Temporarily reduce volume.
-        :param factor: Volume multiplier (0.0-1.0).
+        Temporarily reduce volume, or pause playback in ``pause`` mode.
+        :param owner: Who asks: ``conversation``, ``timer`` or ``announce``. The volume is restored when every owner has called :meth:`unduck`.
+        :param factor: Volume multiplier (0.0-1.0), not used in ``pause`` mode.
+        :raises ValueError: If the owner is not a known one.
         """
-        self._log.debug("duck(factor=%.2f)", factor)
-        self._player.duck(factor)
+        self._check_duck_owner(owner)
+        with self._duck_lock:
+            self._duck_owners.add(owner)
+            self._log.debug("Duck requested by %s, factor %.2f (owners: %s)", owner, factor, sorted(self._duck_owners))
+            if self._duck_mode == "pause":
+                if self._player.state() == PlayerState.PLAYING and not self._paused_by_duck:
+                    self._log.debug("Pausing instead of ducking")
+                    self._paused_by_duck = True
+                    self._player.pause()
+            else:
+                self._player.duck(factor)
 
-    def unduck(self) -> None:
-        """Restore volume after ducking."""
-        self._log.debug("unduck() called")
-        self._player.unduck()
+    def unduck(self, owner: str) -> None:
+        """
+        Restore volume (or resume playback in ``pause`` mode) after ducking, once no owner wants it ducked any more.
+        :param owner: The owner that called :meth:`duck`.
+        :raises ValueError: If the owner is not a known one.
+        """
+        self._check_duck_owner(owner)
+        with self._duck_lock:
+            self._duck_owners.discard(owner)
+            if self._duck_owners:
+                self._log.debug("Unduck by %s, stays ducked for %s", owner, sorted(self._duck_owners))
+            else:
+                self._log.debug("Unduck by %s, no owner left", owner)
+                if self._duck_mode == "pause":
+                    if self._paused_by_duck:
+                        self._paused_by_duck = False
+                        if self._player.state() == PlayerState.PAUSED:
+                            self._log.debug("Resuming playback paused for ducking")
+                            self._player.resume()
+                else:
+                    self._player.unduck()
+
+    def _release_pause_by_duck(self) -> None:
+        """A command from outside takes over a pause that only served ducking, so the unduck does not undo it."""
+        with self._duck_lock:
+            self._paused_by_duck = False
+
+    def _check_duck_owner(self, owner: str) -> None:
+        if owner not in _DUCK_OWNERS:
+            raise ValueError(f"Unknown duck owner {owner!r}, expected one of {_DUCK_OWNERS}")

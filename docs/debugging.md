@@ -57,7 +57,7 @@ The Linux audio stack consists of multiple layers working together:
 │  │  Environment Variables:                             │    │
 │  │  - LVA_XDG_RUNTIME_DIR=/run/user/1000 (host path)       │    │
 │  │  - AUDIO_INPUT_DEVICE="default"                     │    │
-│  │  - AUDIO_OUTPUT_DEVICE="default"                    │    │
+│  │  - AUDIO_OUTPUT_DEVICE="pulse"                      │    │
 │  └─────────────────────────────────────────────────────┘    │
 │                                                             │
 │  Device Access:                                             │
@@ -101,7 +101,7 @@ services:
     environment:
       - LVA_XDG_RUNTIME_DIR=/run/user/1000
       - AUDIO_INPUT_DEVICE=default
-      - AUDIO_OUTPUT_DEVICE=default
+      - AUDIO_OUTPUT_DEVICE=pulse
     volumes:
       - /run/user/1000:/run/user/1000:rw
     devices:
@@ -124,8 +124,12 @@ Update the `.env` file with your device names:
 
 ``` ini
 AUDIO_INPUT_DEVICE="default"
-AUDIO_OUTPUT_DEVICE="default"
+AUDIO_OUTPUT_DEVICE="pulse"
 ```
+
+The output list contains the same device several times, once per mpv audio driver (`pipewire/...`, `pulse/...`, `alsa/...`). Use the `pulse/...` entry, for example `AUDIO_OUTPUT_DEVICE="pulse/alsa_output.usb-Example.analog-stereo"`. `AUDIO_OUTPUT_DEVICE="pulse"` selects the default PulseAudio output without a device name.
+
+To play music and media on a different device than voice and TTS, set `MUSIC_OUTPUT_DEVICE` to another entry from the same list. If it is unset, music uses `AUDIO_OUTPUT_DEVICE`.
 
 
 ## Pipewire runtime directory (Optional):
@@ -150,6 +154,17 @@ If the container cannot access audio devices, ensure:
 ### Permission Denied Errors:
 
 tbd
+
+### "Incorrect preamble" in the log:
+
+The ESPHome API port (`--port`, default 6053) only accepts ESPHome plaintext frames, which start with the byte `0x00`. If another client connects, LVA logs `Incorrect preamble: <byte>` and a hint:
+
+| Byte | Meaning | What to check |
+|------|---------|---------------|
+| `1` | Client expects an encrypted connection | Start LVA with `--enable-encryption`, or remove the key from the client |
+| `22` | TLS handshake | The ESPHome API port does not use TLS |
+| `123` (`{`) | JSON | A peripheral client is connected to the wrong port: use `--peripheral-port` (default 6055) |
+| `71` (`G`), `80` (`P`), `72` (`H`), ... | HTTP or WebSocket request | Same as above: peripherals use `--peripheral-port` (default 6055) |
 
 ### Low Audio Quality:
 

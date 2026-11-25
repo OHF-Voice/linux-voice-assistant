@@ -40,6 +40,14 @@ if [ -n "${PORT}" ]; then
   EXTRA_ARGS+=( "--port" "$PORT" )
 fi
 
+if [ "$ENABLE_ENCRYPTION" = "1" ]; then
+  EXTRA_ARGS+=( "--enable-encryption" )
+fi
+
+if [ -n "${ENCRYPTION_KEY_FILE}" ]; then
+  EXTRA_ARGS+=( "--encryption-key-file" "$ENCRYPTION_KEY_FILE" )
+fi
+
 if [ -n "${AUDIO_INPUT_DEVICE}" ]; then
   EXTRA_ARGS+=( "--audio-input-device" "$AUDIO_INPUT_DEVICE" )
 fi
@@ -54,6 +62,10 @@ fi
 
 if [ -n "${MUSIC_OUTPUT_DEVICE}" ]; then
   EXTRA_ARGS+=( "--music-output-device" "$MUSIC_OUTPUT_DEVICE" )
+fi
+
+if [ -n "${MPV_PLAYER_DUCK_MODE}" ]; then
+  EXTRA_ARGS+=( "--mpv-player-duck-mode" "$MPV_PLAYER_DUCK_MODE" )
 fi
 
 if [ -n "${MIC_VOLUME}" ]; then
@@ -80,6 +92,10 @@ if [ "$LISTEN_DURING_WAKE_SOUND" = "1" ]; then
   EXTRA_ARGS+=( "--listen-during-wake-sound" )
 fi
 
+if [ -n "${WAKE_WORD_ROOT_DIR}" ]; then
+  EXTRA_ARGS+=( "--wake-word-root-dir" "$WAKE_WORD_ROOT_DIR" )
+fi
+
 if [ -n "${WAKE_WORD_DIR}" ]; then
   EXTRA_ARGS+=( "--wake-word-dir" "$WAKE_WORD_DIR" )
 fi
@@ -88,12 +104,12 @@ if [ -n "${WAKE_MODEL}" ]; then
   EXTRA_ARGS+=( "--wake-model" "$WAKE_MODEL" )
 fi
 
-if [ -n "${STOP_MODEL}" ]; then
-  EXTRA_ARGS+=( "--stop-model" "$STOP_MODEL" )
+if [ -n "${WAKE_MODEL_2}" ]; then
+  EXTRA_ARGS+=( "--wake-model-2" "$WAKE_MODEL_2" )
 fi
 
-if [ -n "${DOWNLOAD_DIR}" ]; then
-  EXTRA_ARGS+=( "--download-dir" "$DOWNLOAD_DIR" )
+if [ -n "${STOP_MODEL}" ]; then
+  EXTRA_ARGS+=( "--stop-model" "$STOP_MODEL" )
 fi
 
 if [ -n "${REFACTORY_SECONDS}" ]; then
@@ -166,6 +182,8 @@ fi
 
 if [ "$ALLOW_REMOTE_MUTE" = "1" ]; then
   EXTRA_ARGS+=( "--allow-remote-mute" )
+if [ -n "${ENABLE_ZEROCONF}" ]; then
+  EXTRA_ARGS+=( "--enable-zeroconf" "$ENABLE_ZEROCONF" )
 fi
 
 if [ "$DISABLE_PERIPHERAL_API" = "1" ]; then

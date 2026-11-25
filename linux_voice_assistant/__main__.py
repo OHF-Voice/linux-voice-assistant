@@ -9,28 +9,33 @@ import sys
 import threading
 import time
 from pathlib import Path
-from typing import Any, List, Optional, Union
+from typing import Any, List, Optional
 
 import numpy as np
 import soundcard as sc
 from aioesphomeapi.api_pb2 import NumberStateResponse  # type: ignore  # pylint: disable=no-name-in-module
-from pymicro_wakeword import MicroWakeWord, MicroWakeWordFeatures
+from pymicro_wakeword import MicroWakeWordFeatures
 from pyopen_wakeword import OpenWakeWord, OpenWakeWordFeatures
 
-from .models import Preferences, ServerState, WakeWordType, initial_stop_word_threshold
+from .api_server import create_encryption_key_file, load_encryption_key_file
+from .migrations import migrate_preferences
+from .models import Preferences, ServerState, initial_stop_word_threshold
 from .mpv_player import MpvMediaPlayer
 from .peripheral_api import LVAEvent, PeripheralAPIServer
 from .satellite import VoiceSatelliteProtocol
+from .stop_word import process_stop_word
 from .util import (
     get_default_interface,
     get_default_ipv4,
     get_esphome_version,
     get_version,
     resolve_mac_address,
+    warn_about_removed_options,
 )
-from .wake_word import find_available_wake_words, load_stop_model, load_wake_models
+from .wake_word import find_available_wake_words, load_stop_model, load_wake_models, wake_word_ids_for_selections, wake_word_selections_for_ids
+from .wake_word_detection import ActiveWakeWord, apply_sensitivities, gate_wake_words, process_wake_words, select_active_wake_words, wake_words_need_refresh
 from .webrtc import WebRTCProcessor
-from .zeroconf import HomeAssistantZeroconf
+from .zeroconf import start_discovery
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -68,18 +73,32 @@ async def main() -> None:
     )
     parser.add_argument(
         "--audio-output-device",
-        help="Name for the audio output device (see --list-output-devices)",
+        default="pulse",
+        help="Name for the audio output device, use a pulse/... name (see --list-output-devices)",
     )
     parser.add_argument(
         "--music-output-device",
         help="mpv name for the music/media output device (defaults to --audio-output-device)",
     )
     parser.add_argument(
+        "--mpv-player-duck-mode",
+        default="duck",
+        choices=("duck", "pause"),
+        help="What the music player does while the assistant talks, an announcement plays or a timer rings: "
+        "duck lowers the volume to 50 %%, pause pauses the music and resumes it afterwards (default: %(default)s)",
+    )
+    parser.add_argument(
         "--list-output-devices",
         action="store_true",
         help="List audio output devices and exit",
     )
-    parser.add_argument("--mic-volume", type=int, default=100, choices=list(range(1, 101)), help="Microphone volume level (1 to 100)")
+    parser.add_argument(
+        "--mic-volume",
+        type=int,
+        default=None,
+        choices=list(range(101)),
+        help="Microphone volume level (0 to 100), overrides the stored value on every start. If not given, the stored value is used, or 100 if none is stored",
+    )
     parser.add_argument("--mic-auto-gain", type=int, default=0, choices=list(range(32)))
     parser.add_argument("--mic-noise-suppression", type=int, default=0, choices=(0, 1, 2, 3, 4))
     parser.add_argument(
@@ -87,13 +106,22 @@ async def main() -> None:
         type=int,
         default=1,
         choices=(1, 2),
-        help="Number of mic channels to capture and stream (1=mono, 2=dual-channel voice)",
+        help="Number of mic channels to capture (1=mono, 2=mic + AEC reference channel); what is streamed to Home Assistant does not depend on it",
+    )
+    parser.add_argument(
+        "--wake-word-root-dir",
+        default=_WAKEWORDS_DIR,
+        help="Root directory of the wake word layout: <origin>/<engine> with origin internal, downloaded or custom and engine microwakeword or openwakeword",
     )
     parser.add_argument(
         "--wake-word-dir",
-        default=[_WAKEWORDS_DIR],
-        action="append",
-        help="Directory with wake word models (.tflite) and configuration (.json)",
+        default=None,
+        help="Removed and ignored, use --wake-word-root-dir",
+    )
+    parser.add_argument(
+        "--download-dir",
+        default=None,
+        help="Removed and ignored, downloaded wake words are stored in <--wake-word-root-dir>/downloaded",
     )
     parser.add_argument(
         "--wake-model",
@@ -101,20 +129,20 @@ async def main() -> None:
         help="File name of the first active wake model",
     )
     parser.add_argument(
+        "--wake-model-2",
+        default="",
+        help="File name of the second active wake model, used only when no wake words are stored yet (empty = no second wake word)",
+    )
+    parser.add_argument(
         "--stop-model",
         default="stop",
         help="File name of the stop model",
     )
     parser.add_argument(
-        "--download-dir",
-        default=_REPO_DIR / "local",
-        help="Directory to download custom wake word models to",
-    )
-    parser.add_argument(
         "--refractory-seconds",
-        default=2.0,
+        default=0.0,
         type=float,
-        help="Seconds before wake word can be activated again",
+        help="Seconds after an accepted wake word during which further detections are blocked (0 = off)",
     )
     parser.add_argument(
         "--continue-conversation-delay",
@@ -199,6 +227,15 @@ async def main() -> None:
         help="Port the application is listening on (default: 6053)",
     )
     parser.add_argument(
+        "--enable-encryption",
+        action="store_true",
+        help="Encrypt the ESPHome API with the key from --encryption-key-file; Home Assistant then needs the same key, clients without it are refused",
+    )
+    parser.add_argument(
+        "--encryption-key-file",
+        help="File holding the encryption key (32 bytes, base64; for example from: openssl rand -base64 32). Default: encryption.key next to the preferences file. Created with a new random key if it does not exist",
+    )
+    parser.add_argument(
         "--enable-thinking-sound",
         action="store_true",
         help="Enable thinking sound on startup",
@@ -233,6 +270,13 @@ async def main() -> None:
         "--disable-peripheral-api",
         action="store_true",
         help="Disable the peripheral WebSocket API entirely",
+    )
+    parser.add_argument(
+        "--enable-zeroconf",
+        type=int,
+        choices=(0, 1),
+        default=1,
+        help="Announce LVA via mDNS (default: %(default)s). Set 0 to not announce it: Home Assistant then no longer discovers it automatically, add it manually with the host IP address and --port.",
     )
     parser.add_argument(
         "--peripheral-startup-wait",
@@ -299,59 +343,76 @@ async def main() -> None:
 
     # Resolve network interface for mac-address detection
     if not args.network_interface:
-        print("No network interface specified, try to detect default interface")
+        _LOGGER.info("No network interface specified, try to detect default interface")
         network_interface = get_default_interface()
-        print(f"Default interface detected: {network_interface}")
+        _LOGGER.info("Default interface detected: %s", network_interface)
     else:
-        print("Network interface specified")
+        _LOGGER.info("Network interface specified")
         network_interface = args.network_interface
-        print(f"Using network interface: {network_interface}")
+        _LOGGER.info("Using network interface: %s", network_interface)
 
     # Resolve ip_address where the application will be listening
     if not args.host:
-        print("No host (ip-address) specified, try to detect IP-Address")
+        _LOGGER.info("No host (ip-address) specified, try to detect IP-Address")
         host_ip_address = get_default_ipv4(network_interface)
-        print(f"IP-Address detected: {host_ip_address}")
+        _LOGGER.info("IP-Address detected: %s", host_ip_address)
     else:
-        print("Host specified")
-        print(f"Using host: {args.host}")
+        _LOGGER.info("Custom Host specified")
+        _LOGGER.info("Using host: %s", args.host)
         host_ip_address = args.host
 
     # Resolve mac
     try:
         mac_address = resolve_mac_address(args.mac_address, network_interface)
     except ValueError as err:
-        print(f"{err}, app stopped.")
+        _LOGGER.error("%s, app stopped.", err)
         sys.exit(1)
     if args.mac_address:
-        print(f"Using MAC address: {mac_address}")
+        _LOGGER.info("Using custom MAC address: %s", mac_address)
     mac_address_clean = mac_address.replace(":", "").lower()
 
     # Resolve name
     if not args.name:
-        print("No friendly name specified, try to autogenerate name")
+        _LOGGER.info("No friendly name specified, try to autogenerate name")
         friendly_name = f"LVA - {mac_address_clean}"
-        print(f"Friendly name autogenerated: {friendly_name}")
+        _LOGGER.info("Friendly name autogenerated: %s", friendly_name)
     else:
-        print("Friendly name specified")
-        print(f"Using friendly name: {args.name}")
+        _LOGGER.info("Friendly name specified")
+        _LOGGER.info("Using custom friendly name: %s", args.name)
         friendly_name = args.name
 
     device_name = f"lva-{mac_address_clean}"
 
-    print(f"Device name: {device_name}")
+    # Resolve encryption key
+    noise_psk: Optional[bytes] = None
+    if args.enable_encryption:
+        key_path = Path(args.encryption_key_file) if args.encryption_key_file else Path(args.preferences_file).parent / "encryption.key"
+        try:
+            if not key_path.exists():
+                create_encryption_key_file(key_path)
+                # Only the path is logged, never the key: logs are less protected than the key file
+                _LOGGER.warning("Created encryption key file: %s. Home Assistant will ask for this key, read it from that file.", key_path)
+            noise_psk = load_encryption_key_file(key_path)
+        except OSError as err:
+            _LOGGER.error("Cannot read the encryption key file: %s, app stopped.", err)
+            sys.exit(1)
+        except ValueError as err:
+            _LOGGER.error("%s (%s), app stopped.", err, key_path)
+            sys.exit(1)
+        _LOGGER.info("API encryption: enabled (key file %s)", key_path)
+    else:
+        _LOGGER.info("API encryption: disabled (plaintext)")
+
+    _LOGGER.info("Device name: %s", device_name)
 
     # Resolve version
     version = get_version()
-    print(f"Version: {version}")
+    _LOGGER.info("Version: %s", version)
+    warn_about_removed_options(args.wake_word_dir, args.download_dir)
 
     # Resolve esphome version
     esphome_version = get_esphome_version()
-    print(f"ESPHome api version: {esphome_version}")
-
-    # Resolve download dir
-    args.download_dir = Path(args.download_dir)
-    args.download_dir.mkdir(parents=True, exist_ok=True)
+    _LOGGER.info("ESPHome api version: %s", esphome_version)
 
     # Resolve microphone
     if args.audio_input_device is not None:
@@ -360,32 +421,33 @@ async def main() -> None:
         except ValueError:
             pass
 
-        mic = sc.get_microphone(args.audio_input_device)
+        try:
+            mic = sc.get_microphone(args.audio_input_device)
+        except IndexError:
+            _LOGGER.error("Audio input device %r not found.", args.audio_input_device)
+            _LOGGER.error("Available input devices:")
+            for idx, available_mic in enumerate(sc.all_microphones()):
+                _LOGGER.error("  [%d] %s", idx, available_mic.name)
+            sys.exit(1)
     else:
         mic = sc.default_microphone()
 
+    # Validate output devices, mpv silently accepts unknown names
+    for output_device in (args.audio_output_device, args.music_output_device):
+        if output_device and not _output_device_exists(output_device):
+            _LOGGER.error("Audio output device %r not found.", output_device)
+            _LOGGER.error("Available output devices:")
+            for idx, speaker in enumerate(_list_output_devices()):
+                _LOGGER.error("  [%d] %s: %s", idx, speaker["name"], speaker["description"])
+            sys.exit(1)
+
     # Load available wake words
-    wake_word_dirs = [Path(ww_dir) for ww_dir in args.wake_word_dir]
+    wake_word_root = Path(args.wake_word_root_dir)
+    # Lowest priority first: a wake word id found in a later directory replaces the same id found earlier
+    wake_word_dirs = [wake_word_root / origin / engine for origin in ("internal", "downloaded", "custom") for engine in ("microwakeword", "openwakeword")]
+    for wake_word_dir in wake_word_dirs:
+        wake_word_dir.mkdir(parents=True, exist_ok=True)
 
-    # If the operator explicitly pointed --wake-word-dir (or the WAKE_WORD_DIR
-    # env var) at the openWakeWord subdirectory, prefer resolving --wake-model
-    # to an openWakeWord model of the same name instead of a same-named
-    # microWakeWord one. Checked before the automatic dirs below are appended,
-    # since those always include the openWakeWord path and would otherwise
-    # make every configuration look like an openWakeWord preference.
-    preferred_wake_word_type = WakeWordType.OPEN_WAKE_WORD if any("openwakeword" in str(ww_dir).lower() for ww_dir in wake_word_dirs) else None
-
-    # openWakeWord models ship in their own subdirectory under the default
-    # wakewords dir. find_available_wake_words() only globs the top level of
-    # each directory it's given, so this must be added explicitly or the OWW
-    # models never get discovered (and never show up in the HA dropdown).
-    # Appended after the user-specified dirs so OWW entries are inserted
-    # (and therefore displayed) after the microWakeWord ones.
-    oww_dir = _WAKEWORDS_DIR / "openWakeWord"
-    if oww_dir not in wake_word_dirs:
-        wake_word_dirs.append(oww_dir)
-
-    wake_word_dirs.append(args.download_dir / "external_wake_words")
     available_wake_words = find_available_wake_words(wake_word_dirs, args.stop_model)
 
     # Load preferences
@@ -396,7 +458,14 @@ async def main() -> None:
             preferences_dict = json.load(preferences_file)
             preferences = Preferences.from_dict(preferences_dict)
     else:
+        _LOGGER.info("No preferences file found, creating it with the defaults: %s", preferences_path)
         preferences = Preferences()
+        preferences.save(preferences_path)
+
+    migrated_preferences = migrate_preferences(preferences, available_wake_words)
+    if migrated_preferences != preferences:
+        preferences = migrated_preferences
+        preferences.save(preferences_path)
 
     # Load volume from preferences on startup, and ensure it's between 0.0 and 1.0
     initial_volume = preferences.volume if preferences.volume is not None else 1.0
@@ -434,7 +503,7 @@ async def main() -> None:
             _LOGGER.exception("Extras for webrtc are not installed")
             sys.exit(1)
 
-    if args.mic_volume > 0.0:
+    if args.mic_volume is not None:
         preferences.mic_volume = args.mic_volume
     if args.mic_auto_gain > 0:
         preferences.mic_auto_gain = args.mic_auto_gain
@@ -443,15 +512,15 @@ async def main() -> None:
         preferences.mic_noise_suppression = args.mic_noise_suppression
 
     # Load wake/stop models
-    wake_models, active_wake_words, fallback_used = load_wake_models(
+    wake_models, wake_word_slots, fallback_used = load_wake_models(
         available_wake_words,
-        [word for word in preferences.active_wake_words if word is not None],
-        args.wake_model,
-        preferred_type=preferred_wake_word_type,
+        [word for word in wake_word_ids_for_selections(preferences.active_wake_words, available_wake_words) if word is not None],
+        first_default_wake_word_id=args.wake_model,
+        second_default_wake_word_id=args.wake_model_2,
     )
 
     # TODO: allow openWakeWord for "stop"
-    stop_model = load_stop_model(wake_word_dirs, args.stop_model)
+    stop_model = load_stop_model(list(reversed(wake_word_dirs)), args.stop_model)
     assert stop_model is not None
 
     state = ServerState(
@@ -465,15 +534,16 @@ async def main() -> None:
         entities=[],
         available_wake_words=available_wake_words,
         wake_words=wake_models,
-        active_wake_words=active_wake_words,
+        active_wake_words=set(wake_word_slots),
         stop_word=stop_model,
-        music_player=MpvMediaPlayer(device=args.music_output_device or args.audio_output_device),
-        tts_player=MpvMediaPlayer(device=args.audio_output_device),
+        music_player=MpvMediaPlayer(device=args.music_output_device or args.audio_output_device, name="music", duck_mode=args.mpv_player_duck_mode),
+        tts_player=MpvMediaPlayer(device=args.audio_output_device, name="tts"),
         wakeup_sound=args.wakeup_sound,
         start_listening_sound=args.start_listening_sound,
         timer_finished_sound=args.timer_finished_sound,
         processing_sound=args.processing_sound,
         mute_sound=args.mute_sound,
+        noise_psk=noise_psk,
         unmute_sound=args.unmute_sound,
         pipeline_ended_sound=args.pipeline_ended_sound,
         button_double_press_sound=args.button_double_press_sound,
@@ -484,7 +554,7 @@ async def main() -> None:
         refractory_seconds=args.refractory_seconds,
         continue_conversation_delay=args.continue_conversation_delay,
         output_only=args.output_only,
-        download_dir=args.download_dir,
+        wake_word_root=wake_word_root,
         volume=initial_volume,
         stop_word_threshold=initial_threshold,
         button_controls_locked=initial_button_controls_locked,
@@ -502,14 +572,14 @@ async def main() -> None:
     if fallback_used:
         # Fallback to the default model was used, save as active wake words
         _LOGGER.debug("Fallback was used, save default wake words in Preferences.")
-        state.preferences.active_wake_words = list(active_wake_words)
-        state.active_wake_words = active_wake_words
+        state.preferences.active_wake_words = wake_word_selections_for_ids(list(wake_word_slots), available_wake_words)
+        state.active_wake_words = set(wake_word_slots)
         state.wake_words = wake_models
-        state.save_preferences()
+        state.preferences.save(state.preferences_path)
         state.wake_words_changed = True
 
-    if args.enable_thinking_sound or args.mic_auto_gain or args.mic_noise_suppression or remote_mute_dropped:
-        state.save_preferences()
+    if args.enable_thinking_sound or args.mic_volume is not None or args.mic_auto_gain or args.mic_noise_suppression or remote_mute_dropped:
+        state.preferences.save(state.preferences_path)
 
     initial_volume_percent = int(round(initial_volume * 100))
     state.music_player.set_volume(initial_volume_percent)
@@ -596,13 +666,14 @@ async def main() -> None:
     process_audio_thread.start()
 
     # Auto discovery (zeroconf, mDNS)
-    discovery = HomeAssistantZeroconf(
+    await start_discovery(
+        enabled=args.enable_zeroconf == 1,
         port=args.port,
         name=state.name,
         mac_address=state.mac_address,
         host_ip_address=host_ip_address,
+        encrypted=noise_psk is not None,
     )
-    await discovery.register_server()
 
     # ------------------------------------------------------------------
     # Start peripheral API and signal "getting started" to peripherals
@@ -640,6 +711,22 @@ async def main() -> None:
 
 
 # -----------------------------------------------------------------------------
+def _list_output_devices() -> list:
+    """Return the audio output devices reported by mpv."""
+    from mpv import MPV
+
+    return list(MPV().audio_device_list)  # type: ignore
+
+
+def _output_device_exists(device: str) -> bool:
+    """
+    Check whether mpv knows the given output device.
+    :param device: Device name as passed to --audio-output-device, a bare driver name like "pulse" matches any "pulse/..." device.
+    """
+    names = [speaker["name"] for speaker in _list_output_devices()]
+    return device in names or any(name.startswith(f"{device}/") for name in names)
+
+
 def _setup_logging(args: argparse.Namespace) -> None:
     COLORS = {
         logging.DEBUG: "\033[36m",
@@ -678,7 +765,8 @@ def process_audio(state: ServerState, mic, block_size: int):
     """Process audio chunks from the microphone."""
     n_channels = state.audio_input_channels
 
-    wake_words: List[Union[MicroWakeWord, OpenWakeWord]] = []
+    wake_words: List[ActiveWakeWord] = []
+    wake_words_refreshed = False
     micro_features: Optional[MicroWakeWordFeatures] = None
     micro_inputs: List[np.ndarray] = []
 
@@ -688,6 +776,8 @@ def process_audio(state: ServerState, mic, block_size: int):
 
     last_active: Optional[float] = None
     webrtc: Optional[WebRTCProcessor] = None
+    stop_word_running = False
+    wake_word_running = False
 
     try:
         _LOGGER.debug("Opening audio input device: %s", mic.name)
@@ -707,6 +797,8 @@ def process_audio(state: ServerState, mic, block_size: int):
 
                 # Primary channel drives WebRTC and wake-word detection.
                 audio_chunk = channel_chunks[0]
+                # Save raw before any processing
+                audio_chunk_unprocessed = channel_chunks[0]
                 agc = state.preferences.mic_auto_gain or 0
                 ns = state.preferences.mic_noise_suppression or 0
 
@@ -723,40 +815,16 @@ def process_audio(state: ServerState, mic, block_size: int):
                     continue
 
                 # WAKE WORD
-                if (not wake_words) or (state.wake_words_changed and state.wake_words):
+                if wake_words_need_refresh(state, wake_words_refreshed):
                     # Update list of wake word models to process
                     state.wake_words_changed = False
-                    wake_words = [ww for ww_id, ww in state.wake_words.items() if ww_id in state.active_wake_words]
+                    wake_words = select_active_wake_words(state)
+                    wake_words_refreshed = True
 
                     # TODO: Load default stop word value from json into state and preferences missing.
 
-                    has_oww = False
-                    for idx, wake_word in enumerate(wake_words):
-
-                        # Load default threshold from model json
-                        wake_word_id = next((ww_id for ww_id, ww in state.wake_words.items() if ww is wake_word), "")
-                        available_word = state.available_wake_words.get(wake_word_id)
-                        # _LOGGER.debug("word= %s", state.available_wake_words.get(wake_word_id))
-                        default_threshold = available_word.probability_cutoff if available_word else 0.7
-                        _LOGGER.debug("Using default threshold %.3f for wake word '%s' from model config", default_threshold, wake_word_id)
-                        # Check preferences override
-                        if idx == 0:
-                            old_val = state.wake_word_1_threshold
-                            if state.preferences.wake_word_1_sensitivity is not None:
-                                state.wake_word_1_threshold = state.preferences.wake_word_1_sensitivity
-                            else:
-                                state.wake_word_1_threshold = default_threshold
-                            _LOGGER.debug("Wake Word 1 threshold set to %.3f (was %.3f, preferences: %s)", state.wake_word_1_threshold, old_val, state.preferences.wake_word_1_sensitivity)
-                        elif idx == 1:
-                            old_val = state.wake_word_2_threshold
-                            if state.preferences.wake_word_2_sensitivity is not None:
-                                state.wake_word_2_threshold = state.preferences.wake_word_2_sensitivity
-                            else:
-                                state.wake_word_2_threshold = default_threshold
-                            _LOGGER.debug("Wake Word 2 threshold set to %.3f (was %.3f, preferences: %s)", state.wake_word_2_threshold, old_val, state.preferences.wake_word_2_sensitivity)
-
-                        if isinstance(wake_word, OpenWakeWord):
-                            has_oww = True
+                    apply_sensitivities(state, wake_words)
+                    has_oww = any(isinstance(word.model, OpenWakeWord) for word in wake_words)
 
                     # Sync entity states after threshold values were updated
                     if state.satellite is not None:
@@ -806,71 +874,27 @@ def process_audio(state: ServerState, mic, block_size: int):
                         oww_features = OpenWakeWordFeatures.from_builtin()
 
                 try:
-                    # Both channels travel in one message: data=ch0 (enhanced), data2=ch1 (raw reference)
-                    audio_chunk_2 = channel_chunks[1] if n_channels >= 2 else None
+                    # data=ch0 (after WebRTC gain/noise suppression), data2=ch0 before any WebRTC processing
+                    audio_chunk_2 = audio_chunk_unprocessed
                     state.satellite.handle_audio(audio_chunk, audio_chunk_2)
 
                     assert micro_features is not None
                     micro_inputs.clear()
                     micro_inputs.extend(micro_features.process_streaming(audio_chunk))
 
-                    if has_oww:
-                        assert oww_features is not None
-                        oww_inputs.clear()
-                        oww_inputs.extend(oww_features.process_streaming(audio_chunk))
+                    wake_word_running = gate_wake_words(wake_words, oww_features, state.satellite.pipeline_active, wake_word_running)
+                    if wake_word_running:
+                        if has_oww:
+                            assert oww_features is not None
+                            oww_inputs.clear()
+                            oww_inputs.extend(oww_features.process_streaming(audio_chunk))
 
-                    for wake_word_index, wake_word in enumerate(wake_words):
-                        activated = False
+                        now = time.monotonic()
+                        detections, last_active = process_wake_words(state, wake_words, micro_inputs, oww_inputs, last_active, now)
+                        for wake_word, detection in detections:
+                            state.satellite.wakeup(wake_word, detection)
 
-                        # Set dynamic threshold depending on wake word index
-                        if wake_word_index == 0:
-                            threshold = state.wake_word_1_threshold
-                            # _LOGGER.debug("Set wake word %d probability cutoff to %.3f", wake_word_index+1, state.wake_word_1_threshold)
-                        elif wake_word_index == 1:
-                            threshold = state.wake_word_2_threshold
-                            # _LOGGER.debug("Set wake word %d probability cutoff to %.3f", wake_word_index+1, state.wake_word_2_threshold)
-                        else:
-                            threshold = 0.7
-                            # _LOGGER.debug("Set wake word %d probability cutoff to fallback value 0.7", wake_word_index+1)
-
-                        if isinstance(wake_word, MicroWakeWord):
-                            # No debugging when no detection
-                            wake_word.debug_probabilities = False
-
-                            # set microWakeWord cutoff
-                            wake_word.probability_cutoff = threshold
-
-                            for micro_input in micro_inputs:
-                                if wake_word.process_streaming(micro_input):
-                                    wake_word.debug_probabilities = True
-                                    activated = True
-                        elif isinstance(wake_word, OpenWakeWord):
-                            for oww_input in oww_inputs:
-                                for prob in wake_word.process_streaming(oww_input):
-                                    if prob > threshold:
-                                        _LOGGER.debug("Wake word '%s' activated (probability %.3f exceeded threshold %.3f)", wake_word.wake_word, prob, threshold)  # type: ignore[attr-defined]
-                                        activated = True
-
-                        if activated and not state.muted:
-                            # Check refractory
-                            now = time.monotonic()
-                            if (last_active is None) or ((now - last_active) > state.refractory_seconds):
-                                state.satellite.wakeup(wake_word)
-                                last_active = now
-
-                    # Always process to keep state correct
-                    stopped = False
-
-                    # No debugging when no detection
-                    state.stop_word.debug_probabilities = False
-
-                    # Apply stop word sensitivity threshold
-                    state.stop_word.probability_cutoff = state.stop_word_threshold
-                    # _LOGGER.debug("Set stop word probability cutoff to %.3f", state.stop_word_threshold)
-                    for micro_input in micro_inputs:
-                        if state.stop_word.process_streaming(micro_input):
-                            state.stop_word.debug_probabilities = True
-                            stopped = True
+                    stopped, stop_word_running = process_stop_word(state, micro_inputs, stop_word_running)
 
                     if stopped and (state.stop_word.id in state.active_wake_words) and not state.muted:
                         _LOGGER.debug("Stop word detected")

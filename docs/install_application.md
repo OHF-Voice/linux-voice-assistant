@@ -56,6 +56,8 @@ You can change the used version in the docker-compose.yml.
 | `x.y` | Major.Minor with auto updates | `ghcr.io/ohf-voice/linux-voice-assistant:1.0` |
 | `<branch>` | Branch-specific build | `ghcr.io/ohf-voice/linux-voice-assistant:my-branch` |
 
+All tags are multi-architecture images for `linux/amd64`, `linux/aarch64` and `linux/arm/v7` (32-bit ARM, e.g. Raspberry Pi 2/3 with a 32-bit OS, Orange Pi, Allwinner H3). Docker selects the matching image for your platform automatically.
+
 Edit the .env file and change the values to your needs:
 ``` sh
 vim .env
@@ -70,7 +72,7 @@ Start the application:
 docker compose up -d
 ```
 
-💡 **Note:** If you want to use the application with a different user, you need to change the user in the .env file. Dont forget to change the UID from the user. The docker container will run until you stop it. It will restart autiomatically after a reboot.
+💡 **Note:** If you want to use the application with a different user, you need to change the user in the .env file. Dont forget to change the UID from the user. The docker container will run until you stop it. It will restart automatically after a reboot.
 
 Check if the application is running:
 ``` sh
@@ -175,21 +177,24 @@ Environment=PREFERENCES_FILE="/home/pi/linux-voice-assistant/preferences.json"
 # Environment=MAC_ADDRESS="02:00:00:00:00:01"
 # Environment=HOST="0.0.0.0"
 # Environment=PORT="6053"
+# Environment=ENABLE_ENCRYPTION="1"
+# Environment=ENCRYPTION_KEY_FILE="/home/pi/linux-voice-assistant/encryption.key"
 # Environment=AUDIO_INPUT_DEVICE="default"
 # Environment=AUDIO_INPUT_BLOCK_SIZE="1024"
-# Environment=AUDIO_OUTPUT_DEVICE="default"
-# Environment=MUSIC_OUTPUT_DEVICE="default"
-# Environment=MIC_VOLUME="1.0"
+# Environment=AUDIO_OUTPUT_DEVICE="pulse"
+# Environment=MUSIC_OUTPUT_DEVICE="pulse"
+# Environment=MPV_PLAYER_DUCK_MODE="duck"
+# Environment=MIC_VOLUME="100"
 # Environment=MIC_AUTO_GAIN="0"
 # Environment=MIC_NOISE_SUPPRESSION="0"
-# Environment=AUDIO_INPUT_CHANNELS=2
+# Environment=AUDIO_INPUT_CHANNELS=1
 # Environment=ENABLE_THINKING_SOUND="1"
-# Environment=WAKE_WORD_DIR="app/wakewords"
-# Environment=WAKE-MODEL="okay_nabu"
+# Environment=WAKE_WORD_ROOT_DIR="/home/pi/linux-voice-assistant/wakewords"
+# Environment=WAKE_MODEL="okay_nabu"
+# Environment=WAKE_MODEL_2="hey_jarvis"
 # Environment=STOP_MODEL="stop"
-# Environment=DOWNLOAD_DIR="/home/pi/linux-voice-assistant/local"
 # Environment=TIMER_MAX_RING_SECONDS="900"
-# Environment=REFACTORY_SECONDS="2"
+# Environment=REFACTORY_SECONDS="0"
 # Environment=CONTINUE_CONVERSATION_DELAY="0.5"
 # Environment=WAKEUP_SOUND="sounds/wake_word_triggered.flac"
 # Environment=START_LISTENING_SOUND="sounds/start_listening_button.flac"
@@ -208,6 +213,7 @@ Environment=PREFERENCES_FILE="/home/pi/linux-voice-assistant/preferences.json"
 # Environment=PERIPHERAL_STARTUP_WAIT="2.0"
 # Environment=ALLOW_REMOTE_MUTE="1"
 # Environment=DISABLE_PERIPHERAL_API="1"
+# Environment=ENABLE_ZEROCONF="1"
 # Environment=ENABLE_OUTPUT_ONLY="1"
 ExecStart=/home/pi/linux-voice-assistant/docker-entrypoint.sh
 # ExecStart=/home/pi/linux-voice-assistant/docker-entrypoint.sh --additional-parameter-if-you-want
@@ -247,6 +253,7 @@ sudo systemctl status linux-voice-assistant
 3. Choose "ESPHome" and then "Set up another instance of ESPHome"
 4. Enter the IP address of your voice satellite with port 6053
 5. Click "Submit"
+6. If you enabled encryption (see [Feature: API Encryption](#feature-api-encryption)), Home Assistant asks for it now. Enter the key from LVA's key file.
 
 
 ## Additional Information:
@@ -278,21 +285,24 @@ The following variables can be configured in the `.env` or in the service file:
 | `MAC_ADDRESS` | The network interface's | MAC address the device is known by in Home Assistant (colon separated, e.g. `02:00:00:00:00:01`). Keeps one identity across interfaces, or gives several instances on one machine each their own |
 | `HOST` | Autodetected | API server IP-Address, can be 0.0.0.0 for all interfaces, but only one network card works for MAC-ADDRESS and ESP protocol |
 | `PORT` | `6053` | API server port |
+| `ENABLE_ENCRYPTION` | false | Set to "1" to encrypt the ESPHome API. LVA creates the key file if it does not exist (see [Feature: API Encryption](#feature-api-encryption)) |
+| `ENCRYPTION_KEY_FILE` | `encryption.key` in the directory of `PREFERENCES_FILE` | Key file used when `ENABLE_ENCRYPTION` is set. LVA creates it with mode 600 if it does not exist |
 | `AUDIO_INPUT_DEVICE` | Autodetected | Audio input device name |
 | `AUDIO_INPUT_BLOCK_SIZE` | `1024` | Audio input block size in samples |
-| `AUDIO_OUTPUT_DEVICE` | Autodetected | Audio output device name |
+| `AUDIO_OUTPUT_DEVICE` | `pulse` | Audio output device name, use a `pulse/...` name from the device list (see `LIST_DEVICES`) |
 | `MUSIC_OUTPUT_DEVICE` | `AUDIO_OUTPUT_DEVICE` | Music/media output device name (defaults to the voice output device) |
-| `MIC_VOLUME` | 100 | Control microphone volume |
+| `MPV_PLAYER_DUCK_MODE` | `duck` | What the music of LVA does while the assistant talks, an announcement plays or a timer rings: `duck` lowers the volume to 50 %, `pause` pauses the music and resumes it afterwards. Does not change the voice player |
+| `MIC_VOLUME` | Stored value, else 100 | Microphone volume 0 to 100, overrides the stored Mic Volume on every start. Leave it unset or empty to keep the stored value |
 | `MIC_AUTO_GAIN` | 0 | Add WebRTC Gain to Mic |
 | `MIC_NOISE_SUPPRESSION` | 0 | Add WebRTC Noise Suppression to Mic |
-| `AUDIO_INPUT_CHANNELS` | 2 | Number of audio input channels |
+| `AUDIO_INPUT_CHANNELS` | 1 | Number of audio input channels to capture (2 for devices with a hardware AEC reference channel). Does not change what is sent to Home Assistant |
 | `ENABLE_THINKING_SOUND` | false | Set to "1" to enable thinking sound |
-| `WAKE_WORD_DIR` | `app/wakewords` | Path to the wake word directory |
+| `WAKE_WORD_ROOT_DIR` | `/app/wakewords` | Root directory of the wake word layout (`internal`, `downloaded`, `custom`), see [Wake Word](#wake-word) |
 | `WAKE_MODEL` | `okay_nabu` | Wake word model to use |
+| `WAKE_MODEL_2` | empty | Wake word model for the second slot (empty = no second wake word). Used only when no wake words are stored yet, see [Custom Wake Word](#custom-wake-word) |
 | `STOP_MODEL` | `stop` | Stop model to use |
-| `DOWNLOAD_DIR` | `/app/local` | Directory to download custom wake word models to |
 | `TIMER_MAX_RING_SECONDS` | `900` | Seconds after which the timer stops ringing |
-| `REFACTORY_SECONDS` | `2` | Refractory period in seconds after wake word |
+| `REFACTORY_SECONDS` | `0` | Seconds after an accepted wake word during which further detections of any wake word are blocked and discarded (logged at debug level). `0` turns it off. See [behavior](behavior.md#talking-to-the-assistant) |
 | `CONTINUE_CONVERSATION_DELAY` | `0.5` | Delay before mic opens for continued conversation |
 | `WAKEUP_SOUND` | `sounds/wake_word_triggered.flac` | Sound file for wake word triggered |
 | `START_LISTENING_SOUND` | `sounds/start_listening_button.flac` | Sound file for pressing button to talk |
@@ -311,6 +321,7 @@ The following variables can be configured in the `.env` or in the service file:
 | `PERIPHERAL_STARTUP_WAIT` | `2.0` | Seconds to wait for peripherals to register entities before Home Assistant enumerates them (0 to skip) |
 | `ALLOW_REMOTE_MUTE` | false | Set to "1" to let peripherals mute the microphone with `remote_mute` so that Home Assistant cannot unmute it until `remote_unmute` |
 | `DISABLE_PERIPHERAL_API` | false | Disable the peripheral WebSocket API |
+| `ENABLE_ZEROCONF` | `1` | Set to "0" to not announce LVA via mDNS (same as `--enable-zeroconf 0`). Home Assistant then does not discover it automatically: add it manually with the host IP address and port `6053`. Does not change the ESPHome API or the peripheral API |
 | `ENABLE_OUTPUT_ONLY` | (optional) | Set to "1" to enable output-only mode |
 
 
@@ -325,6 +336,24 @@ Enable `LISTEN_DURING_WAKE_SOUND="1"` to let LVA begin listening immediately aft
 This feature is especially useful when you want a more natural interaction flow and do not want to wait to confirm that the wake word was detected before speaking the command.
 
 Keep in mind that listening while the wake sound is playing can also make the microphone pick up some of that wake sound as echo, depending on your speaker and microphone setup. This echo can interfere with speech-to-text and make commands less accurate. If you run into this, see [Enabling Acoustic Echo Cancellation (AEC)](enabling_aec.md).
+
+
+### Feature: API Encryption
+
+By default the connection between LVA and Home Assistant is plaintext, like an ESPHome device without `api: encryption:`. Microphone audio, replies and controls then travel unencrypted, and anyone who can reach the port can drive the satellite. Set `ENABLE_ENCRYPTION="1"` to turn on the same Noise encryption that ESPHome devices use.
+
+**The key is created on the LVA side, not by Home Assistant.** Home Assistant only asks for it when adding the device and stores it. Both sides need the same key, and nothing is exchanged automatically. The key can only be given as a file, never on the command line, where it would be visible in the process list.
+
+1. Set `ENABLE_ENCRYPTION="1"` and start LVA. If the key file does not exist, LVA creates it (32 random bytes, base64, mode 600). By default it is `encryption.key` in the same directory as the preferences file (`/app/configuration/encryption.key` in Docker). Set `ENCRYPTION_KEY_FILE` to use another path. Docker: the path is inside the container, so keep it in a mounted volume, otherwise a new key is created on every container start. You can also create the key yourself: `openssl rand -base64 32 > encryption.key`.
+2. When LVA creates the file it logs a warning with its path (look for "Created encryption key file"). The key itself is never written to the log, so show it from the file and enter it in Home Assistant when it asks (see [Connecting to Home Assistant](#connecting-to-home-assistant)):
+   ``` sh
+   docker compose exec linux-voice-assistant cat /app/configuration/encryption.key   # Docker, use your service name
+   cat /home/pi/linux-voice-assistant/encryption.key                                 # systemd
+   ```
+
+LVA warns at startup if the key file is readable by other users; fix it with `chmod 600 <file>`. LVA refuses to start if the file cannot be read or is not 32 bytes of base64. Clients without the key, or with a different one, are refused.
+
+To change the key, replace the content of the file, restart LVA, and enter the new key in Home Assistant (ESPHome integration, "Reconfigure" on the device, or remove and re-add it). Remove `ENABLE_ENCRYPTION` to serve plaintext again.
 
 
 ### Use own soundfiles:
@@ -360,15 +389,50 @@ The following wake word models are available:
 
 ### Stop Word:
 
-The `stop` wake word is used to stop the current process (response, announcement, or timer). It is available in the `wakewords` directory (using the microWakeWord engine) and can be referenced in the `.env` file with `STOP_MODEL=stop`.
+The `stop` wake word is used to stop the current process (response, announcement, or timer). It is available in the `wakewords/internal/microwakeword` directory (using the microWakeWord engine) and can be referenced in the `.env` file with `STOP_MODEL=stop`.
+
+### Wake Word Directories:
+
+All wake word models live below one root directory, set with `WAKE_WORD_ROOT_DIR` (`--wake-word-root-dir`, default `wakewords/`, in Docker `/app/wakewords`). Below it, models are sorted by origin and by engine:
+
+```text
+wakewords/
+├── internal/        bundled with LVA, not changed by you
+│   ├── microwakeword/
+│   └── openwakeword/
+├── downloaded/      wake words that Home Assistant sends to the satellite
+│   ├── microwakeword/
+│   └── openwakeword/
+└── custom/          your own wake words
+    ├── microwakeword/
+    └── openwakeword/
+```
+
+`downloaded` and `custom` are created at startup. In Docker they are volumes (`wakeword_downloaded` and `wakeword_custom`), `internal` is part of the image. The engine of a model is taken from the `type` in its `.json` file, the engine directory is only for keeping things tidy.
+
+Every wake word has a name made of origin, engine and the phrase from its `.json` file, for example `Internal - MWW - Hey Jarvis` or `Custom - OWW - Hey Jarvis`. The same model in two directories is two separate wake words that you can choose from in Home Assistant. `WAKE_MODEL` and `WAKE_MODEL_2` accept the file name (`hey_jarvis`) or this name. If the file name exists in more than one origin, the directories are searched in the order `internal`, `downloaded`, `custom` and the last one is used, so a model in `custom` is chosen before a bundled one. The same applies to the stop word. The name is also the phrase LVA sends to Home Assistant with a voice request.
+
+In the wake word selection in Home Assistant, the name of a wake word shows where it comes from and which engine it uses, for example `Internal - MWW - Hey Jarvis`, `Download - OWW - Hey Jarvis` or `Custom - MWW - Hey Jarvis` (MWW = microWakeWord, OWW = openWakeWord). The phrase that is sent to Home Assistant when the wake word is detected is the plain phrase from the `.json` file, for example `Hey Jarvis`.
 
 ### Custom Wake Word:
 
-If you want to use your own wakewords, you can add them to the `wakewords/custom` aka `/var/lib/docker/volumes/lva_wakeword_custom/_data` directory and reference them in the `.env` file.
+If you want to use your own wakewords, you can add them to `wakewords/custom/microwakeword` (microWakeWord models) or `wakewords/custom/openwakeword` (openWakeWord models). Restart LVA after adding files.
 
-Change the default wake word with `WAKE_MODEL <id>` where `<id>` is the name of a model in the `wakewords` directory. For example, `WAKE_MODEL hey_jarvis` will load `app/wakewords/hey_jarvis.tflite` by default.
+With Docker, `wakewords/custom` is the volume `wakeword_custom`. Docker stores it on the host, for example in `/var/lib/docker/volumes/lva_wakeword_custom/_data` (`lva` is the name of the compose project, check it with `docker volume ls`). The folders `microwakeword` and `openwakeword` are created there when LVA starts. Copy your files into one of them, for example:
 
-You can include more wakeword directories by adding `WAKE_WORD_DIR <DIR>` where `<DIR>` contains either [microWakeWord][] or [openWakeWord][] config files and `.tflite` models. For example, `WAKE_WORD_DIR app/wakewords/openWakeWord` will include the default wake words for openWakeWord.
+```sh
+sudo cp glados.json glados.tflite /var/lib/docker/volumes/lva_wakeword_custom/_data/openwakeword/
+```
+
+LVA does not run as root in the container, so the files must be readable by the user from `LVA_USER_ID` and `LVA_USER_GROUP` (default 1000:1000). The `fix-permissions` service in the compose file does this on every `docker compose up`. If you copied files as root and LVA does not find them, run `docker compose up -d` again or set the owner by hand:
+
+```sh
+sudo chown -R 1000:1000 /var/lib/docker/volumes/lva_wakeword_custom/_data
+```
+
+Change the default wake word with `WAKE_MODEL <id>` where `<id>` is the name of a model in one of the wake word directories. For example, `WAKE_MODEL hey_jarvis` will load `wakewords/internal/microwakeword/hey_jarvis.tflite` by default, or the model with that name from `custom` if you have one.
+
+Set `WAKE_MODEL_2 <id>` to also activate a second wake word by default. It is looked up like `WAKE_MODEL`; if it is empty, unknown or the same as the first one, only the first wake word is active. Both defaults apply only while no wake words are stored yet (first start, or after the preferences file was removed). After that, the wake words chosen in Home Assistant are kept and `WAKE_MODEL` / `WAKE_MODEL_2` are ignored.
 
 If you want to add [other wakewords][wakewords-collection], make sure to create a small JSON config file to identify it as an openWakeWord model. For example, download the [GLaDOS][glados] model to `glados.tflite` and create `glados.json` with:
 
@@ -380,7 +444,7 @@ If you want to add [other wakewords][wakewords-collection], make sure to create 
 }
 ```
 
-Add `WAKE_WORD_DIR <DIR>` with the directory containing `glados.tflite` and `glados.json` to your command-line.
+Put `glados.tflite` and `glados.json` into `wakewords/custom/openwakeword`.
 
 #### Additional Wakewords:
 

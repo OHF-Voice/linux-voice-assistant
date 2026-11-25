@@ -2,12 +2,14 @@
 
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
 
-def make_player(device=None):
+def make_player(device=None, duck_mode=None):
     """Return an MpvMediaPlayer with the internal LibMpvPlayer mocked out."""
     from linux_voice_assistant.player.state import PlayerState
 
@@ -17,7 +19,7 @@ def make_player(device=None):
     with patch("linux_voice_assistant.mpv_player.LibMpvPlayer", return_value=mock_lib_player):
         from linux_voice_assistant.mpv_player import MpvMediaPlayer
 
-        player = MpvMediaPlayer(device=device)
+        player = MpvMediaPlayer(device=device) if duck_mode is None else MpvMediaPlayer(device=device, duck_mode=duck_mode)
         player._mock = mock_lib_player
         return player
 
@@ -34,7 +36,7 @@ class TestInit:
             from linux_voice_assistant.mpv_player import MpvMediaPlayer
 
             MpvMediaPlayer(device="hw:1,0")
-            mock_cls.assert_called_once_with(device="hw:1,0")
+            mock_cls.assert_called_once_with(device="hw:1,0", name="mpv")
 
     def test_player_initialized_with_none_device(self):
         with patch("linux_voice_assistant.mpv_player.LibMpvPlayer") as mock_cls:
@@ -42,7 +44,16 @@ class TestInit:
             from linux_voice_assistant.mpv_player import MpvMediaPlayer
 
             MpvMediaPlayer(device=None)
-            mock_cls.assert_called_once_with(device=None)
+            mock_cls.assert_called_once_with(device=None, name="mpv")
+
+    def test_name_is_passed_to_player_and_logger(self):
+        with patch("linux_voice_assistant.mpv_player.LibMpvPlayer") as mock_cls:
+            mock_cls.return_value = MagicMock()
+            from linux_voice_assistant.mpv_player import MpvMediaPlayer
+
+            player = MpvMediaPlayer(device=None, name="music")
+            mock_cls.assert_called_once_with(device=None, name="music")
+            assert player._log.name == "MpvMediaPlayer[music]"
 
     def test_done_callback_starts_none(self):
         player = make_player()
@@ -241,18 +252,185 @@ class TestVolume:
 
     def test_duck_delegates_to_lib_player(self):
         player = make_player()
-        player.duck(factor=0.3)
+        player.duck(owner="conversation", factor=0.3)
         player._mock.duck.assert_called_once_with(0.3)
 
     def test_duck_default_factor(self):
         player = make_player()
-        player.duck()
+        player.duck(owner="conversation")
         player._mock.duck.assert_called_once_with(0.5)
 
     def test_unduck_delegates_to_lib_player(self):
         player = make_player()
-        player.unduck()
+        player.duck(owner="conversation")
+        player.unduck(owner="conversation")
         player._mock.unduck.assert_called_once()
+
+
+class TestDuckOwners:
+    def test_stays_ducked_until_last_owner_unducks(self):
+        player = make_player()
+        player.duck(owner="conversation")
+        player.duck(owner="timer")
+
+        player.unduck(owner="timer")
+        player._mock.unduck.assert_not_called()
+
+        player.unduck(owner="conversation")
+        player._mock.unduck.assert_called_once()
+
+    def test_unduck_order_does_not_matter(self):
+        player = make_player()
+        player.duck(owner="conversation")
+        player.duck(owner="timer")
+
+        player.unduck(owner="conversation")
+        player._mock.unduck.assert_not_called()
+
+        player.unduck(owner="timer")
+        player._mock.unduck.assert_called_once()
+
+    def test_same_owner_ducking_twice_unducks_once(self):
+        player = make_player()
+        player.duck(owner="conversation")
+        player.duck(owner="conversation")
+        player.unduck(owner="conversation")
+        player._mock.unduck.assert_called_once()
+
+    def test_unduck_by_owner_that_never_ducked_is_harmless(self):
+        player = make_player()
+        player.duck(owner="conversation")
+        player.unduck(owner="timer")
+        player._mock.unduck.assert_not_called()
+
+    def test_unknown_owner_is_rejected(self):
+        player = make_player()
+        with pytest.raises(ValueError, match="Unknown duck owner 'music'"):
+            player.duck(owner="music")
+        with pytest.raises(ValueError, match="Unknown duck owner 'music'"):
+            player.unduck(owner="music")
+        player._mock.duck.assert_not_called()
+        player._mock.unduck.assert_not_called()
+
+    def test_duck_logs_owners(self, caplog):
+        player = make_player()
+        with caplog.at_level("DEBUG"):
+            player.duck(owner="conversation")
+            player.duck(owner="timer")
+            player.unduck(owner="timer")
+            player.unduck(owner="conversation")
+
+        assert "Duck requested by timer, factor 0.50 (owners: ['conversation', 'timer'])" in caplog.text
+        assert "Unduck by timer, stays ducked for ['conversation']" in caplog.text
+        assert "Unduck by conversation, no owner left" in caplog.text
+
+
+class TestDuckModePause:
+    @staticmethod
+    def _pause_player(state):
+        player = make_player(duck_mode="pause")
+        player._mock.state.return_value = state
+        return player
+
+    def test_unknown_duck_mode_is_rejected(self):
+        with pytest.raises(ValueError, match="Unknown duck mode 'mute'"):
+            make_player(duck_mode="mute")
+
+    def test_duck_pauses_playing_music_instead_of_lowering(self):
+        from linux_voice_assistant.player.state import PlayerState
+
+        player = self._pause_player(PlayerState.PLAYING)
+        player.duck(owner="conversation")
+
+        player._mock.pause.assert_called_once()
+        player._mock.duck.assert_not_called()
+
+    def test_duck_leaves_music_that_does_not_play_alone(self):
+        from linux_voice_assistant.player.state import PlayerState
+
+        for state in (PlayerState.PAUSED, PlayerState.IDLE):
+            player = self._pause_player(state)
+            player.duck(owner="conversation")
+            player._mock.pause.assert_not_called()
+
+    def test_unduck_resumes_music_it_paused(self):
+        from linux_voice_assistant.player.state import PlayerState
+
+        player = self._pause_player(PlayerState.PLAYING)
+        player.duck(owner="conversation")
+        player._mock.state.return_value = PlayerState.PAUSED
+        player.unduck(owner="conversation")
+
+        player._mock.resume.assert_called_once()
+        player._mock.unduck.assert_not_called()
+
+    def test_unduck_keeps_music_paused_that_was_paused_before(self):
+        from linux_voice_assistant.player.state import PlayerState
+
+        player = self._pause_player(PlayerState.PAUSED)
+        player.duck(owner="conversation")
+        player.unduck(owner="conversation")
+
+        player._mock.resume.assert_not_called()
+
+    def test_resumes_only_after_the_last_owner(self):
+        from linux_voice_assistant.player.state import PlayerState
+
+        player = self._pause_player(PlayerState.PLAYING)
+        player.duck(owner="conversation")
+        player._mock.state.return_value = PlayerState.PAUSED
+        player.duck(owner="timer")
+        player.unduck(owner="timer")
+        player._mock.resume.assert_not_called()
+
+        player.unduck(owner="conversation")
+        player._mock.resume.assert_called_once()
+        assert player._mock.pause.call_count == 1
+
+    def test_pause_for_ducking_does_not_count_as_paused(self):
+        from linux_voice_assistant.player.state import PlayerState
+
+        player = self._pause_player(PlayerState.PLAYING)
+        player.duck(owner="conversation")
+        player._mock.state.return_value = PlayerState.PAUSED
+
+        assert player.is_paused is False
+        assert player.is_playing is True
+
+    def test_user_pause_during_ducking_is_not_undone(self):
+        from linux_voice_assistant.player.state import PlayerState
+
+        player = self._pause_player(PlayerState.PLAYING)
+        player.duck(owner="conversation")
+        player._mock.state.return_value = PlayerState.PAUSED
+        player.pause()
+
+        assert player.is_paused is True
+        player.unduck(owner="conversation")
+        player._mock.resume.assert_not_called()
+
+    def test_stop_during_ducking_is_not_undone(self):
+        from linux_voice_assistant.player.state import PlayerState
+
+        player = self._pause_player(PlayerState.PLAYING)
+        player.duck(owner="conversation")
+        player._mock.state.return_value = PlayerState.PAUSED
+        player.stop()
+        player._mock.state.return_value = PlayerState.IDLE
+        player.unduck(owner="conversation")
+
+        player._mock.resume.assert_not_called()
+
+    def test_duck_mode_is_logged(self, caplog):
+        with caplog.at_level("DEBUG"):
+            make_player(duck_mode="pause")
+
+        assert "duck mode=pause" in caplog.text
+
+    def test_duck_mode_is_the_default(self):
+        player = make_player()
+        player.duck(owner="conversation")
+        player._mock.duck.assert_called_once_with(0.5)
 
 
 # ---------------------------------------------------------------------------

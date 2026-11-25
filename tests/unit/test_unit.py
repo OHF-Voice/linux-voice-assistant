@@ -276,3 +276,28 @@ class TestResolveMacAddress:
         with patch("linux_voice_assistant.util.get_mac_address", return_value=None):
             with pytest.raises(ValueError):
                 util.resolve_mac_address(None, "eth0")
+
+
+class TestWarnAboutRemovedOptions:
+    def test_no_warning_when_options_are_not_given(self, caplog):
+        from linux_voice_assistant.util import warn_about_removed_options
+
+        with caplog.at_level("WARNING"):
+            warn_about_removed_options(None, None)
+        assert caplog.text == ""
+
+    def test_warns_about_wake_word_dir(self, caplog):
+        from linux_voice_assistant.util import warn_about_removed_options
+
+        with caplog.at_level("WARNING"):
+            warn_about_removed_options("/app/wakewords/custom", None)
+        assert "--wake-word-dir (WAKE_WORD_DIR) '/app/wakewords/custom' is ignored" in caplog.text
+        assert "--download-dir" not in caplog.text
+
+    def test_warns_about_download_dir(self, caplog):
+        from linux_voice_assistant.util import warn_about_removed_options
+
+        with caplog.at_level("WARNING"):
+            warn_about_removed_options(None, "/app/local")
+        assert "--download-dir '/app/local' is ignored" in caplog.text
+        assert "--wake-word-dir" not in caplog.text

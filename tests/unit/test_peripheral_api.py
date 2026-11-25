@@ -511,6 +511,32 @@ class TestDispatchVolume:
         satellite.send_messages.assert_called_once()
 
     @pytest.mark.asyncio
+    async def test_volume_goes_through_the_media_player_entity(self, tmp_path):
+        state = make_state(tmp_path, volume=0.5)
+        state.media_player_entity = make_media_entity()
+        state.satellite = MagicMock()
+        server = make_server(state)
+
+        await dispatch(server, LVACommand.SET_VOLUME.value, {"volume": 0.8})
+
+        state.media_player_entity.set_volume.assert_called_once_with(0.8)
+        state.music_player.set_volume.assert_not_called()
+        message = state.satellite.send_messages.call_args.args[0][0]
+        assert message.volume == pytest.approx(0.8)
+        assert message.key == state.media_player_entity.key
+
+    @pytest.mark.asyncio
+    async def test_volume_without_entity_persists_and_sets_players(self, tmp_path):
+        state = make_state(tmp_path, volume=0.2)
+        server = make_server(state)
+
+        await dispatch(server, LVACommand.SET_VOLUME.value, {"volume": 0.6})
+
+        state.music_player.set_volume.assert_called_once_with(60)
+        state.tts_player.set_volume.assert_called_once_with(60)
+        assert state.volume == pytest.approx(0.6)
+
+    @pytest.mark.asyncio
     async def test_set_volume_sets_exact_value(self, tmp_path):
         state = make_state(tmp_path, volume=0.2)
         server = make_server(state)
@@ -576,7 +602,7 @@ class TestDispatchStopTimerRinging:
         assert satellite._timer_finished is False  # pylint: disable=protected-access
         assert state.stop_word.id not in state.active_wake_words
         state.tts_player.stop.assert_called_once()
-        satellite.unduck.assert_called_once()
+        satellite.unduck.assert_called_once_with(owner="timer")
 
     @pytest.mark.asyncio
     async def test_noop_when_not_ringing(self, tmp_path):
@@ -633,16 +659,35 @@ class TestDispatchMediaPlayer:
         state.music_player.resume.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_stop_media_player_updates_entity_state(self, tmp_path):
-        from aioesphomeapi.model import MediaPlayerState  # pylint: disable=import-outside-toplevel
+    @pytest.mark.parametrize(
+        "command, method",
+        [
+            (LVACommand.STOP_MEDIA_PLAYER, "stop"),
+            (LVACommand.PAUSE_MEDIA_PLAYER, "pause"),
+            (LVACommand.RESUME_MEDIA_PLAYER, "resume"),
+        ],
+    )
+    async def test_goes_through_entity_and_pushes_its_state(self, tmp_path, command, method):
+        state = make_state(tmp_path)
+        state.media_player_entity = make_media_entity()
+        state.satellite = MagicMock()
+        server = make_server(state)
 
+        await dispatch(server, command.value)
+
+        getattr(state.media_player_entity, method).assert_called_once()
+        getattr(state.music_player, method).assert_not_called()
+        state.satellite.send_messages.assert_called_once_with([getattr(state.media_player_entity, method).return_value])
+
+    @pytest.mark.asyncio
+    async def test_entity_command_without_satellite_does_not_raise(self, tmp_path):
         state = make_state(tmp_path)
         state.media_player_entity = make_media_entity()
         server = make_server(state)
 
         await dispatch(server, LVACommand.STOP_MEDIA_PLAYER.value)
 
-        assert state.media_player_entity.state == MediaPlayerState.IDLE
+        state.media_player_entity.stop.assert_called_once()
 
 
 # ---------------------------------------------------------------------------
@@ -952,24 +997,3 @@ class TestEmitEventSync:
 
         mock_run.assert_called_once()
         assert mock_run.call_args.args[1] is loop
-
-
-# ---------------------------------------------------------------------------
-# _create_media_player_response()
-# ---------------------------------------------------------------------------
-
-
-class TestCreateMediaPlayerResponse:
-    def test_returns_response_with_entity_fields(self, tmp_path):
-        from aioesphomeapi.model import MediaPlayerState  # pylint: disable=import-outside-toplevel
-
-        state = make_state(tmp_path)
-        state.media_player_entity = make_media_entity(key=3, volume=0.4, muted=True)
-        server = make_server(state)
-
-        response = server._create_media_player_response(MediaPlayerState.PLAYING)  # pylint: disable=protected-access
-
-        assert response.key == 3
-        assert response.volume == pytest.approx(0.4)
-        assert response.muted is True
-        assert response.state == MediaPlayerState.PLAYING

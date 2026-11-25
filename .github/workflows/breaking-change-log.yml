@@ -1,0 +1,46 @@
+name: Breaking change log
+
+on:
+  pull_request_target:
+    types:
+      - closed
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+concurrency:
+  group: breaking-change-log
+
+jobs:
+  append:
+    name: Add to breaking_change.md
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.merged == true && contains(github.event.pull_request.labels.*.name, 'breaking-change')
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+
+      - name: Add the migration text of the PR
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: python3 .github/scripts/breaking_change.py add
+
+      - name: Commit and push
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          if git diff --quiet -- breaking_change.md; then
+            echo "breaking_change.md unchanged."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add breaking_change.md
+          git commit -m "Add breaking change migration of #${PR_NUMBER}"
+          git pull --rebase origin main
+          git push origin HEAD:main
