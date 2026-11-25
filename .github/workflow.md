@@ -10,7 +10,7 @@ This project uses three separate Docker build workflows that automatically build
 | [docker-build-nightly.yml](.github/workflows/docker-build-nightly.yml) | Push to `main` | `nightly` |
 | [docker-build-pr.yml](.github/workflows/docker-build-pr.yml) | Pull requests | `pr-<pr-number>` |
 
-The image workflows are joined by [e2e.yml](.github/workflows/e2e.yml), which builds no image. It runs the end-to-end tests of `tests/e2e` against LVA started from the checkout on push to `main`, on pull requests and manually, and uploads the LVA log as the artifact `lva-e2e-log`. See `tests/e2e/README.md`.
+The image workflows are joined by [e2e.yml](.github/workflows/e2e.yml), which builds no image. It runs the end-to-end tests of `tests/e2e` against LVA started from the checkout on push to `main`, on pull requests and manually, and publishes the result in the job summary with annotations for failed tests and uploads the LVA log and JUnit XML as the artifact `e2e-results`. See `tests/e2e/README.md`.
 
 ## Detailed Description
 

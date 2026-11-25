@@ -51,13 +51,20 @@ jobs:
 
       - name: Run end-to-end tests
         env:
-          E2E_LOG_DIR: ${{ runner.temp }}/e2e-logs
-        run: ./script/e2e -v
+          E2E_LOG_DIR: ${{ runner.temp }}/e2e-results
+        run: ./script/e2e -v --junitxml="$RUNNER_TEMP/e2e-results/junit.xml"
 
-      - name: Upload LVA log
+      - name: Publish test results
+        if: always()
+        run: |
+          if [ -f "$RUNNER_TEMP/e2e-results/junit.xml" ]; then
+            python .github/scripts/junit_summary.py "$RUNNER_TEMP/e2e-results/junit.xml" "End-to-end test results"
+          fi
+
+      - name: Upload LVA log and test results
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: lva-e2e-log
-          path: ${{ runner.temp }}/e2e-logs
+          name: e2e-results
+          path: ${{ runner.temp }}/e2e-results
           if-no-files-found: ignore
