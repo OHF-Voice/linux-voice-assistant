@@ -1,7 +1,7 @@
 """A peripheral client for the end-to-end tests.
 
 LVA reports its state (wake word detected, listening, speaking, idle) to peripherals over a WebSocket.
-The tests use that stream to follow what LVA is doing, the same way an LED ring would.
+Only the tests in ``peripheral_api/`` use this client, the other end-to-end tests do not depend on the peripheral API.
 """
 
 import asyncio

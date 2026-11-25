@@ -1,20 +1,19 @@
 # End-to-end tests
 
-These tests start a real LVA process and drive it the way a user and Home Assistant would, without hardware and without a real Home Assistant.
+These tests start a real LVA process and drive it the way a user and Home Assistant would, without hardware and without a real Home Assistant. Except for the tests in `peripheral_api/`, they do not use the peripheral WebSocket API.
 
 ```
  test ──paplay──▶ e2e_mic (null sink) ──▶ e2e_mic_source ──▶ LVA ──▶ e2e_speaker (null sink) ──parec──▶ test
                                                               │  ▲
-                                                 ESPHome API  ▼  │  WebSocket events
-                                                    fake Home Assistant, peripheral client
+                                                 ESPHome API  ▼  │
+                                                    fake Home Assistant
 ```
 
 | Part | File | Job |
 |------|------|-----|
 | Virtual audio | `audio.py` | Creates the null sinks, plays wav files into the microphone, records the speaker and detects tones and sound |
-| LVA process | `lva.py` | Starts `python -m linux_voice_assistant` with the virtual devices, collects the log |
+| LVA process | `lva.py` | Starts `python -m linux_voice_assistant --debug` with the virtual devices, collects the log. Tests wait for its debug log lines (`Detected wake word`, `Playing TTS response`, `TTS response finished`, `Stopping timer finished sound`, ...) to follow what LVA does |
 | Fake Home Assistant | `fake_ha.py` | ESPHome API client (`aioesphomeapi`) that subscribes to the voice assistant, receives microphone audio, answers requests with the pipeline events and serves TTS/media URLs over HTTP |
-| Peripheral client | `peripheral.py` | Follows the state events of the peripheral WebSocket API (wake word detected, listening, speaking, idle, ...) |
 
 One LVA instance runs for the whole session. Every test opens a fresh fake Home Assistant connection and waits for the wake word refractory period, so tests do not influence each other as long as each one ends with LVA idle.
 
@@ -35,7 +34,7 @@ Needs `libmpv`, `pactl`, `paplay`, `parec` and a running PulseAudio or PipeWire-
 ./script/e2e -s         # also show the LVA log
 ```
 
-The suite is not part of `./script/tests`, which only runs the fast unit tests. In CI it runs in `.github/workflows/e2e.yml` and shows the result as a table in the job summary, annotates failed tests and uploads the LVA log and `junit.xml` as artifact `e2e-results` (set `E2E_LOG_DIR` to write the log to a directory locally, add `--junitxml=<file>` for the XML).
+The suite is not part of `./script/tests`, which only runs the fast unit tests. In CI it runs in `.github/workflows/e2e.yml` and shows the result as a table in the job summary, annotates failed tests (the docstring of every test is its description column in the table) and uploads the LVA log and `junit.xml` as artifact `e2e-results` (set `E2E_LOG_DIR` to write the log to a directory locally, add `--junitxml=<file>` for the XML).
 
 No real microphone, speaker or Home Assistant is involved. The tests show that LVA's logic and audio paths work, not that a specific sound card does.
 

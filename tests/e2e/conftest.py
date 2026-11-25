@@ -19,13 +19,21 @@ import pytest
 from .audio import SpeakerRecorder, VirtualAudio
 from .fake_ha import FakeHomeAssistant, FixtureServer
 from .lva import LvaProcess
-from .peripheral import PeripheralClient
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 LVA_START_TIMEOUT = 90.0
 
 #: Time after connecting before a test speaks, so a wake word of the previous test is out of its refractory period
 SETTLE_SECONDS = 2.5
+
+
+@pytest.hookimpl(tryfirst=True)
+def pytest_runtest_call(item: pytest.Item) -> None:
+    """Add the docstring of a test to the JUnit XML as its description, which the job summary shows next to the test."""
+    test_function = getattr(item, "function", None)
+    description = (test_function.__doc__ or "").strip() if test_function is not None else ""
+    if description:
+        item.user_properties.append(("description", description))
 
 
 @pytest.fixture(scope="session")
@@ -91,14 +99,6 @@ async def ha(lva: LvaProcess) -> AsyncIterator[FakeHomeAssistant]:
     await asyncio.sleep(SETTLE_SECONDS)
     yield home_assistant
     await home_assistant.disconnect()
-
-
-@pytest.fixture
-async def peripheral(lva: LvaProcess) -> AsyncIterator[PeripheralClient]:
-    client = PeripheralClient()
-    await client.connect(lva.peripheral_port)
-    yield client
-    await client.disconnect()
 
 
 def _store_log(process: LvaProcess, file_name: str) -> None:

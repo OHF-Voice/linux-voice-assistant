@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from .audio import MIC_SOURCE, SPEAKER_SINK
+from .waiting import wait_until
 
 REPO_DIR = Path(__file__).resolve().parents[2]
 
@@ -99,6 +100,18 @@ class LvaProcess:
                 return text in self.log_since(since)
             time.sleep(0.1)
         return False
+
+    async def wait_for_log_line(self, text: str, since: int, timeout: float = 15.0) -> None:
+        """
+        Wait without blocking the event loop until a log line after the mark contains the text.
+        :param text: Part of the log line, for example ``Detected wake word``.
+        :param since: Position from :meth:`log_mark`, so earlier lines are ignored.
+        :param timeout: Seconds to wait before a TimeoutError is raised.
+        """
+        try:
+            await wait_until(lambda: text in self.log_since(since), timeout, f"log line {text!r}")
+        except TimeoutError as error:
+            raise TimeoutError(f"{error}, log since the mark:\n{self.log_since(since)}") from error
 
     def _read(self) -> None:
         assert self._process is not None and self._process.stdout is not None
