@@ -1,0 +1,19 @@
+#!/usr/bin/env python3
+"""Run the end-to-end tests (tests/e2e). They need a PulseAudio or PipeWire-Pulse server and libmpv, see tests/e2e/README.md."""
+import subprocess
+import sys
+import venv
+from pathlib import Path
+
+_DIR = Path(__file__).parent
+_PROGRAM_DIR = _DIR.parent
+_VENV_DIR = _PROGRAM_DIR / ".venv"
+_E2E_DIR = _PROGRAM_DIR / "tests" / "e2e"
+
+if _VENV_DIR.exists():
+    context = venv.EnvBuilder().ensure_directories(_VENV_DIR)
+    python_exe = context.env_exe
+else:
+    python_exe = "python3"
+
+sys.exit(subprocess.call([python_exe, "-m", "pytest", str(_E2E_DIR), *sys.argv[1:]]))

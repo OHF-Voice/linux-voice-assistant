@@ -7,6 +7,7 @@ for every test. See tests/e2e/README.md.
 # pylint: disable=unused-argument
 
 import asyncio
+import os
 import shutil
 import socket
 import subprocess
@@ -66,7 +67,12 @@ def lva(virtual_audio: VirtualAudio, tmp_path_factory: pytest.TempPathFactory) -
         yield process
     finally:
         process.stop()
-        print("\n----- LVA log -----\n" + process.full_log())
+        log_dir = os.environ.get("E2E_LOG_DIR")
+        if log_dir:
+            Path(log_dir).mkdir(parents=True, exist_ok=True)
+            (Path(log_dir) / "lva.log").write_text(process.full_log(), encoding="utf-8")
+        else:
+            print("\n----- LVA log -----\n" + process.full_log())
 
 
 @pytest.fixture
