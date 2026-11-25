@@ -5,7 +5,7 @@
 - NEVER automatically reply on Github (PRs or Discussions) without explicit consent from the developer.
 - Always run `./script/lint` and `./script/tests` after code changes to ensure standards are met.
 
-- `docs/behavior.md` is the source of truth for user-visible behavior. Follow it when changing code. If the code contradicts it, ask which one is wrong instead of silently picking one.
+- `docs/behavior.md` is the source of truth for user-visible behavior, and `docs/behavior_peripheral_api.md` for what LVA does for peripherals (per API version). Follow them when changing code. If the code contradicts it, ask which one is wrong instead of silently picking one.
 - When a change alters user-visible behavior, update `docs/behavior.md` in the same change and list every behavior change separately under "Behavior changes" in the PR description (see `.github/PULL_REQUEST_TEMPLATE.md`).
 
 ## Project Overview

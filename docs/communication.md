@@ -1,6 +1,6 @@
 # Communication and Process Overview
 
-This document explains who talks to whom in Linux Voice Assistant (LVA), over which interface, and in which order things happen during a voice request. It is the entry point; details live in the linked documents. The code is the source of truth: [`__main__.py`](../linux_voice_assistant/__main__.py), [`api_server.py`](../linux_voice_assistant/api_server.py), [`satellite.py`](../linux_voice_assistant/satellite.py), [`peripheral_api.py`](../linux_voice_assistant/peripheral_api.py) and [`zeroconf.py`](../linux_voice_assistant/zeroconf.py).
+This document explains who talks to whom in Linux Voice Assistant (LVA), over which interface, and in which order things happen during a voice request. It is the entry point; details live in the linked documents. The code is the source of truth: [`__main__.py`](../linux_voice_assistant/__main__.py), [`api_server.py`](../linux_voice_assistant/api_server.py), [`satellite.py`](../linux_voice_assistant/satellite.py), [`peripheral_api.py`](../linux_voice_assistant/peripheral_api/) and [`zeroconf.py`](../linux_voice_assistant/zeroconf.py).
 
 ## Interfaces at a glance
 
@@ -26,7 +26,7 @@ flowchart LR
 |-----------|-----------|---------|--------|---------|
 | ESPHome native API (TCP `6053`) | Home Assistant ⇄ LVA | Voice pipeline, entities, timers, announcements, media player, wake word configuration | `--port` | below |
 | mDNS (`_esphomelib._tcp`) | LVA → network | Lets Home Assistant discover the device | `--name`, `--network-interface` | below |
-| Peripheral WebSocket API (TCP `6055`) | Peripheral ⇄ LVA | Visual state for LEDs/displays, button and volume input, extra entities | `--peripheral-host`, `--peripheral-port`, `--disable-peripheral-api` | [peripheral_api.md](peripheral_api.md) |
+| Peripheral WebSocket API (TCP `6055`) | Peripheral ⇄ LVA | Visual state for LEDs/displays, button and volume input, extra entities | `--peripheral-host`, `--peripheral-port`, `--disable-peripheral-api` | [peripheral_api/readme.md](peripheral_api/readme.md) |
 | Microphone capture | Sound server → LVA | Audio for wake word detection and speech to text | `--audio-input-device` | [audio_pipeline.md](audio_pipeline.md) |
 | Media URLs over HTTP | Home Assistant server → LVA | TTS replies, music and announcement audio. LVA plays the URL, Home Assistant does not push audio data | | below |
 
@@ -175,7 +175,7 @@ LVA is the WebSocket **server** on port `6055`, a peripheral connects as a clien
 
 Because registered entities are announced to Home Assistant over the ESPHome API, LVA waits `--peripheral-startup-wait` seconds at startup before it serves port `6053`. Peripherals that register later still work, but LVA then closes the Home Assistant connection once so Home Assistant re-reads the entity list.
 
-The full protocol, all event and command names and examples are in [peripheral_api.md](peripheral_api.md).
+The full protocol, all event and command names and examples are in [peripheral_api/readme.md](peripheral_api/readme.md).
 
 ## Startup order
 
@@ -204,5 +204,5 @@ Messages from other threads are handed to the event loop, so the socket is only 
 | [audio_pipeline.md](audio_pipeline.md) | Microphone to Home Assistant, in detail |
 | [behavior.md](behavior.md) | What the user experiences in each situation |
 | [configuration.md](configuration.md) | Entities on the Home Assistant device page |
-| [peripheral_api.md](peripheral_api.md) | WebSocket protocol for peripheral authors |
+| [peripheral_api/readme.md](peripheral_api/readme.md) | WebSocket protocol for peripheral authors |
 | [debugging.md](debugging.md) | Troubleshooting audio and container sockets |
