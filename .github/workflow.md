@@ -39,6 +39,8 @@ Automatically builds nightly images from the main branch.
 **Triggers:**
 - Push to `main` branch
 
+**Concurrency:** A new push to `main` cancels a run of this workflow that is still in progress, including all its jobs (`build-and-push-64`, `build-and-push-32`, `merge-32`). Only the newest commit is built, and an outdated run can no longer move the `nightly` tag back to an older image. A cancelled run shows as "cancelled", not as failed.
+
 **Image Tag:**
 ```
 ghcr.io/ohf-voice/linux-voice-assistant:nightly
