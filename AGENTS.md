@@ -8,6 +8,14 @@
 - `docs/behavior.md` is the source of truth for user-visible behavior, and `docs/behavior_peripheral_api.md` for what LVA does for peripherals (per API version). Follow them when changing code. If the code contradicts it, ask which one is wrong instead of silently picking one.
 - When a change alters user-visible behavior, update `docs/behavior.md` in the same change and list every behavior change separately under "Behavior changes" in the PR description (see `.github/PULL_REQUEST_TEMPLATE.md`).
 
+### End-to-end tests (`tests/e2e/`)
+
+The end-to-end tests pin down the behavior users rely on. An AI agent must not weaken them to make a change pass.
+
+- **No change without explicit confirmation.** An AI agent never changes anything under `tests/e2e/` (tests, fixtures, the harness) or the end-to-end workflow on its own. It first tells the user what it wants to change and why, and waits for the user's explicit confirmation in the chat. This includes adding, removing or loosening assertions, changing timeouts or thresholds, and skipping or deleting a test. Confirmation for one change does not cover the next one.
+- **Every change is checked against `docs/behavior.md`.** Before proposing a change to an end-to-end test, the agent checks it against `docs/behavior.md` and states the result. A failing end-to-end test is never fixed by adapting the test, unless `docs/behavior.md` says the new behavior is the right one. If the test and `docs/behavior.md` disagree, ask which one is wrong, do not pick one.
+- **Behavior changes need the developers' approval in the PR.** A change that makes an end-to-end test expect different behavior is a behavior change. The AI prepares the request for the developers in the PR: it lists the change under "Behavior changes" in the PR description, with what changes, why and what `docs/behavior.md` says. The change is only allowed once the developers have approved it in the PR. The AI never treats its own review as that approval, and posting anything to GitHub still needs the explicit consent above.
+
 ## Project Overview
 
 LVA always means **Linux Voice Assistant**, this project.
