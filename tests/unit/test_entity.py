@@ -20,7 +20,7 @@ from aioesphomeapi.api_pb2 import (  # type: ignore[attr-defined]
     SwitchCommandRequest,
     SwitchStateResponse,
 )
-from aioesphomeapi.model import MediaPlayerCommand, MediaPlayerState
+from aioesphomeapi.model import EntityCategory, MediaPlayerCommand, MediaPlayerState
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -416,6 +416,11 @@ class TestMuteSwitchEntity:
         entity = make_mute_switch()
         msgs = list(entity.handle_message(ListEntitiesRequest()))
         assert any(isinstance(m, ListEntitiesSwitchResponse) for m in msgs)
+
+    def test_list_entities_request_places_switch_under_controls(self):
+        entity = make_mute_switch()
+        msgs = list(entity.handle_message(ListEntitiesRequest()))
+        assert msgs[0].entity_category == EntityCategory.NONE
 
     def test_subscribe_states_yields_switch_state_response(self):
         entity = make_mute_switch()

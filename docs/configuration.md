@@ -25,7 +25,7 @@ See the [Wake Word section](install_application.md#wake-word) of the installatio
 
 ## Mute Switch
 
-The **Mute** switch disables wake word detection and stops the assistant from responding to any wake word or button-triggered listening, without stopping the LVA process itself. While muted, a configurable sound plays to confirm the mute/unmute transition (`--mute-sound` / `--unmute-sound`).
+The **Mute** switch disables wake word detection and stops the assistant from responding to any wake word or button-triggered listening, without stopping the LVA process itself. It is listed under **Controls** on the device page, next to the media player, not under **Configuration**. While muted, a configurable sound plays to confirm the mute/unmute transition (`--mute-sound` / `--unmute-sound`).
 
 ![Mute Switch](./images/mute_switch.png)
 
