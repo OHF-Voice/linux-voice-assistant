@@ -181,10 +181,6 @@ class MediaPlayerEntity(ESPHomeEntity):
     def handle_message(self, msg: message.Message) -> Iterable[message.Message]:
         self._log.debug("handle_message called with msg: %s", msg)
 
-        # Suppress warning for irrelevant NumberCommandRequest
-        if isinstance(msg, (NumberCommandRequest, SelectCommandRequest)):
-            return
-
         if isinstance(msg, MediaPlayerCommandRequest) and (msg.key == self.key):
             self._log.debug("MediaPlayerCommandRequest matched for this key")
 
@@ -234,8 +230,6 @@ class MediaPlayerEntity(ESPHomeEntity):
         elif isinstance(msg, SubscribeHomeAssistantStatesRequest):
             self._log.debug("SubscribeHomeAssistantStatesRequest received")
             yield self._get_state_message()
-        else:
-            self._log.warning("Unknown message type received: %s", type(msg))
 
     def _update_state(self, new_state: MediaPlayerState) -> MediaPlayerStateResponse:
         self._log.debug("SET NEW STATE: %s => %s", self.state, new_state)
