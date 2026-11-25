@@ -370,12 +370,19 @@
         volBar.style.width  = pct + '%';
       }
       if (ev === 'volume_muted' && data) {
-        const isMuted = !!data.muted;
-        metaMuted.textContent = isMuted ? 'yes' : 'no';
-        if (isMuted) {
+        // Media player (speaker) mute: only affects the volume display.
+        // The "Muted" field tracks the microphone and is driven by the
+        // "muted" event below.
+        if (data.muted) {
           metaVol.textContent = '0%';
           volBar.style.width = '0%';
         }
+      }
+      if (ev === 'muted') {
+        // Microphone mute state, emitted on every transition in both
+        // directions. A bare event without data reads as muted.
+        const isMuted = data && data.muted !== undefined ? !!data.muted : true;
+        metaMuted.textContent = isMuted ? 'yes' : 'no';
       }
       if (ev === 'zeroconf' && data) {
         metaHa.textContent = data.status === 'connected' ? 'yes' : 'connecting…';
