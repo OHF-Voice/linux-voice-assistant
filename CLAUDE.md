@@ -9,6 +9,7 @@ Dense codebase map for AI agents. `AGENTS.md` (imported above) holds the rules; 
 | Task | Command | Time |
 |------|---------|------|
 | All unit tests | `./script/tests` | ~2 s (386 tests) |
+| End-to-end tests (real LVA, virtual mic/speaker, fake HA; needs PulseAudio, see `tests/e2e/README.md`) | `./script/e2e` (LVA tests: `--ignore=tests/e2e/peripheral_api`, peripheral API tests: `tests/e2e/peripheral_api`) | ~4.5 min (40 tests: 23 LVA, 17 peripheral API) |
 | One file / one test | `.venv/bin/python -m pytest tests/unit/test_satellite.py -k timer -q` | <1 s |
 | All lint | `./script/lint` | ~15 s |
 | Auto-format | `./script/lint_black --auto && ./script/lint_isort --auto` | |
@@ -170,6 +171,7 @@ Set the default of a CLI option as a literal in its `parser.add_argument(default
 | `docs/configuration.md` | Every HA device-page entity, from the user's view |
 | `docs/peripheral_api.md` | Full WebSocket protocol for peripheral authors |
 | `docs/communication.md` | Overview of the ESPHome API, mDNS and peripheral WebSocket interfaces, the voice request sequence, startup order, threads |
+| `tests/e2e/README.md` | End-to-end test setup: virtual mic/speaker, fake Home Assistant, marker tones, CI job |
 | `docs/audio_pipeline.md` | Mic input to HA streaming: capture, Mic Volume scalar, WebRTC, wake/stop word, `VoiceAssistantAudio` data/data2 |
 | `docs/enabling_aec.md` | Echo cancellation via PulseAudio/PipeWire |
 | `docs/debugging.md` | Audio stack / container socket troubleshooting |
