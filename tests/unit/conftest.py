@@ -70,7 +70,7 @@ def make_state(tmp_path=None, **overrides):
         "button_long_press_sound": "/sounds/long_press.flac",
         "preferences": Preferences(),
         "preferences_path": tmp_path / "preferences.json",
-        "download_dir": tmp_path / "downloads",
+        "wake_word_root": tmp_path / "wakewords",
         "volume": 1.0,
         "mic_volume": 100,
         "mic_auto_gain": 0,
