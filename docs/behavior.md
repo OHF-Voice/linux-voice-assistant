@@ -229,7 +229,7 @@ This table describes API version 1. Version 2 offers fewer commands, see [Periph
 
 ## Peripheral API versions
 
-> **Status:** specified here, implementation follows. Until then LVA only offers version 1 on every path.
+> **Status:** the choice of the version and version 1 are implemented. Version 2 is specified here, implementation follows. Until then `/v2` is refused like any unknown version and `docs/peripheral_api/v2.md` does not exist yet.
 
 The [peripheral API](peripheral_api.md) is versioned, so a peripheral written for an older version keeps working when a newer one appears. A peripheral chooses the version by the path of the WebSocket URL:
 

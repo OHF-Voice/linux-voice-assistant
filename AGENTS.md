@@ -35,7 +35,7 @@ LVA always means **Linux Voice Assistant**, this project.
 - `linux_voice_assistant/player/libmpv.py` - libmpv wrapper: playback, thread-safe state, volume/ducking, end-of-file callbacks
 - `linux_voice_assistant/entity.py` - Entity definitions (MediaPlayer, MuteSwitch, etc.)
 - `linux_voice_assistant/api_server.py` - ESPHome API server 
-- `linux_voice_assistant/peripheral_api.py` - Peripheral WebSocket API server
+- `linux_voice_assistant/peripheral_api/` - Peripheral WebSocket API server, one module per API version
 - `linux_voice_assistant/models.py` - Preferences and ServerState dataclasses
 
 ## Development Commands
