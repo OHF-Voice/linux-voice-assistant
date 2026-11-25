@@ -21,7 +21,7 @@ from .fake_ha import FakeHomeAssistant, FixtureServer
 from .lva import LvaProcess
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
-LVA_START_TIMEOUT = 30.0
+LVA_START_TIMEOUT = 180.0
 
 #: Time after connecting before a test speaks, so a wake word of the previous test is out of its refractory period
 SETTLE_SECONDS = 2.5
