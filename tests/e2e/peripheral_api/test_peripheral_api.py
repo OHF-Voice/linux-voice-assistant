@@ -268,6 +268,20 @@ async def test_timer_events_and_stop_timer_ringing(session: PeripheralSession, s
     assert not await speaker.wait_for_sound(speaker.mark(), timeout=2), "the timer kept ringing"
 
 
+async def test_cancelled_timer_clears_the_countdown_and_returns_to_idle(session: PeripheralSession) -> None:
+    ha, peripheral = session.ha, session.peripheral
+    events = peripheral.mark()
+    ha.timer_event(VoiceAssistantTimerEventType.VOICE_ASSISTANT_TIMER_STARTED, "t2", 60, 60)
+    await peripheral.wait_for("timer_ticking", events)
+    updates = peripheral.mark()
+
+    ha.timer_event(VoiceAssistantTimerEventType.VOICE_ASSISTANT_TIMER_CANCELLED, "t2", 60, 30)
+
+    updated = await peripheral.wait_for("timer_updated", updates)
+    assert updated["data"]["seconds_left"] == 0
+    await peripheral.wait_for("idle", updates)
+
+
 async def test_media_commands_control_the_music(session: PeripheralSession, speaker: SpeakerRecorder, media_server: FixtureServer) -> None:
     ha, peripheral = session.ha, session.peripheral
     events = peripheral.mark()
