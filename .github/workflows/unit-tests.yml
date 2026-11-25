@@ -1,4 +1,4 @@
-name: Unit Tests
+name: Unit-Tests
 
 on:
   push:
@@ -12,7 +12,7 @@ on:
 
 jobs:
   unit-tests:
-    name: Unit Tests
+    name: Unit-Tests
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
