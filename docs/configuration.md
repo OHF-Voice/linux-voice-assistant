@@ -29,6 +29,16 @@ The **Mute** switch disables wake word detection and stops the assistant from re
 
 ![Mute Switch](./images/mute_switch.png)
 
+## Hardware Mute
+
+Some hardware can mute its microphone itself, with a switch or a button, and sometimes software can control that too. The **Hardware Mute** switch shows it in Home Assistant. It only exists for a device that has one: LVA adds it when a version 2 peripheral reports a hardware mute for the first time, and Home Assistant is reconnected once so that it shows up (the same as for the entities that peripherals register in version 1).
+
+- The state comes from a version 2 peripheral (the Linux Peripherals Controller), which reports whether the hardware mute is on and whether software can change it.
+- Switching it asks the peripheral to mute or unmute the hardware. That only works if the peripheral has said that software can change it and is connected. Otherwise nothing happens and the switch jumps back to the real state. It then changes when the peripheral reports the new state, not at once.
+- It is **not** the **Mute** switch. LVA does not mute because the hardware is muted, and the other way round.
+
+See [Behavior](behavior_peripheral_api.md) for details.
+
 ## Thinking Sound
 
 The **Thinking Sound** switch toggles whether a short audible chime plays while the assistant is processing your request (between the end of listening and the start of the response). This is the same setting as the `--enable-thinking-sound` CLI flag / `ENABLE_THINKING_SOUND` environment variable, but can be flipped on or off at runtime from this switch. The change is saved to `preferences.json`.

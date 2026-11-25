@@ -45,6 +45,14 @@ class StatusRefresher(Protocol):
         """Work out the status again and send what changed."""
 
 
+@runtime_checkable
+class HardwareMuteRequester(Protocol):
+    """A version that can ask its peripherals to mute or unmute the hardware of the microphone."""
+
+    async def request_hardware_mute(self, muted: bool) -> None:
+        """Ask the peripherals to mute (True) or unmute (False) the hardware."""
+
+
 def resolve_version(path: str, supported: Collection[str]) -> Optional[str]:
     """
     Find the API version that a request path asks for.

@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any, Dict, Optional
 
 from .v1 import LVAEvent, PeripheralApiV1
 from .v2 import PeripheralApiV2
-from .versions import ApiVersionHandler, StatusRefresher, resolve_version
+from .versions import ApiVersionHandler, HardwareMuteRequester, StatusRefresher, resolve_version
 
 if TYPE_CHECKING:
     from ..models import ServerState
@@ -121,6 +121,20 @@ class PeripheralAPIServer:
         for handler in self._versions.values():
             if isinstance(handler, StatusRefresher):
                 asyncio.run_coroutine_threadsafe(handler.refresh_status(), loop)
+
+    def request_hardware_mute_sync(self, muted: bool) -> None:
+        """
+        Ask the peripherals of the versions that have a hardware mute to mute or unmute the hardware.
+        :param muted: True to mute the hardware.
+
+        Thread-safe, because the Hardware Mute switch is changed from the thread of the Home Assistant connection.
+        """
+        loop = self._loop
+        if loop is None or loop.is_closed():
+            return
+        for handler in self._versions.values():
+            if isinstance(handler, HardwareMuteRequester):
+                asyncio.run_coroutine_threadsafe(handler.request_hardware_mute(muted), loop)
 
     # ------------------------------------------------------------------
     # Client handling

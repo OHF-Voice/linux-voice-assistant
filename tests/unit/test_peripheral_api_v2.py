@@ -577,3 +577,268 @@ class TestButtonPressed:
         server._state.button_event_sensor_entity = MagicMock()  # pylint: disable=protected-access
         await dispatch(server, "button_pressed", {"press": "double"})
         server._state.button_event_sensor_entity.update_state.assert_not_called()  # pylint: disable=protected-access
+
+
+async def dispatch_from(server: PeripheralApiV2, sender, command: str, data: Optional[dict] = None) -> None:
+    payload: Dict[str, Any] = {"command": command}
+    if data is not None:
+        payload["data"] = data
+    await server._dispatch_command(json.dumps(payload), sender)  # pylint: disable=protected-access
+
+
+class TestHardwareMuteStatus:
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("status,muted", [("muted", True), ("unmuted", False)])
+    async def test_status_is_stored(self, tmp_path, status, muted):
+        server = make_server(tmp_path)
+        await dispatch(server, "hardware_mute_status", {"status": status})
+        assert server._state.hardware_muted is muted  # pylint: disable=protected-access
+
+    @pytest.mark.asyncio
+    async def test_it_does_not_change_the_mute_of_lva(self, tmp_path):
+        server = make_server(tmp_path)
+        await dispatch(server, "hardware_mute_status", {"status": "muted"})
+        server._state.satellite._set_muted.assert_not_called()  # pylint: disable=protected-access
+        assert server._state.muted is False  # pylint: disable=protected-access
+
+    @pytest.mark.asyncio
+    async def test_other_clients_are_told_but_not_the_sender(self, tmp_path, caplog):
+        server = make_server(tmp_path)
+        sender, other = connect(server), connect(server)
+
+        with caplog.at_level(logging.DEBUG):
+            await dispatch_from(server, sender, "hardware_mute_status", {"status": "muted"})
+
+        assert other.sent() == [{"event": "hardware_mute_status", "data": {"status": "muted"}}]
+        sender.send.assert_not_awaited()
+        assert "Hardware mute reported: muted" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_home_assistant_is_told_through_the_switch(self, tmp_path):
+        server = make_server(tmp_path)
+        entity = MagicMock()
+        server._state.hardware_mute_switch_entity = entity  # pylint: disable=protected-access
+        server._state.broadcast = MagicMock()  # pylint: disable=protected-access
+
+        await dispatch(server, "hardware_mute_status", {"status": "muted"})
+
+        server._state.broadcast.assert_called_once_with([entity.state_message.return_value])  # pylint: disable=protected-access
+
+    @pytest.mark.asyncio
+    async def test_no_switch_is_fine(self, tmp_path):
+        server = make_server(tmp_path)
+        server._state.hardware_mute_switch_entity = None  # pylint: disable=protected-access
+        await dispatch(server, "hardware_mute_status", {"status": "muted"})
+
+    @pytest.mark.asyncio
+    async def test_an_unchanged_status_is_not_passed_on_again(self, tmp_path, caplog):
+        server = make_server(tmp_path)
+        await dispatch(server, "hardware_mute_status", {"status": "muted"})
+        other = connect(server)
+
+        with caplog.at_level(logging.DEBUG):
+            await dispatch(server, "hardware_mute_status", {"status": "muted"})
+
+        other.send.assert_not_awaited()
+        assert "already reported as muted" in caplog.text
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("data", [None, {}, {"status": "on"}, {"status": True}, {"muted": True}])
+    async def test_invalid_status_warns_and_changes_nothing(self, tmp_path, caplog, data):
+        server = make_server(tmp_path)
+        with caplog.at_level(logging.WARNING):
+            await dispatch(server, "hardware_mute_status", data)
+        assert server._state.hardware_muted is None  # pylint: disable=protected-access
+        assert "invalid status in hardware_mute_status" in caplog.text
+
+
+class TestHardwareMutePossible:
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("possible", [True, False])
+    async def test_possible_is_stored(self, tmp_path, possible):
+        server = make_server(tmp_path)
+        await dispatch(server, "hardware_mute_possible", {"possible": possible})
+        assert server._state.hardware_mute_possible is possible  # pylint: disable=protected-access
+
+    @pytest.mark.asyncio
+    async def test_other_clients_are_told_but_not_the_sender(self, tmp_path):
+        server = make_server(tmp_path)
+        sender, other = connect(server), connect(server)
+
+        await dispatch_from(server, sender, "hardware_mute_possible", {"possible": True})
+
+        assert other.sent() == [{"event": "hardware_mute_possible", "data": {"possible": True}}]
+        sender.send.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_an_unchanged_value_is_not_passed_on_again(self, tmp_path):
+        server = make_server(tmp_path)
+        await dispatch(server, "hardware_mute_possible", {"possible": False})
+        other = connect(server)
+        await dispatch(server, "hardware_mute_possible", {"possible": False})
+        other.send.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("data", [None, {}, {"possible": "yes"}, {"possible": 1}, {"status": True}])
+    async def test_invalid_value_warns_and_changes_nothing(self, tmp_path, caplog, data):
+        server = make_server(tmp_path)
+        with caplog.at_level(logging.WARNING):
+            await dispatch(server, "hardware_mute_possible", data)
+        assert server._state.hardware_mute_possible is None  # pylint: disable=protected-access
+        assert "invalid possible in hardware_mute_possible" in caplog.text
+
+
+class TestHardwareMuteSnapshot:
+    @pytest.mark.asyncio
+    async def test_nothing_is_sent_until_a_peripheral_has_reported(self, tmp_path):
+        server = make_server(tmp_path)
+        ws = FakeWebSocket()
+        await server.handle_client(ws)
+        assert not [m for m in ws.sent() if m["event"].startswith("hardware_mute")]
+
+    @pytest.mark.asyncio
+    async def test_a_new_client_gets_the_reported_values_after_the_status(self, tmp_path):
+        server = make_server(tmp_path)
+        server._state.hardware_muted = True  # pylint: disable=protected-access
+        server._state.hardware_mute_possible = False  # pylint: disable=protected-access
+        ws = FakeWebSocket()
+
+        await server.handle_client(ws)
+
+        sent = ws.sent()
+        assert sent[-2:] == [{"event": "hardware_mute_status", "data": {"status": "muted"}}, {"event": "hardware_mute_possible", "data": {"possible": False}}]
+        assert sent[-3]["event"] == "media_player_status"
+
+    @pytest.mark.asyncio
+    async def test_only_the_reported_value_is_sent(self, tmp_path):
+        server = make_server(tmp_path)
+        server._state.hardware_mute_possible = True  # pylint: disable=protected-access
+        ws = FakeWebSocket()
+        await server.handle_client(ws)
+        assert [m["event"] for m in ws.sent() if m["event"].startswith("hardware_mute")] == ["hardware_mute_possible"]
+
+    @pytest.mark.asyncio
+    async def test_a_report_of_a_connected_client_reaches_a_client_that_connects_later(self, tmp_path):
+        server = make_server(tmp_path)
+        reporter = FakeWebSocket([json.dumps({"command": "hardware_mute_status", "data": {"status": "muted"}})])
+        await server.handle_client(reporter)
+
+        late = FakeWebSocket()
+        await server.handle_client(late)
+
+        assert {"event": "hardware_mute_status", "data": {"status": "muted"}} in late.sent()
+
+
+class TestRequestHardwareMute:
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("muted,event", [(True, "hardware_mute_on"), (False, "hardware_mute_off")])
+    async def test_request_goes_to_every_peripheral(self, tmp_path, muted, event):
+        server = make_server(tmp_path)
+        server._state.hardware_mute_possible = True  # pylint: disable=protected-access
+        first, second = connect(server), connect(server)
+
+        await server.request_hardware_mute(muted)
+
+        assert first.sent() == second.sent() == [{"event": event}]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("possible", [False, None])
+    async def test_ignored_when_the_hardware_mute_is_not_possible(self, tmp_path, caplog, possible):
+        server = make_server(tmp_path)
+        server._state.hardware_mute_possible = possible  # pylint: disable=protected-access
+        ws = connect(server)
+
+        with caplog.at_level(logging.DEBUG):
+            await server.request_hardware_mute(True)
+
+        ws.send.assert_not_awaited()
+        assert f"Ignoring the request to set the hardware mute: possible={possible}" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_ignored_without_a_connected_peripheral(self, tmp_path, caplog):
+        server = make_server(tmp_path)
+        server._state.hardware_mute_possible = True  # pylint: disable=protected-access
+        with caplog.at_level(logging.DEBUG):
+            await server.request_hardware_mute(False)
+        assert "0 peripheral(s) connected" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_an_ignored_request_tells_home_assistant_the_real_state_again(self, tmp_path):
+        server = make_server(tmp_path)
+        entity = MagicMock()
+        server._state.hardware_mute_switch_entity = entity  # pylint: disable=protected-access
+        server._state.broadcast = MagicMock()  # pylint: disable=protected-access
+        server._state.hardware_mute_possible = False  # pylint: disable=protected-access
+
+        await server.request_hardware_mute(True)
+
+        server._state.broadcast.assert_called_once_with([entity.state_message.return_value])  # pylint: disable=protected-access
+
+    @pytest.mark.asyncio
+    async def test_a_sent_request_does_not_change_the_stored_state(self, tmp_path):
+        server = make_server(tmp_path)
+        server._state.hardware_mute_possible = True  # pylint: disable=protected-access
+        connect(server)
+        await server.request_hardware_mute(True)
+        assert server._state.hardware_muted is None  # pylint: disable=protected-access
+
+    @pytest.mark.asyncio
+    async def test_without_state_it_does_nothing(self):
+        await PeripheralApiV2().request_hardware_mute(True)
+
+
+class TestHardwareMuteSwitchRegistration:
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("command,data", [("hardware_mute_status", {"status": "muted"}), ("hardware_mute_possible", {"possible": True})])
+    async def test_the_first_report_registers_the_switch(self, tmp_path, caplog, command, data):
+        server = make_server(tmp_path)
+        assert server._state.pending_hardware_mute is False  # pylint: disable=protected-access
+
+        with caplog.at_level(logging.INFO):
+            await dispatch(server, command, data)
+
+        assert server._state.pending_hardware_mute is True  # pylint: disable=protected-access
+        server._state.satellite.register_pending_hardware_mute.assert_called_once()  # pylint: disable=protected-access
+        assert "Hardware mute switch registered by peripheral" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_it_is_registered_only_once(self, tmp_path):
+        server = make_server(tmp_path)
+        await dispatch(server, "hardware_mute_status", {"status": "muted"})
+        await dispatch(server, "hardware_mute_possible", {"possible": True})
+        await dispatch(server, "hardware_mute_status", {"status": "unmuted"})
+        server._state.satellite.register_pending_hardware_mute.assert_called_once()  # pylint: disable=protected-access
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("command,data", [("hardware_mute_status", {"status": "maybe"}), ("hardware_mute_possible", {"possible": "yes"})])
+    async def test_an_invalid_report_registers_nothing(self, tmp_path, command, data):
+        server = make_server(tmp_path)
+        await dispatch(server, command, data)
+        assert server._state.pending_hardware_mute is False  # pylint: disable=protected-access
+
+    @pytest.mark.asyncio
+    async def test_it_is_registered_without_a_satellite(self, tmp_path):
+        server = make_server(tmp_path)
+        server._state.satellite = None  # pylint: disable=protected-access
+        await dispatch(server, "hardware_mute_status", {"status": "muted"})
+        assert server._state.pending_hardware_mute is True  # pylint: disable=protected-access
+
+    @pytest.mark.asyncio
+    async def test_home_assistant_is_reconnected_once_for_the_new_entity(self, tmp_path):
+        server = make_server(tmp_path)
+        server.set_loop(asyncio.get_running_loop())
+        scheduled = []
+        server._late_reconnect.schedule = lambda *args: scheduled.append(args)  # pylint: disable=protected-access
+
+        await dispatch(server, "hardware_mute_status", {"status": "muted"})
+        await dispatch(server, "hardware_mute_possible", {"possible": True})
+
+        assert len(scheduled) == 1
+        assert scheduled[0][2:] == ("hardware_mute", "hardware_mute")
+
+    @pytest.mark.asyncio
+    async def test_stop_cancels_a_planned_reconnect(self, tmp_path):
+        server = make_server(tmp_path)
+        server._late_reconnect.cancel = MagicMock()  # pylint: disable=protected-access
+        await server.stop()
+        server._late_reconnect.cancel.assert_called_once()  # pylint: disable=protected-access
