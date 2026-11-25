@@ -1,5 +1,6 @@
 """Shared models."""
 
+import asyncio
 import json
 import logging
 from collections.abc import Iterable
@@ -184,6 +185,7 @@ class ServerState:
     media_player_entity: "Optional[MediaPlayerEntity]" = None
     satellite: "Optional[VoiceSatelliteProtocol]" = None
     connections: "List[VoiceSatelliteProtocol]" = field(default_factory=list)
+    client_disconnected: asyncio.Event = field(default_factory=asyncio.Event)
     mute_switch_entity: "Optional[MuteSwitchEntity]" = None
     thinking_sound_entity: "Optional[ThinkingSoundEntity]" = None
     button_event_sensor_entity: "Optional[ButtonEventSensorEntity]" = None

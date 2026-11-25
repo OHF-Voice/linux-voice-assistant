@@ -671,6 +671,17 @@ class TestConnectionLost:
         sat.connection_lost(None)
         assert sat.state.connected is False
 
+    def test_client_lost_signals_address_check(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        sat.connection_lost(None)
+        assert sat.state.client_disconnected.is_set()
+
+    def test_client_lost_signals_address_check_while_another_client_is_connected(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        sat.state.connections.append(MagicMock())
+        sat.connection_lost(None)
+        assert sat.state.client_disconnected.is_set()
+
     def test_connection_lost_clears_satellite_reference(self, tmp_path):
         sat = make_satellite(tmp_path)
         sat.connection_lost(None)

@@ -1197,6 +1197,7 @@ class VoiceSatelliteProtocol(APIServer):
         # Deregister this connection.
         if self in self.state.connections:
             self.state.connections.remove(self)
+        self.state.client_disconnected.set()
 
         # Only tear down shared playback/state when the LAST client disconnects.
         # Otherwise a secondary client (a diagnostic tool, a second dashboard, or
