@@ -81,6 +81,13 @@ async def main() -> None:
         help="mpv name for the music/media output device (defaults to --audio-output-device)",
     )
     parser.add_argument(
+        "--mpv-player-duck-mode",
+        default="duck",
+        choices=("duck", "pause"),
+        help="What the music player does while the assistant talks, an announcement plays or a timer rings: "
+        "duck lowers the volume to 50 %%, pause pauses the music and resumes it afterwards (default: %(default)s)",
+    )
+    parser.add_argument(
         "--list-output-devices",
         action="store_true",
         help="List audio output devices and exit",
@@ -516,8 +523,8 @@ async def main() -> None:
         wake_words=wake_models,
         active_wake_words=set(wake_word_slots),
         stop_word=stop_model,
-        music_player=MpvMediaPlayer(device=args.music_output_device or args.audio_output_device),
-        tts_player=MpvMediaPlayer(device=args.audio_output_device),
+        music_player=MpvMediaPlayer(device=args.music_output_device or args.audio_output_device, name="music", duck_mode=args.mpv_player_duck_mode),
+        tts_player=MpvMediaPlayer(device=args.audio_output_device, name="tts"),
         wakeup_sound=args.wakeup_sound,
         start_listening_sound=args.start_listening_sound,
         timer_finished_sound=args.timer_finished_sound,

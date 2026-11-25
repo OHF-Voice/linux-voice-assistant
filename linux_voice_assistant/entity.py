@@ -148,6 +148,36 @@ class MediaPlayerEntity(ESPHomeEntity):
 
         yield self._update_state(MediaPlayerState.PLAYING)
 
+    def pause(self) -> MediaPlayerStateResponse:
+        """Pause the music. Also used for peripheral commands."""
+        self._log.debug("Executing PAUSE")
+        self.music_player.pause()
+        return self._update_state(MediaPlayerState.PAUSED)
+
+    def resume(self) -> MediaPlayerStateResponse:
+        """Resume the music. Also used for peripheral commands."""
+        self._log.debug("Executing PLAY / RESUME")
+        self.music_player.resume()
+        return self._update_state(MediaPlayerState.PLAYING)
+
+    def stop(self) -> MediaPlayerStateResponse:
+        """Stop the music. Also used for peripheral commands."""
+        self._log.debug("Executing STOP")
+        self.music_player.stop()
+        return self._update_state(MediaPlayerState.IDLE)
+
+    def set_volume(self, volume: float) -> None:
+        """
+        Set the volume of the players and save it. Also used for peripheral commands.
+        :param volume: Volume 0.0 to 1.0.
+        """
+        self._apply_volume(volume, persist=True)
+        if hasattr(self.server, "state") and getattr(self.server, "state", None) is not None:
+            self._log.debug("Persisting volume to preferences")
+            self.server.state.persist_volume(self.volume)
+        else:
+            self._log.warning("Cannot persist volume - server.state not available")
+
     def handle_message(self, msg: message.Message) -> Iterable[message.Message]:
         self._log.debug("handle_message called with msg: %s", msg)
 
@@ -169,51 +199,27 @@ class MediaPlayerEntity(ESPHomeEntity):
                 command = MediaPlayerCommand(msg.command)
 
                 if msg.command == MediaPlayerCommand.PAUSE:
-                    self._log.debug("Executing PAUSE")
-                    self.music_player.pause()
-                    yield self._update_state(MediaPlayerState.PAUSED)
+                    yield self.pause()
 
                 elif msg.command == MediaPlayerCommand.PLAY:
-                    self._log.debug("Executing PLAY / RESUME")
-                    self.music_player.resume()
-                    yield self._update_state(MediaPlayerState.PLAYING)
+                    yield self.resume()
 
                 elif command == MediaPlayerCommand.STOP:
-                    self._log.debug("Executing STOP")
-                    self.music_player.stop()
-                    yield self._update_state(MediaPlayerState.IDLE)
+                    yield self.stop()
 
                 elif command == MediaPlayerCommand.MUTE:
                     self._log.debug("Executing MUTE")
-                    if not self.muted:
-                        self.previous_volume = self.volume
-                        self.volume = 0
-                        self.music_player.set_volume(0)
-                        self.announce_player.set_volume(0)
-                        self.muted = True
-                        if hasattr(self.server, "state") and getattr(self.server, "state", None) is not None:
-                            self.server.state.persist_volume(self.volume)
+                    self._set_muted(True)
                     yield self._update_state(self.state)
 
                 elif command == MediaPlayerCommand.UNMUTE:
                     self._log.debug("Executing UNMUTE")
-                    if self.muted:
-                        self.volume = self.previous_volume
-                        self.music_player.set_volume(int(self.volume * 100))
-                        self.announce_player.set_volume(int(self.volume * 100))
-                        self.muted = False
-                        if hasattr(self.server, "state") and getattr(self.server, "state", None) is not None:
-                            self.server.state.persist_volume(self.volume)
+                    self._set_muted(False)
                     yield self._update_state(self.state)
 
             elif msg.has_volume:
                 self._log.debug("Message has volume: %.2f", msg.volume)
-                self._apply_volume(msg.volume, persist=True)
-                if hasattr(self.server, "state") and getattr(self.server, "state", None) is not None:
-                    self._log.debug("Persisting volume to preferences")
-                    self.server.state.persist_volume(self.volume)
-                else:
-                    self._log.warning("Cannot persist volume - server.state not available")
+                self.set_volume(msg.volume)
                 yield self._update_state(self.state)
 
         elif isinstance(msg, ListEntitiesRequest):
@@ -281,6 +287,27 @@ class MediaPlayerEntity(ESPHomeEntity):
 
         if self._on_volume_changed and persist:
             self._on_volume_changed(normalized)
+
+    def _set_muted(self, muted: bool) -> None:
+        """
+        Mute or unmute the players. The volume before the mute is restored on unmute.
+        :param muted: True to mute.
+        """
+        if muted == self.muted:
+            return
+
+        if muted:
+            self.previous_volume = self.volume
+            self.volume = 0
+            self.music_player.set_volume(0)
+            self.announce_player.set_volume(0)
+        else:
+            self.volume = self.previous_volume
+            self.music_player.set_volume(int(self.volume * 100))
+            self.announce_player.set_volume(int(self.volume * 100))
+        self.muted = muted
+        if hasattr(self.server, "state") and getattr(self.server, "state", None) is not None:
+            self.server.state.persist_volume(self.volume)
 
 
 # -----------------------------------------------------------------------------

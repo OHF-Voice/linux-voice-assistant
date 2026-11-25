@@ -356,6 +356,7 @@ class VoiceSatelliteProtocol(APIServer):
         self._intent_started = False
         self._stt_text_received = False
         self._continue_conversation = False
+        self._announce_ducking = False
         # Phrase that started the conversation. HA selects the pipeline from it, so a
         # follow-up request without it would run the first pipeline instead of the one
         # the user woke up. Empty after a button press or an HA announcement.
@@ -696,7 +697,7 @@ class VoiceSatelliteProtocol(APIServer):
                 self.state.active_wake_words.add(self.state.stop_word.id)
                 self._timer_finished = True
                 self._timer_ring_start = time.monotonic()
-                self.duck()
+                self.duck(owner="timer")
                 self._emit(LVAEvent.TIMER_RINGING, timer_data)
                 self._play_timer_finished()
 
@@ -727,7 +728,8 @@ class VoiceSatelliteProtocol(APIServer):
             self._continue_conversation = msg.start_conversation
             self._wake_word_phrase = ""
 
-            self.duck()
+            self._announce_ducking = True
+            self.duck(owner="announce")
             self._emit(LVAEvent.TTS_SPEAKING)
             self.state.tts_player.play(urls, done_callback=self._tts_finished)
 
@@ -944,12 +946,15 @@ class VoiceSatelliteProtocol(APIServer):
         _LOGGER.debug("Detected wake word: %s", wake_word_phrase)
         self._wake_word_phrase = wake_word_phrase
 
+        timer_was_ringing = self._timer_finished
         self._timer_finished = False
         self._timer_ring_start = None
         _LOGGER.debug("Stopping timer finished sound")
         self._pipeline_active = True
         self._emit(LVAEvent.WAKE_WORD_DETECTED, self._detection_event_data(detection))
         self.duck()
+        if timer_was_ringing:
+            self.unduck(owner="timer")
         if self.state.listen_during_wake_sound:
             _LOGGER.debug("Starting audio streaming immediately (listen_during_wake_sound enabled)")
             self.state.tts_player.play(self.state.wakeup_sound)
@@ -1006,11 +1011,14 @@ class VoiceSatelliteProtocol(APIServer):
 
         _LOGGER.debug("Button start_listening triggered")
         self._wake_word_phrase = ""
+        timer_was_ringing = self._timer_finished
         self._timer_finished = False
         self._timer_ring_start = None
         _LOGGER.debug("Stopping timer finished sound")
         self._pipeline_active = True
         self.duck()
+        if timer_was_ringing:
+            self.unduck(owner="timer")
         self.state.tts_player.play(
             self.state.start_listening_sound,
             done_callback=self._on_start_listening_sound_finished,
@@ -1030,7 +1038,7 @@ class VoiceSatelliteProtocol(APIServer):
         if self._timer_finished:
             self._timer_finished = False
             self._timer_ring_start = None
-            self.unduck()
+            self.unduck(owner="timer")
             self.state.tts_player.stop()
             self._emit(LVAEvent.IDLE)
             _LOGGER.debug("Stopping timer finished sound")
@@ -1064,6 +1072,13 @@ class VoiceSatelliteProtocol(APIServer):
         self.state.active_wake_words.discard(self.state.stop_word.id)
         self.send_messages([VoiceAssistantAnnounceFinished()])
         self._emit(LVAEvent.TTS_FINISHED)
+
+        if self._announce_ducking:
+            self._announce_ducking = False
+            if self._continue_conversation:
+                # The conversation takes over the ducking of an announcement without a gap
+                self.duck(owner="conversation")
+            self.unduck(owner="announce")
 
         if self._continue_conversation:
             self._continue_conversation = False
@@ -1106,13 +1121,21 @@ class VoiceSatelliteProtocol(APIServer):
     # Ducking
     # ------------------------------------------------------------------
 
-    def duck(self) -> None:
-        _LOGGER.debug("Ducking music")
-        self.state.music_player.duck()
+    def duck(self, owner: str = "conversation") -> None:
+        """
+        Duck the music. It stays ducked until every owner has called :meth:`unduck`.
+        :param owner: ``conversation``, ``timer`` (ringing) or ``announce`` (voice announcements).
+        """
+        _LOGGER.debug("Duck requested by %s", owner)
+        self.state.music_player.duck(owner=owner)
 
-    def unduck(self) -> None:
-        _LOGGER.debug("Unducking music")
-        self.state.music_player.unduck()
+    def unduck(self, owner: str = "conversation") -> None:
+        """
+        End the ducking of an owner. The volume is restored when no owner is left.
+        :param owner: The owner that called :meth:`duck`.
+        """
+        _LOGGER.debug("Unduck requested by %s", owner)
+        self.state.music_player.unduck(owner=owner)
 
     # ------------------------------------------------------------------
     # Timer finished loop
@@ -1121,7 +1144,7 @@ class VoiceSatelliteProtocol(APIServer):
     def _play_timer_finished(self) -> None:
         if not self._timer_finished:
             _LOGGER.debug("Timer finished sound stopped")
-            self.unduck()
+            self.unduck(owner="timer")
             self._timer_ring_start = None
             return
 
@@ -1137,7 +1160,7 @@ class VoiceSatelliteProtocol(APIServer):
                 self._timer_finished = False
                 self._timer_ring_start = None
                 self.state.active_wake_words.discard(self.state.stop_word.id)
-                self.unduck()
+                self.unduck(owner="timer")
                 return
 
         self.state.tts_player.play(
@@ -1167,6 +1190,7 @@ class VoiceSatelliteProtocol(APIServer):
         self._tts_url = None
         self._tts_played = False
         self._continue_conversation = False
+        self._announce_ducking = False
         self._timer_finished = False
         self._pipeline_active = False
 
@@ -1184,6 +1208,9 @@ class VoiceSatelliteProtocol(APIServer):
                 self.state.music_player.stop()
             except Exception:  # pylint: disable=broad-except
                 _LOGGER.exception("Failed to stop music player during disconnect")
+
+            for owner in ("conversation", "timer", "announce"):
+                self.unduck(owner=owner)
 
             try:
                 self.state.tts_player.stop()

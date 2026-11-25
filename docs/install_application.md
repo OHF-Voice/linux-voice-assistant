@@ -183,6 +183,7 @@ Environment=PREFERENCES_FILE="/home/pi/linux-voice-assistant/preferences.json"
 # Environment=AUDIO_INPUT_BLOCK_SIZE="1024"
 # Environment=AUDIO_OUTPUT_DEVICE="pulse"
 # Environment=MUSIC_OUTPUT_DEVICE="pulse"
+# Environment=MPV_PLAYER_DUCK_MODE="duck"
 # Environment=MIC_VOLUME="100"
 # Environment=MIC_AUTO_GAIN="0"
 # Environment=MIC_NOISE_SUPPRESSION="0"
@@ -289,6 +290,7 @@ The following variables can be configured in the `.env` or in the service file:
 | `AUDIO_INPUT_BLOCK_SIZE` | `1024` | Audio input block size in samples |
 | `AUDIO_OUTPUT_DEVICE` | `pulse` | Audio output device name, use a `pulse/...` name from the device list (see `LIST_DEVICES`) |
 | `MUSIC_OUTPUT_DEVICE` | `AUDIO_OUTPUT_DEVICE` | Music/media output device name (defaults to the voice output device) |
+| `MPV_PLAYER_DUCK_MODE` | `duck` | What the music of LVA does while the assistant talks, an announcement plays or a timer rings: `duck` lowers the volume to 50 %, `pause` pauses the music and resumes it afterwards. Does not change the voice player |
 | `MIC_VOLUME` | Stored value, else 100 | Microphone volume 0 to 100, overrides the stored Mic Volume on every start. Leave it unset or empty to keep the stored value |
 | `MIC_AUTO_GAIN` | 0 | Add WebRTC Gain to Mic |
 | `MIC_NOISE_SUPPRESSION` | 0 | Add WebRTC Noise Suppression to Mic |

@@ -36,7 +36,8 @@ The music player can be sent to a different sound card with `--music-output-devi
 Two rules apply everywhere:
 
 - **Music is never ended by the assistant on its own.** During a conversation it is lowered (*ducked*). During a TTS / announcement sent to the media player (for example `tts.speak` with `announce: true`) it is **paused** for the duration of the announcement and then resumed. Only an explicit *stop* from Home Assistant or a peripheral, or losing the connection to Home Assistant (see below), stops it for good.
-- **Ducking** means the music volume is reduced to **50 %** of the volume you set. When the interaction is over it returns to 100 % of your set volume.
+- **Ducking** means the music volume is reduced to **50 %** of the volume you set. When the interaction is over it returns to 100 % of your set volume. The music stays ducked as long as something still wants it ducked: a conversation, a ringing timer and a voice announcement ask for it separately, so the music returns to full volume only when all of them are over. For example, a timer that is stopped during a conversation does not end the ducking of the conversation. When the last Home Assistant client disconnects, all of them are released.
+- **Pause mode (`--mpv-player-duck-mode pause`, `MPV_PLAYER_DUCK_MODE=pause`).** The default is `duck`, which lowers the volume as described above. With `pause` the music of LVA is **paused** instead of lowered, and resumed when the last reason for ducking is over. Music that was already paused stays paused. A pause or stop from Home Assistant or a peripheral during that time takes over, so the music is not resumed against it. While it is paused for ducking, the media player keeps reporting `playing`. Music that is started while it is ducked plays at full volume, because nothing pauses it again. The option only applies to the music player, not to the voice player (announcements, chimes, TTS, timer sound).
 
 ---
 
@@ -87,7 +88,7 @@ Music started from Home Assistant (a media player service call or the media play
 | Timer rings | Music is ducked while the timer rings and restored when it stops, see [Timers](#timers). |
 | Mute switch | Does **not** affect music, see [Mute](#mute). |
 
-If music is paused when you start talking to the assistant, it stays paused. Ducking only changes the volume. The music is not resumed automatically at the end of a conversation.
+If music is paused when you start talking to the assistant, it stays paused. Ducking only changes the volume (or pauses the music in `pause` mode, which resumes only music that it paused itself). The music is not resumed automatically at the end of a conversation.
 
 ---
 

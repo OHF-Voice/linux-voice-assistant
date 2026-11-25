@@ -64,6 +64,10 @@ if [ -n "${MUSIC_OUTPUT_DEVICE}" ]; then
   EXTRA_ARGS+=( "--music-output-device" "$MUSIC_OUTPUT_DEVICE" )
 fi
 
+if [ -n "${MPV_PLAYER_DUCK_MODE}" ]; then
+  EXTRA_ARGS+=( "--mpv-player-duck-mode" "$MPV_PLAYER_DUCK_MODE" )
+fi
+
 if [ -n "${MIC_VOLUME}" ]; then
   EXTRA_ARGS+=( "--mic-volume" "$MIC_VOLUME" )
 fi
