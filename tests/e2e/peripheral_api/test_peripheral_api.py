@@ -62,6 +62,7 @@ async def session(peripheral_lva: LvaProcess) -> AsyncIterator[PeripheralSession
 
 
 async def test_registrations_add_entities_and_reconnect_home_assistant_once(peripheral_lva: LvaProcess) -> None:
+    """Registering a light, a button and a button lock adds their entities and makes LVA reconnect Home Assistant exactly once."""
     ha = FakeHomeAssistant()
     await ha.connect(peripheral_lva.api_port)
     peripheral = PeripheralClient()
@@ -88,6 +89,7 @@ async def test_registrations_add_entities_and_reconnect_home_assistant_once(peri
 
 @pytest.mark.usefixtures("session")
 async def test_snapshot_describes_the_current_state(peripheral_lva: LvaProcess) -> None:
+    """A peripheral that connects receives a snapshot of the current state of LVA."""
     other = PeripheralClient()
 
     await other.connect(peripheral_lva.peripheral_port)
@@ -101,6 +103,7 @@ async def test_snapshot_describes_the_current_state(peripheral_lva: LvaProcess) 
 
 
 async def test_invalid_input_is_ignored(session: PeripheralSession) -> None:
+    """Invalid JSON, unknown commands and wrong values are ignored and LVA keeps working."""
     peripheral = session.peripheral
     events = peripheral.mark()
 
@@ -115,6 +118,7 @@ async def test_invalid_input_is_ignored(session: PeripheralSession) -> None:
 
 
 async def test_mute_commands_reach_home_assistant(session: PeripheralSession) -> None:
+    """The mute commands of a peripheral change the mute switch that Home Assistant sees."""
     ha, peripheral = session.ha, session.peripheral
     events = peripheral.mark()
     mute = ha.entity_by_name("Mute")
@@ -131,6 +135,7 @@ async def test_mute_commands_reach_home_assistant(session: PeripheralSession) ->
 
 
 async def test_mute_from_home_assistant_is_reported(session: PeripheralSession) -> None:
+    """Muting from Home Assistant is reported to the peripheral as an event."""
     ha, peripheral = session.ha, session.peripheral
     events = peripheral.mark()
     mute = ha.entity_by_name("Mute")
@@ -148,6 +153,7 @@ async def test_mute_from_home_assistant_is_reported(session: PeripheralSession) 
 
 
 async def test_volume_commands_reach_the_media_player(session: PeripheralSession) -> None:
+    """The volume commands of a peripheral change the volume of the media player and are reported back."""
     ha, peripheral = session.ha, session.peripheral
     events = peripheral.mark()
     media_player = ha.entity_by_name("Media Player")
@@ -166,6 +172,7 @@ async def test_volume_commands_reach_the_media_player(session: PeripheralSession
 
 
 async def test_start_listening_runs_a_conversation_reported_as_events(session: PeripheralSession, speaker: SpeakerRecorder, media_server: FixtureServer) -> None:
+    """The start listening command runs a voice request whose phases the peripheral receives as events."""
     ha, peripheral = session.ha, session.peripheral
     events = peripheral.mark()
     speaker_mark = speaker.mark()
@@ -196,6 +203,7 @@ async def test_start_listening_runs_a_conversation_reported_as_events(session: P
 
 
 async def test_start_listening_is_ignored_while_muted(session: PeripheralSession) -> None:
+    """The start listening command does nothing while LVA is muted."""
     ha, peripheral = session.ha, session.peripheral
     events = peripheral.mark()
     await peripheral.command("mute_mic")
@@ -211,6 +219,7 @@ async def test_start_listening_is_ignored_while_muted(session: PeripheralSession
 
 
 async def test_stop_pipeline_ends_a_spoken_reply(session: PeripheralSession, speaker: SpeakerRecorder, media_server: FixtureServer) -> None:
+    """The stop pipeline command cuts off a spoken reply while it plays."""
     ha, peripheral = session.ha, session.peripheral
     events = peripheral.mark()
     await peripheral.command("start_listening")
@@ -228,6 +237,7 @@ async def test_stop_pipeline_ends_a_spoken_reply(session: PeripheralSession, spe
 
 
 async def test_pipeline_error_is_reported(session: PeripheralSession) -> None:
+    """A pipeline error is reported to the peripheral and LVA returns to idle."""
     ha, peripheral = session.ha, session.peripheral
     events = peripheral.mark()
     await peripheral.command("start_listening")
@@ -241,6 +251,7 @@ async def test_pipeline_error_is_reported(session: PeripheralSession) -> None:
 
 
 async def test_timer_events_and_stop_timer_ringing(session: PeripheralSession, speaker: SpeakerRecorder) -> None:
+    """Timer events reach the peripheral and the stop timer ringing command silences a ringing timer."""
     ha, peripheral = session.ha, session.peripheral
     events = peripheral.mark()
 
@@ -269,6 +280,7 @@ async def test_timer_events_and_stop_timer_ringing(session: PeripheralSession, s
 
 
 async def test_cancelled_timer_clears_the_countdown_and_returns_to_idle(session: PeripheralSession) -> None:
+    """A cancelled timer clears the countdown on the peripheral and LVA returns to idle."""
     ha, peripheral = session.ha, session.peripheral
     events = peripheral.mark()
     ha.timer_event(VoiceAssistantTimerEventType.VOICE_ASSISTANT_TIMER_STARTED, "t2", 60, 60)
@@ -283,6 +295,7 @@ async def test_cancelled_timer_clears_the_countdown_and_returns_to_idle(session:
 
 
 async def test_media_commands_control_the_music(session: PeripheralSession, speaker: SpeakerRecorder, media_server: FixtureServer) -> None:
+    """The media commands of a peripheral control the music playback."""
     ha, peripheral = session.ha, session.peripheral
     events = peripheral.mark()
 
@@ -308,6 +321,7 @@ async def test_media_commands_control_the_music(session: PeripheralSession, spea
 
 
 async def test_button_presses_reach_home_assistant(session: PeripheralSession, speaker: SpeakerRecorder) -> None:
+    """Button presses of a peripheral arrive in Home Assistant as button events."""
     ha, peripheral = session.ha, session.peripheral
     button = ha.entity_by_name("Button Press")
     speaker_mark = speaker.mark()
@@ -327,6 +341,7 @@ async def test_button_presses_reach_home_assistant(session: PeripheralSession, s
 
 
 async def test_button_lock_from_home_assistant_is_reported(session: PeripheralSession, peripheral_lva: LvaProcess) -> None:
+    """The button lock switched in Home Assistant is reported to the peripheral."""
     ha, peripheral = session.ha, session.peripheral
     events = peripheral.mark()
     lock = ha.entity_by_name("Disable button controls")
@@ -345,6 +360,7 @@ async def test_button_lock_from_home_assistant_is_reported(session: PeripheralSe
 
 
 async def test_light_command_from_home_assistant_is_forwarded(session: PeripheralSession) -> None:
+    """A light command from Home Assistant is forwarded to the peripheral."""
     ha, peripheral = session.ha, session.peripheral
     events = peripheral.mark()
     light = ha.entity_by_name("Web Console LEDs")
@@ -361,6 +377,7 @@ async def test_light_command_from_home_assistant_is_forwarded(session: Periphera
 
 
 async def test_losing_home_assistant_is_reported(session: PeripheralSession, peripheral_lva: LvaProcess) -> None:
+    """Losing the Home Assistant connection is reported to the peripheral."""
     ha, peripheral = session.ha, session.peripheral
     events = peripheral.mark()
 
