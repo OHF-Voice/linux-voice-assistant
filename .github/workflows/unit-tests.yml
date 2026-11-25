@@ -11,8 +11,8 @@ on:
     types: [opened, synchronize, reopened]
 
 jobs:
-  pytest:
-    name: Pytest Unit
+  unit-tests:
+    name: Unit Tests
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
