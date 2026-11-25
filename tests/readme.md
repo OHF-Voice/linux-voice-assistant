@@ -9,7 +9,7 @@ From the root of LVA run:-
 From the root of LVA run:-
 ```./script/e2e```
 
-Starts a real LVA instance with a virtual microphone and speaker and a fake Home Assistant, see `tests/e2e/README.md`. It runs in CI as `.github/workflows/e2e.yml`.
+Starts a real LVA instance with a virtual microphone and speaker and a fake Home Assistant, see `tests/e2e/README.md`. It runs in CI as `.github/workflows/e2e-tests.yml`.
 
 
 # Manual testing
