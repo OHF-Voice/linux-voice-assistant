@@ -1,7 +1,9 @@
 """Unit tests for ESPHome entity classes."""
 
+import logging
 from unittest.mock import MagicMock
 
+import pytest
 from aioesphomeapi.api_pb2 import (  # type: ignore[attr-defined]
     ListEntitiesMediaPlayerResponse,
     ListEntitiesNumberResponse,
@@ -198,6 +200,14 @@ class TestMediaPlayerEntityVolume:
         msg = MediaPlayerCommandRequest(key=99, has_volume=True, volume=0.6)
         msgs = list(entity.handle_message(msg))
         assert msgs == [] or not any(isinstance(m, MediaPlayerStateResponse) for m in msgs)
+
+    @pytest.mark.parametrize("msg", [SwitchCommandRequest(key=1, state=True), NumberCommandRequest(key=1, state=0.5), SelectCommandRequest(key=1, state="a")])
+    def test_command_for_other_entity_type_is_ignored_silently(self, msg, caplog):
+        entity = make_media_player(key=0)
+        with caplog.at_level(logging.DEBUG):
+            msgs = list(entity.handle_message(msg))
+        assert msgs == []
+        assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
 
 
 class TestMediaPlayerEntityMuteUnmute:
