@@ -1,7 +1,7 @@
 name: End-to-End Tests
 
 # Starts a real LVA instance with a virtual microphone and speaker (PulseAudio null sinks) and a fake Home Assistant.
-# See tests/e2e/README.md.
+# The peripheral API tests (tests/e2e/peripheral_api) run in e2e-peripheral.yml. See tests/e2e/README.md.
 
 on:
   push:
@@ -52,7 +52,7 @@ jobs:
       - name: Run end-to-end tests
         env:
           E2E_LOG_DIR: ${{ runner.temp }}/e2e-results
-        run: ./script/e2e -v --junitxml="$RUNNER_TEMP/e2e-results/junit.xml"
+        run: ./script/e2e -v --ignore=tests/e2e/peripheral_api --junitxml="$RUNNER_TEMP/e2e-results/junit.xml"
 
       - name: Publish test results
         if: always()

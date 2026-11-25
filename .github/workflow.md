@@ -10,7 +10,7 @@ This project uses three separate Docker build workflows that automatically build
 | [docker-build-nightly.yml](.github/workflows/docker-build-nightly.yml) | Push to `main` | `nightly` |
 | [docker-build-pr.yml](.github/workflows/docker-build-pr.yml) | Pull requests | `pr-<pr-number>` |
 
-The image workflows are joined by [e2e.yml](.github/workflows/e2e.yml), which builds no image. It runs the end-to-end tests of `tests/e2e` against LVA started from the checkout on push to `main`, on pull requests and manually, and publishes the result in the job summary with annotations for failed tests and uploads the LVA log and JUnit XML as the artifact `e2e-results`. See `tests/e2e/README.md`.
+The image workflows are joined by [e2e.yml](.github/workflows/e2e.yml), which builds no image. It runs the end-to-end tests of `tests/e2e` (without `tests/e2e/peripheral_api`) against LVA started from the checkout on push to `main`, on pull requests and manually, and publishes the result in the job summary with annotations for failed tests and uploads the LVA log and JUnit XML as the artifact `e2e-results`. [e2e-peripheral.yml](.github/workflows/e2e-peripheral.yml) does the same for `tests/e2e/peripheral_api` only, with its own job summary and the artifact `e2e-peripheral-results`. See `tests/e2e/README.md`.
 
 The unit test workflow ([unit-tests.yml](.github/workflows/unit-tests.yml)) publishes its result the same way: `./script/tests --junitxml=<file>` writes a JUnit XML, `.github/scripts/junit_summary.py` turns it into the job summary and failure annotations (a long test list is collapsed), and the XML is uploaded as the artifact `unit-results`.
 

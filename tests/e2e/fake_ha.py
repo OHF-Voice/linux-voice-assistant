@@ -69,10 +69,11 @@ class FakeHomeAssistant:
         self.states: Dict[int, Any] = {}
         self._client: Optional[APIClient] = None
         self._unsubscribe: Any = None
+        self.connection_lost = False
 
     async def connect(self, port: int) -> None:
         self._client = APIClient("127.0.0.1", port, None, client_info="e2e-fake-home-assistant")
-        await self._client.connect(login=True)
+        await self._client.connect(on_stop=self._on_stop, login=True)
         entities, _ = await self._client.list_entities_services()
         self.entities = list(entities)
         self._client.subscribe_states(self._on_state)
@@ -168,6 +169,9 @@ class FakeHomeAssistant:
 
     def _event(self, event_type: VoiceAssistantEventType, data: Optional[Dict[str, str]] = None) -> None:
         self.client.send_voice_assistant_event(event_type, data)
+
+    async def _on_stop(self, expected_disconnect: bool) -> None:
+        self.connection_lost = not expected_disconnect
 
     def _on_state(self, state: EntityState) -> None:
         self.states[state.key] = state

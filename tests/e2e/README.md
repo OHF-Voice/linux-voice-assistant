@@ -1,6 +1,6 @@
 # End-to-end tests
 
-These tests start a real LVA process and drive it the way a user and Home Assistant would, without hardware and without a real Home Assistant. They do not use the peripheral WebSocket API.
+These tests start a real LVA process and drive it the way a user and Home Assistant would, without hardware and without a real Home Assistant. Except for the tests in `peripheral_api/`, they do not use the peripheral WebSocket API.
 
 ```
  test ──paplay──▶ e2e_mic (null sink) ──▶ e2e_mic_source ──▶ LVA ──▶ e2e_speaker (null sink) ──parec──▶ test
@@ -29,14 +29,22 @@ Playback is verified without a microphone or speaker in two ways:
 Needs `libmpv`, `pactl`, `paplay`, `parec` and a running PulseAudio or PipeWire-Pulse server. The tests create and remove their own virtual devices and skip when no server is available.
 
 ```bash
-./script/e2e            # whole suite, about 2.5 minutes
-./script/e2e -k stop    # selected tests
-./script/e2e -s         # also show the LVA log
+./script/e2e                                  # everything (LVA and peripheral API tests), about 4.5 minutes
+./script/e2e --ignore=tests/e2e/peripheral_api  # only the LVA tests, as in CI
+./script/e2e tests/e2e/peripheral_api         # only the peripheral API tests, as in CI
+./script/e2e -k stop                          # selected tests
+./script/e2e -s                               # also show the LVA log
 ```
 
-The suite is not part of `./script/tests`, which only runs the fast unit tests. In CI it runs in `.github/workflows/e2e.yml` and shows the result as a table in the job summary, annotates failed tests (the docstring of every test is its description column in the table) and uploads the LVA log and `junit.xml` as artifact `e2e-results` (set `E2E_LOG_DIR` to write the log to a directory locally, add `--junitxml=<file>` for the XML).
+Without a path argument `./script/e2e` runs all of `tests/e2e`. With a path argument only that path runs, other arguments go to pytest unchanged. Each selection works on its own: the `lva` instance only starts when a test asks for it.
+
+The suite is not part of `./script/tests`, which only runs the fast unit tests. In CI the LVA tests and the peripheral API tests run as two separate workflows, each with its own job summary table (the docstring of every test is its description column) and annotations for failed tests: `.github/workflows/e2e.yml` (LVA tests, artifact `e2e-results`) and `.github/workflows/e2e-peripheral.yml` (peripheral API tests, artifact `e2e-peripheral-results`). Each artifact holds the LVA log and `junit.xml` (set `E2E_LOG_DIR` to write the log to a directory locally, add `--junitxml=<file>` for the XML).
 
 No real microphone, speaker or Home Assistant is involved. The tests show that LVA's logic and audio paths work, not that a specific sound card does.
+
+## Peripheral API tests
+
+`peripheral_api/` tests the peripheral WebSocket API the way a peripheral uses it, modelled on `examples/Peripheral web console`: the same registrations (light, button, button lock), the same commands and the events the console reacts to. They run against a second LVA instance (`peripheral_lva`), because registering entities adds them to the device and makes LVA reconnect Home Assistant once, which would change the entity list the other tests check. Run them alone with `./script/e2e tests/e2e/peripheral_api`, they have their own workflow `e2e-peripheral.yml`.
 
 ## Fixtures
 

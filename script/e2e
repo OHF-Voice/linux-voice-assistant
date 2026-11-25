@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Run the end-to-end tests (tests/e2e). They need a PulseAudio or PipeWire-Pulse server and libmpv, see tests/e2e/README.md."""
+"""Run the end-to-end tests (tests/e2e). They need a PulseAudio or PipeWire-Pulse server and libmpv, see tests/e2e/README.md.
+
+Without a path argument all tests in tests/e2e run, including tests/e2e/peripheral_api. With a path (for example tests/e2e/peripheral_api)
+only that path runs. All other arguments go to pytest unchanged, for example --ignore=tests/e2e/peripheral_api.
+"""
 import subprocess
 import sys
 import venv
@@ -16,4 +20,11 @@ if _VENV_DIR.exists():
 else:
     python_exe = "python3"
 
-sys.exit(subprocess.call([python_exe, "-m", "pytest", str(_E2E_DIR), *sys.argv[1:]]))
+
+def _names_a_test_path(argument: str) -> bool:
+    """Whether a command line argument selects a test file or directory (``path`` or ``path::test``) instead of being an option."""
+    return not argument.startswith("-") and Path(argument.split("::", maxsplit=1)[0]).exists()
+
+
+_default_paths = [] if any(_names_a_test_path(argument) for argument in sys.argv[1:]) else [str(_E2E_DIR)]
+sys.exit(subprocess.call([python_exe, "-m", "pytest", *_default_paths, *sys.argv[1:]]))
