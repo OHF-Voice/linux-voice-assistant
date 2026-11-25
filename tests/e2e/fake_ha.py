@@ -7,7 +7,6 @@ Text to speech is served by a small HTTP server, so LVA plays real audio from a 
 
 # pylint: disable=unused-argument
 
-import asyncio
 import functools
 import threading
 from dataclasses import dataclass
@@ -19,11 +18,15 @@ from aioesphomeapi import (
     APIClient,
     EntityInfo,
     EntityState,
+    MediaPlayerCommand,
+    MediaPlayerState,
     VoiceAssistantAnnounceFinished,
     VoiceAssistantAudioSettings,
     VoiceAssistantEventType,
     VoiceAssistantTimerEventType,
 )
+
+from .waiting import wait_until
 
 
 @dataclass(frozen=True)
@@ -62,12 +65,10 @@ class FakeHomeAssistant:
         self.starts: List[PipelineStart] = []
         self.stops: int = 0
         self.audio = bytearray()
-        self.announce_finished: int = 0
         self.entities: List[EntityInfo] = []
         self.states: Dict[int, Any] = {}
         self._client: Optional[APIClient] = None
         self._unsubscribe: Any = None
-        self._announce_finished_event = asyncio.Event()
 
     async def connect(self, port: int) -> None:
         self._client = APIClient("127.0.0.1", port, None, client_info="e2e-fake-home-assistant")
@@ -79,7 +80,6 @@ class FakeHomeAssistant:
             handle_start=self._handle_start,
             handle_stop=self._handle_stop,
             handle_audio=self._handle_audio,
-            handle_announcement_finished=self._handle_announce_finished,
         )
 
     async def disconnect(self) -> None:
@@ -107,8 +107,23 @@ class FakeHomeAssistant:
 
     async def wait_for_start(self, count: int, timeout: float) -> PipelineStart:
         """Wait until LVA has requested the given number of voice pipelines in total."""
-        await _wait_until(lambda: len(self.starts) >= count, timeout, f"voice request {count}")
+        await wait_until(lambda: len(self.starts) >= count, timeout, f"voice request {count}")
         return self.starts[count - 1]
+
+    def media_player_command(self, url: Optional[str] = None, command: Optional[MediaPlayerCommand] = None, announcement: bool = False) -> None:
+        """
+        Send a command to LVA's media player like Home Assistant or Music Assistant does.
+        :param url: Media to play, which also replaces what plays now (this is how Music Assistant skips to the next track).
+        :param command: Command such as pause, play or stop.
+        :param announcement: Play the url as announcement, like tts.speak does.
+        """
+        key = self.entity_by_name("Media Player").key
+        self.client.media_player_command(key, command=command, media_url=url, announcement=announcement or None)
+
+    async def wait_for_media_state(self, state: MediaPlayerState, timeout: float = 5.0) -> None:
+        """Wait until the media player entity reports the state."""
+        key = self.entity_by_name("Media Player").key
+        await wait_until(lambda: key in self.states and self.states[key].state == state, timeout, f"media player state {state.name}")
 
     def audio_received_since(self, mark: int) -> bytes:
         return bytes(self.audio[mark:])
@@ -167,19 +182,6 @@ class FakeHomeAssistant:
 
     async def _handle_audio(self, data: bytes, data2: Optional[bytes]) -> None:
         self.audio.extend(data)
-
-    async def _handle_announce_finished(self, finished: Any) -> None:
-        self.announce_finished += 1
-        self._announce_finished_event.set()
-
-
-async def _wait_until(condition: Any, timeout: float, description: str) -> None:
-    loop = asyncio.get_running_loop()
-    deadline = loop.time() + timeout
-    while not condition():
-        if loop.time() >= deadline:
-            raise TimeoutError(f"timed out after {timeout} s waiting for {description}")
-        await asyncio.sleep(0.05)
 
 
 class _QuietHandler(SimpleHTTPRequestHandler):

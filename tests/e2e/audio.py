@@ -25,7 +25,8 @@ SPEAKER_SINK = "e2e_speaker"
 #: Must match tests/e2e/generate_fixtures.py
 PROBE_TONE_HZ = 1000
 TTS_TONE_HZ = 1500
-MUSIC_TONE_HZ = 800
+FIRST_MUSIC_TONE_HZ = 800
+SECOND_MUSIC_TONE_HZ = 600
 
 _WINDOW_SECONDS = 0.2
 
@@ -95,6 +96,11 @@ class SpeakerRecorder:
         with self._lock:
             data = bytes(self._buffer[mark:])
         return np.frombuffer(data[: len(data) // 2 * 2], dtype=np.int16)
+
+    def recent_amplitude(self, frequency: int, seconds: float = 0.5) -> float:
+        """Amplitude of the tone in the last seconds of what was played, a measure of the volume of a tone."""
+        samples = self.samples_since(0)
+        return tone_amplitude(samples[-int(SAMPLE_RATE * seconds) :], frequency)
 
     async def wait_for_sound(self, mark: int, timeout: float) -> bool:
         """Wait until anything audible was played after the mark."""

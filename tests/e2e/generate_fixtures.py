@@ -29,7 +29,8 @@ FIXTURES_DIR = Path(__file__).parent / "fixtures"
 #: Marker tone frequencies, they must match tests/e2e/audio.py
 PROBE_TONE_HZ = 1000
 TTS_TONE_HZ = 1500
-MUSIC_TONE_HZ = 800
+FIRST_MUSIC_TONE_HZ = 800
+SECOND_MUSIC_TONE_HZ = 600
 
 SPEECH: Dict[str, str] = {
     "okay_nabu": "okay nabu",
@@ -53,7 +54,8 @@ def main() -> None:
     _write("probe_tone", _tone(PROBE_TONE_HZ, 1.5))
     _write("tts_marker", _tone(TTS_TONE_HZ, 2.0), silence=False)
     _write("tts_marker_long", _tone(TTS_TONE_HZ, 12.0), silence=False)
-    _write("music_marker", _tone(MUSIC_TONE_HZ, 30.0), silence=False)
+    _write("music_first", _tone(FIRST_MUSIC_TONE_HZ, 30.0), silence=False)
+    _write("music_second", _tone(SECOND_MUSIC_TONE_HZ, 30.0), silence=False)
 
 
 def _resample(samples: np.ndarray, source_rate: int) -> np.ndarray:

@@ -23,7 +23,7 @@ One LVA instance runs for the whole session. Every test opens a fresh fake Home 
 Playback is verified without a microphone or speaker in two ways:
 
 * **Into LVA:** `probe_tone.wav` (1 kHz) is played on the virtual microphone and must arrive as a 1 kHz tone in the audio LVA streams to Home Assistant. Speech files must trigger (or not trigger) the wake and stop word.
-* **Out of LVA:** the fake Home Assistant hands out URLs of tone files (`tts_marker*.wav` 1.5 kHz, `music_marker.wav` 0.8 kHz). The recorder on the speaker monitor must hear exactly that tone, so the test knows that the right audio was played, how long, and that it stopped. The wake sound and the timer sound are checked for audible sound.
+* **Out of LVA:** the fake Home Assistant hands out URLs of tone files (`tts_marker*.wav` 1.5 kHz, `music_first.wav` 0.8 kHz, `music_second.wav` 0.6 kHz). The recorder on the speaker monitor must hear exactly that tone, so the test knows that the right audio was played, how long, and that it stopped. The wake sound and the timer sound are checked for audible sound.
 
 ## Running locally
 
@@ -35,7 +35,7 @@ Needs `libmpv`, `pactl`, `paplay`, `parec` and a running PulseAudio or PipeWire-
 ./script/e2e -s         # also show the LVA log
 ```
 
-The suite is not part of `./script/tests`, which only runs the fast unit tests. In CI it runs in `.github/workflows/e2e.yml` and uploads the LVA log as artifact `lva-e2e-log` (set `E2E_LOG_DIR` to write it to a directory locally).
+The suite is not part of `./script/tests`, which only runs the fast unit tests. In CI it runs in `.github/workflows/e2e.yml` and shows the result as a table in the job summary, annotates failed tests and uploads the LVA log and `junit.xml` as artifact `e2e-results` (set `E2E_LOG_DIR` to write the log to a directory locally, add `--junitxml=<file>` for the XML).
 
 No real microphone, speaker or Home Assistant is involved. The tests show that LVA's logic and audio paths work, not that a specific sound card does.
 

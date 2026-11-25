@@ -9,7 +9,7 @@ Dense codebase map for AI agents. `AGENTS.md` (imported above) holds the rules; 
 | Task | Command | Time |
 |------|---------|------|
 | All unit tests | `./script/tests` | ~2 s (386 tests) |
-| End-to-end tests (real LVA, virtual mic/speaker, fake HA; needs PulseAudio, see `tests/e2e/README.md`) | `./script/e2e` | ~2.5 min (19 tests) |
+| End-to-end tests (real LVA, virtual mic/speaker, fake HA; needs PulseAudio, see `tests/e2e/README.md`) | `./script/e2e` | ~3 min (26 tests) |
 | One file / one test | `.venv/bin/python -m pytest tests/unit/test_satellite.py -k timer -q` | <1 s |
 | All lint | `./script/lint` | ~15 s |
 | Auto-format | `./script/lint_black --auto && ./script/lint_isort --auto` | |
