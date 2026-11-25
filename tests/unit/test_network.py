@@ -10,6 +10,7 @@ import pytest
 from linux_voice_assistant.network import (
     DEFAULT_KEEPALIVE,
     EsphomeEndpoint,
+    KeepaliveResult,
     KeepaliveSettings,
     apply_keepalive,
     changed_address,
@@ -24,20 +25,22 @@ SETTINGS = KeepaliveSettings(idle_seconds=7, interval_seconds=3, probe_count=2, 
 
 class TestKeepaliveSocketOptions:
     def test_enables_keepalive_first(self):
-        assert keepalive_socket_options(SETTINGS)[0] == (socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+        first = keepalive_socket_options(SETTINGS)[0]
+        assert (first.name, first.level, first.option, first.value) == ("SO_KEEPALIVE", socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
 
     def test_maps_settings_to_tcp_options(self):
-        options = keepalive_socket_options(SETTINGS)
-        assert (socket.IPPROTO_TCP, socket.TCP_KEEPIDLE, 7) in options
-        assert (socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, 3) in options
-        assert (socket.IPPROTO_TCP, socket.TCP_KEEPCNT, 2) in options
-        assert (socket.IPPROTO_TCP, socket.TCP_USER_TIMEOUT, 15_000) in options
+        options = {option.name: option for option in keepalive_socket_options(SETTINGS)}
+        assert (options["TCP_KEEPIDLE"].option, options["TCP_KEEPIDLE"].value) == (socket.TCP_KEEPIDLE, 7)
+        assert (options["TCP_KEEPINTVL"].option, options["TCP_KEEPINTVL"].value) == (socket.TCP_KEEPINTVL, 3)
+        assert (options["TCP_KEEPCNT"].option, options["TCP_KEEPCNT"].value) == (socket.TCP_KEEPCNT, 2)
+        assert (options["TCP_USER_TIMEOUT"].option, options["TCP_USER_TIMEOUT"].value) == (socket.TCP_USER_TIMEOUT, 15_000)
+        assert all(option.level == socket.IPPROTO_TCP for name, option in options.items() if name != "SO_KEEPALIVE")
 
-    def test_skips_options_the_platform_lacks(self, monkeypatch):
+    def test_marks_options_the_platform_lacks(self, monkeypatch):
         monkeypatch.delattr(socket, "TCP_USER_TIMEOUT")
-        options = keepalive_socket_options(SETTINGS)
-        assert all(option != getattr(socket, "TCP_USER_TIMEOUT", -1) for _level, option, _value in options)
-        assert len(options) == 4
+        options = {option.name: option for option in keepalive_socket_options(SETTINGS)}
+        assert options["TCP_USER_TIMEOUT"].option is None
+        assert options["TCP_KEEPIDLE"].option is not None
 
     def test_default_dead_peer_is_noticed_within_ten_seconds(self):
         worst_case = DEFAULT_KEEPALIVE.idle_seconds + DEFAULT_KEEPALIVE.interval_seconds * DEFAULT_KEEPALIVE.probe_count
@@ -45,35 +48,68 @@ class TestKeepaliveSocketOptions:
         assert DEFAULT_KEEPALIVE.user_timeout_ms <= 10_000
 
 
+class TestKeepaliveResult:
+    def test_active_needs_so_keepalive(self):
+        assert KeepaliveResult(applied=("SO_KEEPALIVE",), failed=("TCP_KEEPIDLE",)).active is True
+        assert KeepaliveResult(applied=("TCP_KEEPIDLE",), failed=("SO_KEEPALIVE",)).active is False
+
+
 class TestApplyKeepalive:
     def test_sets_options_on_real_socket(self):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-            assert apply_keepalive(sock, SETTINGS) is True
+            result = apply_keepalive(sock, SETTINGS)
+            assert result.failed == ()
+            assert result.active is True
             assert sock.getsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE) == 1
             assert sock.getsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPIDLE) == 7
             assert sock.getsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPINTVL) == 3
             assert sock.getsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPCNT) == 2
             assert sock.getsockopt(socket.IPPROTO_TCP, socket.TCP_USER_TIMEOUT) == 15_000
 
-    def test_without_socket_does_nothing(self):
-        assert apply_keepalive(None) is False
+    def test_without_socket_nothing_is_set(self):
+        result = apply_keepalive(None)
+        assert result.applied == ()
+        assert result.active is False
 
-    def test_failure_is_swallowed_and_logged(self, caplog):
+    def test_one_failing_option_does_not_stop_the_others(self, caplog):
+        sock = MagicMock()
+
+        def refuse_keepidle(_level, option, _value):
+            if option == socket.TCP_KEEPIDLE:
+                raise OSError("invalid argument")
+
+        sock.setsockopt.side_effect = refuse_keepidle
+        with caplog.at_level(logging.DEBUG, logger="linux_voice_assistant.network"):
+            result = apply_keepalive(sock, SETTINGS)
+        assert result.failed == ("TCP_KEEPIDLE",)
+        assert result.applied == ("SO_KEEPALIVE", "TCP_KEEPINTVL", "TCP_KEEPCNT", "TCP_USER_TIMEOUT")
+        assert result.active is True
+        assert sock.setsockopt.call_count == 5
+        assert "TCP keepalive option TCP_KEEPIDLE could not be set: invalid argument" in caplog.text
+        assert "TCP keepalive is on with limits, options set: SO_KEEPALIVE, TCP_KEEPINTVL, TCP_KEEPCNT, TCP_USER_TIMEOUT, options not set: TCP_KEEPIDLE" in caplog.text
+
+    def test_keepalive_off_is_reported_when_so_keepalive_fails(self, caplog):
         sock = MagicMock()
         sock.setsockopt.side_effect = OSError("not supported")
         with caplog.at_level(logging.DEBUG, logger="linux_voice_assistant.network"):
-            assert apply_keepalive(sock, SETTINGS) is False
-        assert "Could not enable TCP keepalive: not supported" in caplog.text
+            result = apply_keepalive(sock, SETTINGS)
+        assert result.active is False
+        assert result.applied == ()
+        assert "TCP keepalive is off, options set: none, options not set: SO_KEEPALIVE" in caplog.text
 
-    def test_logs_settings_once_applied(self, caplog):
+    def test_platform_without_an_option_is_reported(self, monkeypatch, caplog):
+        monkeypatch.delattr(socket, "TCP_USER_TIMEOUT")
+        sock = MagicMock()
+        with caplog.at_level(logging.DEBUG, logger="linux_voice_assistant.network"):
+            result = apply_keepalive(sock, SETTINGS)
+        assert result.failed == ("TCP_USER_TIMEOUT",)
+        assert "TCP_USER_TIMEOUT could not be set: not available on this platform" in caplog.text
+        assert sock.setsockopt.call_count == 4
+
+    def test_logs_settings_once_all_applied(self, caplog):
         with caplog.at_level(logging.DEBUG, logger="linux_voice_assistant.network"):
             apply_keepalive(MagicMock(), SETTINGS)
         assert "TCP keepalive enabled (idle 7 s, interval 3 s, 2 probes, user timeout 15000 ms)" in caplog.text
-
-    def test_applies_every_option_to_the_socket(self):
-        sock = MagicMock()
-        apply_keepalive(sock, SETTINGS)
-        assert sock.setsockopt.call_count == len(keepalive_socket_options(SETTINGS))
 
 
 BOUND = "192.168.1.10"

@@ -3,7 +3,7 @@
 Home Assistant reaches LVA over one TCP connection and finds it by the IPv4 address of the network interface, announced over mDNS.
 A Wi-Fi drop or a DHCP renewal breaks both: the connection can stay half open without anybody noticing, and the interface can get
 another address, so the listener and the announcement point to an address nobody uses any more. This module closes dead connections
-(TCP keepalive) and moves the listener and the announcement to the interface's current address, checked whenever a client
+(TCP keepalive, as far as the kernel supports it) and moves the listener and the announcement to the interface's current address, checked whenever a client
 disconnected and every 30 seconds as a fallback for changes that cause no disconnect.
 """
 
@@ -45,49 +45,97 @@ class KeepaliveSettings:
 DEFAULT_KEEPALIVE = KeepaliveSettings(idle_seconds=4, interval_seconds=2, probe_count=3, user_timeout_ms=10_000)
 
 
-def keepalive_socket_options(settings: KeepaliveSettings) -> list[tuple[int, int, int]]:
+@dataclass(frozen=True)
+class KeepaliveOption:
+    """
+    One socket option of the keepalive configuration.
+    :param name: Name of the option, as in the socket module.
+    :param level: Protocol level the option belongs to.
+    :param option: Option number, or None when this platform does not have the option.
+    :param value: Value to set.
+    """
+
+    name: str
+    level: int
+    option: Optional[int]
+    value: int
+
+
+@dataclass(frozen=True)
+class KeepaliveResult:
+    """
+    The keepalive configuration a socket really got.
+    :param applied: Names of the options that were set.
+    :param failed: Names of the options that were not set, because the platform lacks them or the kernel refused them.
+    """
+
+    applied: tuple[str, ...]
+    failed: tuple[str, ...]
+
+    @property
+    def active(self) -> bool:
+        """True when keepalive is switched on at all. Without the timing options the kernel defaults apply, which take hours."""
+        return "SO_KEEPALIVE" in self.applied
+
+
+def keepalive_socket_options(settings: KeepaliveSettings) -> list[KeepaliveOption]:
     """
     Socket options that turn the settings into kernel behavior.
     :param settings: Probe timing.
-    :return: ``(level, option, value)`` triples. Options this platform does not have are left out.
+    :return: The options, ``SO_KEEPALIVE`` first. An option the platform does not have has ``option`` None.
     """
-    options = [(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)]
-    optional = [
+    options = [KeepaliveOption("SO_KEEPALIVE", socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)]
+    timing = [
         ("TCP_KEEPIDLE", settings.idle_seconds),
         ("TCP_KEEPINTVL", settings.interval_seconds),
         ("TCP_KEEPCNT", settings.probe_count),
         ("TCP_USER_TIMEOUT", settings.user_timeout_ms),
     ]
-    for name, value in optional:
-        option = getattr(socket, name, None)
-        if option is not None:
-            options.append((socket.IPPROTO_TCP, option, value))
+    for name, value in timing:
+        options.append(KeepaliveOption(name, socket.IPPROTO_TCP, getattr(socket, name, None), value))
     return options
 
 
-def apply_keepalive(sock: Optional[socket.socket], settings: KeepaliveSettings = DEFAULT_KEEPALIVE) -> bool:
+def apply_keepalive(sock: Optional[socket.socket], settings: KeepaliveSettings = DEFAULT_KEEPALIVE) -> KeepaliveResult:
     """
-    Enable keepalive on a connected TCP socket.
+    Enable keepalive on a connected TCP socket. Every option is set on its own, so one that fails does not stop the others.
     :param sock: Socket of the connection, or None when the transport has none.
     :param settings: Probe timing.
-    :return: True when all options were set. A failure is logged and never raised, the connection works without keepalive.
+    :return: What was set and what was not. Failures are logged and never raised, the connection works without keepalive.
+
+    How fast a dead connection is closed depends on the options the kernel accepted, see ``KeepaliveResult``.
     """
+    options = keepalive_socket_options(settings)
     if sock is None:
-        return False
-    try:
-        for level, option, value in keepalive_socket_options(settings):
-            sock.setsockopt(level, option, value)
-    except OSError as err:
-        _LOGGER.debug("Could not enable TCP keepalive: %s", err)
-        return False
-    _LOGGER.debug(
-        "TCP keepalive enabled (idle %d s, interval %d s, %d probes, user timeout %d ms)",
-        settings.idle_seconds,
-        settings.interval_seconds,
-        settings.probe_count,
-        settings.user_timeout_ms,
-    )
-    return True
+        return KeepaliveResult(applied=(), failed=tuple(option.name for option in options))
+    applied = []
+    failed = []
+    for option in options:
+        try:
+            if option.option is None:
+                raise OSError("not available on this platform")
+            sock.setsockopt(option.level, option.option, option.value)
+            applied.append(option.name)
+        except OSError as err:
+            failed.append(option.name)
+            _LOGGER.debug("TCP keepalive option %s could not be set: %s", option.name, err)
+    result = KeepaliveResult(applied=tuple(applied), failed=tuple(failed))
+    if not result.failed:
+        _LOGGER.debug(
+            "TCP keepalive enabled (idle %d s, interval %d s, %d probes, user timeout %d ms)",
+            settings.idle_seconds,
+            settings.interval_seconds,
+            settings.probe_count,
+            settings.user_timeout_ms,
+        )
+    else:
+        _LOGGER.warning(
+            "TCP keepalive is %s, options set: %s, options not set: %s",
+            "on with limits" if result.active else "off",
+            ", ".join(result.applied) or "none",
+            ", ".join(result.failed),
+        )
+    return result
 
 
 def changed_address(*, bound_ip: str, observed_ip: Optional[str]) -> Optional[str]:

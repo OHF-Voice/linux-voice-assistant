@@ -61,7 +61,7 @@ flowchart LR
 
 Notes:
 
-- A connection that goes silent without being closed (for example after a Wi-Fi drop) is ended by TCP keepalive after 10 s: probes start after 4 s without traffic, and the connection is dropped after 3 unanswered probes (2 s apart) or 10 s of unacknowledged data. This is fixed, there is no option for it.
+- A connection that goes silent without being closed (for example after a Wi-Fi drop) is ended by TCP keepalive after about 10 s: probes start after 4 s without traffic, and the connection is dropped after 3 unanswered probes (2 s apart) or 10 s of unacknowledged data. This depends on the kernel accepting the socket options: LVA sets each one on its own and logs a warning with the ones it could not set, then the connection is closed later or not at all. The timings are fixed, there is no option for them.
 - Whenever a Home Assistant client disconnects, and every 30 s as a fallback, LVA reads the IPv4 address of the network interface again. If it changed, the ESPHome listener moves and the new address is announced over mDNS. See [Connection to Home Assistant](behavior.md#connection-to-home-assistant).
 - The ESPHome API connection is opened by **Home Assistant**, so an inbound rule on the LVA host for `6053` is needed. LVA itself opens no outgoing connection for it.
 - The media URLs are chosen by Home Assistant (internal/external URL setting). LVA must be able to reach exactly that address, otherwise the connection works but replies and music stay silent. Music can also point to other servers, so the target port is not always the Home Assistant port.
