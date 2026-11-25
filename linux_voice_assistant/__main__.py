@@ -18,7 +18,8 @@ from pymicro_wakeword import MicroWakeWordFeatures
 from pyopen_wakeword import OpenWakeWord, OpenWakeWordFeatures
 
 from .api_server import create_encryption_key_file, load_encryption_key_file
-from .models import Preferences, ServerState, WakeWordType, initial_stop_word_threshold
+from .migrations import migrate_preferences
+from .models import Preferences, ServerState, initial_stop_word_threshold
 from .mpv_player import MpvMediaPlayer
 from .network import EsphomeEndpoint, follow_interface_address
 from .peripheral_api import LVAEvent, PeripheralAPIServer
@@ -30,9 +31,10 @@ from .util import (
     get_esphome_version,
     get_version,
     resolve_mac_address,
+    warn_about_removed_options,
 )
-from .wake_word import find_available_wake_words, load_stop_model, load_wake_models
-from .wake_word_detection import ActiveWakeWord, apply_sensitivities, gate_wake_words, process_wake_words, select_active_wake_words
+from .wake_word import find_available_wake_words, load_stop_model, load_wake_models, wake_word_ids_for_selections, wake_word_selections_for_ids
+from .wake_word_detection import ActiveWakeWord, apply_sensitivities, gate_wake_words, process_wake_words, select_active_wake_words, wake_words_need_refresh
 from .webrtc import WebRTCProcessor
 from .zeroconf import start_discovery
 
@@ -108,10 +110,19 @@ async def main() -> None:
         help="Number of mic channels to capture (1=mono, 2=mic + AEC reference channel); what is streamed to Home Assistant does not depend on it",
     )
     parser.add_argument(
+        "--wake-word-root-dir",
+        default=_WAKEWORDS_DIR,
+        help="Root directory of the wake word layout: <origin>/<engine> with origin internal, downloaded or custom and engine microwakeword or openwakeword",
+    )
+    parser.add_argument(
         "--wake-word-dir",
-        default=[_WAKEWORDS_DIR],
-        action="append",
-        help="Directory with wake word models (.tflite) and configuration (.json)",
+        default=None,
+        help="Removed and ignored, use --wake-word-root-dir",
+    )
+    parser.add_argument(
+        "--download-dir",
+        default=None,
+        help="Removed and ignored, downloaded wake words are stored in <--wake-word-root-dir>/downloaded",
     )
     parser.add_argument(
         "--wake-model",
@@ -127,11 +138,6 @@ async def main() -> None:
         "--stop-model",
         default="stop",
         help="File name of the stop model",
-    )
-    parser.add_argument(
-        "--download-dir",
-        default=_REPO_DIR / "local",
-        help="Directory to download custom wake word models to",
     )
     parser.add_argument(
         "--refractory-seconds",
@@ -398,14 +404,11 @@ async def main() -> None:
     # Resolve version
     version = get_version()
     _LOGGER.info("Version: %s", version)
+    warn_about_removed_options(args.wake_word_dir, args.download_dir)
 
     # Resolve esphome version
     esphome_version = get_esphome_version()
     _LOGGER.info("ESPHome api version: %s", esphome_version)
-
-    # Resolve download dir
-    args.download_dir = Path(args.download_dir)
-    args.download_dir.mkdir(parents=True, exist_ok=True)
 
     # Resolve microphone
     if args.audio_input_device is not None:
@@ -435,27 +438,12 @@ async def main() -> None:
             sys.exit(1)
 
     # Load available wake words
-    wake_word_dirs = [Path(ww_dir) for ww_dir in args.wake_word_dir]
+    wake_word_root = Path(args.wake_word_root_dir)
+    # Lowest priority first: a wake word id found in a later directory replaces the same id found earlier
+    wake_word_dirs = [wake_word_root / origin / engine for origin in ("internal", "downloaded", "custom") for engine in ("microwakeword", "openwakeword")]
+    for wake_word_dir in wake_word_dirs:
+        wake_word_dir.mkdir(parents=True, exist_ok=True)
 
-    # If the operator explicitly pointed --wake-word-dir (or the WAKE_WORD_DIR
-    # env var) at the openWakeWord subdirectory, prefer resolving --wake-model
-    # to an openWakeWord model of the same name instead of a same-named
-    # microWakeWord one. Checked before the automatic dirs below are appended,
-    # since those always include the openWakeWord path and would otherwise
-    # make every configuration look like an openWakeWord preference.
-    preferred_wake_word_type = WakeWordType.OPEN_WAKE_WORD if any("openwakeword" in str(ww_dir).lower() for ww_dir in wake_word_dirs) else None
-
-    # openWakeWord models ship in their own subdirectory under the default
-    # wakewords dir. find_available_wake_words() only globs the top level of
-    # each directory it's given, so this must be added explicitly or the OWW
-    # models never get discovered (and never show up in the HA dropdown).
-    # Appended after the user-specified dirs so OWW entries are inserted
-    # (and therefore displayed) after the microWakeWord ones.
-    oww_dir = _WAKEWORDS_DIR / "openWakeWord"
-    if oww_dir not in wake_word_dirs:
-        wake_word_dirs.append(oww_dir)
-
-    wake_word_dirs.append(args.download_dir / "external_wake_words")
     available_wake_words = find_available_wake_words(wake_word_dirs, args.stop_model)
 
     # Load preferences
@@ -468,6 +456,11 @@ async def main() -> None:
     else:
         _LOGGER.info("No preferences file found, creating it with the defaults: %s", preferences_path)
         preferences = Preferences()
+        preferences.save(preferences_path)
+
+    migrated_preferences = migrate_preferences(preferences, available_wake_words)
+    if migrated_preferences != preferences:
+        preferences = migrated_preferences
         preferences.save(preferences_path)
 
     # Load volume from preferences on startup, and ensure it's between 0.0 and 1.0
@@ -509,14 +502,13 @@ async def main() -> None:
     # Load wake/stop models
     wake_models, wake_word_slots, fallback_used = load_wake_models(
         available_wake_words,
-        [word for word in preferences.active_wake_words if word is not None],
+        [word for word in wake_word_ids_for_selections(preferences.active_wake_words, available_wake_words) if word is not None],
         first_default_wake_word_id=args.wake_model,
         second_default_wake_word_id=args.wake_model_2,
-        preferred_type=preferred_wake_word_type,
     )
 
     # TODO: allow openWakeWord for "stop"
-    stop_model = load_stop_model(wake_word_dirs, args.stop_model)
+    stop_model = load_stop_model(list(reversed(wake_word_dirs)), args.stop_model)
     assert stop_model is not None
 
     state = ServerState(
@@ -550,7 +542,7 @@ async def main() -> None:
         refractory_seconds=args.refractory_seconds,
         continue_conversation_delay=args.continue_conversation_delay,
         output_only=args.output_only,
-        download_dir=args.download_dir,
+        wake_word_root=wake_word_root,
         volume=initial_volume,
         stop_word_threshold=initial_threshold,
         button_controls_locked=initial_button_controls_locked,
@@ -565,7 +557,7 @@ async def main() -> None:
     if fallback_used:
         # Fallback to the default model was used, save as active wake words
         _LOGGER.debug("Fallback was used, save default wake words in Preferences.")
-        state.preferences.active_wake_words = list(wake_word_slots)
+        state.preferences.active_wake_words = wake_word_selections_for_ids(list(wake_word_slots), available_wake_words)
         state.active_wake_words = set(wake_word_slots)
         state.wake_words = wake_models
         state.preferences.save(state.preferences_path)
@@ -775,6 +767,7 @@ def process_audio(state: ServerState, mic, block_size: int):
     n_channels = state.audio_input_channels
 
     wake_words: List[ActiveWakeWord] = []
+    wake_words_refreshed = False
     micro_features: Optional[MicroWakeWordFeatures] = None
     micro_inputs: List[np.ndarray] = []
 
@@ -823,10 +816,11 @@ def process_audio(state: ServerState, mic, block_size: int):
                     continue
 
                 # WAKE WORD
-                if (not wake_words) or (state.wake_words_changed and state.wake_words):
+                if wake_words_need_refresh(state, wake_words_refreshed):
                     # Update list of wake word models to process
                     state.wake_words_changed = False
                     wake_words = select_active_wake_words(state)
+                    wake_words_refreshed = True
 
                     # TODO: Load default stop word value from json into state and preferences missing.
 

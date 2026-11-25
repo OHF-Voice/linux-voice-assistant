@@ -92,6 +92,10 @@ if [ "$LISTEN_DURING_WAKE_SOUND" = "1" ]; then
   EXTRA_ARGS+=( "--listen-during-wake-sound" )
 fi
 
+if [ -n "${WAKE_WORD_ROOT_DIR}" ]; then
+  EXTRA_ARGS+=( "--wake-word-root-dir" "$WAKE_WORD_ROOT_DIR" )
+fi
+
 if [ -n "${WAKE_WORD_DIR}" ]; then
   EXTRA_ARGS+=( "--wake-word-dir" "$WAKE_WORD_DIR" )
 fi
@@ -106,10 +110,6 @@ fi
 
 if [ -n "${STOP_MODEL}" ]; then
   EXTRA_ARGS+=( "--stop-model" "$STOP_MODEL" )
-fi
-
-if [ -n "${DOWNLOAD_DIR}" ]; then
-  EXTRA_ARGS+=( "--download-dir" "$DOWNLOAD_DIR" )
 fi
 
 if [ -n "${REFACTORY_SECONDS}" ]; then

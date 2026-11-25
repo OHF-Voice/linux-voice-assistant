@@ -338,6 +338,69 @@ class TestWakeWordDetectionEvent:
         sat._emit.assert_called_once_with(LVAEvent.WAKE_WORD_DETECTED, None)
 
 
+class TestWakeWordPhraseLogging:
+    def test_streaming_start_logs_phrase(self, tmp_path, caplog):
+        sat = make_satellite(tmp_path)
+        sat.send_messages = MagicMock()
+
+        with caplog.at_level("DEBUG"):
+            sat._start_audio_streaming("Hey Jarvis")
+
+        assert "with wake_word_phrase 'Hey Jarvis'" in caplog.text
+
+    def test_streaming_after_wake_sound_logs_phrase(self, tmp_path, caplog):
+        sat = make_satellite(tmp_path)
+        sat.send_messages = MagicMock()
+
+        with caplog.at_level("DEBUG"):
+            sat._on_wakeup_sound_finished("Hey Jarvis")
+
+        assert "with wake_word_phrase 'Hey Jarvis'" in caplog.text
+
+
+class TestWakeWordPhraseSent:
+    def test_phrase_is_the_name_of_the_detected_wake_word(self, tmp_path):
+        # Home Assistant compares the phrase with the name in the wake word selection to choose the pipeline.
+        sat = make_satellite(tmp_path)
+        sat.send_messages = MagicMock()
+
+        sat.wakeup(MagicMock(wake_word="Hey Jarvis"), DetectionResult("Internal - MWW - Hey Jarvis", 0, 0.9))
+
+        assert sat._wake_word_phrase == "Internal - MWW - Hey Jarvis"
+
+    def test_phrase_of_the_model_is_used_without_a_detection(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        sat.send_messages = MagicMock()
+
+        sat.wakeup(MagicMock(wake_word="Hey Jarvis"))
+
+        assert sat._wake_word_phrase == "Hey Jarvis"
+
+
+class TestStartListening:
+    def test_plays_the_start_listening_sound_with_an_active_wake_word(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        sat.state.wake_words = {"Internal - MWW - Hey Jarvis": MagicMock()}
+        sat.state.active_wake_words = {"Internal - MWW - Hey Jarvis"}
+
+        sat.start_listening()
+
+        sat.state.tts_player.play.assert_called_once()
+        assert sat._pipeline_active is True
+
+    def test_is_ignored_without_an_active_wake_word(self, tmp_path, caplog):
+        sat = make_satellite(tmp_path)
+        sat.state.wake_words = {"Internal - MWW - Hey Jarvis": MagicMock()}
+        sat.state.active_wake_words = set()
+
+        with caplog.at_level("DEBUG"):
+            sat.start_listening()
+
+        sat.state.tts_player.play.assert_not_called()
+        assert sat._pipeline_active is False
+        assert "Ignoring start_listening - no wake word is active" in caplog.text
+
+
 class TestContinueConversation:
     def _follow_up_request(self, sat):
         sat.send_messages = MagicMock()
@@ -360,8 +423,20 @@ class TestContinueConversation:
         assert request.start
         assert request.wake_word_phrase == "Hey Jarvis"
 
+    def test_follow_up_logs_phrase(self, tmp_path, caplog):
+        sat = make_satellite(tmp_path)
+        sat.wakeup(MagicMock(wake_word="Hey Jarvis"))
+        sat._pipeline_active = False
+
+        with caplog.at_level("DEBUG"):
+            self._follow_up_request(sat)
+
+        assert "wake_word_phrase 'Hey Jarvis' (continued conversation)" in caplog.text
+
     def test_follow_up_after_button_press_has_no_phrase(self, tmp_path):
         sat = make_satellite(tmp_path)
+        sat.state.wake_words = {"Internal - MWW - Hey Jarvis": MagicMock()}
+        sat.state.active_wake_words = {"Internal - MWW - Hey Jarvis"}
         sat._wake_word_phrase = "Hey Jarvis"
         sat.start_listening()
         sat._pipeline_active = False
@@ -714,7 +789,7 @@ class TestDownloadExternalWakeWord:
 
         sat = make_satellite(tmp_path)
         model_bytes = b"tflite-model"
-        eww_dir = sat.state.download_dir / "external_wake_words"
+        eww_dir = sat.state.wake_word_root / "downloaded" / "microwakeword"
         eww_dir.mkdir(parents=True)
         (eww_dir / "custom.json").write_text("{}")
         (eww_dir / "custom.tflite").write_bytes(model_bytes)
@@ -734,12 +809,34 @@ class TestDownloadExternalWakeWord:
 
         mock_urlopen.assert_not_called()
         assert result is not None
-        assert result.id == "custom"
+        assert result.id == "Download - MWW - Custom"
+        assert result.file_id == "custom"
 
 
 # ---------------------------------------------------------------------------
 # VoiceAssistantSetConfiguration
 # ---------------------------------------------------------------------------
+
+
+class TestConfigurationRequest:
+    def test_wake_word_names_contain_origin_and_engine(self, tmp_path):
+        from aioesphomeapi.api_pb2 import VoiceAssistantConfigurationRequest, VoiceAssistantConfigurationResponse
+
+        from linux_voice_assistant.models import AvailableWakeWord, WakeWordType
+
+        sat = make_satellite(tmp_path)
+        sat.state.available_wake_words = {
+            "Internal - OWW - Hey Jarvis": AvailableWakeWord("Internal - OWW - Hey Jarvis", WakeWordType.OPEN_WAKE_WORD, "Hey Jarvis", ["en"], tmp_path / "hey_jarvis_v0.1.json", origin="internal"),
+            "Custom - MWW - Okay Nabu": AvailableWakeWord("Custom - MWW - Okay Nabu", WakeWordType.MICRO_WAKE_WORD, "Okay Nabu", ["en"], tmp_path / "okay_nabu.json", origin="custom"),
+        }
+
+        responses = list(sat.handle_message(VoiceAssistantConfigurationRequest()))
+
+        response = next(msg for msg in responses if isinstance(msg, VoiceAssistantConfigurationResponse))
+        assert {ww.id: ww.wake_word for ww in response.available_wake_words} == {
+            "Internal - OWW - Hey Jarvis": "Internal - OWW - Hey Jarvis",
+            "Custom - MWW - Okay Nabu": "Custom - MWW - Okay Nabu",
+        }
 
 
 class TestSetConfiguration:
@@ -760,6 +857,22 @@ class TestSetConfiguration:
         assert sat.state.wake_words == {"hey_jarvis": kept}
         assert sat.state.active_wake_words == {"hey_jarvis"}
         assert sat.state.wake_words_changed is True
+
+    def test_former_id_from_home_assistant_is_resolved_to_the_wake_word(self, tmp_path):
+        from aioesphomeapi.api_pb2 import VoiceAssistantSetConfiguration
+
+        from linux_voice_assistant.models import AvailableWakeWord, WakeWordSelection, WakeWordType
+
+        sat = self._make_sat(tmp_path, [])
+        word = AvailableWakeWord("Internal - MWW - Hey Jarvis", WakeWordType.MICRO_WAKE_WORD, "Hey Jarvis", ["en"], tmp_path / "hey_jarvis.json", origin="internal", file_id="hey_jarvis")
+        sat.state.available_wake_words = {word.id: word}
+
+        with patch.object(AvailableWakeWord, "load", return_value=MagicMock()):
+            list(sat.handle_message(VoiceAssistantSetConfiguration(active_wake_words=["hey_jarvis"])))
+
+        assert list(sat.state.wake_words) == ["Internal - MWW - Hey Jarvis"]
+        assert sat.state.active_wake_words == {"Internal - MWW - Hey Jarvis"}
+        assert sat.state.preferences.active_wake_words == [WakeWordSelection("internal", "mww", "hey_jarvis"), None]
 
     def test_unknown_only_selection_keeps_loaded_models(self, tmp_path):
         from aioesphomeapi.api_pb2 import VoiceAssistantSetConfiguration

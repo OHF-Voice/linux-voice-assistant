@@ -10,8 +10,10 @@ from linux_voice_assistant.wake_word_detection import (
     ActiveWakeWord,
     apply_sensitivities,
     gate_wake_words,
+    has_active_wake_word,
     process_wake_words,
     select_active_wake_words,
+    wake_words_need_refresh,
 )
 from tests.unit.conftest import make_state
 
@@ -38,6 +40,70 @@ def set_words(state, ids, slots=None):
     state.wake_words = {ww_id: make_micro() for ww_id in ids}
     state.active_wake_words = set(ids)
     state.preferences.active_wake_words = slots if slots is not None else list(ids)
+
+
+class TestHasActiveWakeWord:
+    def test_true_with_an_active_loaded_wake_word(self, tmp_path):
+        state = make_state(tmp_path)
+        set_words(state, ["a", "b"])
+
+        assert has_active_wake_word(state) is True
+
+    def test_false_when_no_wake_word_is_active(self, tmp_path):
+        state = make_state(tmp_path)
+        set_words(state, ["a", "b"])
+        state.active_wake_words = set()
+
+        assert has_active_wake_word(state) is False
+
+    def test_the_stop_word_does_not_count(self, tmp_path):
+        state = make_state(tmp_path)
+        set_words(state, ["a"])
+        state.active_wake_words = {"stop"}
+
+        assert has_active_wake_word(state) is False
+
+
+class TestWakeWordsNeedRefresh:
+    def test_refreshes_before_the_first_selection(self, tmp_path):
+        state = make_state(tmp_path)
+        set_words(state, ["a"])
+
+        assert wake_words_need_refresh(state, refreshed_before=False) is True
+
+    def test_refreshes_when_the_active_wake_words_changed(self, tmp_path):
+        state = make_state(tmp_path)
+        set_words(state, ["a"])
+        state.wake_words_changed = True
+
+        assert wake_words_need_refresh(state, refreshed_before=True) is True
+
+    def test_does_not_refresh_again_without_a_change(self, tmp_path):
+        state = make_state(tmp_path)
+        set_words(state, ["a"])
+        state.wake_words_changed = False
+
+        assert wake_words_need_refresh(state, refreshed_before=True) is False
+
+    def test_an_empty_selection_does_not_refresh_again(self, tmp_path):
+        # Both wake word selects in Home Assistant set to "No wake word": no word is active, but the models stay loaded.
+        state = make_state(tmp_path)
+        set_words(state, ["a", "b"])
+        state.active_wake_words = set()
+        state.wake_words_changed = False
+
+        assert select_active_wake_words(state) == []
+        assert wake_words_need_refresh(state, refreshed_before=True) is False
+
+    def test_the_empty_selection_is_logged_once_per_selection(self, tmp_path, caplog):
+        state = make_state(tmp_path)
+        set_words(state, ["a"])
+        state.active_wake_words = set()
+
+        with caplog.at_level("DEBUG"):
+            select_active_wake_words(state)
+
+        assert "No wake word is active" in caplog.text
 
 
 class TestSelectActiveWakeWords:
