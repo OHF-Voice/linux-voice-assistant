@@ -848,3 +848,16 @@ class TestEmitEvent:
         await server.emit_event(LVAEvent.TIMER_UPDATED, {"seconds_left": 25})
 
         assert server._current_state == LVAEvent.IDLE  # pylint: disable=protected-access
+
+
+class TestTimerAutoStopped:
+    @pytest.mark.asyncio
+    async def test_event_is_broadcast_with_the_seconds_and_is_not_a_state(self):
+        server = make_server()
+        ws = AsyncMock()
+        server._clients = {ws}  # pylint: disable=protected-access
+
+        await server.emit_event(LVAEvent.TIMER_AUTO_STOPPED, {"seconds": 900})
+
+        assert json.loads(ws.send.call_args.args[0]) == {"event": "timer_auto_stopped", "data": {"seconds": 900}}
+        assert server._current_state is None  # pylint: disable=protected-access

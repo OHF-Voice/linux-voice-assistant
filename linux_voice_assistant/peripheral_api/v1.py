@@ -1,7 +1,7 @@
 """WebSocket peripheral API, version 1.
 
-This is the API as it was before versioning. It is frozen: only bug fixes, no new events or commands.
-New features go into a newer version.
+This is the API as it was before versioning. It is frozen: it only gets bug fixes. New features go into a newer version.
+The event ``timer_auto_stopped`` was added as a bug fix: a timer that stopped ringing on its own was never reported.
 
 Bridges LVA state to a separate peripheral container (LEDs, buttons, HAT boards).
 
@@ -45,6 +45,9 @@ Feedback events emitted by LVA
   timer_ticking   data: {"id": str, "name": str, "total_seconds": int, "seconds_left": int}
   timer_updated   data: {"id": str, "name": str, "total_seconds": int, "seconds_left": int}
   timer_ringing   data: {"id": str, "name": str, "total_seconds": int, "seconds_left": int}
+  timer_auto_stopped    data: {"seconds": int}
+              The ringing timer stopped on its own after ``--timer-max-ring-seconds``
+              (``seconds`` is how long it rang). Followed by ``idle``.
   media_player_playing  Emitted when HA sends music/media to the music_player
                         (non-announcement playback). Not emitted for TTS or
                         voice pipeline announcements — those use tts_speaking.
@@ -159,6 +162,7 @@ class LVAEvent(str, Enum):
     TIMER_TICKING = "timer_ticking"
     TIMER_UPDATED = "timer_updated"
     TIMER_RINGING = "timer_ringing"
+    TIMER_AUTO_STOPPED = "timer_auto_stopped"
     MEDIA_PLAYER_PLAYING = "media_player_playing"
     VOLUME_CHANGED = "volume_changed"
     VOLUME_MUTED = "volume_muted"

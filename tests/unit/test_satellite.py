@@ -1,5 +1,6 @@
 """Unit tests for VoiceSatelliteProtocol logic."""
 
+import time
 from unittest.mock import MagicMock, call, patch
 
 import pytest
@@ -293,6 +294,57 @@ class TestPlayTts:
 # ---------------------------------------------------------------------------
 # stop()
 # ---------------------------------------------------------------------------
+
+
+class TestPeripheralStatusProperties:
+    def test_timer_ringing_follows_the_timer_flag(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        assert sat.timer_ringing is False
+        sat._timer_finished = True
+        assert sat.timer_ringing is True
+
+    def test_announcing_follows_the_announcement_flag(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        assert sat.announcing is False
+        sat._announce_ducking = True
+        assert sat.announcing is True
+
+
+class TestTimerAutoStop:
+    def test_auto_stop_sends_the_signal_and_then_idle(self, tmp_path):
+        sat = make_satellite(tmp_path, {"timer_max_ring_seconds": 10.0})
+        sat.state.peripheral_api = MagicMock()
+        sat._timer_finished = True
+        sat._timer_ring_start = time.monotonic() - 20
+
+        sat._play_timer_finished()
+
+        assert sat._timer_finished is False
+        events = sat.state.peripheral_api.emit_event_sync.call_args_list
+        assert events == [call(LVAEvent.TIMER_AUTO_STOPPED, {"seconds": 20}), call(LVAEvent.IDLE, None)]
+        sat.state.tts_player.play.assert_not_called()
+
+    def test_auto_stop_without_peripheral_api(self, tmp_path):
+        sat = make_satellite(tmp_path, {"timer_max_ring_seconds": 10.0})
+        sat.state.peripheral_api = None
+        sat._timer_finished = True
+        sat._timer_ring_start = time.monotonic() - 20
+
+        sat._play_timer_finished()
+
+        assert sat._timer_finished is False
+
+    def test_ringing_goes_on_before_the_limit(self, tmp_path):
+        sat = make_satellite(tmp_path, {"timer_max_ring_seconds": 100.0})
+        sat.state.peripheral_api = MagicMock()
+        sat._timer_finished = True
+        sat._timer_ring_start = time.monotonic()
+
+        sat._play_timer_finished()
+
+        assert sat._timer_finished is True
+        sat.state.peripheral_api.emit_event_sync.assert_not_called()
+        sat.state.tts_player.play.assert_called_once()
 
 
 class TestStop:

@@ -82,6 +82,7 @@ class MediaPlayerEntity(ESPHomeEntity):
         self.state = MediaPlayerState.IDLE
         self.volume = max(0.0, min(1.0, initial_volume))
         self.muted = False
+        self.announcing = False
         self.previous_volume = 1.0
         self.music_player = music_player
         self.announce_player = announce_player
@@ -110,11 +111,13 @@ class MediaPlayerEntity(ESPHomeEntity):
     ) -> Iterable[message.Message]:
         if announcement:
             self._log.debug("PLAY: announcement true")
+            self._set_announcing(True)
             if self.music_player.is_paused:
                 # Announce, keep music paused
                 self.announce_player.play(
                     url,
                     done_callback=lambda: call_all(
+                        lambda: self._set_announcing(False),
                         lambda: self._broadcast_state([self._update_state(MediaPlayerState.PAUSED)]),
                         done_callback,
                     ),
@@ -124,13 +127,14 @@ class MediaPlayerEntity(ESPHomeEntity):
                 self.music_player.pause()
                 self.announce_player.play(
                     url,
-                    done_callback=lambda: call_all(self.music_player.resume, done_callback),
+                    done_callback=lambda: call_all(lambda: self._set_announcing(False), self.music_player.resume, done_callback),
                 )
             else:
                 # Announce, idle
                 self.announce_player.play(
                     url,
                     done_callback=lambda: call_all(
+                        lambda: self._set_announcing(False),
                         lambda: self._broadcast_state([self._update_state(MediaPlayerState.IDLE)]),
                         done_callback,
                     ),
@@ -235,7 +239,23 @@ class MediaPlayerEntity(ESPHomeEntity):
         self._log.debug("SET NEW STATE: %s => %s", self.state, new_state)
         self._log.debug("SET NEW STATE: %s => %s", self.state.name, new_state.name)
         self.state = new_state
+        self._notify_peripherals()
         return self._get_state_message()
+
+    def _set_announcing(self, announcing: bool) -> None:
+        """
+        Remember that a media player announcement plays or has ended.
+        :param announcing: True while the announcement plays.
+        """
+        self.announcing = announcing
+        self._notify_peripherals()
+
+    def _notify_peripherals(self) -> None:
+        """Tell the peripheral API that the media player state changed, which has no event of its own."""
+        state = getattr(self.server, "state", None)
+        api = getattr(state, "peripheral_api", None)
+        if api is not None:
+            api.refresh_status_sync()
 
     def _get_state_message(self) -> MediaPlayerStateResponse:
         return MediaPlayerStateResponse(

@@ -387,6 +387,16 @@ class VoiceSatelliteProtocol(APIServer):
         if api is not None:
             api.emit_event_sync(event, data)
 
+    @property
+    def timer_ringing(self) -> bool:
+        """True while a timer rings."""
+        return self._timer_finished
+
+    @property
+    def announcing(self) -> bool:
+        """True while a voice announcement of Home Assistant plays."""
+        return self._announce_ducking
+
     def register_pending_lights(self) -> None:
         """Materialise LightEntities for peripheral registered lights.
 
@@ -1161,6 +1171,8 @@ class VoiceSatelliteProtocol(APIServer):
                 self._timer_ring_start = None
                 self.state.active_wake_words.discard(self.state.stop_word.id)
                 self.unduck(owner="timer")
+                self._emit(LVAEvent.TIMER_AUTO_STOPPED, {"seconds": round(elapsed)})
+                self._emit(LVAEvent.IDLE)
                 return
 
         self.state.tts_player.play(

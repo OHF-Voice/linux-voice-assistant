@@ -30,8 +30,12 @@ class TestInit:
         server = PeripheralAPIServer(volume_step=0.1)
         assert server._versions["v1"]._volume_step == pytest.approx(0.1)
 
-    def test_v1_is_offered(self):
-        assert "v1" in PeripheralAPIServer()._versions
+    def test_v1_and_v2_are_offered(self):
+        assert list(PeripheralAPIServer()._versions) == ["v1", "v2"]
+
+    def test_volume_step_reaches_v2(self):
+        server = PeripheralAPIServer(volume_step=0.1)
+        assert server._versions["v2"]._volume_step == pytest.approx(0.1)
 
 
 class TestSetState:
@@ -183,6 +187,36 @@ class TestEmitEvent:
 
         v1.emit_event.assert_awaited_once_with(LVAEvent.IDLE, {"a": 1})
         v2.emit_event.assert_awaited_once_with(LVAEvent.IDLE, {"a": 1})
+
+
+class TestRefreshStatusSync:
+    def test_noop_when_no_loop(self):
+        PeripheralAPIServer().refresh_status_sync()  # should not raise
+
+    def test_noop_when_loop_closed(self):
+        server = PeripheralAPIServer()
+        loop = MagicMock()
+        loop.is_closed.return_value = True
+        server._loop = loop
+
+        with patch("asyncio.run_coroutine_threadsafe") as mock_run:
+            server.refresh_status_sync()
+
+        mock_run.assert_not_called()
+
+    def test_only_versions_that_work_out_their_status_are_refreshed(self):
+        server = PeripheralAPIServer()
+        loop = MagicMock()
+        loop.is_closed.return_value = False
+        server._loop = loop
+
+        with patch("asyncio.run_coroutine_threadsafe") as mock_run:
+            server.refresh_status_sync()
+            for call in mock_run.call_args_list:
+                call.args[0].close()
+
+        assert mock_run.call_count == 1
+        assert mock_run.call_args.args[1] is loop
 
 
 class TestEmitEventSync:

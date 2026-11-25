@@ -7,7 +7,7 @@ peripherals written before versioning keep working unchanged. Every version is o
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING, Any, Collection, Dict, Optional, Protocol
+from typing import TYPE_CHECKING, Any, Collection, Dict, Optional, Protocol, runtime_checkable
 from urllib.parse import urlsplit
 
 if TYPE_CHECKING:
@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from .v1 import LVAEvent
 
 DEFAULT_VERSION = "v1"
+SUPPORTED_VERSIONS = ("v1", "v2")
 
 
 class ApiVersionHandler(Protocol):
@@ -34,6 +35,14 @@ class ApiVersionHandler(Protocol):
 
     async def emit_event(self, event: "LVAEvent", data: Optional[Dict[str, Any]] = None) -> None:
         """Offer an event of LVA to the clients of this version."""
+
+
+@runtime_checkable
+class StatusRefresher(Protocol):
+    """A version that works out its messages from the state of LVA and has to be told when that state changed."""
+
+    async def refresh_status(self) -> None:
+        """Work out the status again and send what changed."""
 
 
 def resolve_version(path: str, supported: Collection[str]) -> Optional[str]:

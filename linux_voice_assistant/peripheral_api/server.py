@@ -12,7 +12,8 @@ from http import HTTPStatus
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
 from .v1 import LVAEvent, PeripheralApiV1
-from .versions import ApiVersionHandler, resolve_version
+from .v2 import PeripheralApiV2
+from .versions import ApiVersionHandler, StatusRefresher, resolve_version
 
 if TYPE_CHECKING:
     from ..models import ServerState
@@ -44,7 +45,7 @@ class PeripheralAPIServer:
         self._port = port
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._server: Any = None
-        self._versions: Dict[str, ApiVersionHandler] = {"v1": PeripheralApiV1(volume_step=volume_step)}
+        self._versions: Dict[str, ApiVersionHandler] = {"v1": PeripheralApiV1(volume_step=volume_step), "v2": PeripheralApiV2(volume_step=volume_step)}
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -107,6 +108,19 @@ class PeripheralAPIServer:
         if loop is None or loop.is_closed():
             return
         asyncio.run_coroutine_threadsafe(self.emit_event(event, data), loop)
+
+    def refresh_status_sync(self) -> None:
+        """
+        Tell the versions that work out their messages from the state of LVA that it changed.
+
+        Thread-safe, for state changes that have no event, like the media player or an announcement.
+        """
+        loop = self._loop
+        if loop is None or loop.is_closed():
+            return
+        for handler in self._versions.values():
+            if isinstance(handler, StatusRefresher):
+                asyncio.run_coroutine_threadsafe(handler.refresh_status(), loop)
 
     # ------------------------------------------------------------------
     # Client handling
