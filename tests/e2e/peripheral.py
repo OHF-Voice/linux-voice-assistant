@@ -14,14 +14,21 @@ import websockets
 class PeripheralClient:
     """Collects the events of the peripheral API and lets tests wait for them."""
 
+    #: Time to let the replay of the current state event after the snapshot arrive, so it is not taken for a new event
+    REPLAY_SECONDS = 0.3
+
     def __init__(self) -> None:
         self.events: List[Dict[str, Any]] = []
+        self.snapshot: Dict[str, Any] = {}
         self._connection: Any = None
         self._task: Optional[asyncio.Task] = None
 
     async def connect(self, port: int) -> None:
         self._connection = await websockets.connect(f"ws://127.0.0.1:{port}")
         self._task = asyncio.create_task(self._collect())
+        snapshot = await self.wait_for("snapshot", 0, timeout=5)
+        self.snapshot = snapshot["data"]
+        await asyncio.sleep(self.REPLAY_SECONDS)
 
     async def disconnect(self) -> None:
         if self._task is not None:

@@ -4,6 +4,8 @@ One LVA instance runs for the whole session, with virtual audio devices and a fa
 for every test. See tests/e2e/README.md.
 """
 
+# pylint: disable=unused-argument
+
 import asyncio
 import shutil
 import socket

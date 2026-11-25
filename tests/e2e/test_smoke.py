@@ -18,7 +18,7 @@ async def test_speaker_recorder_hears_marker_tone(speaker: SpeakerRecorder) -> N
     assert not await speaker.wait_for_tone(mark, PROBE_TONE_HZ, timeout=0.2)
 
 
-async def test_play_into_mic_does_not_reach_speaker(speaker: SpeakerRecorder, virtual_audio) -> None:
+async def test_play_into_mic_does_not_reach_speaker(speaker: SpeakerRecorder) -> None:
     mark = speaker.mark()
     await play_into_mic(FIXTURES_DIR / "probe_tone.wav")
 

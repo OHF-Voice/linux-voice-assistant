@@ -13,6 +13,8 @@ so regenerating the speech changes the committed files even when nothing is mean
 All files are 16 kHz, mono, 16 bit, which is what LVA captures, with one second of silence before and after.
 """
 
+# pylint: disable=import-error,no-member
+
 import sys
 import wave
 from pathlib import Path
@@ -41,7 +43,7 @@ def main() -> None:
     FIXTURES_DIR.mkdir(exist_ok=True)
 
     if len(sys.argv) > 1:
-        from piper import PiperVoice  # pylint: disable=import-outside-toplevel
+        from piper import PiperVoice  # type: ignore[import-not-found]  # pylint: disable=import-outside-toplevel
 
         voice = PiperVoice.load(sys.argv[1])
         for name, text in SPEECH.items():

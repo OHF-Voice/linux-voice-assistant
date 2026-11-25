@@ -5,6 +5,8 @@ receives the streamed microphone audio and answers a voice request with the same
 Text to speech is served by a small HTTP server, so LVA plays real audio from a URL.
 """
 
+# pylint: disable=unused-argument
+
 import asyncio
 import functools
 import threading
@@ -62,7 +64,7 @@ class FakeHomeAssistant:
         self.audio = bytearray()
         self.announce_finished: int = 0
         self.entities: List[EntityInfo] = []
-        self.states: Dict[int, EntityState] = {}
+        self.states: Dict[int, Any] = {}
         self._client: Optional[APIClient] = None
         self._unsubscribe: Any = None
         self._announce_finished_event = asyncio.Event()

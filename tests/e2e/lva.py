@@ -60,6 +60,7 @@ class LvaProcess:
         self._process: Optional[subprocess.Popen] = None
 
     def start(self) -> None:
+        # pylint: disable-next=consider-using-with
         self._process = subprocess.Popen(self._command, cwd=REPO_DIR, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
         threading.Thread(target=self._read, daemon=True).start()
 

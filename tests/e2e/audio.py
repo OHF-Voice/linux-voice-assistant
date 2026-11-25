@@ -71,6 +71,7 @@ class SpeakerRecorder:
         self._thread: Optional[threading.Thread] = None
 
     def start(self) -> None:
+        # pylint: disable-next=consider-using-with
         self._process = subprocess.Popen(
             ["parec", f"--device={SPEAKER_SINK}.monitor", "--format=s16le", f"--rate={SAMPLE_RATE}", "--channels=1", "--latency-msec=20"],
             stdout=subprocess.PIPE,
@@ -97,7 +98,7 @@ class SpeakerRecorder:
 
     async def wait_for_sound(self, mark: int, timeout: float) -> bool:
         """Wait until anything audible was played after the mark."""
-        return await self._wait(mark, timeout, lambda samples: has_sound(samples))
+        return await self._wait(mark, timeout, has_sound)
 
     async def wait_for_tone(self, mark: int, frequency: int, timeout: float) -> bool:
         """Wait until a tone of the given frequency was played after the mark."""
@@ -143,6 +144,15 @@ def has_tone(samples: np.ndarray, frequency: int, min_rms: float = 1000.0, min_s
     return False
 
 
+def tone_amplitude(samples: np.ndarray, frequency: int) -> float:
+    """Amplitude of the tone at the frequency, over the whole samples. 0.0 if there are no samples."""
+    if len(samples) == 0:
+        return 0.0
+    x = samples.astype(np.float64)
+    t = np.arange(len(x)) / SAMPLE_RATE
+    return float(np.abs(np.sum(x * np.exp(-2j * np.pi * frequency * t))) * 2 / len(x))
+
+
 def _windows(samples: np.ndarray) -> List[np.ndarray]:
     size = int(SAMPLE_RATE * _WINDOW_SECONDS)
     return [samples[start : start + size] for start in range(0, len(samples) - size + 1, size)]
@@ -154,8 +164,5 @@ def _rms(window: np.ndarray) -> float:
 
 def _tone_share(window: np.ndarray, frequency: int) -> float:
     """Share of the window's energy at the frequency, 1.0 for a pure tone (Goertzel)."""
-    x = window.astype(np.float64)
-    t = np.arange(len(x)) / SAMPLE_RATE
-    amplitude = np.abs(np.sum(x * np.exp(-2j * np.pi * frequency * t))) * 2 / len(x)
-    total = np.mean(x**2)
-    return float(amplitude**2 / 2 / total) if total > 0 else 0.0
+    total = np.mean(window.astype(np.float64) ** 2)
+    return float(tone_amplitude(window, frequency) ** 2 / 2 / total) if total > 0 else 0.0
