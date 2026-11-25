@@ -21,15 +21,15 @@ from .fake_ha import FakeHomeAssistant, FixtureServer
 from .lva import LvaProcess
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
-LVA_START_TIMEOUT = 90.0
+LVA_START_TIMEOUT = 30.0
 
 #: Time after connecting before a test speaks, so a wake word of the previous test is out of its refractory period
 SETTLE_SECONDS = 2.5
 
 
 @pytest.hookimpl(tryfirst=True)
-def pytest_runtest_call(item: pytest.Item) -> None:
-    """Add the docstring of a test to the JUnit XML as its description, which the job summary shows next to the test."""
+def pytest_runtest_setup(item: pytest.Item) -> None:
+    """Add the docstring of a test to the JUnit XML as its description, which the job summary shows next to the test. Runs before the fixtures, so a test whose setup fails has it too."""
     test_function = getattr(item, "function", None)
     description = (test_function.__doc__ or "").strip() if test_function is not None else ""
     if description:

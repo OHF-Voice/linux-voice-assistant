@@ -17,6 +17,10 @@ from typing import List
 #: A longer list of tests is collapsed in the summary, failures are always listed below it
 _COLLAPSE_ABOVE = 50
 
+#: Limits of the failure details, so one failure cannot flood the summary
+_MAX_DETAIL = 3000
+_MAX_LINE = 300
+
 
 @dataclass(frozen=True)
 class TestResult:
@@ -78,8 +82,22 @@ def _render_summary(title: str, results: List[TestResult]) -> str:
     else:
         lines += table
     for result in failed:
-        lines += ["", f"<details><summary>❌ {result.name}</summary>", "", "```", result.detail[:3000], "```", "</details>"]
+        lines += ["", f"<details><summary>❌ {result.name}</summary>", "", _fenced(_short_detail(result.detail)), "</details>"]
     return "\n".join(lines) + "\n"
+
+
+def _short_detail(detail: str) -> str:
+    """The error lines of a failure (pytest marks them with ``E``), or the start of the report if there are none. Long lines are cut."""
+    lines = detail.splitlines()
+    error_lines = [line for line in lines if line.startswith("E ")]
+    shown = error_lines or lines
+    return "\n".join(line if len(line) <= _MAX_LINE else line[:_MAX_LINE] + " ..." for line in shown)[:_MAX_DETAIL]
+
+
+def _fenced(text: str) -> str:
+    """A code block around the text that stays closed even if the text contains a code fence."""
+    fence = "```" if "```" not in text else "~~~~"
+    return f"{fence}\n{text}\n{fence}"
 
 
 def _escape(text: str, is_property: bool) -> str:
