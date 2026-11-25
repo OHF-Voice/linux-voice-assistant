@@ -14,6 +14,10 @@ from dataclasses import dataclass
 from typing import List
 
 
+#: A longer list of tests is collapsed in the summary, failures are always listed below it
+_COLLAPSE_ABOVE = 50
+
+
 @dataclass(frozen=True)
 class TestResult:
     name: str
@@ -62,8 +66,12 @@ def _render_summary(title: str, results: List[TestResult]) -> str:
     icon = {"passed": "✅", "failed": "❌", "skipped": "⏭️"}
 
     lines = [f"## {title}", "", f"{passed} passed, {len(failed)} failed, {len(skipped)} skipped in {sum(r.seconds for r in results):.0f} s", ""]
-    lines += ["| | Test | Time |", "|---|---|---|"]
-    lines += [f"| {icon[r.outcome]} | `{r.path}::{r.name}` | {r.seconds:.1f} s |" for r in results]
+    table = ["| | Test | Time |", "|---|---|---|"]
+    table += [f"| {icon[r.outcome]} | `{r.path}::{r.name}` | {r.seconds:.1f} s |" for r in results]
+    if len(results) > _COLLAPSE_ABOVE:
+        lines += [f"<details><summary>All {len(results)} tests</summary>", ""] + table + ["", "</details>"]
+    else:
+        lines += table
     for result in failed:
         lines += ["", f"<details><summary>❌ {result.name}</summary>", "", "```", result.detail[:3000], "```", "</details>"]
     return "\n".join(lines) + "\n"
