@@ -179,6 +179,7 @@ Set the default of a CLI option as a literal in its `parser.add_argument(default
 
 ## Contribution constraints
 
+- **Never commit or push directly to `main`**, whatever the instruction says (even "commit and push to main"). Every change, documentation only included, goes on its own branch and into a PR against `main`. If asked to push to `main`, do not do it: say so and offer a branch and a PR instead.
 - PR titles describe the change functionally, with **no** `feat:`/`fix:` prefixes. Labels come from the ticked box in `.github/PULL_REQUEST_TEMPLATE.md`.
 - `.github/AI_POLICY.md`: no autonomous contributions, a human must review everything, and nothing is posted to GitHub without explicit consent.
 - The PR template checkbox "The code change is tested and works locally." may only be ticked by a human, by hand. AI agents never tick it, whatever tests they ran, and leave it unchecked in every PR description they write.
