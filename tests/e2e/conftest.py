@@ -19,7 +19,6 @@ import pytest
 from .audio import SpeakerRecorder, VirtualAudio
 from .fake_ha import FakeHomeAssistant, FixtureServer
 from .lva import LvaProcess
-from .peripheral import PeripheralClient
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 LVA_START_TIMEOUT = 90.0
@@ -82,14 +81,6 @@ async def ha(lva: LvaProcess) -> AsyncIterator[FakeHomeAssistant]:
     await asyncio.sleep(SETTLE_SECONDS)
     yield home_assistant
     await home_assistant.disconnect()
-
-
-@pytest.fixture
-async def peripheral(lva: LvaProcess) -> AsyncIterator[PeripheralClient]:
-    client = PeripheralClient()
-    await client.connect(lva.peripheral_port)
-    yield client
-    await client.disconnect()
 
 
 def _free_port() -> int:

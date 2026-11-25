@@ -1,20 +1,19 @@
 # End-to-end tests
 
-These tests start a real LVA process and drive it the way a user and Home Assistant would, without hardware and without a real Home Assistant.
+These tests start a real LVA process and drive it the way a user and Home Assistant would, without hardware and without a real Home Assistant. They do not use the peripheral WebSocket API.
 
 ```
  test ──paplay──▶ e2e_mic (null sink) ──▶ e2e_mic_source ──▶ LVA ──▶ e2e_speaker (null sink) ──parec──▶ test
                                                               │  ▲
-                                                 ESPHome API  ▼  │  WebSocket events
-                                                    fake Home Assistant, peripheral client
+                                                 ESPHome API  ▼  │
+                                                    fake Home Assistant
 ```
 
 | Part | File | Job |
 |------|------|-----|
 | Virtual audio | `audio.py` | Creates the null sinks, plays wav files into the microphone, records the speaker and detects tones and sound |
-| LVA process | `lva.py` | Starts `python -m linux_voice_assistant` with the virtual devices, collects the log |
+| LVA process | `lva.py` | Starts `python -m linux_voice_assistant --debug` with the virtual devices, collects the log. Tests wait for its debug log lines (`Detected wake word`, `Playing TTS response`, `TTS response finished`, `Stopping timer finished sound`, ...) to follow what LVA does |
 | Fake Home Assistant | `fake_ha.py` | ESPHome API client (`aioesphomeapi`) that subscribes to the voice assistant, receives microphone audio, answers requests with the pipeline events and serves TTS/media URLs over HTTP |
-| Peripheral client | `peripheral.py` | Follows the state events of the peripheral WebSocket API (wake word detected, listening, speaking, idle, ...) |
 
 One LVA instance runs for the whole session. Every test opens a fresh fake Home Assistant connection and waits for the wake word refractory period, so tests do not influence each other as long as each one ends with LVA idle.
 

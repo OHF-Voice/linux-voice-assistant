@@ -3,11 +3,9 @@
 import asyncio
 from pathlib import Path
 
-import pytest
-
 from .audio import TTS_TONE_HZ, SpeakerRecorder, play_into_mic
 from .fake_ha import FakeHomeAssistant, FixtureServer
-from .peripheral import PeripheralClient
+from .lva import LvaProcess
 from .waiting import wait_until
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
@@ -35,44 +33,33 @@ async def test_device_identity_and_entities(ha: FakeHomeAssistant) -> None:
     assert [entity.name for entity in ha.entities] == EXPECTED_ENTITIES
 
 
-@pytest.mark.usefixtures("ha")
-async def test_peripheral_snapshot_reports_home_assistant_connection(peripheral: PeripheralClient) -> None:
-    assert peripheral.snapshot["ha_connected"] is True
-    assert peripheral.snapshot["muted"] is False
-    assert 0.0 <= peripheral.snapshot["volume"] <= 1.0
-
-
-async def test_mute_switch_blocks_wake_word(ha: FakeHomeAssistant, peripheral: PeripheralClient) -> None:
-    events = peripheral.mark()
+async def test_mute_switch_blocks_wake_word(lva: LvaProcess, ha: FakeHomeAssistant) -> None:
+    log = lva.log_mark()
     mute = ha.entity_by_name("Mute")
 
     ha.client.switch_command(mute.key, True)
-    muted = await peripheral.wait_for("muted", events)
-    assert muted["data"]["muted"] is True
+    await wait_until(lambda: mute.key in ha.states and ha.states[mute.key].state is True, description="mute switch on")
     await play_into_mic(FIXTURES_DIR / "okay_nabu.wav")
     await asyncio.sleep(1.0)
     assert not ha.starts, "a muted assistant must not react to the wake word"
 
     ha.client.switch_command(mute.key, False)
+    await wait_until(lambda: ha.states[mute.key].state is False, description="mute switch off")
     await asyncio.sleep(2.5)
     await play_into_mic(FIXTURES_DIR / "okay_nabu.wav")
     await ha.wait_for_start(1, timeout=10)
     ha.run_pipeline("never mind", None, None)
-    await peripheral.wait_for("idle", events)
+    await lva.wait_for_log_line("TTS response finished", log)
 
 
-async def test_volume_command_reaches_home_assistant(ha: FakeHomeAssistant, peripheral: PeripheralClient) -> None:
-    events = peripheral.mark()
+async def test_volume_command_changes_media_player_volume(ha: FakeHomeAssistant) -> None:
     media_player = ha.entity_by_name("Media Player")
 
-    await peripheral.command("set_volume", {"volume": 0.3})
+    ha.client.media_player_command(media_player.key, volume=0.3)
+    await wait_until(lambda: media_player.key in ha.states and abs(ha.states[media_player.key].volume - 0.3) < 0.01, description="volume 0.3")
 
-    changed = await peripheral.wait_for("volume_changed", events)
-    assert abs(changed["data"]["volume"] - 0.3) < 0.01
-    await wait_until(lambda: media_player.key in ha.states and abs(ha.states[media_player.key].volume - 0.3) < 0.01)
-
-    await peripheral.command("set_volume", {"volume": 1.0})
-    await peripheral.wait_for("volume_changed", events + 1)
+    ha.client.media_player_command(media_player.key, volume=1.0)
+    await wait_until(lambda: abs(ha.states[media_player.key].volume - 1.0) < 0.01, description="volume 1.0")
 
 
 async def test_announcement_is_played_and_confirmed(ha: FakeHomeAssistant, speaker: SpeakerRecorder, media_server: FixtureServer) -> None:
