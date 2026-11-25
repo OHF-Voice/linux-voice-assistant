@@ -13,6 +13,7 @@ FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
 
 async def test_ringing_timer_ducks_music_and_stop_word_restores_it(lva: LvaProcess, ha: FakeHomeAssistant, speaker: SpeakerRecorder, media_server: FixtureServer) -> None:
+    """A ringing timer lowers the music volume, and the stop word silences the timer and brings the music back to full volume."""
     log = lva.log_mark()
     ha.media_player_command(url=f"{media_server.base_url}/music_first.wav")
     assert await speaker.wait_for_tone(speaker.mark(), FIRST_MUSIC_TONE_HZ, timeout=8)
@@ -37,6 +38,7 @@ async def test_ringing_timer_ducks_music_and_stop_word_restores_it(lva: LvaProce
 
 
 async def test_wake_word_silences_ringing_timer_and_starts_pipeline(lva: LvaProcess, ha: FakeHomeAssistant, speaker: SpeakerRecorder) -> None:
+    """Saying the wake word while a timer rings silences the timer and starts a normal voice request."""
     log = lva.log_mark()
     ha.timer_event(VoiceAssistantTimerEventType.VOICE_ASSISTANT_TIMER_FINISHED, "t1", 60, 0)
     assert await speaker.wait_for_sound(speaker.mark(), timeout=5)

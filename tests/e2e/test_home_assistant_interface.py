@@ -24,6 +24,7 @@ EXPECTED_ENTITIES = [
 
 
 async def test_device_identity_and_entities(ha: FakeHomeAssistant) -> None:
+    """Home Assistant sees the expected device name, MAC address and the full list of entities."""
     info = await ha.device_info()
 
     assert info.mac_address == "02:00:00:00:00:01"
@@ -34,6 +35,7 @@ async def test_device_identity_and_entities(ha: FakeHomeAssistant) -> None:
 
 
 async def test_mute_switch_blocks_wake_word(lva: LvaProcess, ha: FakeHomeAssistant) -> None:
+    """While the Mute switch is on, the wake word is ignored. After switching it off, the wake word works again."""
     log = lva.log_mark()
     mute = ha.entity_by_name("Mute")
 
@@ -53,6 +55,7 @@ async def test_mute_switch_blocks_wake_word(lva: LvaProcess, ha: FakeHomeAssista
 
 
 async def test_volume_command_changes_media_player_volume(ha: FakeHomeAssistant) -> None:
+    """A volume command from Home Assistant changes the volume reported by the media player."""
     media_player = ha.entity_by_name("Media Player")
 
     ha.client.media_player_command(media_player.key, volume=0.3)
@@ -63,6 +66,7 @@ async def test_volume_command_changes_media_player_volume(ha: FakeHomeAssistant)
 
 
 async def test_announcement_is_played_and_confirmed(ha: FakeHomeAssistant, speaker: SpeakerRecorder, media_server: FixtureServer) -> None:
+    """An announcement from Home Assistant is played and LVA confirms that it finished."""
     speaker_mark = speaker.mark()
 
     finished = await ha.announce(f"{media_server.base_url}/tts_marker.wav", "Dinner is ready")

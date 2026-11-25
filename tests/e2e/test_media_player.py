@@ -13,6 +13,7 @@ FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
 
 async def test_media_player_plays_and_stops_music(ha: FakeHomeAssistant, speaker: SpeakerRecorder, media_server: FixtureServer) -> None:
+    """Music sent by Home Assistant is played, and stop ends it."""
     ha.media_player_command(url=f"{media_server.base_url}/music_first.wav")
 
     assert await speaker.wait_for_tone(speaker.mark(), FIRST_MUSIC_TONE_HZ, timeout=8), "the music was not played"
@@ -26,6 +27,7 @@ async def test_media_player_plays_and_stops_music(ha: FakeHomeAssistant, speaker
 
 
 async def test_media_player_pauses_and_resumes_music(ha: FakeHomeAssistant, speaker: SpeakerRecorder, media_server: FixtureServer) -> None:
+    """Pause silences the music and play continues it."""
     ha.media_player_command(url=f"{media_server.base_url}/music_first.wav")
     assert await speaker.wait_for_tone(speaker.mark(), FIRST_MUSIC_TONE_HZ, timeout=8)
 
@@ -44,6 +46,7 @@ async def test_media_player_pauses_and_resumes_music(ha: FakeHomeAssistant, spea
 
 
 async def test_next_track_replaces_the_current_one(ha: FakeHomeAssistant, speaker: SpeakerRecorder, media_server: FixtureServer) -> None:
+    """A new media URL replaces the track that is playing, as Music Assistant does when it skips to the next track."""
     ha.media_player_command(url=f"{media_server.base_url}/music_first.wav")
     assert await speaker.wait_for_tone(speaker.mark(), FIRST_MUSIC_TONE_HZ, timeout=8)
 
@@ -57,6 +60,7 @@ async def test_next_track_replaces_the_current_one(ha: FakeHomeAssistant, speake
 
 
 async def test_text_to_speech_over_music_pauses_and_resumes_the_music(ha: FakeHomeAssistant, speaker: SpeakerRecorder, media_server: FixtureServer) -> None:
+    """tts.speak over playing music pauses the music, plays the speech and resumes the music afterwards."""
     ha.media_player_command(url=f"{media_server.base_url}/music_first.wav")
     assert await speaker.wait_for_tone(speaker.mark(), FIRST_MUSIC_TONE_HZ, timeout=8)
     mark = speaker.mark()
@@ -71,6 +75,7 @@ async def test_text_to_speech_over_music_pauses_and_resumes_the_music(ha: FakeHo
 
 
 async def test_music_is_ducked_while_assistant_listens(lva: LvaProcess, ha: FakeHomeAssistant, speaker: SpeakerRecorder, media_server: FixtureServer) -> None:
+    """Music is lowered while the assistant listens and returns to full volume when the conversation is over."""
     ha.media_player_command(url=f"{media_server.base_url}/music_first.wav")
     assert await speaker.wait_for_tone(speaker.mark(), FIRST_MUSIC_TONE_HZ, timeout=8)
     await asyncio.sleep(1.0)

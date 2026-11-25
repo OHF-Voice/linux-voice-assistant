@@ -13,6 +13,7 @@ FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
 
 async def test_wake_word_runs_pipeline_and_plays_reply(lva: LvaProcess, ha: FakeHomeAssistant, speaker: SpeakerRecorder, media_server: FixtureServer) -> None:
+    """The wake word starts a voice request, the wake sound plays, and the spoken reply from Home Assistant is played."""
     log = lva.log_mark()
     speaker_mark = speaker.mark()
 
@@ -32,6 +33,7 @@ async def test_wake_word_runs_pipeline_and_plays_reply(lva: LvaProcess, ha: Fake
 
 
 async def test_unrelated_speech_does_not_wake(lva: LvaProcess, ha: FakeHomeAssistant) -> None:
+    """Speech without the wake word does not start a voice request."""
     log = lva.log_mark()
 
     await play_into_mic(FIXTURES_DIR / "unrelated_speech.wav")
@@ -42,6 +44,7 @@ async def test_unrelated_speech_does_not_wake(lva: LvaProcess, ha: FakeHomeAssis
 
 
 async def test_other_wake_word_does_not_wake(lva: LvaProcess, ha: FakeHomeAssistant) -> None:
+    """A wake word that is not active does not start a voice request."""
     log = lva.log_mark()
 
     await play_into_mic(FIXTURES_DIR / "hey_jarvis.wav")
@@ -52,6 +55,7 @@ async def test_other_wake_word_does_not_wake(lva: LvaProcess, ha: FakeHomeAssist
 
 
 async def test_microphone_audio_is_streamed_to_home_assistant(lva: LvaProcess, ha: FakeHomeAssistant) -> None:
+    """After the wake word, the audio from the microphone arrives at Home Assistant."""
     log = lva.log_mark()
     await play_into_mic(FIXTURES_DIR / "okay_nabu.wav")
     await ha.wait_for_start(1, timeout=10)
@@ -67,6 +71,7 @@ async def test_microphone_audio_is_streamed_to_home_assistant(lva: LvaProcess, h
 
 
 async def test_run_without_reply_returns_to_idle(lva: LvaProcess, ha: FakeHomeAssistant) -> None:
+    """A voice request that ends without a spoken reply plays the pipeline ended sound and no reply."""
     log = lva.log_mark()
     await play_into_mic(FIXTURES_DIR / "okay_nabu.wav")
     await ha.wait_for_start(1, timeout=10)
@@ -78,6 +83,7 @@ async def test_run_without_reply_returns_to_idle(lva: LvaProcess, ha: FakeHomeAs
 
 
 async def test_pipeline_error_is_reported_and_lva_recovers(lva: LvaProcess, ha: FakeHomeAssistant) -> None:
+    """After a pipeline error from Home Assistant, LVA returns to idle and accepts the next wake word."""
     log = lva.log_mark()
     await play_into_mic(FIXTURES_DIR / "okay_nabu.wav")
     await ha.wait_for_start(1, timeout=10)
@@ -95,6 +101,7 @@ async def test_pipeline_error_is_reported_and_lva_recovers(lva: LvaProcess, ha: 
 
 
 async def test_continue_conversation_listens_again_without_wake_word(lva: LvaProcess, ha: FakeHomeAssistant, media_server: FixtureServer) -> None:
+    """A follow-up question from Home Assistant makes LVA listen again without a wake word, on the same wake word pipeline."""
     log = lva.log_mark()
     await play_into_mic(FIXTURES_DIR / "okay_nabu.wav")
     first = await ha.wait_for_start(1, timeout=10)

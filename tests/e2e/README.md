@@ -34,7 +34,7 @@ Needs `libmpv`, `pactl`, `paplay`, `parec` and a running PulseAudio or PipeWire-
 ./script/e2e -s         # also show the LVA log
 ```
 
-The suite is not part of `./script/tests`, which only runs the fast unit tests. In CI it runs in `.github/workflows/e2e.yml` and shows the result as a table in the job summary, annotates failed tests and uploads the LVA log and `junit.xml` as artifact `e2e-results` (set `E2E_LOG_DIR` to write the log to a directory locally, add `--junitxml=<file>` for the XML).
+The suite is not part of `./script/tests`, which only runs the fast unit tests. In CI it runs in `.github/workflows/e2e.yml` and shows the result as a table in the job summary, annotates failed tests (the docstring of every test is its description column in the table) and uploads the LVA log and `junit.xml` as artifact `e2e-results` (set `E2E_LOG_DIR` to write the log to a directory locally, add `--junitxml=<file>` for the XML).
 
 No real microphone, speaker or Home Assistant is involved. The tests show that LVA's logic and audio paths work, not that a specific sound card does.
 

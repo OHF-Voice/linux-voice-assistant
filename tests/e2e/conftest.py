@@ -27,6 +27,15 @@ LVA_START_TIMEOUT = 90.0
 SETTLE_SECONDS = 2.5
 
 
+@pytest.hookimpl(tryfirst=True)
+def pytest_runtest_call(item: pytest.Item) -> None:
+    """Add the docstring of a test to the JUnit XML as its description, which the job summary shows next to the test."""
+    test_function = getattr(item, "function", None)
+    description = (test_function.__doc__ or "").strip() if test_function is not None else ""
+    if description:
+        item.user_properties.append(("description", description))
+
+
 @pytest.fixture(scope="session")
 def virtual_audio() -> Iterator[VirtualAudio]:
     missing = [tool for tool in ("pactl", "paplay", "parec") if shutil.which(tool) is None]

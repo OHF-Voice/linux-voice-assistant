@@ -13,6 +13,7 @@ FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
 
 async def test_stop_word_ends_spoken_reply(lva: LvaProcess, ha: FakeHomeAssistant, speaker: SpeakerRecorder, media_server: FixtureServer) -> None:
+    """The stop word cuts off a spoken reply while it plays."""
     log = lva.log_mark()
     await play_into_mic(FIXTURES_DIR / "okay_nabu.wav")
     await ha.wait_for_start(1, timeout=10)
@@ -29,6 +30,7 @@ async def test_stop_word_ends_spoken_reply(lva: LvaProcess, ha: FakeHomeAssistan
 
 
 async def test_stop_word_is_ignored_while_idle(lva: LvaProcess, ha: FakeHomeAssistant) -> None:
+    """The stop word is not detected while nothing is playing."""
     log = lva.log_mark()
 
     await play_into_mic(FIXTURES_DIR / "stop.wav")
@@ -39,6 +41,7 @@ async def test_stop_word_is_ignored_while_idle(lva: LvaProcess, ha: FakeHomeAssi
 
 
 async def test_stop_word_stops_ringing_timer(lva: LvaProcess, ha: FakeHomeAssistant, speaker: SpeakerRecorder) -> None:
+    """The stop word silences a ringing timer."""
     log = lva.log_mark()
     speaker_mark = speaker.mark()
     ha.timer_event(VoiceAssistantTimerEventType.VOICE_ASSISTANT_TIMER_STARTED, "t1", 60, 60)

@@ -8,6 +8,7 @@ FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
 
 async def test_speaker_recorder_hears_marker_tone(speaker: SpeakerRecorder) -> None:
+    """Test setup: the speaker recorder detects the marker tone that is played on the virtual speaker."""
     import asyncio
 
     mark = speaker.mark()
@@ -19,6 +20,7 @@ async def test_speaker_recorder_hears_marker_tone(speaker: SpeakerRecorder) -> N
 
 
 async def test_play_into_mic_does_not_reach_speaker(speaker: SpeakerRecorder) -> None:
+    """Test setup: audio played into the virtual microphone does not show up on the virtual speaker."""
     mark = speaker.mark()
     await play_into_mic(FIXTURES_DIR / "probe_tone.wav")
 
