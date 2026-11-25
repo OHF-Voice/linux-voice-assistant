@@ -44,7 +44,7 @@ Lint runs on Python 3.13, tests run on Python 3.12 with libmpv-dev.
 ### What CI Checks
 
 - **Lint**: `.github/workflows/lint.yml` runs all linting checks
-- **Tests**: `.github/workflows/tests.yml` runs pytest unit tests
+- **Tests**: `.github/workflows/unit-tests.yml` runs pytest unit tests
 
 ## Skip These (Low Value)
 

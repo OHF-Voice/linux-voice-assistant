@@ -11,8 +11,8 @@ on:
     types: [opened, synchronize, reopened]
 
 jobs:
-  pytest:
-    name: Pytest Unit
+  unit-tests:
+    name: Unit Tests
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -34,4 +34,19 @@ jobs:
           ./script/setup --dev
 
       - name: Run unit tests
-        run: ./script/tests
+        run: ./script/tests --junitxml="$RUNNER_TEMP/unit-results/junit.xml"
+
+      - name: Publish test results
+        if: always()
+        run: |
+          if [ -f "$RUNNER_TEMP/unit-results/junit.xml" ]; then
+            python .github/scripts/junit_summary.py "$RUNNER_TEMP/unit-results/junit.xml" "Unit test results"
+          fi
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-results
+          path: ${{ runner.temp }}/unit-results
+          if-no-files-found: ignore
