@@ -8,17 +8,17 @@ The Linux audio stack consists of multiple layers working together:
 ```mermaid
 flowchart TB
     subgraph host["Host system"]
-        apps["<b>User applications</b><br>Browser, media player, voice assistant, etc."]
-        sound["<b>PipeWire / PulseAudio</b> (sound server)<br>Audio mixing and routing<br>Device abstraction<br>Network audio support<br>Per-application volume control"]
-        alsa["<b>ALSA</b> (Advanced Linux Sound Architecture)<br>Kernel-level audio driver framework<br>Direct hardware access<br>Controls: /dev/snd/"]
-        hw["<b>Hardware</b> (sound card)<br>Microphone, speaker, DSP/codec"]
+        apps["User applications<br>Browser, media player, voice assistant, etc."]
+        sound["PipeWire / PulseAudio (sound server)<br>Audio mixing and routing<br>Device abstraction<br>Network audio support<br>Per-application volume control"]
+        alsa["ALSA (Advanced Linux Sound Architecture)<br>Kernel-level audio driver framework<br>Direct hardware access<br>Controls: /dev/snd/"]
+        hw["Hardware (sound card)<br>Microphone, speaker, DSP/codec"]
         sockets["LVA_XDG_RUNTIME_DIR=/run/user/1000<br>Socket: /run/user/1000/pipewire-0<br>Socket: /run/user/1000/pulse/native"]
         apps --> sound --> alsa --> hw
         sound --- sockets
     end
     subgraph container["Docker container"]
-        lva["<b>Container process</b> (Linux Voice Assistant)<br>Accesses audio via the PipeWire/PulseAudio client library<br>Uses the same LVA_XDG_RUNTIME_DIR socket path<br><br>LVA_XDG_RUNTIME_DIR=/run/user/1000 (host path)<br>AUDIO_INPUT_DEVICE=&quot;default&quot;<br>AUDIO_OUTPUT_DEVICE=&quot;pulse&quot;"]
-        mounts["<b>Device access</b><br>Socket: /run/user/1000/pipewire-0 (volume mount)<br>Socket: /run/user/1000/pulse/native (volume mount)"]
+        lva["Container process (Linux Voice Assistant)<br>Accesses audio via the PipeWire/PulseAudio client library<br>Uses the same LVA_XDG_RUNTIME_DIR socket path<br><br>LVA_XDG_RUNTIME_DIR=/run/user/1000 (host path)<br>AUDIO_INPUT_DEVICE=default<br>AUDIO_OUTPUT_DEVICE=pulse"]
+        mounts["Device access<br>Socket: /run/user/1000/pipewire-0 (volume mount)<br>Socket: /run/user/1000/pulse/native (volume mount)"]
         mounts --- lva
     end
     sockets -->|"Device passthrough"| mounts
