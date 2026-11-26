@@ -7,8 +7,9 @@ Events  (LVA → peripheral): {"event": "<name>", "data": {...}}
 Commands (peripheral → LVA): {"command": "<name>", "data": {...}}
 
 Events: hello, lva_status, state, mute_status, volume_status, timer_status, timer_remaining_time, timer_remaining_percentage,
-media_player_status, pipeline_error, timer_auto_stopped.
-Commands: start_listening, stop, mute_on, mute_off, volume_up, volume_down, volume_set, timer_stop, button_pressed.
+media_player_status, pipeline_error, timer_auto_stopped, hardware_mute_on, hardware_mute_off.
+Commands: start_listening, stop, mute_on, mute_off, volume_up, volume_down, volume_set, timer_stop, button_pressed,
+hardware_mute_status, hardware_mute_type.
 """
 
 from __future__ import annotations
@@ -35,6 +36,7 @@ _LOGGER = logging.getLogger(__name__)
 _SOUNDS_DIR = Path(__file__).resolve().parents[2] / "sounds"
 _VOLUME_LIMIT_SOUND = _SOUNDS_DIR / "volume_limit.wav"
 _VOLUME_STEP_SOUND = _SOUNDS_DIR / "volume_step.wav"
+HARDWARE_MUTE_TYPES = ("none", "changeable", "read_only")
 _MEDIA_STATE_NAMES = {"IDLE": "idle", "PLAYING": "playing", "PAUSED": "pause"}
 
 
@@ -125,6 +127,27 @@ class PeripheralApiV2:
             await self._broadcast(messages)
         self._keep_ticker_running()
 
+    async def request_hardware_mute(self, muted: bool) -> None:
+        """
+        Ask the peripherals to mute or unmute the hardware of the microphone.
+        :param muted: True to mute the hardware.
+        The request is only sent if a peripheral has said that the hardware mute is ``changeable`` and one is connected. Otherwise it
+        is ignored.
+        """
+        state = self._state
+        if state is None:
+            return
+        if state.hardware_mute_type != "changeable" or not self._clients:
+            _LOGGER.debug(
+                "Ignoring the request to %s the hardware mute: type=%s, %d peripheral(s) connected",
+                "set" if muted else "clear",
+                state.hardware_mute_type,
+                len(self._clients),
+            )
+            return
+        _LOGGER.debug("Asking the peripherals to %s the hardware mute", "set" if muted else "clear")
+        await self._broadcast([{"event": "hardware_mute_on" if muted else "hardware_mute_off"}])
+
     # ------------------------------------------------------------------
     # Commands
     # ------------------------------------------------------------------
@@ -165,8 +188,37 @@ class PeripheralApiV2:
             self._set_volume_command(state, satellite, data)
         elif command == "button_pressed":
             self._play_button_sound(state, data)
+        elif command == "hardware_mute_status":
+            self._set_hardware_muted(state, data)
+        elif command == "hardware_mute_type":
+            self._set_hardware_mute_type(state, data)
         else:
             _LOGGER.warning("Peripheral (API v2): unknown command '%s'", command)
+
+    def _set_hardware_muted(self, state: "ServerState", data: Any) -> None:
+        """Keep the hardware mute state that a peripheral reported. LVA's own mute is not changed."""
+        status = data.get("status") if isinstance(data, dict) else None
+        if status not in ("muted", "unmuted"):
+            _LOGGER.warning("Peripheral (API v2): invalid status in hardware_mute_status command: %s", status)
+            return
+        muted = status == "muted"
+        if state.hardware_muted == muted:
+            _LOGGER.debug("Hardware mute is already reported as %s", status)
+            return
+        _LOGGER.debug("Hardware mute reported: %s", status)
+        state.hardware_muted = muted
+
+    def _set_hardware_mute_type(self, state: "ServerState", data: Any) -> None:
+        """Keep the kind of hardware mute that a peripheral reported."""
+        mute_type = data.get("type") if isinstance(data, dict) else None
+        if mute_type not in HARDWARE_MUTE_TYPES:
+            _LOGGER.warning("Peripheral (API v2): invalid type in hardware_mute_type command: %s", mute_type)
+            return
+        if state.hardware_mute_type == mute_type:
+            _LOGGER.debug("Hardware mute type is already reported as %s", mute_type)
+            return
+        _LOGGER.debug("Hardware mute type reported: %s", mute_type)
+        state.hardware_mute_type = mute_type
 
     def _set_mic_muted(self, state: "ServerState", satellite: Any, muted: bool) -> None:
         """Mute or unmute the microphone like the Mute switch does, and tell Home Assistant."""

@@ -577,3 +577,151 @@ class TestButtonPressed:
         server._state.button_event_sensor_entity = MagicMock()  # pylint: disable=protected-access
         await dispatch(server, "button_pressed", {"press": "double"})
         server._state.button_event_sensor_entity.update_state.assert_not_called()  # pylint: disable=protected-access
+
+
+class TestHardwareMuteStatus:
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("status,muted", [("muted", True), ("unmuted", False)])
+    async def test_status_is_kept(self, tmp_path, caplog, status, muted):
+        server = make_server(tmp_path)
+        with caplog.at_level(logging.DEBUG):
+            await dispatch(server, "hardware_mute_status", {"status": status})
+        assert server._state.hardware_muted is muted  # pylint: disable=protected-access
+        assert f"Hardware mute reported: {status}" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_it_does_not_change_the_mute_of_lva(self, tmp_path):
+        server = make_server(tmp_path)
+        await dispatch(server, "hardware_mute_status", {"status": "muted"})
+        server._state.satellite._set_muted.assert_not_called()  # pylint: disable=protected-access
+        assert server._state.muted is False  # pylint: disable=protected-access
+
+    @pytest.mark.asyncio
+    async def test_nothing_is_passed_on_to_clients_or_home_assistant(self, tmp_path):
+        server = make_server(tmp_path)
+        other = connect(server)
+        server._state.broadcast = MagicMock()  # pylint: disable=protected-access
+
+        await dispatch(server, "hardware_mute_status", {"status": "muted"})
+        await dispatch(server, "hardware_mute_type", {"type": "changeable"})
+
+        other.send.assert_not_awaited()
+        server._state.broadcast.assert_not_called()  # pylint: disable=protected-access
+        server._state.satellite.send_messages.assert_not_called()  # pylint: disable=protected-access
+
+    @pytest.mark.asyncio
+    async def test_no_entity_is_added(self, tmp_path):
+        server = make_server(tmp_path)
+        before = list(server._state.entities)  # pylint: disable=protected-access
+        await dispatch(server, "hardware_mute_status", {"status": "muted"})
+        await dispatch(server, "hardware_mute_type", {"type": "read_only"})
+        assert server._state.entities == before  # pylint: disable=protected-access
+
+    @pytest.mark.asyncio
+    async def test_an_unchanged_status_is_noted_in_the_log(self, tmp_path, caplog):
+        server = make_server(tmp_path)
+        await dispatch(server, "hardware_mute_status", {"status": "muted"})
+        with caplog.at_level(logging.DEBUG):
+            await dispatch(server, "hardware_mute_status", {"status": "muted"})
+        assert "already reported as muted" in caplog.text
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("data", [None, {}, {"status": "on"}, {"status": True}, {"muted": True}])
+    async def test_invalid_status_warns_and_changes_nothing(self, tmp_path, caplog, data):
+        server = make_server(tmp_path)
+        with caplog.at_level(logging.WARNING):
+            await dispatch(server, "hardware_mute_status", data)
+        assert server._state.hardware_muted is None  # pylint: disable=protected-access
+        assert "invalid status in hardware_mute_status" in caplog.text
+
+
+class TestHardwareMuteType:
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("mute_type", ["none", "changeable", "read_only"])
+    async def test_type_is_kept(self, tmp_path, caplog, mute_type):
+        server = make_server(tmp_path)
+        with caplog.at_level(logging.DEBUG):
+            await dispatch(server, "hardware_mute_type", {"type": mute_type})
+        assert server._state.hardware_mute_type == mute_type  # pylint: disable=protected-access
+        assert f"Hardware mute type reported: {mute_type}" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_an_unchanged_type_is_noted_in_the_log(self, tmp_path, caplog):
+        server = make_server(tmp_path)
+        await dispatch(server, "hardware_mute_type", {"type": "none"})
+        with caplog.at_level(logging.DEBUG):
+            await dispatch(server, "hardware_mute_type", {"type": "none"})
+        assert "already reported as none" in caplog.text
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("data", [None, {}, {"type": "maybe"}, {"type": True}, {"possible": True}, {"type": "Changeable"}])
+    async def test_invalid_type_warns_and_changes_nothing(self, tmp_path, caplog, data):
+        server = make_server(tmp_path)
+        with caplog.at_level(logging.WARNING):
+            await dispatch(server, "hardware_mute_type", data)
+        assert server._state.hardware_mute_type is None  # pylint: disable=protected-access
+        assert "invalid type in hardware_mute_type" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_the_old_name_is_an_unknown_command(self, tmp_path, caplog):
+        server = make_server(tmp_path)
+        with caplog.at_level(logging.WARNING):
+            await dispatch(server, "hardware_mute_possible", {"possible": True})
+        assert "unknown command 'hardware_mute_possible'" in caplog.text
+
+
+class TestHardwareMuteInTheSnapshot:
+    @pytest.mark.asyncio
+    async def test_a_new_client_is_not_told_the_hardware_mute(self, tmp_path):
+        server = make_server(tmp_path)
+        server._state.hardware_muted = True  # pylint: disable=protected-access
+        server._state.hardware_mute_type = "changeable"  # pylint: disable=protected-access
+        ws = FakeWebSocket()
+        await server.handle_client(ws)
+        assert not [m for m in ws.sent() if m["event"].startswith("hardware_mute")]
+
+
+class TestRequestHardwareMute:
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("muted,event", [(True, "hardware_mute_on"), (False, "hardware_mute_off")])
+    async def test_request_goes_to_every_peripheral_if_changeable(self, tmp_path, muted, event):
+        server = make_server(tmp_path)
+        server._state.hardware_mute_type = "changeable"  # pylint: disable=protected-access
+        first, second = connect(server), connect(server)
+
+        await server.request_hardware_mute(muted)
+
+        assert first.sent() == second.sent() == [{"event": event}]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("mute_type", ["none", "read_only", None])
+    async def test_ignored_if_the_hardware_mute_cannot_be_changed(self, tmp_path, caplog, mute_type):
+        server = make_server(tmp_path)
+        server._state.hardware_mute_type = mute_type  # pylint: disable=protected-access
+        ws = connect(server)
+
+        with caplog.at_level(logging.DEBUG):
+            await server.request_hardware_mute(True)
+
+        ws.send.assert_not_awaited()
+        assert f"Ignoring the request to set the hardware mute: type={mute_type}" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_ignored_without_a_connected_peripheral(self, tmp_path, caplog):
+        server = make_server(tmp_path)
+        server._state.hardware_mute_type = "changeable"  # pylint: disable=protected-access
+        with caplog.at_level(logging.DEBUG):
+            await server.request_hardware_mute(False)
+        assert "0 peripheral(s) connected" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_a_sent_request_does_not_change_the_kept_state(self, tmp_path):
+        server = make_server(tmp_path)
+        server._state.hardware_mute_type = "changeable"  # pylint: disable=protected-access
+        connect(server)
+        await server.request_hardware_mute(True)
+        assert server._state.hardware_muted is None  # pylint: disable=protected-access
+
+    @pytest.mark.asyncio
+    async def test_without_state_it_does_nothing(self):
+        await PeripheralApiV2().request_hardware_mute(True)

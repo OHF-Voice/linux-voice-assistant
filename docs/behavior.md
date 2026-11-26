@@ -185,6 +185,8 @@ When unmuted, the unmute sound (`--unmute-sound`) plays and the assistant return
 
 Do not confuse this with the **media player mute**, which sets the shared volume to 0, see below.
 
+Some hardware can also mute its microphone itself. That **hardware mute** is separate from this switch: LVA only learns about it from a version 2 peripheral, see [behavior_peripheral_api.md](behavior_peripheral_api.md). LVA does not mute because the hardware is muted and the other way round, and Home Assistant sees the hardware mute through the peripheral, not through LVA.
+
 ---
 
 ## Volume

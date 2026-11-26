@@ -185,6 +185,10 @@ class ServerState:
     satellite: "Optional[VoiceSatelliteProtocol]" = None
     connections: "List[VoiceSatelliteProtocol]" = field(default_factory=list)
     mute_switch_entity: "Optional[MuteSwitchEntity]" = None
+    # Hardware mute of the microphone, as a version 2 peripheral reported it. None until it has said so. LVA only keeps these for its
+    # own processing: its own mute (``muted``) is not changed by them, and nothing is passed on to Home Assistant.
+    hardware_muted: Optional[bool] = None
+    hardware_mute_type: Optional[str] = None  # none, changeable or read_only
     thinking_sound_entity: "Optional[ThinkingSoundEntity]" = None
     button_event_sensor_entity: "Optional[ButtonEventSensorEntity]" = None
 
