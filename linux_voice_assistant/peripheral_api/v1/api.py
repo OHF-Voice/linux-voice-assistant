@@ -135,7 +135,7 @@ from typing import TYPE_CHECKING, Any, Dict, Optional, Set
 from aioesphomeapi.api_pb2 import MediaPlayerStateResponse  # type: ignore[attr-defined]  # pylint: disable=no-name-in-module
 
 if TYPE_CHECKING:
-    from ..models import ServerState
+    from ...models import ServerState
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -430,7 +430,7 @@ class PeripheralApiV1:
         Idempotent on object_id: repeat registrations (e.g. after a
         peripheral reconnect) keep the existing entity and its state.
         """
-        from ..models import LightRegistration  # local import to avoid a cycle
+        from ...models import LightRegistration  # local import to avoid a cycle
 
         object_id = str(data.get("object_id", "")).strip()
         if not object_id:

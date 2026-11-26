@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from linux_voice_assistant.peripheral_api.v1 import LVAEvent
-from linux_voice_assistant.peripheral_api.v2 import _VOLUME_LIMIT_SOUND, _VOLUME_STEP_SOUND, PeripheralApiV2
+from linux_voice_assistant.peripheral_api.v2.api import _VOLUME_LIMIT_SOUND, _VOLUME_STEP_SOUND, PeripheralApiV2
 from tests.unit.conftest import make_state
 
 
@@ -51,6 +51,13 @@ async def dispatch(server: PeripheralApiV2, command: str, data: Optional[dict] =
     await server._dispatch_command(json.dumps(payload))  # pylint: disable=protected-access
 
 
+async def report(server: PeripheralApiV2, event: str, data: Optional[dict] = None) -> None:
+    payload: Dict[str, Any] = {"event": event}
+    if data is not None:
+        payload["data"] = data
+    await server._dispatch_command(json.dumps(payload))  # pylint: disable=protected-access
+
+
 def connect(server: PeripheralApiV2) -> FakeWebSocket:
     ws = FakeWebSocket()
     server._clients.add(ws)  # pylint: disable=protected-access
@@ -67,9 +74,11 @@ class TestHandleClient:
 
         sent = ws.sent()
         assert sent[0] == {"event": "hello", "data": {"api_version": "v2", "supported_versions": ["v1", "v2"]}}
-        assert len(sent) == 9
+        assert len(sent) == 10
         assert (sent[1]["event"], sent[-1]["event"]) == ("lva_status", "media_player_status")
         assert sent[1]["data"] == {"status": "connected"}
+        assert {"event": "mute_status", "data": {"status": "unmuted"}} in sent
+        assert {"event": "timer_full_data_set", "data": {"timers": []}} in sent
         assert {"event": "volume_status", "data": {"volume": 50}} in sent
 
     @pytest.mark.asyncio
@@ -81,7 +90,7 @@ class TestHandleClient:
     @pytest.mark.asyncio
     async def test_commands_of_the_client_are_executed(self, tmp_path):
         server = make_server(tmp_path)
-        ws = FakeWebSocket([json.dumps({"command": "start_listening"})])
+        ws = FakeWebSocket([json.dumps({"command": "listening_start"})])
 
         await server.handle_client(ws)
 
@@ -140,16 +149,16 @@ class TestEmitEvent:
 
         await server.emit_event(LVAEvent.PIPELINE_ERROR, {"reason": "stt-failed"})
 
-        assert ws.sent() == [{"event": "pipeline_error", "data": {"reason": "stt-failed"}}, {"event": "state", "data": {"state": "idle"}}]
+        assert ws.sent() == [{"event": "state", "data": {"state": "pipeline_error"}}, {"event": "state", "data": {"state": "idle"}}]
 
     @pytest.mark.asyncio
-    async def test_pipeline_error_without_a_reason_says_unknown(self, tmp_path):
+    async def test_pipeline_error_is_not_an_event_of_its_own(self, tmp_path):
         server = make_server(tmp_path)
         ws = connect(server)
 
         await server.emit_event(LVAEvent.PIPELINE_ERROR)
 
-        assert ws.sent()[0] == {"event": "pipeline_error", "data": {"reason": "unknown"}}
+        assert "pipeline_error" not in [m["event"] for m in ws.sent()]
 
     @pytest.mark.asyncio
     async def test_mute_volume_and_connection_are_read_from_the_state(self, tmp_path):
@@ -164,7 +173,7 @@ class TestEmitEvent:
 
         assert ws.sent() == [
             {"event": "lva_status", "data": {"status": "disconnected"}},
-            {"event": "mute_status", "data": {"muted": True}},
+            {"event": "mute_status", "data": {"status": "muted"}},
             {"event": "volume_status", "data": {"volume": 25}},
         ]
 
@@ -176,19 +185,21 @@ class TestEmitEvent:
         timer = {"id": "t1", "name": "", "total_seconds": 60, "seconds_left": 60}
 
         await server.emit_event(LVAEvent.TIMER_TICKING, timer)
-        assert {"event": "timer_status", "data": {"status": "active"}} in ws.sent()
+        assert {"event": "timer_status", "data": {"status": "active", "auto_stopped": False}} in ws.sent()
         assert {"event": "timer_remaining_time", "data": {"seconds": 60}} in ws.sent()
         assert {"event": "timer_remaining_percentage", "data": {"percentage": 100}} in ws.sent()
+        timer_data = {"id": "t1", "name": "", "status": "active", "total_seconds": 60, "seconds_left": 60, "percentage": 100}
+        assert {"event": "timer_full_data_set", "data": {"timers": [timer_data]}} in ws.sent()
 
         ws.send.reset_mock()
         server._state.satellite.timer_ringing = True  # pylint: disable=protected-access
         await server.emit_event(LVAEvent.TIMER_RINGING, {**timer, "seconds_left": 0})
-        assert ws.sent()[0] == {"event": "timer_status", "data": {"status": "ringing"}}
+        assert ws.sent()[0] == {"event": "timer_status", "data": {"status": "ringing", "auto_stopped": False}}
 
         ws.send.reset_mock()
         server._state.satellite.timer_ringing = False  # pylint: disable=protected-access
         await server.emit_event(LVAEvent.IDLE)
-        assert ws.sent() == [{"event": "timer_status", "data": {"status": "idle"}}]
+        assert ws.sent() == [{"event": "timer_status", "data": {"status": "idle", "auto_stopped": False}}, {"event": "timer_full_data_set", "data": {"timers": []}}]
         await server.stop()
 
     @pytest.mark.asyncio
@@ -201,7 +212,22 @@ class TestEmitEvent:
 
         await server.emit_event(LVAEvent.TIMER_AUTO_STOPPED, {"seconds": 900})
 
-        assert ws.sent() == [{"event": "timer_auto_stopped", "data": {"seconds": 900}}, {"event": "timer_status", "data": {"status": "idle"}}]
+        assert ws.sent() == [{"event": "timer_status", "data": {"status": "idle", "auto_stopped": True}}]
+
+    @pytest.mark.asyncio
+    async def test_auto_stopped_is_only_reported_once(self, tmp_path):
+        server = make_server(tmp_path)
+        server._state.satellite.timer_ringing = True  # pylint: disable=protected-access
+        await server.refresh_status()
+        server._state.satellite.timer_ringing = False  # pylint: disable=protected-access
+        await server.emit_event(LVAEvent.TIMER_AUTO_STOPPED, {"seconds": 900})
+        ws = connect(server)
+
+        await server.emit_event(LVAEvent.IDLE)
+        await server.handle_client(FakeWebSocket())
+
+        ws.send.assert_not_awaited()
+        assert server._timer_auto_stopped is False  # pylint: disable=protected-access
 
     @pytest.mark.asyncio
     async def test_cancelled_timer_goes_back_to_idle(self, tmp_path):
@@ -212,7 +238,7 @@ class TestEmitEvent:
 
         await server.emit_event(LVAEvent.TIMER_UPDATED, {**timer, "seconds_left": 0})
 
-        assert {"event": "timer_status", "data": {"status": "idle"}} in ws.sent()
+        assert {"event": "timer_status", "data": {"status": "idle", "auto_stopped": False}} in ws.sent()
         assert {"event": "timer_remaining_time", "data": {"seconds": 0}} in ws.sent()
         await server.stop()
 
@@ -297,8 +323,8 @@ class TestTicker:
         await server.emit_event(LVAEvent.TIMER_TICKING, timer)
         ws = connect(server)
 
-        with patch("linux_voice_assistant.peripheral_api.v2.time.monotonic", return_value=1000.0):
-            with patch("linux_voice_assistant.peripheral_api.v2.asyncio.sleep", AsyncMock()):
+        with patch("linux_voice_assistant.peripheral_api.v2.api.time.monotonic", return_value=1000.0):
+            with patch("linux_voice_assistant.peripheral_api.v2.api.asyncio.sleep", AsyncMock()):
                 await server.refresh_status()
                 await asyncio.sleep(0)
                 await asyncio.sleep(0)
@@ -358,7 +384,7 @@ class TestCommandParsing:
 
     @pytest.mark.asyncio
     async def test_command_without_state_is_ignored(self):
-        await dispatch(PeripheralApiV2(), "start_listening")
+        await dispatch(PeripheralApiV2(), "listening_start")
 
 
 class TestStartListeningAndStop:
@@ -375,7 +401,7 @@ class TestStartListeningAndStop:
         assert [m["event"] for m in ws.sent()] == ["timer_status", "state"]
 
     @pytest.mark.asyncio
-    async def test_start_listening_that_ends_a_ringing_timer_updates_the_status_at_once(self, tmp_path):
+    async def test_listening_start_that_ends_a_ringing_timer_updates_the_status_at_once(self, tmp_path):
         server = make_server(tmp_path)
         server._state.satellite.timer_ringing = True  # pylint: disable=protected-access
         await server.refresh_status()
@@ -385,41 +411,52 @@ class TestStartListeningAndStop:
             server._state.satellite.timer_ringing = False  # pylint: disable=protected-access
 
         server._state.satellite.start_listening.side_effect = stop_ringing  # pylint: disable=protected-access
-        await dispatch(server, "start_listening")
+        await dispatch(server, "listening_start")
 
-        assert {"event": "timer_status", "data": {"status": "idle"}} in ws.sent()
+        assert {"event": "timer_status", "data": {"status": "idle", "auto_stopped": False}} in ws.sent()
 
     @pytest.mark.asyncio
-    async def test_start_listening(self, tmp_path):
+    async def test_listening_start(self, tmp_path):
         server = make_server(tmp_path)
-        await dispatch(server, "start_listening")
+        await dispatch(server, "listening_start")
         server._state.satellite.start_listening.assert_called_once()  # pylint: disable=protected-access
 
     @pytest.mark.asyncio
-    async def test_start_listening_is_ignored_while_muted(self, tmp_path):
+    async def test_listening_start_is_ignored_while_muted(self, tmp_path):
         server = make_server(tmp_path)
         server._state.muted = True  # pylint: disable=protected-access
-        await dispatch(server, "start_listening")
+        await dispatch(server, "listening_start")
         server._state.satellite.start_listening.assert_not_called()  # pylint: disable=protected-access
 
     @pytest.mark.asyncio
-    async def test_start_listening_without_satellite(self, tmp_path):
+    async def test_listening_start_without_satellite(self, tmp_path):
         server = make_server(tmp_path)
         server._state.satellite = None  # pylint: disable=protected-access
-        await dispatch(server, "start_listening")
+        await dispatch(server, "listening_start")
 
     @pytest.mark.asyncio
-    async def test_stop_stops_the_pipeline(self, tmp_path):
+    async def test_listening_stop_stops_the_pipeline(self, tmp_path):
         server = make_server(tmp_path)
-        await dispatch(server, "stop")
+        await dispatch(server, "listening_stop")
         server._state.satellite.stop.assert_called_once()  # pylint: disable=protected-access
 
     @pytest.mark.asyncio
-    async def test_stop_leaves_a_ringing_timer_alone(self, tmp_path):
+    async def test_listening_stop_leaves_a_ringing_timer_alone(self, tmp_path):
         server = make_server(tmp_path)
         server._state.satellite.timer_ringing = True  # pylint: disable=protected-access
-        await dispatch(server, "stop")
+        await dispatch(server, "listening_stop")
         server._state.satellite.stop.assert_not_called()  # pylint: disable=protected-access
+
+    @pytest.mark.asyncio
+    async def test_the_old_names_stop_and_start_listening_are_unknown(self, tmp_path, caplog):
+        server = make_server(tmp_path)
+        with caplog.at_level(logging.WARNING):
+            await dispatch(server, "stop")
+            await dispatch(server, "start_listening")
+        assert "unknown command 'stop'" in caplog.text
+        assert "unknown command 'start_listening'" in caplog.text
+        server._state.satellite.stop.assert_not_called()  # pylint: disable=protected-access
+        server._state.satellite.start_listening.assert_not_called()  # pylint: disable=protected-access
 
     @pytest.mark.asyncio
     async def test_timer_stop_stops_a_ringing_timer(self, tmp_path):
@@ -572,6 +609,13 @@ class TestVolume:
         assert "playing the step sound" in caplog.text
 
     @pytest.mark.asyncio
+    async def test_volume_silent_sets_the_volume_to_zero_without_a_sound(self, tmp_path):
+        server = make_server(tmp_path)
+        await dispatch(server, "volume_silent")
+        assert server._state.volume == 0.0  # pylint: disable=protected-access
+        server._state.tts_player.play.assert_not_called()  # pylint: disable=protected-access
+
+    @pytest.mark.asyncio
     async def test_volume_set_plays_no_sound(self, tmp_path):
         server = make_server(tmp_path)
         await dispatch(server, "volume_set", {"volume": 70})
@@ -643,14 +687,14 @@ class TestHardwareMuteStatus:
     async def test_status_is_kept(self, tmp_path, caplog, status, muted):
         server = make_server(tmp_path)
         with caplog.at_level(logging.DEBUG):
-            await dispatch(server, "hardware_mute_status", {"status": status})
+            await report(server, "hardware_mute_status", {"status": status})
         assert server._state.hardware_muted is muted  # pylint: disable=protected-access
         assert f"Hardware mute reported: {status}" in caplog.text
 
     @pytest.mark.asyncio
     async def test_it_does_not_change_the_mute_of_lva(self, tmp_path):
         server = make_server(tmp_path)
-        await dispatch(server, "hardware_mute_status", {"status": "muted"})
+        await report(server, "hardware_mute_status", {"status": "muted"})
         server._state.satellite._set_muted.assert_not_called()  # pylint: disable=protected-access
         assert server._state.muted is False  # pylint: disable=protected-access
 
@@ -660,8 +704,8 @@ class TestHardwareMuteStatus:
         other = connect(server)
         server._state.broadcast = MagicMock()  # pylint: disable=protected-access
 
-        await dispatch(server, "hardware_mute_status", {"status": "muted"})
-        await dispatch(server, "hardware_mute_type", {"type": "changeable"})
+        await report(server, "hardware_mute_status", {"status": "muted"})
+        await report(server, "hardware_mute_type", {"type": "changeable"})
 
         other.send.assert_not_awaited()
         server._state.broadcast.assert_not_called()  # pylint: disable=protected-access
@@ -671,16 +715,16 @@ class TestHardwareMuteStatus:
     async def test_no_entity_is_added(self, tmp_path):
         server = make_server(tmp_path)
         before = list(server._state.entities)  # pylint: disable=protected-access
-        await dispatch(server, "hardware_mute_status", {"status": "muted"})
-        await dispatch(server, "hardware_mute_type", {"type": "read_only"})
+        await report(server, "hardware_mute_status", {"status": "muted"})
+        await report(server, "hardware_mute_type", {"type": "read_only"})
         assert server._state.entities == before  # pylint: disable=protected-access
 
     @pytest.mark.asyncio
     async def test_an_unchanged_status_is_noted_in_the_log(self, tmp_path, caplog):
         server = make_server(tmp_path)
-        await dispatch(server, "hardware_mute_status", {"status": "muted"})
+        await report(server, "hardware_mute_status", {"status": "muted"})
         with caplog.at_level(logging.DEBUG):
-            await dispatch(server, "hardware_mute_status", {"status": "muted"})
+            await report(server, "hardware_mute_status", {"status": "muted"})
         assert "already reported as muted" in caplog.text
 
     @pytest.mark.asyncio
@@ -688,7 +732,7 @@ class TestHardwareMuteStatus:
     async def test_invalid_status_warns_and_changes_nothing(self, tmp_path, caplog, data):
         server = make_server(tmp_path)
         with caplog.at_level(logging.WARNING):
-            await dispatch(server, "hardware_mute_status", data)
+            await report(server, "hardware_mute_status", data)
         assert server._state.hardware_muted is None  # pylint: disable=protected-access
         assert "invalid status in hardware_mute_status" in caplog.text
 
@@ -699,16 +743,16 @@ class TestHardwareMuteType:
     async def test_type_is_kept(self, tmp_path, caplog, mute_type):
         server = make_server(tmp_path)
         with caplog.at_level(logging.DEBUG):
-            await dispatch(server, "hardware_mute_type", {"type": mute_type})
+            await report(server, "hardware_mute_type", {"type": mute_type})
         assert server._state.hardware_mute_type == mute_type  # pylint: disable=protected-access
         assert f"Hardware mute type reported: {mute_type}" in caplog.text
 
     @pytest.mark.asyncio
     async def test_an_unchanged_type_is_noted_in_the_log(self, tmp_path, caplog):
         server = make_server(tmp_path)
-        await dispatch(server, "hardware_mute_type", {"type": "none"})
+        await report(server, "hardware_mute_type", {"type": "none"})
         with caplog.at_level(logging.DEBUG):
-            await dispatch(server, "hardware_mute_type", {"type": "none"})
+            await report(server, "hardware_mute_type", {"type": "none"})
         assert "already reported as none" in caplog.text
 
     @pytest.mark.asyncio
@@ -716,7 +760,7 @@ class TestHardwareMuteType:
     async def test_invalid_type_warns_and_changes_nothing(self, tmp_path, caplog, data):
         server = make_server(tmp_path)
         with caplog.at_level(logging.WARNING):
-            await dispatch(server, "hardware_mute_type", data)
+            await report(server, "hardware_mute_type", data)
         assert server._state.hardware_mute_type is None  # pylint: disable=protected-access
         assert "invalid type in hardware_mute_type" in caplog.text
 
@@ -724,8 +768,28 @@ class TestHardwareMuteType:
     async def test_the_old_name_is_an_unknown_command(self, tmp_path, caplog):
         server = make_server(tmp_path)
         with caplog.at_level(logging.WARNING):
-            await dispatch(server, "hardware_mute_possible", {"possible": True})
-        assert "unknown command 'hardware_mute_possible'" in caplog.text
+            await report(server, "hardware_mute_possible", {"possible": True})
+        assert "unknown event 'hardware_mute_possible'" in caplog.text
+
+
+class TestHardwareMuteMessageKinds:
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("name,data", [("hardware_mute_status", {"status": "muted"}), ("hardware_mute_type", {"type": "changeable"})])
+    async def test_a_peripheral_reports_the_hardware_mute_as_an_event_not_as_a_command(self, tmp_path, caplog, name, data):
+        server = make_server(tmp_path)
+        with caplog.at_level(logging.WARNING):
+            await dispatch(server, name, data)
+        assert f"unknown command '{name}'" in caplog.text
+        assert server._state.hardware_muted is None  # pylint: disable=protected-access
+        assert server._state.hardware_mute_type is None  # pylint: disable=protected-access
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("name", ["hardware_mute_on", "hardware_mute_off"])
+    async def test_the_requests_to_switch_the_hardware_mute_are_not_accepted_from_a_peripheral(self, tmp_path, caplog, name):
+        server = make_server(tmp_path)
+        with caplog.at_level(logging.WARNING):
+            await report(server, name)
+        assert f"unknown event '{name}'" in caplog.text
 
 
 class TestHardwareMuteInTheSnapshot:
@@ -749,7 +813,7 @@ class TestRequestHardwareMute:
 
         await server.request_hardware_mute(muted)
 
-        assert first.sent() == second.sent() == [{"event": event}]
+        assert first.sent() == second.sent() == [{"command": event}]
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("mute_type", ["none", "read_only", None])

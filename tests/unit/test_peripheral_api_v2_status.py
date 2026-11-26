@@ -2,8 +2,8 @@
 
 import pytest
 
-from linux_voice_assistant.peripheral_api.v2_status import StatusInputs, V2Status, derive_status, pipeline_state_after, status_messages
-from linux_voice_assistant.peripheral_api.v2_timers import TimerSummary
+from linux_voice_assistant.peripheral_api.v2.status import StatusInputs, V2Status, derive_status, pipeline_state_after, status_messages
+from linux_voice_assistant.peripheral_api.v2.timers import TimerEntry, TimerSummary
 
 IDLE_TIMER = TimerSummary("idle", 0, 0)
 
@@ -25,7 +25,7 @@ class TestPipelineStateAfter:
             ("tts_speaking", "tts"),
             ("tts_finished", "idle"),
             ("idle", "idle"),
-            ("pipeline_error", "idle"),
+            ("pipeline_error", "pipeline_error"),
         ],
     )
     def test_events_move_the_pipeline(self, event, expected):
@@ -51,7 +51,7 @@ class TestDeriveStatus:
     def test_volume_is_a_percentage(self):
         assert derive_status(make_inputs(volume=0.37), None).volume == 37
 
-    @pytest.mark.parametrize("pipeline", ["wake_word", "listening", "speech_detected", "thinking", "tts"])
+    @pytest.mark.parametrize("pipeline", ["wake_word", "listening", "speech_detected", "thinking", "tts", "pipeline_error"])
     def test_state_follows_the_pipeline(self, pipeline):
         assert derive_status(make_inputs(pipeline_state=pipeline), None).state == pipeline
 
@@ -90,6 +90,7 @@ class TestStatusMessages:
             "timer_status",
             "timer_remaining_time",
             "timer_remaining_percentage",
+            "timer_full_data_set",
             "state",
             "mute_status",
             "volume_status",
@@ -100,8 +101,10 @@ class TestStatusMessages:
         messages = {m["event"]: m["data"] for m in status_messages(None, derive_status(make_inputs(muted=True, volume=0.8), None))}
         assert messages["lva_status"] == {"status": "connected"}
         assert messages["state"] == {"state": "idle"}
-        assert messages["mute_status"] == {"muted": True}
+        assert messages["mute_status"] == {"status": "muted"}
         assert messages["volume_status"] == {"volume": 80}
+        assert messages["timer_status"] == {"status": "idle", "auto_stopped": False}
+        assert messages["timer_full_data_set"] == {"timers": []}
         assert messages["timer_remaining_time"] == {"seconds": 0}
         assert messages["timer_remaining_percentage"] == {"percentage": 0}
         assert messages["media_player_status"] == {"status": "idle"}
@@ -119,3 +122,29 @@ class TestStatusMessages:
         before = derive_status(make_inputs(timer=TimerSummary("ringing", 0, 0)), None)
         after = derive_status(make_inputs(pipeline_state="wake_word"), before)
         assert [m["event"] for m in status_messages(before, after)] == ["timer_status", "state"]
+
+    def test_unmuted_is_reported_as_unmuted(self):
+        before = derive_status(make_inputs(muted=True), None)
+        after = derive_status(make_inputs(muted=False), before)
+        assert status_messages(before, after) == [{"event": "mute_status", "data": {"status": "unmuted"}}]
+
+    def test_a_timer_that_stopped_on_its_own_says_so_in_the_timer_status(self):
+        before = derive_status(make_inputs(timer=TimerSummary("ringing", 0, 0)), None)
+        after = derive_status(make_inputs(timer_auto_stopped=True), before)
+        assert status_messages(before, after) == [{"event": "timer_status", "data": {"status": "idle", "auto_stopped": True}}]
+
+    def test_the_flag_alone_sends_nothing_new(self):
+        before = derive_status(make_inputs(timer_auto_stopped=True), None)
+        after = derive_status(make_inputs(timer_auto_stopped=False), before)
+        assert not status_messages(before, after)
+
+    def test_all_timers_are_sent_with_their_data(self):
+        timer = TimerEntry("t1", "tea", "active", 300, 150, 50)
+        status = derive_status(make_inputs(timer=TimerSummary("active", 150, 50, (timer,))), None)
+        data = {m["event"]: m["data"] for m in status_messages(None, status)}["timer_full_data_set"]
+        assert data == {"timers": [{"id": "t1", "name": "tea", "status": "active", "total_seconds": 300, "seconds_left": 150, "percentage": 50}]}
+
+    def test_the_full_data_set_is_sent_again_when_a_timer_changes(self):
+        first = derive_status(make_inputs(timer=TimerSummary("active", 150, 50, (TimerEntry("t1", "tea", "active", 300, 150, 50),))), None)
+        second = derive_status(make_inputs(timer=TimerSummary("active", 149, 50, (TimerEntry("t1", "tea", "active", 300, 149, 50),))), first)
+        assert "timer_full_data_set" in [m["event"] for m in status_messages(first, second)]

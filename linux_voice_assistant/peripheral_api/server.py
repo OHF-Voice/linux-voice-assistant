@@ -1,7 +1,7 @@
 """WebSocket server of the peripheral API.
 
 Binds the port and hands every client to the module of the API version it asked for. What a version sends and accepts lives in
-the module of that version (``v1.py``), so one version never changes another.
+the module of that version (``v1/api.py``), so one version never changes another.
 """
 
 from __future__ import annotations

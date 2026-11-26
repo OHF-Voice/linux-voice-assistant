@@ -2,7 +2,7 @@
 
 This page describes what Linux Voice Assistant (LVA) does in everyday situations, from the user's point of view: what happens to music when you talk to the assistant, what happens when a timer rings, what the stop word does, and so on.
 
-For the list of Home Assistant entities see [configuration.md](configuration.md). For the events sent to hardware peripherals see [peripheral_api/readme.md](peripheral_api/readme.md), for what peripherals can trigger see [behavior_peripheral_api.md](behavior_peripheral_api.md).
+For the list of Home Assistant entities see [configuration.md](configuration.md). For the events sent to hardware peripherals see [peripheral_api/readme.md](peripheral_api/readme.md), for what peripherals can trigger see the specification of each version ([v1](peripheral_api/v1.md), [v2](peripheral_api/v2.md)).
 
 ---
 
@@ -63,7 +63,7 @@ Details:
 - **Continued conversation.** If Home Assistant asks a follow-up question, the assistant listens again after the reply, without a wake word. It waits `--continue-conversation-delay` (default 0.5 s) after the reply so the microphone does not record the tail of its own voice. Music stays ducked through the whole conversation and is restored only when the conversation ends. The follow-up runs on the same pipeline as the wake word that started the conversation. After a button press or an announcement from Home Assistant there is no wake word, so the first pipeline is used. If you mute the assistant during that delay, the follow-up is skipped and music is restored.
 - **Wake word while a timer rings.** Saying the wake word silences the ringing timer and starts a normal interaction.
 - **Starting by button.** A peripheral button can start listening without a wake word. Instead of the wake sound, the start-listening sound (`--start-listening-sound`) plays; everything else is identical. This also silences a ringing timer. It does nothing while no wake word is active, see below.
-- **Errors.** If the pipeline reports an error, peripherals receive a `pipeline_error` event. See [peripheral_api/readme.md](peripheral_api/readme.md).
+- **Errors.** If the pipeline reports an error, version 1 peripherals receive a `pipeline_error` event, version 2 peripherals the state `pipeline_error`. See [peripheral_api/readme.md](peripheral_api/readme.md).
 - **Two wake words.** Home Assistant can activate up to two wake words at once. Each has its own sensitivity setting (*Wake Word 1/2 Sensitivity*). A word keeps its slot while the other one changes, and always uses the sensitivity of its own slot, also when it is the only active word.
 - **Wake word locations.** Wake words are read from `wakewords/internal`, `wakewords/downloaded` and `wakewords/custom` (root: `--wake-word-root-dir`), each with a `microwakeword` and an `openwakeword` subdirectory. The same model in two directories is two separate wake words. `--wake-model` and `--wake-model-2` accept the file name (`hey_jarvis`) or the name in the selection (`Internal - MWW - Hey Jarvis`). If a file name exists in more than one origin, `custom` wins over `downloaded`, which wins over `internal`. The same applies to the stop word. Wake words that Home Assistant sends are stored in `downloaded`.
 - **Wake word names.** Every wake word has a name made of origin, engine and the phrase from its `.json` file, for example `Download - OWW - Hey Jarvis` (`Internal`, `Download`, `Custom` and `MWW`, `OWW`). It is the name in the wake word selection in Home Assistant and also the phrase LVA sends with a voice request, because Home Assistant compares both to choose the pipeline of a wake word. If two wake words of one origin and engine have the same phrase, only the last one found is used and a warning is logged.
@@ -194,7 +194,7 @@ When unmuted, the unmute sound (`--unmute-sound`) plays and the assistant return
 
 Do not confuse this with the **media player mute**, which sets the shared volume to 0, see below.
 
-Some hardware can also mute its microphone itself. That **hardware mute** is separate from this switch: LVA only learns about it from a version 2 peripheral, see [behavior_peripheral_api.md](behavior_peripheral_api.md). LVA does not mute because the hardware is muted and the other way round, and Home Assistant sees the hardware mute through the peripheral, not through LVA.
+Some hardware can also mute its microphone itself. That **hardware mute** is separate from this switch: LVA only learns about it from a version 2 peripheral, see [peripheral_api/v2.md](peripheral_api/v2.md#hardware-mute). LVA does not mute because the hardware is muted and the other way round, and Home Assistant sees the hardware mute through the peripheral, not through LVA.
 
 ---
 
@@ -219,7 +219,7 @@ If the second attempt also fails, the assistant logs the error and exits with a 
 
 ## Peripheral API versions
 
-The peripheral API is versioned. Choosing a version and what LVA does in each version is described in [behavior_peripheral_api.md](behavior_peripheral_api.md).
+The peripheral API is versioned. Choosing a version and what LVA does in each version is described in [peripheral_api/readme.md](peripheral_api/readme.md) and the specification of each version.
 
 ---
 

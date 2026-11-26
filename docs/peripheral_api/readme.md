@@ -12,7 +12,7 @@ The API is versioned, so a peripheral written for an older version keeps working
 
 - Clients of different versions can be connected at the same time. Each one only sees the events and commands of its own version.
 - A path that is not a supported version is refused with HTTP 404, and LVA logs the versions it supports.
-- Each version is its own module (`linux_voice_assistant/peripheral_api/v1.py`, `v2.py`) with its own specification page. A change to one version never changes another. Version 1 is only changed to fix bugs.
-- The behavior behind the API is described in [behavior.md](../behavior_peripheral_api.md).
+- Each version is its own module (the folders `linux_voice_assistant/peripheral_api/v1/` and `v2/`) with its own specification page. A change to one version never changes another. Version 1 is only changed to fix bugs.
+- An unknown version is refused, a version is only removed as a breaking change. What LVA does for a peripheral is described in the specification of each version, the rest of LVA in [behavior.md](../behavior.md).
 
 The port and the address are set with `--peripheral-host` and `--peripheral-port`. `--disable-peripheral-api` turns the API off.

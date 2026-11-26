@@ -2,8 +2,8 @@
 
 ## Sync the mute of LVA with the hardware mute
 
-Some hardware can mute its microphone itself. A version 2 peripheral (the Linux Peripherals Controller) reports it to LVA with
-`hardware_mute_type` (`none`, `changeable`, `read_only`) and `hardware_mute_status` (`muted`, `unmuted`). LVA keeps both for its own
+Some hardware can mute its microphone itself. A version 2 peripheral (the Linux Peripherals Controller) reports it to LVA with the
+events `hardware_mute_type` (`none`, `changeable`, `read_only`) and `hardware_mute_status` (`muted`, `unmuted`). LVA keeps both for its own
 processing and does nothing with them yet: its own mute and the hardware mute are independent.
 
 Planned: a parameter (name and default still open) that **syncs** the two, so that the mute of LVA and the hardware mute show the same
@@ -15,7 +15,7 @@ What is already decided:
   reported to LVA. LVA never pushes its own mute onto the hardware at that moment. With the sync on, LVA takes over the state of the
   device.
 - After that the hardware mute is switched normally: from Home Assistant through the entity of the peripheral, or by the hardware
-  itself. LVA can also switch it with `hardware_mute_on` / `hardware_mute_off` if the type is `changeable` (the API and
+  itself. LVA can also switch it with the commands `hardware_mute_on` / `hardware_mute_off` if the type is `changeable` (the API and
   `PeripheralAPIServer.request_hardware_mute_sync()` exist, nothing calls them yet).
 
 What is still open:

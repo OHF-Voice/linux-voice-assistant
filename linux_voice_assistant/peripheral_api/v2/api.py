@@ -3,13 +3,16 @@
 The reduced API for the Linux Peripherals Controller: the status of the assistant and a few commands. LVA creates no Home
 Assistant entities for a version 2 client. The specification is ``docs/peripheral_api/v2.md``.
 
-Events  (LVA → peripheral): {"event": "<name>", "data": {...}}
-Commands (peripheral → LVA): {"command": "<name>", "data": {...}}
+Event   (reports something): {"event": "<name>", "data": {...}}
+Command (asks for something): {"command": "<name>", "data": {...}}
+Which one a message is does not depend on the direction.
 
-Events: hello, lva_status, state, mute_status, volume_status, timer_status, timer_remaining_time, timer_remaining_percentage,
-media_player_status, pipeline_error, timer_auto_stopped, hardware_mute_on, hardware_mute_off.
-Commands: start_listening, stop, mute_on, mute_off, volume_up, volume_down, volume_set, timer_stop, button_pressed,
-hardware_mute_status, hardware_mute_type.
+Events from LVA: hello, lva_status, state, mute_status, volume_status, timer_status, timer_remaining_time, timer_remaining_percentage,
+timer_full_data_set, media_player_status.
+Commands from LVA: hardware_mute_on, hardware_mute_off.
+Commands from the peripheral: listening_start, listening_stop, mute_on, mute_off, volume_up, volume_down, volume_set, volume_silent, timer_stop,
+button_pressed.
+Events from the peripheral: hardware_mute_status, hardware_mute_type.
 """
 
 from __future__ import annotations
@@ -21,17 +24,17 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set
 
-from .v2_status import StatusInputs, V2Status, derive_status, pipeline_state_after, status_messages
-from .v2_timers import TimerInfo, summarize_timers, update_timers
-from .versions import SUPPORTED_VERSIONS
+from ..versions import SUPPORTED_VERSIONS
+from .status import StatusInputs, V2Status, derive_status, pipeline_state_after, status_messages
+from .timers import TimerInfo, drop_stopped_timers, summarize_timers, update_timers
 
 if TYPE_CHECKING:
-    from ..models import ServerState
-    from .v1 import LVAEvent
+    from ...models import ServerState
+    from ..v1 import LVAEvent
 
 _LOGGER = logging.getLogger(__name__)
 
-_SOUNDS_DIR = Path(__file__).resolve().parents[2] / "sounds"
+_SOUNDS_DIR = Path(__file__).resolve().parents[3] / "sounds"
 _VOLUME_LIMIT_SOUND = _SOUNDS_DIR / "volume_limit.wav"
 _VOLUME_STEP_SOUND = _SOUNDS_DIR / "volume_step.wav"
 HARDWARE_MUTE_TYPES = ("none", "changeable", "read_only")
@@ -43,7 +46,7 @@ class PeripheralApiV2:
     Version 2 of the peripheral API for the clients that connected to ``/v2``.
 
     The server calls ``handle_client()`` for every such client and ``emit_event()`` for every event of LVA. The status that is
-    sent comes from the state of LVA, see ``v2_status.py``.
+    sent comes from the state of LVA, see ``status.py``.
     """
 
     DEFAULT_VOLUME_STEP: float = 0.05
@@ -58,6 +61,7 @@ class PeripheralApiV2:
         self._timers: Dict[str, TimerInfo] = {}
         self._status: Optional[V2Status] = None
         self._ticker: Optional[asyncio.Task] = None
+        self._timer_auto_stopped = False
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -107,17 +111,22 @@ class PeripheralApiV2:
         """
         self._pipeline_state = pipeline_state_after(event.value, self._pipeline_state)
         self._timers = update_timers(self._timers, event.value, data, time.monotonic())
-        if event.value == "pipeline_error":
-            await self._broadcast([{"event": "pipeline_error", "data": {"reason": str((data or {}).get("reason", "unknown"))}}])
-        elif event.value == "timer_auto_stopped":
-            await self._broadcast([{"event": "timer_auto_stopped", "data": {"seconds": int((data or {}).get("seconds", 0))}}])
+        if event.value == "timer_auto_stopped":
+            self._timer_auto_stopped = True
         await self.refresh_status()
+        if self._pipeline_state == "pipeline_error":
+            self._pipeline_state = "idle"
+            await self.refresh_status()
 
     async def refresh_status(self) -> None:
         """Work out the status again and send what changed."""
         if self._state is None:
             return
+        ringing = self._ringing()
+        self._timers = drop_stopped_timers(self._timers, ringing)
         current = self._current_status()
+        if current.timer_status != "ringing":
+            self._timer_auto_stopped = False
         messages = status_messages(self._status, current)
         self._status = current
         if messages:
@@ -144,35 +153,41 @@ class PeripheralApiV2:
             )
             return
         _LOGGER.debug("Asking the peripherals to %s the hardware mute", "set" if muted else "clear")
-        await self._broadcast([{"event": "hardware_mute_on" if muted else "hardware_mute_off"}])
+        await self._broadcast([{"command": "hardware_mute_on" if muted else "hardware_mute_off"}])
 
     # ------------------------------------------------------------------
     # Commands
     # ------------------------------------------------------------------
 
     async def _dispatch_command(self, raw: str) -> None:
-        """Parse and execute a JSON command from the peripheral."""
+        """Parse and execute a JSON message from the peripheral: a command to execute or an event that reports the hardware mute."""
         try:
             msg = json.loads(raw)
         except json.JSONDecodeError:
             _LOGGER.warning("Peripheral (API v2): invalid JSON: %.200s", raw)
             return
 
+        event = msg.get("event", "") if isinstance(msg, dict) else ""
         command = msg.get("command", "") if isinstance(msg, dict) else ""
         data = msg.get("data") if isinstance(msg, dict) else None
         state = self._state
-        if not command or state is None:
+        if not (command or event) or state is None:
+            return
+
+        if event:
+            _LOGGER.debug("Peripheral (API v2) event received: %s", event)
+            self._handle_peripheral_event(state, event, data)
             return
 
         _LOGGER.debug("Peripheral (API v2) command received: %s", command)
         satellite = state.satellite
 
-        if command == "start_listening":
+        if command == "listening_start":
             if satellite is not None and not state.muted:
                 satellite.start_listening()
                 # It ends a ringing timer without an event, so the status is worked out again right away
                 await self.refresh_status()
-        elif command == "stop":
+        elif command == "listening_stop":
             if satellite is not None and not satellite.timer_ringing:
                 satellite.stop()
         elif command == "timer_stop":
@@ -184,20 +199,27 @@ class PeripheralApiV2:
             self._change_volume(state, satellite, self._volume_step if command == "volume_up" else -self._volume_step)
         elif command == "volume_set":
             self._set_volume_command(state, satellite, data)
+        elif command == "volume_silent":
+            self._apply_volume(state, satellite, 0.0)
         elif command == "button_pressed":
             self._play_button_sound(state, data)
-        elif command == "hardware_mute_status":
-            self._set_hardware_muted(state, data)
-        elif command == "hardware_mute_type":
-            self._set_hardware_mute_type(state, data)
         else:
             _LOGGER.warning("Peripheral (API v2): unknown command '%s'", command)
+
+    def _handle_peripheral_event(self, state: "ServerState", event: str, data: Any) -> None:
+        """Keep what a peripheral reports about its hardware mute."""
+        if event == "hardware_mute_status":
+            self._set_hardware_muted(state, data)
+        elif event == "hardware_mute_type":
+            self._set_hardware_mute_type(state, data)
+        else:
+            _LOGGER.warning("Peripheral (API v2): unknown event '%s'", event)
 
     def _set_hardware_muted(self, state: "ServerState", data: Any) -> None:
         """Keep the hardware mute state that a peripheral reported. LVA's own mute is not changed."""
         status = data.get("status") if isinstance(data, dict) else None
         if status not in ("muted", "unmuted"):
-            _LOGGER.warning("Peripheral (API v2): invalid status in hardware_mute_status command: %s", status)
+            _LOGGER.warning("Peripheral (API v2): invalid status in hardware_mute_status event: %s", status)
             return
         muted = status == "muted"
         if state.hardware_muted == muted:
@@ -210,7 +232,7 @@ class PeripheralApiV2:
         """Keep the kind of hardware mute that a peripheral reported."""
         mute_type = data.get("type") if isinstance(data, dict) else None
         if mute_type not in HARDWARE_MUTE_TYPES:
-            _LOGGER.warning("Peripheral (API v2): invalid type in hardware_mute_type command: %s", mute_type)
+            _LOGGER.warning("Peripheral (API v2): invalid type in hardware_mute_type event: %s", mute_type)
             return
         if state.hardware_mute_type == mute_type:
             _LOGGER.debug("Hardware mute type is already reported as %s", mute_type)
@@ -286,7 +308,7 @@ class PeripheralApiV2:
 
         satellite = state.satellite
         entity = state.media_player_entity
-        ringing = bool(satellite is not None and satellite.timer_ringing)
+        ringing = self._ringing()
         announcing = bool((satellite is not None and satellite.announcing) or (entity is not None and entity.announcing))
         media_state = _MEDIA_STATE_NAMES.get(entity.state.name, "idle") if entity is not None else "idle"
         inputs = StatusInputs(
@@ -297,8 +319,13 @@ class PeripheralApiV2:
             pipeline_state=self._pipeline_state,
             media_state=media_state,
             timer=summarize_timers(self._timers, now, ringing),
+            timer_auto_stopped=self._timer_auto_stopped,
         )
         return derive_status(inputs, self._status)
+
+    def _ringing(self) -> bool:
+        satellite = self._state.satellite if self._state is not None else None
+        return bool(satellite is not None and satellite.timer_ringing)
 
     async def _broadcast(self, messages: List[Dict[str, Any]]) -> None:
         for ws in list(self._clients):

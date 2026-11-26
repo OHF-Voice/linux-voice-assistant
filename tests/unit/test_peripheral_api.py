@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from linux_voice_assistant.peripheral_api import LVAEvent, PeripheralAPIServer
-from linux_voice_assistant.peripheral_api.v1 import PeripheralApiV1
+from linux_voice_assistant.peripheral_api.v1.api import PeripheralApiV1
 from tests.unit.conftest import make_state
 
 
