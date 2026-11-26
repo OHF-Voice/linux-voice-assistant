@@ -110,8 +110,8 @@ Wake word slots: HA can activate up to 2 wake words. `preferences.active_wake_wo
 1. `__main__.py` argparse. If the app needs it at runtime, add a `ServerState` field with a default (otherwise `make_state()` in conftest has to handle it).
 2. `docker-entrypoint.sh` env → flag mapping.
 3. `.env.example`.
-4. `docs/install_application.md`: systemd `Environment=` block and the env var reference table.
-5. `README.md` parameter table.
+4. `docs/installation_part2_application.md`: systemd `Environment=` block.
+5. `docs/configuration.md` (section "Parameter overview"): one row with parameter, env var, description and default.
 
 Existing env quirk: `REFACTORY_SECONDS` is misspelled on purpose (it's the public name). Don't "fix" it.
 
@@ -151,7 +151,7 @@ Existing env quirk: `REFACTORY_SECONDS` is misspelled on purpose (it's the publi
 
 ## Gotchas
 
-- `ServerState.audio_input_channels` defaults to 1 and argparse (`--audio-input-channels`) also defaults to **1**, so the effective default is mono. The option only controls capture (2 = mic + AEC reference channel). What is streamed (`data` = channel 0 after WebRTC, `data2` = channel 0 before WebRTC) does not depend on it. Audio flow: see `docs/audio_pipeline.md`.
+- `ServerState.audio_input_channels` defaults to 1 and argparse (`--audio-input-channels`) also defaults to **1**, so the effective default is mono. The option only controls capture (2 = mic + AEC reference channel). What is streamed (`data` = channel 0 after WebRTC, `data2` = channel 0 before WebRTC) does not depend on it. Audio flow: see `docs/development/audio_pipeline.md`.
 - In Docker the working directory is `/app`, so the default `--wake-word-root-dir` is `/app/wakewords`. Below it, `internal` ships in the image, `downloaded` and `custom` are named volumes (`wakeword_downloaded`, `wakeword_custom`) and each has a `microwakeword` and an `openwakeword` subdirectory. `__main__.py` builds the search list lowest priority first (internal, downloaded, custom) and creates all directories. HA wake words (always microWakeWord) are stored in `downloaded/microwakeword`. The removed `--wake-word-dir` / `--download-dir` (and `WAKE_WORD_DIR`, which the Docker entrypoint still passes on) are still accepted and ignored with a warning (`warn_about_removed_options()` in `util.py`). Bare metal uses `wakewords/` inside the repo.
 - Paths in `.env.example` and the docs are written for the container (`/app/...`). The systemd examples use `/home/pi/linux-voice-assistant/...`.
 - `mypy` runs non-strict with `python_version = 3.11` (`mypy.ini`). Don't use syntax newer than 3.11.
@@ -166,15 +166,16 @@ Set the default of a CLI option as a literal in its `parser.add_argument(default
 
 | Doc | Contents |
 |-----|----------|
-| `README.md` | Features, hardware, CLI parameter table, dev setup |
-| `docs/install.md` → `install_audioserver.md`, `install_application.md` | Install flow (PipeWire/PulseAudio, Docker Compose, systemd, env var reference, wake word lists) |
+| `README.md` | Features, hardware, install entry points, dev setup |
+| `docs/configuration.md` | Parameter overview at the top (CLI option, env var, description, default), then every HA device-page entity, from the user's view |
+| `docs/installation.md` → `installation_part1_audioserver.md`, `installation_part2_application.md` | Install flow (PipeWire/PulseAudio, Docker Compose, systemd) |
+| `docs/features.md` | Feature guides: AEC, listen during wake sound, API encryption, own sound files, wake words (models, directories, custom), stop word |
 | `docs/behavior.md` | User-visible behavior (phases, ducking, stop word, timers, announcements). Binding for code changes, see AGENTS.md |
-| `docs/configuration.md` | Every HA device-page entity, from the user's view |
 | `docs/peripheral_api/readme.md` | Versions of the WebSocket API and how to choose one. The protocol of each version and what LVA does for a peripheral is in `docs/peripheral_api/vN.md`. Binding for code changes, see AGENTS.md |
-| `docs/communication.md` | Overview of the ESPHome API, mDNS and peripheral WebSocket interfaces, the voice request sequence, startup order, threads |
+| `docs/development/communication.md` | Overview of the ESPHome API, mDNS and peripheral WebSocket interfaces, the voice request sequence, startup order, threads |
 | `tests/e2e/README.md` | End-to-end test setup: virtual mic/speaker, fake Home Assistant, marker tones, CI job |
-| `docs/audio_pipeline.md` | Mic input to HA streaming: capture, Mic Volume scalar, WebRTC, wake/stop word, `VoiceAssistantAudio` data/data2 |
-| `docs/enabling_aec.md` | Echo cancellation via PulseAudio/PipeWire |
+| `docs/development/audio_pipeline.md` | Mic input to HA streaming: capture, Mic Volume scalar, WebRTC, wake/stop word, `VoiceAssistantAudio` data/data2 |
+| `docs/features.md` | Echo cancellation via PulseAudio/PipeWire |
 | `docs/debugging.md` | Audio stack / container socket troubleshooting |
 | `examples/*/` | Peripheral containers (Satellite1, ReSpeaker 2/4-mic, USB array, Jabra, web console) using the WebSocket API |
 | `.github/workflow.md` | Docker build workflows (release/nightly/PR) |

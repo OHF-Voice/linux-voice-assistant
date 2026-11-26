@@ -10,37 +10,38 @@ Unlike simpler voice satellites that run on microcontrollers with very limited c
 
 Because it runs on a full Linux system and offers access significantly more local computing resources for additional features and other integrations on the same satellite, this approach also provides greater flexibility for customization (such as for example experiment with using PipeWire).
 
+News about this software: [Discussion #495](https://github.com/OHF-Voice/linux-voice-assistant/discussions/495).
+
+![Linux-Voice-Assistant](docs/images/banner.svg)
+
 [![A project from the Open Home Foundation](https://www.openhomefoundation.org/badges/ohf-project.png)](https://www.openhomefoundation.org/)
 
 ## Features
 
-- Works with [Home Assistant](https://www.home-assistant.io/integrations/esphome/) using the [ESPHome](https://esphome.io/) protocol/API (via [aioesphomeapi](https://github.com/esphome/aioesphomeapi))
-- Feature local on-device wake word detection using integrated [OpenWakeWord](https://github.com/dscripka/openWakeWord) or [MicroWakeWord](https://github.com/kahrendt/microWakeWord)
-- Supports multiple wake words and languages
-- Two wake words active at the same time (two slots, selectable separately in Home Assistant)
-- Stop word independent of Home Assistant, only active during TTS, announcements and a ringing timer
-- Sensitivity of wake word 1, wake word 2 and the stop word, adjustable at runtime as Home Assistant number entities
-- Two separate players: music with its own output device (`--music-output-device`), voice output separate
-- Mic volume, gain and noise suppression (WebRTC), adjustable at runtime through Home Assistant entities
-- Ducking or pausing of the music while the assistant talks (`--mpv-player-duck-mode`)
-- Own media player entity (Home Assistant can play media, also with `announce: true`)
-- Various states are stored locally and restored on startup
-- Optional encryption of the connection to Home Assistant, like ESPHome devices with an API encryption key (see [API Encryption](./docs/install_application.md#feature-api-encryption))
-- Supports multiple architectures (linux/amd64, linux/aarch64 and linux/arm/v7)
-- Automated builds with artifact attestation for security
-- Supports [announcments](https://www.home-assistant.io/actions/assist_satellite.announce/), [start](https://www.home-assistant.io/actions/assist_satellite.start_conversation/)/continue conversation, and timers
-- Tested and works with Python 3.11 and Python 3.13.
-- Prebuild docker image available on [GitHub Container Registry](https://github.com/OHF-Voice/linux-voice-assistant/pkgs/container/linux-voice-assistant)
-- Prebuild [Raspberry Pi image](https://github.com/florian-asche/PiCompose)
-- Announcing via mDNS can be turned off (`--enable-zeroconf 0`)
-- Several Home Assistant clients can be connected at the same time
-- Several instances on one system are possible (`--mac-address`)
-- Supports [Websocket API](./docs/peripheral_api/readme.md) for peripherals (e.g. buttons, LEDs, etc.) to integrate with the voice assistant (API versions 1 and 2)
-- Single, double, triple and long press events are sent to Home Assistant (event entity), double, triple and long press with their own sounds
-- Button lock switch, LED light entity and remote mute (`--enable-remote-unmute`) for peripherals
-- Software mute: with `--enable-remote-unmute 0`, only a peripheral (e.g. a physical mute switch) can unmute the microphone, Home Assistant cannot (see [Mute](./docs/configuration.md#mute-switch)). This is independent of a hardware mute of the microphone, also one that software cannot switch, and has nothing to do with this one.
-
-News about this software: [Discussion #495](https://github.com/OHF-Voice/linux-voice-assistant/discussions/495).
+- **Home Assistant**
+  - Connects via the [ESPHome](https://esphome.io/) protocol ([aioesphomeapi](https://github.com/esphome/aioesphomeapi)), discovered automatically via mDNS (can be turned off with `--enable-zeroconf 0`)
+  - Optional [API encryption](./docs/features.md#feature-api-encryption), like ESPHome devices with an encryption key
+  - Several Home Assistant clients at once, and several instances on one system (`--mac-address`)
+  - [Announcements](https://www.home-assistant.io/actions/assist_satellite.announce/), [start](https://www.home-assistant.io/actions/assist_satellite.start_conversation/)/continue conversation and timers
+  - Own media player entity, also for `announce: true`
+- **Wake word and stop word**
+  - Local wake word detection with [OpenWakeWord](https://github.com/dscripka/openWakeWord) or [MicroWakeWord](https://github.com/kahrendt/microWakeWord)
+  - Two wake words or languages active at the same time (two slots, selectable in Home Assistant)
+  - Stop word independent of Home Assistant, only active during TTS, announcements and a ringing timer
+  - Sensitivity of both wake words and the stop word adjustable at runtime
+- **Audio**
+  - Separate players for music (own output device with `--music-output-device`) and voice
+  - Music is ducked or paused while the assistant talks (`--mpv-player-duck-mode`)
+  - Mic volume, gain and noise suppression (WebRTC), adjustable at runtime
+- **Peripherals**
+  - [WebSocket API](./docs/peripheral_api/readme.md) for buttons, LEDs and other hardware (API versions 1 and 2)
+  - Single, double, triple and long press events are sent to Home Assistant, double, triple and long press with their own sounds
+  - Button lock switch, LED light entity and remote mute (`--enable-remote-unmute`)
+  - Software mute: with `--enable-remote-unmute 0`, only a peripheral (e.g. a physical mute switch) can unmute the microphone, Home Assistant cannot (see [Mute](./docs/configuration.md#mute-switch)). This is independent of a hardware mute of the microphone.
+- **Runtime**
+  - Settings and states are stored locally and restored on startup
+  - Docker images for linux/amd64, linux/aarch64 and linux/arm/v7 on the [GitHub Container Registry](https://github.com/OHF-Voice/linux-voice-assistant/pkgs/container/linux-voice-assistant), built automatically with artifact attestation
+  - Tested with Python 3.11 and 3.13
 
 ## Requirements
 
@@ -65,93 +66,34 @@ Alternatively if on a lower budget then suggest could use other microphone-array
 
 ### Installation
 
-**Assist Satellite app for Home Assistant OS**
+Pick the setup that fits your system:
 
-For HA OS, we provide a finished [Assist Satellite](https://github.com/OHF-Voice/apps/tree/main/assist_satellite) app (formerly add-on), which uses the Linux Voice Assistant runtime to turn your HA host into a voice satellite. 
+| | <img src="https://raw.githubusercontent.com/OHF-Voice/apps/main/assist_satellite/icon.png" alt="" height="28" align="absmiddle"> HomeAssistant OS | <img src="docs/images/logo.svg" alt="" height="28" align="absmiddle"> Raspberry Pi image | <img src="docs/images/logo.svg" alt="" height="28" align="absmiddle"> Docker / systemd |
+|---|---|---|---|
+| **How** | Install the [Assist Satellite](https://github.com/OHF-Voice/apps/tree/main/assist_satellite) app on your HomeAssistant. | Flash the [PiCompose](https://github.com/florian-asche/PiCompose) image, set Wi-Fi, power on. Everything is set up, and updated automatically. | Install on your own: [install the audio service](docs/installation.md#step-1-install-audioservice), then [install the application](docs/installation.md#step-2-install-application) with Docker Compose or on bare metal with systemd. |
+| **Includes** | Linux-Voice-Assistant | Linux-Voice-Assistant, [Music Assistant Local-Audio](https://github.com/music-assistant/local-audio-addon), [Snapcast](https://github.com/florian-asche/docker-snapcast), [Bluetooth proxy](https://github.com/denvera/bt-proxy) | Linux Voice Assistant |
+| **Start** | <a href="https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https://github.com/OHF-Voice/apps"><img src="https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg" alt="Add repository" height="34"></a><br><a href="https://my.home-assistant.io/redirect/supervisor_addon/?addon=assist_satellite&repository_url=https://github.com/OHF-Voice/apps"><img src="https://my.home-assistant.io/badges/supervisor_addon.svg" alt="Show app" height="34"></a> | [<img src="https://raw.githubusercontent.com/florian-asche/PiCompose/main/docs/picompose_plug_and_play.svg" alt="PiCompose" width="460">](https://github.com/florian-asche/PiCompose#installation) | [![Docker Compose](https://img.shields.io/badge/Docker%20Compose-2496ED?style=for-the-badge&logo=docker&logoColor=white)](docs/installation.md)<br>[![systemd](https://img.shields.io/badge/systemd-bare%20metal-30D475?style=for-the-badge&logo=linux&logoColor=white)](docs/installation.md) |
 
-> [!NOTE]
-> For now you first have to add the [OHF-Voice apps](https://github.com/OHF-Voice/apps) repo manually to the App Store repository inside Home Assistant before you can install it.
+### Configuration and Parameters
 
-Later you will be able to install it directly from the official add-on repository (but it is not yet published publicly there):
+All command line parameters, their defaults and the matching environment variables are listed in the [Parameter overview](docs/configuration.md#parameter-overview), and the controlled entities on the Home Assistant device page are explained in the [Dashboard](docs/configuration.md#dashboard--homeassistant-entities) and its [entities](docs/configuration.md#entities-on-the-device-page).
 
-[![Add repository to your Home Assistant instance.](https://my.home-assistant.io/badges/supervisor_addon.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https://github.com/home-assistant/addons)
+### Feature Guides
 
-Once installed, the satellite is automatically discovered by Home Assistant via the ESPHome integration.
+Setup guides for individual features are in [features](docs/features.md): [echo cancellation](docs/features.md#acoustic-echo-cancellation), [listening during the wake sound](docs/features.md#feature-listen-during-wake-sound), [API encryption](docs/features.md#feature-api-encryption), [own sound files](docs/features.md#use-own-soundfiles), [wake words](docs/features.md#wake-word) (including [custom wake words](docs/features.md#custom-wake-word)) and the [stop word](docs/features.md#stop-word).
 
-**Raspberry Pi prebuilt image**
+### Debugging
 
-For Raspberry Pi users, we provide a prebuild image that can be flashed to a SD card. See [PiCompose](https://github.com/florian-asche/PiCompose).
+If the audio does not work, see the [debugging guide](docs/debugging.md) for how the Linux audio stack and the container sockets fit together.
 
-**Docker / bare metal**
+### Behavior
 
-For all other users, we have different installation methods available (Docker, systemd), each with its own dedicated instructions. See [Linux-Voice-Assistant - Installation](docs/install.md). 
-
-### Parameter overview
-
-💡 **Note:** There is an [environment variable](docs/install_application.md#environment-variables-reference) for each parameter if you use docker or systemd based setup.
-
-```sh
-usage: __main__.py [-h] [--name NAME] [--audio-input-device AUDIO_INPUT_DEVICE] [--list-input-devices] [--audio-input-block-size AUDIO_INPUT_BLOCK_SIZE] [--audio-output-device AUDIO_OUTPUT_DEVICE] [--music-output-device MUSIC_OUTPUT_DEVICE] [--mpv-player-duck-mode {duck,pause}] [--list-output-devices] [--wake-word-root-dir WAKE_WORD_ROOT_DIR]  [--mic-auto-gain] [--mic-noise-suppression]
-                   [--wake-model WAKE_MODEL] [--wake-model-2 WAKE_MODEL_2] [--stop-model STOP_MODEL] [--refractory-seconds REFRACTORY_SECONDS] [--wakeup-sound WAKEUP_SOUND] [--timer-finished-sound TIMER_FINISHED_SOUND] [--processing-sound PROCESSING_SOUND]
-                   [--mute-sound MUTE_SOUND] [--unmute-sound UNMUTE_SOUND] [--preferences-file PREFERENCES_FILE] [--host HOST] [--network-interface NETWORK_INTERFACE] [--mac-address MAC_ADDRESS] [--port PORT] [--enable-encryption] [--encryption-key-file ENCRYPTION_KEY_FILE] [--enable-thinking-sound] [--enable-zeroconf {0,1}] [--listen-during-wake-sound] [--debug]
-```
-
-| Parameter                       | Description                                                                            | Default                              |
-| ------------------------------- | -------------------------------------------------------------------------------------- | ------------------------------------ |
-| `--name`                        | Name of the voice assistant device (required)                                          | Autogenerated (`lva-MAC-ADDRESS`)    |
-| `--audio-input-device`          | Soundcard name for input device                                                        | Autodetected                         |
-| `--audio-input-block-size`      | Audio input block size in samples                                                      | 1024                                 |
-| `--audio-output-device`         | mpv name for output device, use a `pulse/...` name from `--list-output-devices`        | `pulse`                              |
-| `--music-output-device`         | mpv name for the music/media output device                                             | `--audio-output-device`              |
-| `--mpv-player-duck-mode`        | `duck` lowers the music to 50 % while the assistant talks, `pause` pauses and resumes it | `duck`                               |
-| `--mic-volume`                  | Microphone volume 0 to 100, overrides the stored value on every start                  | stored value, else 100               |
-| `--mic-auto-gain`               | Add WebRTC Gain to Mic                                                                 | 0                                    |
-| `--mic-noise-suppression`       | Add WebRTC Noise Suppression to Mic                                                    | 0                                    |
-| `--audio-input-channels`        | Number of microphone audio channels to capture (2 = mic + AEC reference channel)       | 1                                    |
-| `--wake-word-root-dir`          | Root directory of the wake word layout with `internal`, `downloaded` and `custom`, see [Wake Word](docs/install_application.md#wake-word) | `wakewords/`                         |
-| `--wake-model`                  | ID of active wake word model                                                           | `okay_nabu`                          |
-| `--wake-model-2`                | ID of the second active wake word model, empty = none. Only used while no wake words are stored | empty                       |
-| `--stop-model`                  | ID of stop model                                                                       | `stop`                               |
-| `--refractory-seconds`          | Seconds after an accepted wake word during which further detections are blocked (0 = off) | 0.0                                  |
-| `--continue-conversation-delay` | Delay before mic opens for continued conversation                                      | 0.5                                  |
-| `--timer-max-ring-seconds`      | Seconds after which the timer stops ringing                                            | 900.0                                |
-| `--wakeup-sound`                | Sound file played when wake word is detected                                           | `sounds/wake_word_triggered.flac`    |
-| `--start-listening-sound`       | Sound file played when button is pressed to start listening                            | `sounds/start_listening_button.flac` |
-| `--timer-finished-sound`        | Sound file played when timer finishes                                                  | `sounds/timer_finished.flac`         |
-| `--processing-sound`            | Sound played while assistant is processing                                             | `sounds/processing.wav`              |
-| `--mute-sound`                  | Sound played when muting the assistant                                                 | `sounds/mute_switch_on.flac`         |
-| `--unmute-sound`                | Sound played when unmuting the assistant                                               | `sounds/mute_switch_off.flac`        |
-| `--button-double-press-sound`   | Sound played on button double press                                                    | `sounds/button_double_press.flac`    |
-| `--button-triple-press-sound`   | Sound played on button triple press                                                    | `sounds/button_triple_press.flac`    |
-| `--button-long-press-sound`     | Sound played on button long press                                                      | `sounds/button_long_press.flac`      |
-| `--pipeline-ended-sound`        | Sound played when the voice pipeline ends without a response (e.g. no speech detected) | `sounds/pipeline_ended_low.flac`     |
-| `--preferences-file`            | Path to preferences JSON file                                                          | `preferences.json`                   |
-| `--host`                        | IP-Address for ESPHome server, use 0.0.0.0 for all                                     | Autodetected                         |
-| `--network-interface`           | Network interface for ESPHome server                                                   | Autodetected                         |
-| `--mac-address`                 | MAC address the device is known by in Home Assistant (e.g. `02:00:00:00:00:01`)        | The network interface's              |
-| `--port`                        | Port for ESPHome server                                                                | 6053                                 |
-| `--enable-encryption`           | Encrypt the ESPHome API with the key from `--encryption-key-file`                      | False                                |
-| `--encryption-key-file`         | File with the encryption key (32 bytes, base64); created with a new key if missing     | `encryption.key` next to the preferences file |
-| `--enable-thinking-sound`       | Enable thinking sound on startup                                                       | False                                |
-| `--listen-during-wake-sound`    | Start listening while the wake sound is still playing                                  | False                                |
-| `--peripheral-host`             | Bind address for the peripheral WebSocket API                                          | 0.0.0.0                              |
-| `--peripheral-port`             | Port for the peripheral WebSocket API                                                  | 6055                                 |
-| `--peripheral-volume-step`      | Volume change per button press, 0.0–1.0                                                | %(default)s                          |
-| `--peripheral-startup-wait`     | Seconds to wait for peripherals to register entities                                   | 2.0                                  |
-| `--enable-remote-unmute`        | `1`: Home Assistant can mute and unmute; `0`: only a peripheral can unmute             | 1                                    |
-| `--disable-peripheral-api`      | Disable the peripheral WebSocket API entirely                                          | False                                |
-| `--enable-zeroconf`             | Announce LVA via mDNS; `0` turns it off, then add it manually in Home Assistant (host IP and `--port`) | 1                                    |
-| `--debug`                       | Print DEBUG messages to console                                                        | False                                |
-| `--colored-debug`               | Print colored DEBUG messages to console                                                | False                                |
-| `--output-only`                 | Enable output only mode                                                                | False                                |
-
-💡 **Note:** There are detailed explanations on the controlled entities from device page in the [configuration](docs/configuration.md) file.
-
-💡 **Note:** How the assistant behaves in everyday situations (music ducking during conversations, announcements, timers, stop word, mute, volume) is described in the [behavior guide](docs/behavior.md).
-
-💡 **Note:** How LVA communicates with Home Assistant and peripherals, and what happens during a voice request, is described in the [communication overview](docs/communication.md).
+How the assistant behaves in everyday situations (music ducking during conversations, announcements, timers, stop word, mute, volume) is described in the [behavior guide](docs/behavior.md).
 
 ## Build Information
+
+<details>
+<summary><b>Show build information</b></summary>
 
 Image builds can be tracked in this repository's `Actions` tab, and utilize [artifact attestation](https://docs.github.com/en/actions/security-guides/using-artifact-attestations-to-establish-provenance-for-builds) to certify provenance.
 
@@ -163,9 +105,12 @@ The Docker images are built using GitHub Actions, which provides:
 
 The documentation for the build process can be found in the [GitHub Actions Workflows](.github/workflow.md) file.
 
+</details>
+
 ## Development
 
-### System Requirements
+<details>
+<summary><b>System Requirements</b></summary>
 
 **System packages (Linux):**
 - libmpv-dev (`sudo apt install libmpv-dev`)
@@ -176,7 +121,10 @@ The documentation for the build process can be found in the [GitHub Actions Work
 - Python 3.11+ must be installed on your system (`python3 --version` should show 3.11+)
 - On Ubuntu/Debian: `sudo apt install python3.11 python3.11-venv python3.11-dev`
 
-### VS Code Setup
+</details>
+
+<details>
+<summary><b>VS Code Setup</b></summary>
 
 VS Code development uses a local Python virtual environment (`.venv/`):
 
@@ -195,7 +143,10 @@ VS Code development uses a local Python virtual environment (`.venv/`):
 - `Ctrl+Shift+T` - Run Tests
 - `Ctrl+Shift+P` → "Tasks: Run Task" - Show all tasks (Setup, Linter, Tests, Run App)
 
-### Code Quality Checks
+</details>
+
+<details>
+<summary><b>Code Quality Checks</b></summary>
 
 The project uses the following tools to ensure code quality:
 
@@ -216,7 +167,10 @@ def my_function(param1: str, param2: int) -> str:
     """
 ```
 
-### Setup
+</details>
+
+<details>
+<summary><b>Setup</b></summary>
 
 To use the development tools (linting, testing, etc.), you need to install the required dependencies:
 
@@ -225,7 +179,10 @@ To use the development tools (linting, testing, etc.), you need to install the r
 source .venv/bin/activate
 ```
 
-### Linting Commands
+</details>
+
+<details>
+<summary><b>Linting Commands</b></summary>
 
 #### Run all linting checks
 
@@ -259,12 +216,24 @@ Auto-fix formatting issues (Black + isort):
 ./script/lint_isort --auto
 ```
 
-### Testing
+</details>
+
+<details>
+<summary><b>Testing</b></summary>
 
 Run the test suite:
 ``` sh
 ./script/tests
 ```
+
+</details>
+
+<details>
+<summary><b>Developer documentation</b></summary>
+
+How LVA communicates with Home Assistant and peripherals, and what happens during a voice request, is described in the [communication overview](docs/development/communication.md).
+
+</details>
 
 ## License
 

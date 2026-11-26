@@ -25,5 +25,5 @@ What is still open:
 - Whether the mute and unmute sounds play when the change comes from the hardware.
 - How to avoid a loop (the mute of LVA asks the hardware, the hardware reports, LVA mutes again).
 - What happens to a running reply or announcement when the hardware gets muted, as for the Mute switch (`docs/behavior.md`).
-- Documentation in `docs/behavior.md`, `docs/configuration.md`, `README.md`, `.env.example` and `docs/install_application.md`, and a
+- Documentation in `docs/behavior.md`, `docs/configuration.md`, `README.md`, `.env.example` and `docs/installation_part2_application.md`, and a
   test for each case.

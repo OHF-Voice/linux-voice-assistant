@@ -1,6 +1,6 @@
 # Communication and Process Overview
 
-This document explains who talks to whom in Linux Voice Assistant (LVA), over which interface, and in which order things happen during a voice request. It is the entry point; details live in the linked documents. The code is the source of truth: [`__main__.py`](../linux_voice_assistant/__main__.py), [`api_server.py`](../linux_voice_assistant/api_server.py), [`satellite.py`](../linux_voice_assistant/satellite.py), [`peripheral_api/`](../linux_voice_assistant/peripheral_api/), [`zeroconf.py`](../linux_voice_assistant/zeroconf.py) and [`network.py`](../linux_voice_assistant/network.py).
+This document explains who talks to whom in Linux Voice Assistant (LVA), over which interface, and in which order things happen during a voice request. It is the entry point; details live in the linked documents. The code is the source of truth: [`__main__.py`](../../linux_voice_assistant/__main__.py), [`api_server.py`](../../linux_voice_assistant/api_server.py), [`satellite.py`](../../linux_voice_assistant/satellite.py), [`peripheral_api.py`](../../linux_voice_assistant/peripheral_api.py), [`zeroconf.py`](../../linux_voice_assistant/zeroconf.py) and [`network.py`](../../linux_voice_assistant/network.py).
 
 ## Interfaces at a glance
 
@@ -62,7 +62,7 @@ flowchart LR
 Notes:
 
 - A connection that goes silent without being closed (for example after a Wi-Fi drop) is ended by TCP keepalive after about 10 s: probes start after 4 s without traffic, and the connection is dropped after 3 unanswered probes (2 s apart) or 10 s of unacknowledged data. This depends on the kernel accepting the socket options: LVA sets each one on its own and logs a warning with the ones it could not set, then the connection is closed later or not at all. The timings are fixed, there is no option for them.
-- Whenever a Home Assistant client disconnects, and every 30 s as a fallback, LVA reads the IPv4 address of the network interface again. If it changed, the ESPHome listener moves and the new address is announced over mDNS. See [Connection to Home Assistant](behavior.md#connection-to-home-assistant).
+- Whenever a Home Assistant client disconnects, and every 30 s as a fallback, LVA reads the IPv4 address of the network interface again. If it changed, the ESPHome listener moves and the new address is announced over mDNS. See [Connection to Home Assistant](../behavior.md#connection-to-home-assistant).
 - The ESPHome API connection is opened by **Home Assistant**, so an inbound rule on the LVA host for `6053` is needed. LVA itself opens no outgoing connection for it.
 - The media URLs are chosen by Home Assistant (internal/external URL setting). LVA must be able to reach exactly that address, otherwise the connection works but replies and music stay silent. Music can also point to other servers, so the target port is not always the Home Assistant port.
 - Without mDNS (different VLAN, multicast blocked, or `--enable-zeroconf 0`), add the device manually in Home Assistant with the LVA host's IP address and port `6053`.
@@ -76,12 +76,12 @@ LVA pretends to be an ESPHome device. Home Assistant connects **to** LVA (LVA is
 ### Discovery and connection
 
 1. LVA registers the service `<name>._esphomelib._tcp.local.` over mDNS with its port and MAC address (skipped with `--enable-zeroconf 0`). If an encryption key is configured, the service also advertises `api_encryption`, so Home Assistant asks for the key when adding the device.
-2. Home Assistant connects over TCP. [`APIServer`](../linux_voice_assistant/api_server.py) answers `HelloRequest`, `AuthenticationRequest`, `PingRequest` and `DisconnectRequest` on its own. Every other message goes to `VoiceSatelliteProtocol.handle_message()`.
-3. Without an encryption key, frames are plaintext. With a key, the connection uses the ESPHome Noise handshake (`Noise_NNpsk0_25519_ChaChaPoly_SHA256`), and a client without or with a wrong key is rejected. See [API Encryption](install_application.md#feature-api-encryption).
-4. Home Assistant asks for `DeviceInfoRequest`, `ListEntitiesRequest` and `SubscribeStatesRequest` / `SubscribeHomeAssistantStatesRequest`. Every entity answers for itself (see [configuration.md](configuration.md)), and the current states are replayed.
+2. Home Assistant connects over TCP. [`APIServer`](../../linux_voice_assistant/api_server.py) answers `HelloRequest`, `AuthenticationRequest`, `PingRequest` and `DisconnectRequest` on its own. Every other message goes to `VoiceSatelliteProtocol.handle_message()`.
+3. Without an encryption key, frames are plaintext. With a key, the connection uses the ESPHome Noise handshake (`Noise_NNpsk0_25519_ChaChaPoly_SHA256`), and a client without or with a wrong key is rejected. See [API Encryption](../features.md#feature-api-encryption).
+4. Home Assistant asks for `DeviceInfoRequest`, `ListEntitiesRequest` and `SubscribeStatesRequest` / `SubscribeHomeAssistantStatesRequest`. Every entity answers for itself (see [configuration.md](../configuration.md)), and the current states are replayed.
 5. Home Assistant sends `VoiceAssistantConfigurationRequest` and LVA answers with the available and active wake words (at most 2 active). Home Assistant changes the selection with `VoiceAssistantSetConfiguration`. The result is stored in the preferences file.
 
-Each Home Assistant connection gets its own protocol instance, but the settings, entities and players live in one shared state and survive reconnects. When the **last** connection closes, playback is stopped. See [behavior.md](behavior.md#connection-to-home-assistant).
+Each Home Assistant connection gets its own protocol instance, but the settings, entities and players live in one shared state and survive reconnects. When the **last** connection closes, playback is stopped. See [behavior.md](../behavior.md#connection-to-home-assistant).
 
 ### Messages LVA receives and sends
 
@@ -165,8 +165,8 @@ Notes on the flow:
 - **Early speech.** With `INTENT_PROGRESS` carrying `tts_start_streaming`, LVA starts playing the reply before `TTS_END`. Playback of the same reply is only started once.
 - **No spoken reply.** If `RUN_END` arrives without any TTS playback, LVA finishes immediately and may play the pipeline ended sound.
 - **Wake word protection.** While a pipeline run is active, including the TTS playback, wake words are ignored so the speaker output cannot trigger a new run.
-- **Stop word.** The stop word is only active during TTS, announcements and a ringing timer, and stops playback locally without involving Home Assistant. See [behavior.md](behavior.md#the-stop-word).
-- **Announcements and timers** do not start a pipeline run. Home Assistant pushes them with `VoiceAssistantAnnounceRequest` and `VoiceAssistantTimerEventResponse`, and LVA plays the sounds itself. See [behavior.md](behavior.md#announcements) and [behavior.md](behavior.md#timers).
+- **Stop word.** The stop word is only active during TTS, announcements and a ringing timer, and stops playback locally without involving Home Assistant. See [behavior.md](../behavior.md#the-stop-word).
+- **Announcements and timers** do not start a pipeline run. Home Assistant pushes them with `VoiceAssistantAnnounceRequest` and `VoiceAssistantTimerEventResponse`, and LVA plays the sounds itself. See [behavior.md](../behavior.md#announcements) and [behavior.md](../behavior.md#timers).
 
 ## Peripherals: the WebSocket API
 
@@ -177,7 +177,7 @@ LVA is the WebSocket **server** on port `6055`, a peripheral connects as a clien
 
 Because registered entities are announced to Home Assistant over the ESPHome API, LVA waits `--peripheral-startup-wait` seconds at startup before it serves port `6053`. Peripherals that register later still work, but LVA then closes the Home Assistant connection once so Home Assistant re-reads the entity list.
 
-The full protocol, all event and command names and examples are in [peripheral_api/readme.md](peripheral_api/readme.md).
+The full protocol, all event and command names and examples are in [peripheral_api/readme.md](../peripheral_api/readme.md).
 
 ## Startup order
 
@@ -204,7 +204,7 @@ Messages from other threads are handed to the event loop, so the socket is only 
 | Document | Contents |
 |----------|----------|
 | [audio_pipeline.md](audio_pipeline.md) | Microphone to Home Assistant, in detail |
-| [behavior.md](behavior.md) | What the user experiences in each situation |
-| [configuration.md](configuration.md) | Entities on the Home Assistant device page |
-| [peripheral_api/readme.md](peripheral_api/readme.md) | WebSocket protocol for peripheral authors |
-| [debugging.md](debugging.md) | Troubleshooting audio and container sockets |
+| [behavior.md](../behavior.md) | What the user experiences in each situation |
+| [configuration.md](../configuration.md) | Entities on the Home Assistant device page |
+| [peripheral_api/readme.md](../peripheral_api/readme.md) | WebSocket protocol for peripheral authors |
+| [debugging.md](../debugging.md) | Troubleshooting audio and container sockets |
