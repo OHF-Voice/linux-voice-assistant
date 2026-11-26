@@ -344,26 +344,44 @@ class TestMediaPlayerEntityAnnouncement:
         done_callback = entity.announce_player.play.call_args.kwargs["done_callback"]
         return msgs, done_callback
 
-    def test_playing_music_is_paused_and_resumed(self):
+    def test_playing_music_is_ducked_and_restored(self):
         entity = make_media_player()
         entity.music_player.is_paused = False
         entity.music_player.is_playing = True
 
         _, done_callback = self._announce(entity)
-        entity.music_player.pause.assert_called_once()
-        entity.music_player.resume.assert_not_called()
+        entity.music_player.duck.assert_called_once_with(owner="media_announcement")
+        entity.music_player.pause.assert_not_called()
+        entity.music_player.unduck.assert_not_called()
 
         done_callback()
-        entity.music_player.resume.assert_called_once()
+        entity.music_player.unduck.assert_called_once_with(owner="media_announcement")
+        entity.music_player.resume.assert_not_called()
+        assert entity.state == MediaPlayerState.PLAYING
+
+    def test_state_is_announcing_until_the_announcement_is_over(self):
+        entity = make_media_player()
+        entity.music_player.is_paused = False
+        entity.music_player.is_playing = True
+
+        msgs, done_callback = self._announce(entity)
+
+        assert msgs[0].state == MediaPlayerState.ANNOUNCING
+        assert entity.state == MediaPlayerState.ANNOUNCING
+        done_callback()
+        assert entity.state == MediaPlayerState.PLAYING
 
     def test_paused_music_stays_paused(self):
         entity = make_media_player()
         entity.music_player.is_paused = True
         entity.music_player.is_playing = True
 
-        _, done_callback = self._announce(entity)
+        msgs, done_callback = self._announce(entity)
+        assert msgs[0].state == MediaPlayerState.ANNOUNCING
         done_callback()
 
+        entity.music_player.duck.assert_not_called()
+        entity.music_player.unduck.assert_not_called()
         entity.music_player.pause.assert_not_called()
         entity.music_player.resume.assert_not_called()
         assert entity.state == MediaPlayerState.PAUSED
@@ -373,11 +391,43 @@ class TestMediaPlayerEntityAnnouncement:
         entity.music_player.is_paused = False
         entity.music_player.is_playing = False
 
-        _, done_callback = self._announce(entity)
+        msgs, done_callback = self._announce(entity)
+        assert msgs[0].state == MediaPlayerState.ANNOUNCING
         done_callback()
 
+        entity.music_player.duck.assert_not_called()
         entity.music_player.resume.assert_not_called()
         assert entity.state == MediaPlayerState.IDLE
+
+    def test_done_callback_of_the_caller_is_called(self):
+        entity = make_media_player()
+        entity.music_player.is_paused = False
+        entity.music_player.is_playing = False
+        caller_callback = MagicMock()
+
+        list(entity.play("http://example.com/tts.mp3", announcement=True, done_callback=caller_callback))
+        entity.announce_player.play.call_args.kwargs["done_callback"]()
+
+        caller_callback.assert_called_once()
+
+    def test_second_announcement_unducks_once(self):
+        entity = make_media_player()
+        entity.music_player.is_paused = False
+        entity.music_player.is_playing = True
+
+        self._announce(entity)
+        _, done_callback = self._announce(entity)
+        done_callback()
+        done_callback()
+
+        entity.music_player.unduck.assert_called_once_with(owner="media_announcement")
+
+    def test_announcement_does_not_change_music_state_message_of_music_playback(self):
+        entity = make_media_player()
+
+        msgs = list(entity.play("http://example.com/song.mp3"))
+
+        assert msgs[0].state == MediaPlayerState.PLAYING
 
 
 class TestMediaPlayerEntityAnnouncing:

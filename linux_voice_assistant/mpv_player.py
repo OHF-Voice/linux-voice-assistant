@@ -6,7 +6,7 @@ from typing import Callable, List, Optional, Set, Union
 from .player.libmpv import LibMpvPlayer
 from .player.state import PlayerState
 
-_DUCK_OWNERS = ("conversation", "timer", "announce")
+_DUCK_OWNERS = ("conversation", "timer", "announce", "media_announcement")
 _DUCK_MODES = ("duck", "pause")
 
 
@@ -144,7 +144,7 @@ class MpvMediaPlayer:
     def duck(self, owner: str, factor: float = 0.5) -> None:
         """
         Temporarily reduce volume, or pause playback in ``pause`` mode.
-        :param owner: Who asks: ``conversation``, ``timer`` or ``announce``. The volume is restored when every owner has called :meth:`unduck`.
+        :param owner: Who asks: ``conversation``, ``timer``, ``announce`` or ``media_announcement``. The volume is restored when every owner has called :meth:`unduck`.
         :param factor: Volume multiplier (0.0-1.0), not used in ``pause`` mode.
         :raises ValueError: If the owner is not a known one.
         """
