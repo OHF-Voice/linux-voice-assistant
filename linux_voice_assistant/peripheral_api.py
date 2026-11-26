@@ -127,7 +127,6 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any, Dict, Optional, Set
 
 from aioesphomeapi.api_pb2 import MediaPlayerStateResponse  # type: ignore[attr-defined]  # pylint: disable=no-name-in-module
-from aioesphomeapi.model import MediaPlayerState  # type: ignore[import]
 
 if TYPE_CHECKING:
     from .models import ServerState
@@ -381,32 +380,7 @@ class PeripheralAPIServer:
 
         elif command in (LVACommand.VOLUME_UP, LVACommand.VOLUME_DOWN):
             delta = self._volume_step if command == LVACommand.VOLUME_UP else -self._volume_step
-            new_vol = max(0.0, min(1.0, state.volume + delta))
-            vol_pct = int(round(new_vol * 100))
-
-            state.music_player.set_volume(vol_pct)
-            state.tts_player.set_volume(vol_pct)
-
-            if state.media_player_entity is not None:
-                state.media_player_entity.volume = new_vol
-                state.media_player_entity.previous_volume = new_vol
-
-                # Push the new volume to HA so its media player entity updates in real time
-                if satellite is not None:
-
-                    satellite.send_messages(
-                        [
-                            MediaPlayerStateResponse(
-                                key=state.media_player_entity.key,
-                                state=state.media_player_entity.state,
-                                volume=new_vol,
-                                muted=state.media_player_entity.muted,
-                            )
-                        ]
-                    )
-
-            # persist_volume also emits VOLUME_CHANGED via models.py
-            state.persist_volume(new_vol)
+            self._set_volume(state, satellite, max(0.0, min(1.0, state.volume + delta)))
 
         elif command == LVACommand.SET_VOLUME:
             data = msg.get("data", {})
@@ -415,57 +389,13 @@ class PeripheralAPIServer:
                 _LOGGER.warning("Peripheral: invalid volume in set_volume command: %s", volume)
                 return
 
-            new_vol = max(0.0, min(1.0, float(volume)))
-            vol_pct = int(round(new_vol * 100))
-
-            state.music_player.set_volume(vol_pct)
-            state.tts_player.set_volume(vol_pct)
-
-            if state.media_player_entity is not None:
-                state.media_player_entity.volume = new_vol
-                state.media_player_entity.previous_volume = new_vol
-
-                # Push the new volume to HA so its media player entity updates in real time
-                if satellite is not None:
-
-                    satellite.send_messages(
-                        [
-                            MediaPlayerStateResponse(
-                                key=state.media_player_entity.key,
-                                state=state.media_player_entity.state,
-                                volume=new_vol,
-                                muted=state.media_player_entity.muted,
-                            )
-                        ]
-                    )
-
-            # persist_volume also emits VOLUME_CHANGED via models.py
-            state.persist_volume(new_vol)
+            self._set_volume(state, satellite, max(0.0, min(1.0, float(volume))))
 
         elif command == LVACommand.STOP_TIMER_RINGING:
             state.stop_timer_ringing()
 
-        elif command == LVACommand.STOP_MEDIA_PLAYER:
-            state.music_player.stop()
-            if state.media_player_entity is not None:
-
-                state.media_player_entity.state = MediaPlayerState.IDLE
-                if satellite is not None:
-                    satellite.send_messages([self._create_media_player_response(MediaPlayerState.IDLE)])
-
-        elif command == LVACommand.PAUSE_MEDIA_PLAYER:
-            state.music_player.pause()
-            if state.media_player_entity is not None:
-                state.media_player_entity.state = MediaPlayerState.PAUSED
-                if satellite is not None:
-                    satellite.send_messages([self._create_media_player_response(MediaPlayerState.PAUSED)])
-
-        elif command == LVACommand.RESUME_MEDIA_PLAYER:
-            state.music_player.resume()
-            if state.media_player_entity is not None:
-                state.media_player_entity.state = MediaPlayerState.PLAYING
-                if satellite is not None:
-                    satellite.send_messages([self._create_media_player_response(MediaPlayerState.PLAYING)])
+        elif command in (LVACommand.STOP_MEDIA_PLAYER, LVACommand.PAUSE_MEDIA_PLAYER, LVACommand.RESUME_MEDIA_PLAYER):
+            self._control_media_player(state, satellite, LVACommand(command))
 
         elif command == LVACommand.BUTTON_SINGLE_PRESS:
             if state.button_event_sensor_entity is not None:
@@ -668,10 +598,7 @@ class PeripheralAPIServer:
         entity = state.mute_switch_entity
         entity._switch_state = muted  # pylint: disable=protected-access
 
-        # pylint: disable=no-name-in-module
-        from aioesphomeapi.api_pb2 import SwitchStateResponse  # type: ignore[attr-defined]
-
-        satellite.send_messages([SwitchStateResponse(key=entity.key, state=muted)])
+        satellite.send_messages([entity.state_message()])
 
     # ------------------------------------------------------------------
     # Event emission
@@ -759,14 +686,47 @@ class PeripheralAPIServer:
             return
         asyncio.run_coroutine_threadsafe(self.emit_event(event, data), loop)
 
-    def _create_media_player_response(self, state: MediaPlayerState) -> MediaPlayerStateResponse:
-        """Create a MediaPlayerStateResponse with current entity state."""
-        assert self._state is not None
-        media_entity = self._state.media_player_entity
-        assert media_entity is not None
-        return MediaPlayerStateResponse(
-            key=media_entity.key,
-            state=state,
-            volume=media_entity.volume,
-            muted=media_entity.muted,
-        )
+    def _set_volume(self, state: "ServerState", satellite: Any, volume: float) -> None:
+        """
+        Set the volume on behalf of a peripheral. It goes through the media player entity, like a volume set in Home Assistant.
+        :param state: The server state.
+        :param satellite: The satellite that Home Assistant is connected to, None if there is none.
+        :param volume: Volume 0.0 to 1.0.
+        """
+        entity = state.media_player_entity
+        if entity is None:
+            volume_percent = int(round(volume * 100))
+            state.music_player.set_volume(volume_percent)
+            state.tts_player.set_volume(volume_percent)
+            # persist_volume also emits VOLUME_CHANGED via models.py
+            state.persist_volume(volume)
+            return
+
+        entity.set_volume(volume)
+        if satellite is not None:
+            # Push the new volume to HA so its media player entity updates in real time
+            satellite.send_messages([MediaPlayerStateResponse(key=entity.key, state=entity.state, volume=volume, muted=entity.muted)])
+
+    def _control_media_player(self, state: "ServerState", satellite: Any, command: LVACommand) -> None:
+        """
+        Stop, pause or resume the music on behalf of a peripheral. It goes through the media player entity, like the same command from Home Assistant.
+        :param state: The server state.
+        :param satellite: The satellite that Home Assistant is connected to, None if there is none.
+        :param command: ``stop_media_player``, ``pause_media_player`` or ``resume_media_player``.
+        """
+        entity = state.media_player_entity
+        if entity is None:
+            {
+                LVACommand.STOP_MEDIA_PLAYER: state.music_player.stop,
+                LVACommand.PAUSE_MEDIA_PLAYER: state.music_player.pause,
+                LVACommand.RESUME_MEDIA_PLAYER: state.music_player.resume,
+            }[command]()
+            return
+
+        response = {
+            LVACommand.STOP_MEDIA_PLAYER: entity.stop,
+            LVACommand.PAUSE_MEDIA_PLAYER: entity.pause,
+            LVACommand.RESUME_MEDIA_PLAYER: entity.resume,
+        }[command]()
+        if satellite is not None:
+            satellite.send_messages([response])

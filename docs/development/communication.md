@@ -1,6 +1,6 @@
 # Communication and Process Overview
 
-This document explains who talks to whom in Linux Voice Assistant (LVA), over which interface, and in which order things happen during a voice request. It is the entry point; details live in the linked documents. The code is the source of truth: [`__main__.py`](../linux_voice_assistant/__main__.py), [`api_server.py`](../linux_voice_assistant/api_server.py), [`satellite.py`](../linux_voice_assistant/satellite.py), [`peripheral_api.py`](../linux_voice_assistant/peripheral_api.py) and [`zeroconf.py`](../linux_voice_assistant/zeroconf.py).
+This document explains who talks to whom in Linux Voice Assistant (LVA), over which interface, and in which order things happen during a voice request. It is the entry point; details live in the linked documents. The code is the source of truth: [`__main__.py`](../../linux_voice_assistant/__main__.py), [`api_server.py`](../../linux_voice_assistant/api_server.py), [`satellite.py`](../../linux_voice_assistant/satellite.py), [`peripheral_api.py`](../../linux_voice_assistant/peripheral_api.py), [`zeroconf.py`](../../linux_voice_assistant/zeroconf.py) and [`network.py`](../../linux_voice_assistant/network.py).
 
 ## Interfaces at a glance
 
@@ -61,6 +61,8 @@ flowchart LR
 
 Notes:
 
+- A connection that goes silent without being closed (for example after a Wi-Fi drop) is ended by TCP keepalive after about 10 s: probes start after 4 s without traffic, and the connection is dropped after 3 unanswered probes (2 s apart) or 10 s of unacknowledged data. This depends on the kernel accepting the socket options: LVA sets each one on its own and logs a warning with the ones it could not set, then the connection is closed later or not at all. The timings are fixed, there is no option for them.
+- Whenever a Home Assistant client disconnects, and every 30 s as a fallback, LVA reads the IPv4 address of the network interface again. If it changed, the ESPHome listener moves and the new address is announced over mDNS. See [Connection to Home Assistant](../behavior.md#connection-to-home-assistant).
 - The ESPHome API connection is opened by **Home Assistant**, so an inbound rule on the LVA host for `6053` is needed. LVA itself opens no outgoing connection for it.
 - The media URLs are chosen by Home Assistant (internal/external URL setting). LVA must be able to reach exactly that address, otherwise the connection works but replies and music stay silent. Music can also point to other servers, so the target port is not always the Home Assistant port.
 - Without mDNS (different VLAN, multicast blocked, or `--enable-zeroconf 0`), add the device manually in Home Assistant with the LVA host's IP address and port `6053`.
@@ -74,12 +76,12 @@ LVA pretends to be an ESPHome device. Home Assistant connects **to** LVA (LVA is
 ### Discovery and connection
 
 1. LVA registers the service `<name>._esphomelib._tcp.local.` over mDNS with its port and MAC address (skipped with `--enable-zeroconf 0`). If an encryption key is configured, the service also advertises `api_encryption`, so Home Assistant asks for the key when adding the device.
-2. Home Assistant connects over TCP. [`APIServer`](../linux_voice_assistant/api_server.py) answers `HelloRequest`, `AuthenticationRequest`, `PingRequest` and `DisconnectRequest` on its own. Every other message goes to `VoiceSatelliteProtocol.handle_message()`.
-3. Without an encryption key, frames are plaintext. With a key, the connection uses the ESPHome Noise handshake (`Noise_NNpsk0_25519_ChaChaPoly_SHA256`), and a client without or with a wrong key is rejected. See [API Encryption](install_application.md#feature-api-encryption).
-4. Home Assistant asks for `DeviceInfoRequest`, `ListEntitiesRequest` and `SubscribeStatesRequest` / `SubscribeHomeAssistantStatesRequest`. Every entity answers for itself (see [configuration.md](configuration.md)), and the current states are replayed.
+2. Home Assistant connects over TCP. [`APIServer`](../../linux_voice_assistant/api_server.py) answers `HelloRequest`, `AuthenticationRequest`, `PingRequest` and `DisconnectRequest` on its own. Every other message goes to `VoiceSatelliteProtocol.handle_message()`.
+3. Without an encryption key, frames are plaintext. With a key, the connection uses the ESPHome Noise handshake (`Noise_NNpsk0_25519_ChaChaPoly_SHA256`), and a client without or with a wrong key is rejected. See [API Encryption](../features.md#feature-api-encryption).
+4. Home Assistant asks for `DeviceInfoRequest`, `ListEntitiesRequest` and `SubscribeStatesRequest` / `SubscribeHomeAssistantStatesRequest`. Every entity answers for itself (see [configuration.md](../configuration.md)), and the current states are replayed.
 5. Home Assistant sends `VoiceAssistantConfigurationRequest` and LVA answers with the available and active wake words (at most 2 active). Home Assistant changes the selection with `VoiceAssistantSetConfiguration`. The result is stored in the preferences file.
 
-Each Home Assistant connection gets its own protocol instance, but the settings, entities and players live in one shared state and survive reconnects. When the **last** connection closes, playback is stopped. See [behavior.md](behavior.md#connection-to-home-assistant).
+Each Home Assistant connection gets its own protocol instance, but the settings, entities and players live in one shared state and survive reconnects. When the **last** connection closes, playback is stopped. See [behavior.md](../behavior.md#connection-to-home-assistant).
 
 ### Messages LVA receives and sends
 
@@ -103,14 +105,14 @@ LVA identifies a wake word in two ways, and Home Assistant uses them for differe
 
 | Name | Source | Sent where | Used for |
 |------|--------|------------|----------|
-| `id` | Model file name (for example `okay_nabu`) | `VoiceAssistantConfigurationResponse` (`available_wake_words`, `active_wake_words`), `VoiceAssistantSetConfiguration` | Choosing which model is active in which slot |
-| `wake_word` (the phrase) | Field `wake_word` in the model JSON (for example `Okay Nabu`) | `VoiceAssistantConfigurationResponse` (`available_wake_words`) and `VoiceAssistantRequest(wake_word_phrase)` | Naming the word that started a run |
+| `id` | Name of the wake word: origin, engine and phrase (for example `Internal - MWW - Okay Nabu`) | `VoiceAssistantConfigurationResponse` (`available_wake_words`, `active_wake_words`), `VoiceAssistantSetConfiguration` | Choosing which model is active in which slot |
+| `wake_word` (the phrase) | The name of the wake word, the same text as the `id` | `VoiceAssistantConfigurationResponse` (`available_wake_words`) and `VoiceAssistantRequest(wake_word_phrase)` | Naming the word that started a run |
 
-- **Only the phrase starts a run.** LVA sends `wake_word_phrase` in `VoiceAssistantRequest`. It does not send the model `id` or the engine (microWakeWord or openWakeWord) in the request, and it does not send the optional `wake_word_audio` field.
+- **Only the phrase starts a run.** LVA sends `wake_word_phrase` in `VoiceAssistantRequest`. It is the name of the wake word, for example `Internal - MWW - Okay Nabu`, the same text as in the wake word select. LVA does not send the optional `wake_word_audio` field.
 - **Devices that send `wake_word_audio` instead (for example Voice PE).** They report only a model `id`. Home Assistant looks it up in `available_wake_words` and uses its `wake_word` field as the phrase, with the raw `id` as fallback. This path is not used by LVA.
 - **Pipeline selection.** Home Assistant compares the phrase with the state of each wake word select entity of the satellite and runs the pipeline of the first match. An empty phrase (button press, announcement) runs the first pipeline. A follow-up conversation sends the phrase of the original wake word again.
-- **Wake word verification by an app.** For a run with a phrase, Home Assistant passes it as `wake_word_phrase` in the `run-start` message to the Voice Support app. The app compares it with its own wake word ids after normalising both (lower case, `-` and spaces become `_`, other special characters are dropped). The match is by name only. The engine is not part of it.
-- **Consequence for model files.** The `wake_word` value of a model JSON decides whether such an app recognises the word. The file name does not.
+- **Wake word verification by an app.** For a run with a phrase, Home Assistant passes it as `wake_word_phrase` in the `run-start` message to the Voice Support app. The app compares it with its own wake word ids after normalising both (lower case, `-` and spaces become `_`, other special characters are dropped). Its comparison is exact, so it does not recognise a name with origin and engine in front of the phrase, unless the app is changed to accept text around the wake word.
+- **Why the phrase is the name.** Home Assistant builds the wake word select from the `wake_word` field and chooses the pipeline by comparing the phrase with the select, so both have to be the same text. A plain phrase in the select would show the same entry for the microWakeWord and the openWakeWord model of one phrase, and Home Assistant offers only one of them.
 
 This description comes from reading the source of the Home Assistant `esphome` and `voice_support` integrations and of the Voice Support app. It was not tested against a running Voice Support app.
 
@@ -163,8 +165,8 @@ Notes on the flow:
 - **Early speech.** With `INTENT_PROGRESS` carrying `tts_start_streaming`, LVA starts playing the reply before `TTS_END`. Playback of the same reply is only started once.
 - **No spoken reply.** If `RUN_END` arrives without any TTS playback, LVA finishes immediately and may play the pipeline ended sound.
 - **Wake word protection.** While a pipeline run is active, including the TTS playback, wake words are ignored so the speaker output cannot trigger a new run.
-- **Stop word.** The stop word is only active during TTS, announcements and a ringing timer, and stops playback locally without involving Home Assistant. See [behavior.md](behavior.md#the-stop-word).
-- **Announcements and timers** do not start a pipeline run. Home Assistant pushes them with `VoiceAssistantAnnounceRequest` and `VoiceAssistantTimerEventResponse`, and LVA plays the sounds itself. See [behavior.md](behavior.md#announcements) and [behavior.md](behavior.md#timers).
+- **Stop word.** The stop word is only active during TTS, announcements and a ringing timer, and stops playback locally without involving Home Assistant. See [behavior.md](../behavior.md#the-stop-word).
+- **Announcements and timers** do not start a pipeline run. Home Assistant pushes them with `VoiceAssistantAnnounceRequest` and `VoiceAssistantTimerEventResponse`, and LVA plays the sounds itself. See [behavior.md](../behavior.md#announcements) and [behavior.md](../behavior.md#timers).
 
 ## Peripherals: the WebSocket API
 
@@ -185,7 +187,7 @@ The full protocol, all event and command names and examples are in [peripheral_a
 4. Start the audio thread.
 5. Register the mDNS service (skipped with `--enable-zeroconf 0`).
 6. Start the peripheral API, send the `zeroconf` event (`getting_started`) and wait `--peripheral-startup-wait` seconds.
-7. Start serving the ESPHome API.
+7. Start serving the ESPHome API. From now on every client disconnect and a 30 s timer check the interface address (see above).
 
 ## Threads
 
@@ -202,7 +204,7 @@ Messages from other threads are handed to the event loop, so the socket is only 
 | Document | Contents |
 |----------|----------|
 | [audio_pipeline.md](audio_pipeline.md) | Microphone to Home Assistant, in detail |
-| [behavior.md](behavior.md) | What the user experiences in each situation |
-| [configuration.md](configuration.md) | Entities on the Home Assistant device page |
+| [behavior.md](../behavior.md) | What the user experiences in each situation |
+| [configuration.md](../configuration.md) | Entities on the Home Assistant device page |
 | [peripheral_api.md](peripheral_api.md) | WebSocket protocol for peripheral authors |
-| [debugging.md](debugging.md) | Troubleshooting audio and container sockets |
+| [debugging.md](../debugging.md) | Troubleshooting audio and container sockets |

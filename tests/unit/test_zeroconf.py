@@ -179,6 +179,37 @@ class TestRegisterServer:
 
 
 # ---------------------------------------------------------------------------
+# update_address()
+# ---------------------------------------------------------------------------
+
+
+class TestUpdateAddress:
+    @pytest.mark.asyncio
+    async def test_updates_service_with_new_address(self):
+        zc = make_zeroconf(host_ip_address="10.0.0.5")
+        zc._mock_zc.async_update_service = AsyncMock()
+        await zc.update_address("10.0.0.9")
+
+        info = zc._mock_zc.async_update_service.await_args.args[0]
+        import socket
+
+        assert info.addresses == [socket.inet_aton("10.0.0.9")]
+        assert zc.host_ip_address == "10.0.0.9"
+
+    @pytest.mark.asyncio
+    async def test_keeps_service_identity(self):
+        zc = make_zeroconf(name="lva-test")
+        zc._mock_zc.async_register_service = AsyncMock()
+        zc._mock_zc.async_update_service = AsyncMock()
+        await zc.register_server()
+        await zc.update_address("10.0.0.9")
+
+        registered = zc._mock_zc.async_register_service.await_args.args[0]
+        updated = zc._mock_zc.async_update_service.await_args.args[0]
+        assert (updated.name, updated.type, updated.port) == (registered.name, registered.type, registered.port)
+
+
+# ---------------------------------------------------------------------------
 # start_discovery()
 # ---------------------------------------------------------------------------
 

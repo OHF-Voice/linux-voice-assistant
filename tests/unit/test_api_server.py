@@ -152,6 +152,16 @@ class TestConnection:
 
         assert server._transport is transport
 
+    def test_connection_made_enables_keepalive_on_the_socket(self):
+        server = make_server()
+        transport = MagicMock()
+
+        with patch("linux_voice_assistant.api_server.apply_keepalive") as apply_keepalive:
+            server.connection_made(transport)
+
+        transport.get_extra_info.assert_called_once_with("socket")
+        apply_keepalive.assert_called_once_with(transport.get_extra_info.return_value)
+
     def test_connection_lost_clears_transport(self):
         server = make_server()
         server.connection_lost(None)
