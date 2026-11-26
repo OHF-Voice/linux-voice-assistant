@@ -1,6 +1,6 @@
 # Audio Input Pipeline
 
-This document follows a microphone sample from the sound card to the Home Assistant (HA) connection. It describes what the code does today. The code is the source of truth: [`process_audio()`](../linux_voice_assistant/__main__.py), [`_float_to_pcm16()`](../linux_voice_assistant/__main__.py), [`webrtc.py`](../linux_voice_assistant/webrtc.py), `VoiceSatelliteProtocol.handle_audio()` and `wakeup()` in [`satellite.py`](../linux_voice_assistant/satellite.py), and `APIServer.send_messages()` in [`api_server.py`](../linux_voice_assistant/api_server.py).
+This document follows a microphone sample from the sound card to the Home Assistant (HA) connection. It describes what the code does today. The code is the source of truth: [`process_audio()`](../../linux_voice_assistant/__main__.py), [`_float_to_pcm16()`](../../linux_voice_assistant/__main__.py), [`webrtc.py`](../../linux_voice_assistant/webrtc.py), `VoiceSatelliteProtocol.handle_audio()` and `wakeup()` in [`satellite.py`](../../linux_voice_assistant/satellite.py), and `APIServer.send_messages()` in [`api_server.py`](../../linux_voice_assistant/api_server.py).
 
 ## Overview
 
@@ -111,7 +111,7 @@ Everything from capture to `send_messages()` runs on one thread, the audio threa
 | Block size `B` | `--audio-input-block-size` (default 1024 samples, 64 ms at 16 kHz) |
 | Sample format | float32 (32 bit) in the range [-1, 1], shape `(B, N)` |
 
-Channel 0 is the microphone. Channel 1, when present, is a reference signal for AEC (for example the speaker feed of a hardware echo canceller). It is captured but not streamed to Home Assistant; what is streamed does not depend on `N`. The system capture level set in PulseAudio/PipeWire/ALSA is applied before LVA sees any sample. See [`enabling_aec.md`](enabling_aec.md) for system-level echo cancellation.
+Channel 0 is the microphone. Channel 1, when present, is a reference signal for AEC (for example the speaker feed of a hardware echo canceller). It is captured but not streamed to Home Assistant; what is streamed does not depend on `N`. The system capture level set in PulseAudio/PipeWire/ALSA is applied before LVA sees any sample. See [`features.md`](../features.md#acoustic-echo-cancellation) for system-level echo cancellation.
 
 The float32 format is fixed in `soundcard` (version 0.4.6, PulseAudio backend: `PA_SAMPLE_FLOAT32LE`) and cannot be configured. The audio server (PulseAudio or PipeWire) converts whatever the device delivers to 16 kHz, `N` channels and float32. The real bit depth of the sound card is therefore decided by the audio server and the hardware. A float32 stream does not add resolution if the source only has 16 bit.
 

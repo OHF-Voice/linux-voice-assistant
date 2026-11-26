@@ -8,6 +8,9 @@ The Linux-Voice-Assistant container connects to the PulseAudio(PipeWire-Pulse) s
 
 ## A) Pipewire (recommended):
 
+<details>
+<summary><b>Show PipeWire installation</b></summary>
+
 PipeWire is a multimedia server that provides low-latency audio/video handling. 
 
 #### Install packages:
@@ -145,7 +148,12 @@ sudo -u pi XDG_RUNTIME_DIR=/run/user/1000 systemctl --user restart pipewire pipe
 
 💡 **Note:** In certain cases where hardware drivers need to be installed, a system reboot may be required. 
 
+</details>
+
 ## B) PulseAudio:
+
+<details>
+<summary><b>Show PulseAudio installation</b></summary>
 
 Make sure that you only run Pulseaudio and there is no Pipewire installed.
 
@@ -190,11 +198,12 @@ Reboot the system:
 
 In some cases to get the audio hardware working you may need to restart your system.
 
-
+</details>
 
 ## Additional Information:
 
-### Debug audio output:
+<details>
+<summary><b>Debug audio output</b></summary>
 
 You can debug the audio output with the following command:
 
@@ -208,7 +217,10 @@ speaker-test -D pulse -c2 -twav
 
 💡 **Note:** You can replace `pulse` with `default` or `alsa_output.pci-0000_00_1f.3.analog-stereo` or any other audio device.
 
-### Set audio volume:
+</details>
+
+<details>
+<summary><b>Set audio volume</b></summary>
 
 If your driver or audiodevice is loaded and you can see the device with `aplay -L` then
 set the audio volume from 0 to 100:
@@ -233,6 +245,4 @@ sudo alsamixer
 
 💡 **Note:** Replace `$LVA_USER_ID` with your actual user id that you want to run the voice assistant.
 
-## Adding Acoustic Echo Cancellation
-
-Acoustic Echo Cancellation (AEC) is a type of sound processing used to cancel out the noise coming out of your speaker and going into your mic. In LVA this functionality can be useful to allow LVA to listen to wake words even when audio is playing, particularly when a timer is playing. PulseAudio and PipeWire already provide built-in modules for AEC. To enable AEC, see [Linux-Voice-Assistant - Enabling AEC](enabling_aec.md). 
+</details>

@@ -114,7 +114,7 @@ lsusb | grep 0b0e
 
 ### Step 2 — Expose PipeWire to the container
 
-The mute button detection requires PipeWire. Follow the [LVA audio server documentation](https://github.com/OHF-Voice/linux-voice-assistant/blob/main/docs/install_audioserver.md) to expose the PipeWire socket.
+The mute button detection requires PipeWire. Follow the [LVA audio server documentation](https://github.com/OHF-Voice/linux-voice-assistant/blob/main/docs/installation_part1_audioserver.md) to expose the PipeWire socket.
 
 Find your runtime directory:
 
