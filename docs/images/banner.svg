@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="400" height="60" viewBox="0 0 400 60" role="img" aria-label="Linux Voice Assistant: a local voice satellite for Home Assistant.">
+  <title>Linux Voice Assistant: a local voice satellite for Home Assistant.</title>
+  <defs>
+    <clipPath id="round"><rect width="400" height="60" rx="8"/></clipPath>
+  </defs>
+  <g clip-path="url(#round)">
+    <rect width="400" height="60" fill="#2b2f36"/>
+    <rect width="64" height="60" fill="#18bcf2"/>
+    <rect x="336" width="64" height="60" fill="#18bcf2"/>
+  </g>
+
+  <!-- Penguin with headset icon -->
+  <g transform="translate(32 30) scale(1.4) translate(-18 -22)" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <ellipse cx="18" cy="24" rx="13" ry="12" fill="#0f172a"/>
+    <ellipse cx="18" cy="27" rx="8" ry="7" fill="#fff"/>
+    <circle cx="13.5" cy="21" r="2.6" fill="#fff"/><circle cx="22.5" cy="21" r="2.6" fill="#fff"/>
+    <path d="M15.5 25l2.5 3 2.5-3z" fill="#fbbf24" stroke="none"/>
+    <path d="M4 22a14 14 0 0 1 28 0" stroke="#fbbf24" stroke-width="2.2"/>
+    <rect x="2" y="20" width="4" height="8" rx="2" fill="#fbbf24" stroke="none"/><rect x="30" y="20" width="4" height="8" rx="2" fill="#fbbf24" stroke="none"/>
+  </g>
+
+  <!-- Texts -->
+  <g font-family="Verdana, DejaVu Sans, sans-serif" fill="#fff">
+    <text x="80" y="19" font-size="12.5" font-weight="700">Linux Voice Assistant</text>
+    <text x="80" y="34" font-size="10.5" fill="#c9d1db">Local voice satellite for Home Assistant</text>
+    <text x="80" y="49" font-size="10.5" fill="#c9d1db">Wake word, speech, timers</text>
+  </g>
+
+  <!-- Arrows -->
+  <g fill="none" stroke="#8a94a3" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M300 30 H312 M307 25 L312 30 L307 35"/>
+  </g>
+
+  <!-- Microphone with sound waves icon -->
+  <g transform="translate(356 13)" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="7" y="0" width="10" height="20" rx="5" fill="#fff" fill-opacity="0.15"/>
+    <path d="M2 14 C2 22 22 22 22 14"/>
+    <path d="M12 24 V32 M6 32 H18"/>
+  </g>
+</svg>

@@ -12,6 +12,8 @@ Because it runs on a full Linux system and offers access significantly more loca
 
 News about this software: [Discussion #495](https://github.com/OHF-Voice/linux-voice-assistant/discussions/495).
 
+![Linux Voice Assistant](docs/images/banner.svg)
+
 [![A project from the Open Home Foundation](https://www.openhomefoundation.org/badges/ohf-project.png)](https://www.openhomefoundation.org/)
 
 ## Features
@@ -66,7 +68,7 @@ Alternatively if on a lower budget then suggest could use other microphone-array
 
 Pick the setup that fits your system:
 
-| | Home Assistant OS | Raspberry Pi image | Docker / systemd |
+| | <img src="https://raw.githubusercontent.com/OHF-Voice/apps/main/assist_satellite/icon.png" alt="" height="28" align="absmiddle"> Home Assistant OS | <img src="docs/images/logo.svg" alt="" height="28" align="absmiddle"> Raspberry Pi image | <img src="docs/images/logo.svg" alt="" height="28" align="absmiddle"> Docker / systemd |
 |---|---|---|---|
 | **How** | Install the [Assist Satellite](https://github.com/OHF-Voice/apps/tree/main/assist_satellite) app on your HomeAssistant. | Flash the [PiCompose](https://github.com/florian-asche/PiCompose) image, set Wi-Fi, power on. Everything is set up, and updated automatically. | Install on your own: [install the audio service](docs/installation.md#step-1-install-audioservice), then [install the application](docs/installation.md#step-2-install-application) with Docker Compose or on bare metal with systemd. |
 | **Includes** | Linux-Voice-Assistant | Linux-Voice-Assistant, [Snapcast](https://github.com/florian-asche/docker-snapcast), [Music Assistant Local-Audio](https://github.com/music-assistant/local-audio-addon), [Bluetooth proxy](https://github.com/denvera/bt-proxy) | Linux Voice Assistant |
