@@ -303,6 +303,12 @@ class TestDuckOwners:
         player.unduck(owner="timer")
         player._mock.unduck.assert_not_called()
 
+    def test_media_announcement_is_a_known_owner(self):
+        player = make_player()
+        player.duck(owner="media_announcement")
+        player.unduck(owner="media_announcement")
+        player._mock.unduck.assert_called_once()
+
     def test_unknown_owner_is_rejected(self):
         player = make_player()
         with pytest.raises(ValueError, match="Unknown duck owner 'music'"):

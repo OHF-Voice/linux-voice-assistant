@@ -36,8 +36,8 @@ The music player can be sent to a different sound card with `--music-output-devi
 
 Two rules apply everywhere:
 
-- **Music is never ended by the assistant on its own.** During a conversation it is lowered (*ducked*). During a TTS / announcement sent to the media player (for example `tts.speak` with `announce: true`) it is **paused** for the duration of the announcement and then resumed. Only an explicit *stop* from Home Assistant or a peripheral, or losing the connection to Home Assistant (see below), stops it for good.
-- **Ducking** means the music volume is reduced to **50 %** of the volume you set. When the interaction is over it returns to 100 % of your set volume. The music stays ducked as long as something still wants it ducked: a conversation, a ringing timer and a voice announcement ask for it separately, so the music returns to full volume only when all of them are over. For example, a timer that is stopped during a conversation does not end the ducking of the conversation. When the last Home Assistant client disconnects, all of them are released.
+- **Music is never ended by the assistant on its own.** During a conversation it is lowered (*ducked*). During a TTS / announcement sent to the media player (for example `tts.speak` with `announce: true`) it is **ducked** for the duration of the announcement and then restored, and the media player reports `announcing`. Only an explicit *stop* from Home Assistant or a peripheral, or losing the connection to Home Assistant (see below), stops it for good.
+- **Ducking** means the music volume is reduced to **50 %** of the volume you set. When the interaction is over it returns to 100 % of your set volume. The music stays ducked as long as something still wants it ducked: a conversation, a ringing timer, a voice announcement and a media player announcement ask for it separately, so the music returns to full volume only when all of them are over. For example, a timer that is stopped during a conversation does not end the ducking of the conversation. When the last Home Assistant client disconnects, all of them are released.
 - **Pause mode (`--mpv-player-duck-mode pause`, `MPV_PLAYER_DUCK_MODE=pause`).** The default is `duck`, which lowers the volume as described above. With `pause` the music of LVA is **paused** instead of lowered, and resumed when the last reason for ducking is over. Music that was already paused stays paused. A pause or stop from Home Assistant or a peripheral during that time takes over, so the music is not resumed against it. While it is paused for ducking, the media player keeps reporting `playing`. Music that is started while it is ducked plays at full volume, because nothing pauses it again. The option only applies to the music player, not to the voice player (announcements, chimes, TTS, timer sound).
 
 ---
@@ -110,13 +110,15 @@ If the announcement was started with `start_conversation`, the assistant listens
 
 ### Media player announcements and TTS (`announce: true`)
 
-Triggered by a `media_player.play_media` call with `announce: true` on the LVA media player, which is also what `tts.speak` with `announce: true` does. Here the music is **paused** while the announcement is spoken, not just lowered.
+Triggered by a `media_player.play_media` call with `announce: true` on the LVA media player, which is also what `tts.speak` with `announce: true` does. The music is **ducked to 50 %** while the announcement is spoken, like on ESPHome devices, and the media player reports `announcing` until the announcement is over.
 
 | Music state when the announcement arrives | What happens |
 |-------------------------------------------|--------------|
-| **Playing** | The music is **paused** (not just lowered), the announcement plays, then the music **resumes** where it stopped. |
-| **Paused** (by you) | The announcement plays, the music stays paused and the media player reports `paused` afterwards. |
-| **Not playing** | The announcement plays, the media player returns to `idle`. |
+| **Playing** | The music is ducked to 50 %, the announcement plays, then the music returns to full volume. The media player reports `announcing` meanwhile and `playing` afterwards. |
+| **Paused** (by you) | The announcement plays, the music stays paused. The media player reports `announcing` meanwhile and `paused` afterwards. |
+| **Not playing** | The announcement plays. The media player reports `announcing` meanwhile and `idle` afterwards. |
+
+A second announcement replaces the first one. A media player announcement asks for the ducking on its own, like a conversation, a ringing timer and a voice announcement do, so the music returns to full volume only when all of them are over. For example, a media player announcement that ends during a voice announcement does not end its ducking.
 
 ---
 
@@ -324,7 +326,7 @@ A follow-up question (continued conversation) goes `tts`, then `listening` again
 | Conversation finished | Restored to 100 % of the set volume |
 | Follow-up question (continued conversation) | Stays ducked until the conversation ends |
 | Voice announcement (`assist_satellite.announce`) | Ducked, restored after |
-| Media player announcement / `tts.speak` (`announce: true`), music playing | Paused during the announcement, resumed after |
+| Media player announcement / `tts.speak` (`announce: true`), music playing | Ducked during the announcement, restored after |
 | Media player announcement, music paused | Stays paused |
 | Timer finishes | Ducked while ringing, restored when ringing stops |
 | Stop word said | Music is not stopped, only restored from ducking |
