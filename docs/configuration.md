@@ -29,9 +29,7 @@ The **Mute** switch disables wake word detection and stops the assistant from re
 
 ![Mute Switch](./images/mute_switch.png)
 
-## Remote Mute
-
-Only with `--allow-remote-mute` / `ALLOW_REMOTE_MUTE="1"`. The **Remote mute** sensor is on while a peripheral on the machine (for example a physical mute switch or a desktop privacy toggle) has muted the assistant with `remote_mute`. Until a peripheral sends `remote_unmute`, the **Mute** switch cannot be turned off from Home Assistant. See [behavior.md](behavior.md#mute).
+With `--enable-remote-unmute 0` / `ENABLE_REMOTE_UNMUTE="0"` there is no **Mute** switch: Home Assistant shows the mute state in a read-only **Mute** sensor, and only a peripheral can unmute. See [behavior.md](behavior.md#mute).
 
 ## Thinking Sound
 

@@ -408,12 +408,6 @@ class TestMuteSwitchEntity:
         msgs = list(entity.handle_message(msg))
         assert any(isinstance(m, SwitchStateResponse) for m in msgs)
 
-    def test_switch_command_snaps_back_while_remote_muted(self):
-        # The satellite refused the unmute (remote mute): the switch stays on.
-        entity = make_mute_switch(key=2, initial_muted=True)
-        msgs = list(entity.handle_message(SwitchCommandRequest(key=2, state=False)))
-        assert [m.state for m in msgs if isinstance(m, SwitchStateResponse)] == [True]
-
     def test_switch_command_wrong_key_ignored(self):
         entity = make_mute_switch(key=2)
         msg = SwitchCommandRequest(key=99, state=True)
@@ -453,29 +447,41 @@ class TestMuteSwitchEntity:
 
 
 # ---------------------------------------------------------------------------
-# RemoteMuteSensorEntity
+# MuteSwitchEntity with remote unmute disabled
 # ---------------------------------------------------------------------------
 
 
-class TestRemoteMuteSensorEntity:
-    def make_sensor(self, remote_muted=False):
-        from linux_voice_assistant.entity import RemoteMuteSensorEntity
+class TestMuteSwitchEntityRemoteUnmuteDisabled:
+    def make_status(self, muted=True):
+        from linux_voice_assistant.entity import MuteSwitchEntity
 
-        return RemoteMuteSensorEntity(
+        set_muted = MagicMock()
+        entity = MuteSwitchEntity(
             server=make_server(),
-            key=7,
-            name="Remote mute",
-            object_id="remote_mute",
-            get_remote_muted=lambda: remote_muted,
+            key=3,
+            name="Mute",
+            object_id="mute",
+            get_muted=lambda: muted,
+            set_muted=set_muted,
+            remote_unmute_enabled=False,
         )
+        return entity, set_muted
 
-    def test_list_entities_yields_binary_sensor_response(self):
-        msgs = list(self.make_sensor().handle_message(ListEntitiesRequest()))
-        assert [(type(m), m.object_id) for m in msgs] == [(ListEntitiesBinarySensorResponse, "remote_mute")]
+    def test_list_entities_yields_binary_sensor(self):
+        msgs = list(self.make_status()[0].handle_message(ListEntitiesRequest()))
+        assert [(type(m), m.object_id) for m in msgs] == [(ListEntitiesBinarySensorResponse, "mute")]
 
-    def test_subscribe_states_yields_current_state(self):
-        msgs = list(self.make_sensor(remote_muted=True).handle_message(SubscribeHomeAssistantStatesRequest()))
-        assert [(type(m), m.key, m.state) for m in msgs] == [(BinarySensorStateResponse, 7, True)]
+    def test_subscribe_states_yields_mute_state(self):
+        msgs = list(self.make_status(muted=True)[0].handle_message(SubscribeHomeAssistantStatesRequest()))
+        assert [(type(m), m.key, m.state) for m in msgs] == [(BinarySensorStateResponse, 3, True)]
+
+    def test_switch_command_ignored(self):
+        entity, set_muted = self.make_status(muted=True)
+        assert not list(entity.handle_message(SwitchCommandRequest(key=3, state=False)))
+        set_muted.assert_not_called()
+
+    def test_state_message_is_binary_sensor_state(self):
+        assert isinstance(self.make_status()[0].state_message(), BinarySensorStateResponse)
 
 
 # ---------------------------------------------------------------------------

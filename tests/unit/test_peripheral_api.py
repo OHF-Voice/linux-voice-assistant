@@ -363,6 +363,17 @@ class TestDispatchMute:
         satellite._set_muted.assert_called_once_with(False)  # pylint: disable=protected-access
 
     @pytest.mark.asyncio
+    async def test_unmute_mic_works_when_remote_unmute_disabled(self, tmp_path):
+        state = make_state(tmp_path, muted=True, remote_unmute_enabled=False)
+        satellite = MagicMock()
+        state.satellite = satellite
+        server = make_server(state)
+
+        await dispatch(server, LVACommand.UNMUTE_MIC.value)
+
+        satellite._set_muted.assert_called_once_with(False)  # pylint: disable=protected-access
+
+    @pytest.mark.asyncio
     async def test_unmute_mic_noop_when_already_unmuted(self, tmp_path):
         state = make_state(tmp_path, muted=False)
         satellite = MagicMock()
@@ -384,66 +395,6 @@ class TestDispatchMute:
         await dispatch(server, LVACommand.MUTE_MIC.value)
 
         satellite.send_messages.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_remote_mute_without_home_assistant(self, tmp_path):
-        state = make_state(tmp_path, muted=False, remote_mute_allowed=True)
-        state.satellite = None
-        server = make_server(state)
-
-        await dispatch(server, LVACommand.REMOTE_MUTE.value)
-
-        assert (state.muted, state.remote_muted) == (True, True)
-
-    @pytest.mark.asyncio
-    async def test_remote_mute_tells_home_assistant(self, tmp_path):
-        state = make_state(tmp_path, muted=False, remote_mute_allowed=True)
-        state.mute_switch_entity = MagicMock(key=1)
-        state.satellite = MagicMock()
-        server = make_server(state)
-
-        await dispatch(server, LVACommand.REMOTE_MUTE.value)
-
-        assert state.remote_muted is True
-        state.satellite._set_muted.assert_called_once_with(True)  # pylint: disable=protected-access
-        state.satellite.send_messages.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_remote_mute_saved_in_preferences(self, tmp_path):
-        state = make_state(tmp_path, remote_mute_allowed=True)
-        state.satellite = None
-
-        await dispatch(make_server(state), LVACommand.REMOTE_MUTE.value)
-
-        assert json.loads(state.preferences_path.read_text())["remote_muted"] == 1
-
-    @pytest.mark.asyncio
-    async def test_remote_mute_ignored_without_allow_flag(self, tmp_path):
-        state = make_state(tmp_path, muted=False)
-        state.satellite = None
-
-        await dispatch(make_server(state), LVACommand.REMOTE_MUTE.value)
-
-        assert (state.muted, state.remote_muted) == (False, False)
-
-    @pytest.mark.asyncio
-    async def test_unmute_mic_refused_while_remote_muted(self, tmp_path):
-        state = make_state(tmp_path, muted=True, remote_mute_allowed=True, remote_muted=True)
-        state.satellite = MagicMock()
-
-        await dispatch(make_server(state), LVACommand.UNMUTE_MIC.value)
-
-        state.satellite._set_muted.assert_not_called()  # pylint: disable=protected-access
-
-    @pytest.mark.asyncio
-    async def test_remote_unmute_unmutes(self, tmp_path):
-        state = make_state(tmp_path, muted=True, remote_mute_allowed=True, remote_muted=True)
-        state.satellite = None
-
-        await dispatch(make_server(state), LVACommand.REMOTE_UNMUTE.value)
-
-        assert (state.muted, state.remote_muted) == (False, False)
-        assert json.loads(state.preferences_path.read_text())["remote_muted"] == 0
 
 
 # ---------------------------------------------------------------------------
