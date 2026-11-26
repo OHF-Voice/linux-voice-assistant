@@ -16,6 +16,7 @@ PipelineState = str
 _PIPELINE_STATE_AFTER_EVENT: Dict[str, PipelineState] = {
     "wake_word_detected": "wake_word",
     "listening": "listening",
+    "speech_detected": "speech_detected",
     "thinking": "thinking",
     "tts_speaking": "tts",
     "tts_finished": "idle",
@@ -55,9 +56,11 @@ def pipeline_state_after(event: str, current: PipelineState) -> PipelineState:
     """
     Follow the voice pipeline through the events of LVA.
     :param event: Name of the event of LVA.
-    :param current: The pipeline state before the event (``idle``, ``wake_word``, ``listening``, ``thinking`` or ``tts``).
-    :return: The pipeline state after the event. Events that say nothing about the pipeline keep it.
+    :param current: The pipeline state before the event (``idle``, ``wake_word``, ``listening``, ``speech_detected``, ``thinking`` or ``tts``).
+    :return: The pipeline state after the event. Events that say nothing about the pipeline keep it. Speech is only detected while listening.
     """
+    if event == "speech_detected" and current != "listening":
+        return current
     return _PIPELINE_STATE_AFTER_EVENT.get(event, current)
 
 

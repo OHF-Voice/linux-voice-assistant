@@ -101,6 +101,27 @@ class TestEmitEvent:
         assert ws.sent() == [{"event": "state", "data": {"state": "wake_word"}}, {"event": "state", "data": {"state": "listening"}}]
 
     @pytest.mark.asyncio
+    async def test_speech_detected_between_listening_and_thinking(self, tmp_path):
+        server = make_server(tmp_path)
+        await server.refresh_status()
+        ws = connect(server)
+
+        for event in (LVAEvent.LISTENING, LVAEvent.SPEECH_DETECTED, LVAEvent.THINKING):
+            await server.emit_event(event)
+
+        assert [message["data"]["state"] for message in ws.sent()] == ["listening", "speech_detected", "thinking"]
+
+    @pytest.mark.asyncio
+    async def test_speech_detected_outside_listening_is_ignored(self, tmp_path):
+        server = make_server(tmp_path)
+        await server.refresh_status()
+        ws = connect(server)
+
+        await server.emit_event(LVAEvent.SPEECH_DETECTED)
+
+        ws.send.assert_not_awaited()
+
+    @pytest.mark.asyncio
     async def test_unchanged_status_is_not_sent_again(self, tmp_path):
         server = make_server(tmp_path)
         await server.refresh_status()

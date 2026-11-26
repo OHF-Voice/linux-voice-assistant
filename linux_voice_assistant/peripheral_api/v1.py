@@ -150,6 +150,7 @@ class LVAEvent(str, Enum):
 
     WAKE_WORD_DETECTED = "wake_word_detected"
     LISTENING = "listening"
+    SPEECH_DETECTED = "speech_detected"
     STT_TEXT = "stt_text"
     THINKING = "thinking"
     TTS_TEXT = "tts_text"
@@ -599,7 +600,9 @@ class PeripheralApiV1:
         event: LVAEvent,
         data: Optional[Dict[str, Any]] = None,
     ) -> None:
-        """Broadcast an event to all connected peripheral clients."""
+        """Broadcast an event to all connected peripheral clients. ``speech_detected`` exists only in version 2 and is not sent."""
+        if event == LVAEvent.SPEECH_DETECTED:
+            return
         # Cache the last conversation text so newly-connecting clients get it in the snapshot
         if event == LVAEvent.STT_TEXT and data:
             self._last_stt_text = data.get("text")

@@ -682,6 +682,14 @@ class TestPipelineEndedSound:
         sat.state.tts_player.play.assert_called_once()
         assert sat.state.tts_player.play.call_args.args[0] == sat.state.pipeline_ended_sound
 
+    def test_speech_detected_by_home_assistant_is_emitted(self, tmp_path):
+        from aioesphomeapi import VoiceAssistantEventType
+
+        sat = make_satellite(tmp_path)
+        sat._emit = MagicMock()
+        sat.handle_voice_event(VoiceAssistantEventType.VOICE_ASSISTANT_STT_VAD_START, {})
+        sat._emit.assert_called_once_with(LVAEvent.SPEECH_DETECTED)
+
     def test_run_ending_after_stt_does_not_play_sound(self, tmp_path):
         # HA ends the run after speech recognition when an automation handles the answer (ask_question).
         from aioesphomeapi import VoiceAssistantEventType

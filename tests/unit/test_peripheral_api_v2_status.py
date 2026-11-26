@@ -20,6 +20,7 @@ class TestPipelineStateAfter:
         [
             ("wake_word_detected", "wake_word"),
             ("listening", "listening"),
+            ("speech_detected", "speech_detected"),
             ("thinking", "thinking"),
             ("tts_speaking", "tts"),
             ("tts_finished", "idle"),
@@ -29,6 +30,10 @@ class TestPipelineStateAfter:
     )
     def test_events_move_the_pipeline(self, event, expected):
         assert pipeline_state_after(event, "listening") == expected
+
+    @pytest.mark.parametrize("current", ["idle", "wake_word", "speech_detected", "thinking", "tts"])
+    def test_speech_is_only_detected_while_listening(self, current):
+        assert pipeline_state_after("speech_detected", current) == current
 
     @pytest.mark.parametrize("event", ["muted", "volume_changed", "timer_ticking", "zeroconf", "stt_text"])
     def test_other_events_keep_the_state(self, event):
@@ -46,7 +51,7 @@ class TestDeriveStatus:
     def test_volume_is_a_percentage(self):
         assert derive_status(make_inputs(volume=0.37), None).volume == 37
 
-    @pytest.mark.parametrize("pipeline", ["wake_word", "listening", "thinking", "tts"])
+    @pytest.mark.parametrize("pipeline", ["wake_word", "listening", "speech_detected", "thinking", "tts"])
     def test_state_follows_the_pipeline(self, pipeline):
         assert derive_status(make_inputs(pipeline_state=pipeline), None).state == pipeline
 

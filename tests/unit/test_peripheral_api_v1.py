@@ -785,6 +785,19 @@ class TestEmitEvent:
         await server.emit_event(LVAEvent.IDLE)  # should not raise
 
     @pytest.mark.asyncio
+    async def test_speech_detected_is_not_sent_and_keeps_the_state(self):
+        server = make_server()
+        ws = AsyncMock()
+        server._clients = {ws}  # pylint: disable=protected-access
+        await server.emit_event(LVAEvent.LISTENING)
+        ws.send.reset_mock()
+
+        await server.emit_event(LVAEvent.SPEECH_DETECTED)
+
+        ws.send.assert_not_awaited()
+        assert server._current_state == LVAEvent.LISTENING  # pylint: disable=protected-access
+
+    @pytest.mark.asyncio
     async def test_payload_includes_data(self):
         server = make_server()
         ws = AsyncMock()

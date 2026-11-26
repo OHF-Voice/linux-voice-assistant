@@ -601,6 +601,9 @@ class VoiceSatelliteProtocol(APIServer):
             self._continue_conversation = False
             self._pipeline_active = True
 
+        elif event_type == VoiceAssistantEventType.VOICE_ASSISTANT_STT_VAD_START:
+            self._emit(LVAEvent.SPEECH_DETECTED)
+
         elif event_type == VoiceAssistantEventType.VOICE_ASSISTANT_INTENT_START:
             self._intent_started = True
             self._emit(LVAEvent.THINKING)
