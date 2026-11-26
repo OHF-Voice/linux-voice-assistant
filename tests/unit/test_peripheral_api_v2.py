@@ -474,13 +474,13 @@ class TestStartListeningAndStop:
 
 class TestMute:
     @pytest.mark.asyncio
-    async def test_mute_on(self, tmp_path):
+    async def test_muted_on(self, tmp_path):
         server = make_server(tmp_path)
         entity = MagicMock()
         entity.key = 7
         server._state.mute_switch_entity = entity  # pylint: disable=protected-access
 
-        await dispatch(server, "mute_on")
+        await dispatch(server, "muted_on")
 
         server._state.satellite._set_muted.assert_called_once_with(True)  # pylint: disable=protected-access
         assert entity._switch_state is True  # pylint: disable=protected-access
@@ -503,7 +503,7 @@ class TestMute:
         )
         server._state.mute_switch_entity = entity  # pylint: disable=protected-access
 
-        await dispatch(server, "mute_on")
+        await dispatch(server, "muted_on")
 
         (message,) = server._state.satellite.send_messages.call_args.args[0]  # pylint: disable=protected-access
         assert (type(message).__name__, message.key, message.state) == (message_type, 7, True)
@@ -513,27 +513,27 @@ class TestMute:
         server = make_server(tmp_path, remote_unmute_enabled=False)
         server._state.muted = True  # pylint: disable=protected-access
 
-        await dispatch(server, "mute_off")
+        await dispatch(server, "muted_off")
 
         server._state.satellite._set_muted.assert_called_once_with(False)  # pylint: disable=protected-access
 
     @pytest.mark.asyncio
     async def test_a_peripheral_can_mute_while_remote_unmute_is_disabled(self, tmp_path):
         server = make_server(tmp_path, remote_unmute_enabled=False)
-        await dispatch(server, "mute_on")
+        await dispatch(server, "muted_on")
         server._state.satellite._set_muted.assert_called_once_with(True)  # pylint: disable=protected-access
 
     @pytest.mark.asyncio
-    async def test_mute_off(self, tmp_path):
+    async def test_muted_off(self, tmp_path):
         server = make_server(tmp_path)
         server._state.muted = True  # pylint: disable=protected-access
 
-        await dispatch(server, "mute_off")
+        await dispatch(server, "muted_off")
 
         server._state.satellite._set_muted.assert_called_once_with(False)  # pylint: disable=protected-access
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("command,muted", [("mute_on", True), ("mute_off", False)])
+    @pytest.mark.parametrize("command,muted", [("muted_on", True), ("muted_off", False)])
     async def test_already_in_that_state_is_ignored(self, tmp_path, command, muted):
         server = make_server(tmp_path)
         server._state.muted = muted  # pylint: disable=protected-access
@@ -544,7 +544,7 @@ class TestMute:
     async def test_mute_without_satellite(self, tmp_path):
         server = make_server(tmp_path)
         server._state.satellite = None  # pylint: disable=protected-access
-        await dispatch(server, "mute_on")
+        await dispatch(server, "muted_on")
 
 
 class TestVolume:
@@ -784,7 +784,7 @@ class TestHardwareMuteMessageKinds:
         assert server._state.hardware_mute_type is None  # pylint: disable=protected-access
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("name", ["hardware_mute_on", "hardware_mute_off"])
+    @pytest.mark.parametrize("name", ["hardware_muted_on", "hardware_muted_off"])
     async def test_the_requests_to_switch_the_hardware_mute_are_not_accepted_from_a_peripheral(self, tmp_path, caplog, name):
         server = make_server(tmp_path)
         with caplog.at_level(logging.WARNING):
@@ -805,7 +805,7 @@ class TestHardwareMuteInTheSnapshot:
 
 class TestRequestHardwareMute:
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("muted,event", [(True, "hardware_mute_on"), (False, "hardware_mute_off")])
+    @pytest.mark.parametrize("muted,event", [(True, "hardware_muted_on"), (False, "hardware_muted_off")])
     async def test_request_goes_to_every_peripheral_if_changeable(self, tmp_path, muted, event):
         server = make_server(tmp_path)
         server._state.hardware_mute_type = "changeable"  # pylint: disable=protected-access

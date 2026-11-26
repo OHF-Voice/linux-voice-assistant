@@ -15,7 +15,7 @@ What is already decided:
   reported to LVA. LVA never pushes its own mute onto the hardware at that moment. With the sync on, LVA takes over the state of the
   device.
 - After that the hardware mute is switched normally: from Home Assistant through the entity of the peripheral, or by the hardware
-  itself. LVA can also switch it with the commands `hardware_mute_on` / `hardware_mute_off` if the type is `changeable` (the API and
+  itself. LVA can also switch it with the commands `hardware_muted_on` / `hardware_muted_off` if the type is `changeable` (the API and
   `PeripheralAPIServer.request_hardware_mute_sync()` exist, nothing calls them yet).
 
 What is still open:

@@ -9,8 +9,8 @@ Which one a message is does not depend on the direction.
 
 Events from LVA: hello, lva_status, state, mute_status, volume_status, timer_status, timer_remaining_time, timer_remaining_percentage,
 timer_full_data_set, media_player_status.
-Commands from LVA: hardware_mute_on, hardware_mute_off.
-Commands from the peripheral: listening_start, listening_stop, mute_on, mute_off, volume_up, volume_down, volume_set, volume_silent, timer_stop,
+Commands from LVA: hardware_muted_on, hardware_muted_off.
+Commands from the peripheral: listening_start, listening_stop, muted_on, muted_off, volume_up, volume_down, volume_set, volume_silent, timer_stop,
 button_pressed.
 Events from the peripheral: hardware_mute_status, hardware_mute_type.
 """
@@ -153,7 +153,7 @@ class PeripheralApiV2:
             )
             return
         _LOGGER.debug("Asking the peripherals to %s the hardware mute", "set" if muted else "clear")
-        await self._broadcast([{"command": "hardware_mute_on" if muted else "hardware_mute_off"}])
+        await self._broadcast([{"command": "hardware_muted_on" if muted else "hardware_muted_off"}])
 
     # ------------------------------------------------------------------
     # Commands
@@ -193,8 +193,8 @@ class PeripheralApiV2:
         elif command == "timer_stop":
             if satellite is not None and satellite.timer_ringing:
                 satellite.stop()
-        elif command in ("mute_on", "mute_off"):
-            self._set_mic_muted(state, satellite, command == "mute_on")
+        elif command in ("muted_on", "muted_off"):
+            self._set_mic_muted(state, satellite, command == "muted_on")
         elif command in ("volume_up", "volume_down"):
             self._change_volume(state, satellite, self._volume_step if command == "volume_up" else -self._volume_step)
         elif command == "volume_set":
