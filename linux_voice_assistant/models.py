@@ -1,5 +1,6 @@
 """Shared models."""
 
+import asyncio
 import json
 import logging
 from collections.abc import Iterable
@@ -184,6 +185,7 @@ class ServerState:
     media_player_entity: "Optional[MediaPlayerEntity]" = None
     satellite: "Optional[VoiceSatelliteProtocol]" = None
     connections: "List[VoiceSatelliteProtocol]" = field(default_factory=list)
+    client_disconnected: asyncio.Event = field(default_factory=asyncio.Event)
     mute_switch_entity: "Optional[MuteSwitchEntity]" = None
     # Hardware mute of the microphone, as a version 2 peripheral reported it. None until it has said so. LVA only keeps these for its
     # own processing: its own mute (``muted``) is not changed by them, and nothing is passed on to Home Assistant.
