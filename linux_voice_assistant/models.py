@@ -424,7 +424,7 @@ class ServerState:
         self.timer_ring_start = time.monotonic()
         self.local_timers.pop(timer_id, None)
         self.active_wake_words.add(self.stop_word.id)
-        self.music_player.duck()
+        self.music_player.duck(owner="timer")
 
         self._emit_timer_event("timer_ringing", timer_data)
         self._continue_timer_ring()
@@ -459,7 +459,7 @@ class ServerState:
         self.ringing_timer_id = None
         self.timer_ring_start = None
         self.active_wake_words.discard(self.stop_word.id)
-        self.music_player.unduck()
+        self.music_player.unduck(owner="timer")
         self.tts_player.stop()
         self._emit_timer_event("idle", None)
 

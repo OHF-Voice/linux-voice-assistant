@@ -6,7 +6,6 @@ import logging
 import posixpath
 import shutil
 import threading
-import time
 from collections.abc import Iterable
 from functools import partial
 from typing import Any, Dict, List, Optional, Set, Union
@@ -64,7 +63,6 @@ from .entity import (
 )
 from .models import AvailableWakeWord, DetectionResult, ServerState, WakeWordType
 from .peripheral_api import LVAEvent
-from .util import call_all
 from .wake_word import find_matching_wake_word_id, wake_word_display_name, wake_word_ids_for_selections, wake_word_selections_for_ids
 from .wake_word_detection import has_active_wake_word
 
@@ -362,8 +360,6 @@ class VoiceSatelliteProtocol(APIServer):
         # follow-up request without it would run the first pipeline instead of the one
         # the user woke up. Empty after a button press or an HA announcement.
         self._wake_word_phrase = ""
-        self._timer_finished = False
-        self._timer_ring_start: Optional[float] = None
         self._processing = False
         self._pipeline_active = False
         self._external_wake_words: Dict[str, VoiceAssistantExternalWakeWord] = {}
@@ -944,12 +940,10 @@ class VoiceSatelliteProtocol(APIServer):
         _LOGGER.debug("Detected wake word: %s", wake_word_phrase)
         self._wake_word_phrase = wake_word_phrase
 
-        self.state.stop_timer_ringing()
         self._pipeline_active = True
-        self._emit(LVAEvent.WAKE_WORD_DETECTED, self._detection_event_data(detection))
         self.duck()
-        if timer_was_ringing:
-            self.unduck(owner="timer")
+        self.state.stop_timer_ringing()
+        self._emit(LVAEvent.WAKE_WORD_DETECTED, self._detection_event_data(detection))
         if self.state.listen_during_wake_sound:
             _LOGGER.debug("Starting audio streaming immediately (listen_during_wake_sound enabled)")
             self.state.tts_player.play(self.state.wakeup_sound)
@@ -1005,16 +999,10 @@ class VoiceSatelliteProtocol(APIServer):
             return
 
         _LOGGER.debug("Button start_listening triggered")
-        self.state.stop_timer_ringing()
         self._wake_word_phrase = ""
-        timer_was_ringing = self._timer_finished
-        self._timer_finished = False
-        self._timer_ring_start = None
-        _LOGGER.debug("Stopping timer finished sound")
         self._pipeline_active = True
         self.duck()
-        if timer_was_ringing:
-            self.unduck(owner="timer")
+        self.state.stop_timer_ringing()
         self.state.tts_player.play(
             self.state.start_listening_sound,
             done_callback=self._on_start_listening_sound_finished,
@@ -1129,40 +1117,6 @@ class VoiceSatelliteProtocol(APIServer):
         _LOGGER.debug("Unduck requested by %s", owner)
         self.state.music_player.unduck(owner=owner)
 
-    # ------------------------------------------------------------------
-    # Timer finished loop
-    # ------------------------------------------------------------------
-
-    def _play_timer_finished(self) -> None:
-        if not self._timer_finished:
-            _LOGGER.debug("Timer finished sound stopped")
-            self.unduck(owner="timer")
-            self._timer_ring_start = None
-            return
-
-        # Auto-stop after timer_max_ring_seconds
-        if self._timer_ring_start is not None:
-            elapsed = time.monotonic() - self._timer_ring_start
-            if elapsed >= self.state.timer_max_ring_seconds:
-                _LOGGER.info(
-                    "Timer auto-stopped after %.0f seconds (max=%.0f)",
-                    elapsed,
-                    self.state.timer_max_ring_seconds,
-                )
-                self._timer_finished = False
-                self._timer_ring_start = None
-                self.state.active_wake_words.discard(self.state.stop_word.id)
-                self.unduck(owner="timer")
-                return
-
-        self.state.tts_player.play(
-            self.state.timer_finished_sound,
-            done_callback=lambda: call_all(
-                lambda: time.sleep(1.0),
-                self._play_timer_finished,
-            ),
-        )
-
     def connection_made(self, transport) -> None:
         super().connection_made(transport)
         # Track every live connection so asynchronous entity-state changes can be
@@ -1183,7 +1137,6 @@ class VoiceSatelliteProtocol(APIServer):
         self._tts_played = False
         self._continue_conversation = False
         self._announce_ducking = False
-        self._timer_finished = False
         self._pipeline_active = False
 
         # Deregister this connection.

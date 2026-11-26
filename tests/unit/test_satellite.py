@@ -331,7 +331,6 @@ class TestStop:
 
     def test_stop_calls_tts_player_stop(self, tmp_path):
         sat = make_satellite(tmp_path)
-        sat._timer_finished = False
         sat.stop()
         sat.state.tts_player.stop.assert_called()
 
@@ -502,13 +501,13 @@ class TestDuckOwnersInSatellite:
 
     def test_stop_while_ringing_unducks_timer_only(self, tmp_path):
         sat = make_satellite(tmp_path)
-        sat._timer_finished = True
+        sat.state.ringing_timer_id = "timer-1"
         sat.stop()
         sat.state.music_player.unduck.assert_called_once_with(owner="timer")
 
     def test_wakeup_while_ringing_hands_ducking_to_conversation(self, tmp_path):
         sat = make_satellite(tmp_path)
-        sat._timer_finished = True
+        sat.state.ringing_timer_id = "timer-1"
         sat.state.music_player.reset_mock()
         sat.wakeup(MagicMock(wake_word="Hey Jarvis"))
 
@@ -518,7 +517,7 @@ class TestDuckOwnersInSatellite:
         sat = make_satellite(tmp_path)
         sat.state.wake_words = {"okay_nabu": MagicMock()}
         sat.state.active_wake_words = {"okay_nabu"}
-        sat._timer_finished = True
+        sat.state.ringing_timer_id = "timer-1"
         sat.state.music_player.reset_mock()
         sat.start_listening()
 
