@@ -488,6 +488,9 @@ async def main() -> None:
     # a corrected snapshot after the fact.
     initial_button_controls_locked = bool(preferences.button_controls_locked)
 
+    # The stored mute state must be in place before the first peripheral snapshot and the Mute switch are built, for the same reason.
+    initial_muted = bool(preferences.muted)
+
     if args.enable_thinking_sound:
         preferences.thinking_sound = 1
 
@@ -553,6 +556,7 @@ async def main() -> None:
         volume=initial_volume,
         stop_word_threshold=initial_threshold,
         button_controls_locked=initial_button_controls_locked,
+        muted=initial_muted,
         remote_unmute_enabled=args.enable_remote_unmute == 1,
         mic_volume=preferences.mic_volume,
         mic_auto_gain=preferences.mic_auto_gain,

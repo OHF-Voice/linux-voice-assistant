@@ -181,6 +181,7 @@ When muted:
 - A running spoken reply or announcement is stopped and the mute sound (`--mute-sound`) plays.
 - **Music keeps playing.** Mute concerns the voice assistant only.
 - Peripherals receive a `muted` event (for example to show a red LED).
+- The mute state is saved in `preferences.json` and restored after a restart. A device that was muted stays muted: the wake word and the stop word stay disabled and no audio is sent until it is unmuted. No mute sound plays at startup. Home Assistant's **Mute** switch (or **Mute** sensor) and the first peripheral snapshot (`muted` in `snapshot`) show the restored state right away. With `--enable-remote-unmute 0` the restored mute can only be undone by a peripheral.
 
 When unmuted, the unmute sound (`--unmute-sound`) plays and the assistant returns to idle.
 
