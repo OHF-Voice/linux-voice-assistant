@@ -263,6 +263,13 @@ async def main() -> None:
         help="Volume change per button press, 0.0–1.0 (default: %(default)s)",
     )
     parser.add_argument(
+        "--enable-remote-unmute",
+        type=int,
+        choices=(0, 1),
+        default=1,
+        help="1: Home Assistant can mute and unmute, like a peripheral (default: %(default)s). 0: only a peripheral can unmute; Home Assistant only shows the mute state.",
+    )
+    parser.add_argument(
         "--disable-peripheral-api",
         action="store_true",
         help="Disable the peripheral WebSocket API entirely",
@@ -546,6 +553,7 @@ async def main() -> None:
         volume=initial_volume,
         stop_word_threshold=initial_threshold,
         button_controls_locked=initial_button_controls_locked,
+        remote_unmute_enabled=args.enable_remote_unmute == 1,
         mic_volume=preferences.mic_volume,
         mic_auto_gain=preferences.mic_auto_gain,
         mic_noise_suppression=preferences.mic_noise_suppression,

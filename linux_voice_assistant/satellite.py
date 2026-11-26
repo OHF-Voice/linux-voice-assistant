@@ -142,6 +142,7 @@ class VoiceSatelliteProtocol(APIServer):
                 object_id="mute",
                 get_muted=lambda: self.state.muted,
                 set_muted=self._set_muted,
+                remote_unmute_enabled=state.remote_unmute_enabled,
             )
             self.state.entities.append(mute_switch)
             self.state.mute_switch_entity = mute_switch

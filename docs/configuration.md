@@ -29,6 +29,8 @@ The **Mute** switch disables wake word detection and stops the assistant from re
 
 ![Mute Switch](./images/mute_switch.png)
 
+With `--enable-remote-unmute 0` / `ENABLE_REMOTE_UNMUTE="0"` there is no **Mute** switch: Home Assistant shows the mute state in a read-only **Mute** sensor, and only a peripheral can unmute. See [behavior.md](behavior.md#mute).
+
 ## Thinking Sound
 
 The **Thinking Sound** switch toggles whether a short audible chime plays while the assistant is processing your request (between the end of listening and the start of the response). This is the same setting as the `--enable-thinking-sound` CLI flag / `ENABLE_THINKING_SOUND` environment variable, but can be flipped on or off at runtime from this switch. The change is saved to `preferences.json`.

@@ -184,6 +184,12 @@ When muted:
 
 When unmuted, the unmute sound (`--unmute-sound`) plays and the assistant returns to idle.
 
+**Remote unmute.** `--enable-remote-unmute` (`ENABLE_REMOTE_UNMUTE`, `1` by default) decides who may unmute:
+
+- `1`: Home Assistant's **Mute** switch and peripherals (`mute_mic` / `unmute_mic`) can mute and unmute.
+- `0`: only a peripheral can unmute (`unmute_mic`, for example a physical mute switch). Home Assistant has no **Mute** switch, it shows the mute state in a read-only **Mute** sensor instead.
+- The setting is only read at startup and is not saved in `preferences.json`.
+
 Do not confuse this with the **media player mute**, which sets the shared volume to 0, see below.
 
 ---

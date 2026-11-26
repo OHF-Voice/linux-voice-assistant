@@ -180,6 +180,10 @@ if [ -n "${PERIPHERAL_STARTUP_WAIT}" ]; then
   EXTRA_ARGS+=( "--peripheral-startup-wait" "$PERIPHERAL_STARTUP_WAIT" )
 fi
 
+if [ -n "${ENABLE_REMOTE_UNMUTE}" ]; then
+  EXTRA_ARGS+=( "--enable-remote-unmute" "$ENABLE_REMOTE_UNMUTE" )
+fi
+
 if [ -n "${ENABLE_ZEROCONF}" ]; then
   EXTRA_ARGS+=( "--enable-zeroconf" "$ENABLE_ZEROCONF" )
 fi
