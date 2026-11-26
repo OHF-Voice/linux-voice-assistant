@@ -1,4 +1,4 @@
-"""Versioned WebSocket peripheral API, see ``docs/peripheral_api.md``."""
+"""Versioned WebSocket peripheral API, see ``docs/peripheral_api/readme.md``."""
 
 from .server import PeripheralAPIServer
 from .v1 import LVACommand, LVAEvent

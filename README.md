@@ -17,6 +17,14 @@ Because it runs on a full Linux system and offers access significantly more loca
 - Works with [Home Assistant](https://www.home-assistant.io/integrations/esphome/) using the [ESPHome](https://esphome.io/) protocol/API (via [aioesphomeapi](https://github.com/esphome/aioesphomeapi))
 - Feature local on-device wake word detection using integrated [OpenWakeWord](https://github.com/dscripka/openWakeWord) or [MicroWakeWord](https://github.com/kahrendt/microWakeWord)
 - Supports multiple wake words and languages
+- Two wake words active at the same time (two slots, selectable separately in Home Assistant)
+- Stop word independent of Home Assistant, only active during TTS, announcements and a ringing timer
+- Sensitivity of wake word 1, wake word 2 and the stop word, adjustable at runtime as Home Assistant number entities
+- Two separate players: music with its own output device (`--music-output-device`), voice output separate
+- Mic volume, gain and noise suppression (WebRTC), adjustable at runtime through Home Assistant entities
+- Ducking or pausing of the music while the assistant talks (`--mpv-player-duck-mode`)
+- Own media player entity (Home Assistant can play media, also with `announce: true`)
+- Various states are stored locally and restored on startup
 - Optional encryption of the connection to Home Assistant, like ESPHome devices with an API encryption key (see [API Encryption](./docs/install_application.md#feature-api-encryption))
 - Supports multiple architectures (linux/amd64, linux/aarch64 and linux/arm/v7)
 - Automated builds with artifact attestation for security
@@ -24,10 +32,16 @@ Because it runs on a full Linux system and offers access significantly more loca
 - Tested and works with Python 3.11 and Python 3.13.
 - Prebuild docker image available on [GitHub Container Registry](https://github.com/OHF-Voice/linux-voice-assistant/pkgs/container/linux-voice-assistant)
 - Prebuild [Raspberry Pi image](https://github.com/florian-asche/PiCompose)
-- Supports [Websocket API](./docs/peripheral_api/readme.md) for peripherals (e.g. buttons, LEDs, etc.) to integrate with the voice assistant
-- Hardware mute: with `--enable-remote-unmute 0`, only a peripheral (e.g. a physical mute switch) can unmute the microphone, Home Assistant cannot (see [Mute](./docs/configuration.md#mute-switch))
+- Announcing via mDNS can be turned off (`--enable-zeroconf 0`)
+- Several Home Assistant clients can be connected at the same time
+- Several instances on one system are possible (`--mac-address`)
+- Supports [Websocket API](./docs/peripheral_api/readme.md) for peripherals (e.g. buttons, LEDs, etc.) to integrate with the voice assistant (API versions 1 and 2)
+- Single, double, triple and long press events are sent to Home Assistant (event entity), double, triple and long press with their own sounds
+- Button lock switch, LED light entity and remote mute (`--enable-remote-unmute`) for peripherals
+- Software mute: with `--enable-remote-unmute 0`, only a peripheral (e.g. a physical mute switch) can unmute the microphone, Home Assistant cannot (see [Mute](./docs/configuration.md#mute-switch)). This is independent of a hardware mute of the microphone, also one that software cannot switch, and has nothing to do with this one.
 
-Planning for future features is discussed in [Discussion #495](https://github.com/OHF-Voice/linux-voice-assistant/discussions/495).
+News about this software: [Discussion #495](https://github.com/OHF-Voice/linux-voice-assistant/discussions/495).
+
 ## Requirements
 
 - **Microphone:** Device must support 16kHz mono audio

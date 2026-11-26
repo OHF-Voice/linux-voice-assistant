@@ -569,6 +569,8 @@ class VoiceSatelliteProtocol(APIServer):
 
     def _set_muted(self, new_state: bool) -> None:
         self.state.muted = bool(new_state)
+        self.state.preferences.muted = 1 if self.state.muted else 0
+        self.state.preferences.save(self.state.preferences_path)
         self._emit(LVAEvent.MUTED, {"muted": self.state.muted})
 
         if self.state.muted:

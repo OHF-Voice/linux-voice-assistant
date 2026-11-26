@@ -1,12 +1,13 @@
 """Unit tests for VoiceSatelliteProtocol logic."""
 
+import json
 import time
 from unittest.mock import MagicMock, call, patch
 
 import pytest
 from aioesphomeapi.api_pb2 import VoiceAssistantAnnounceRequest  # type: ignore[attr-defined]  # pylint: disable=no-name-in-module
 
-from linux_voice_assistant.models import DetectionResult
+from linux_voice_assistant.models import DetectionResult, Preferences
 from linux_voice_assistant.peripheral_api import LVAEvent
 from tests.unit.conftest import make_satellite, make_state
 
@@ -155,6 +156,19 @@ class TestSetMuted:
         sat._is_streaming_audio = True
         sat._set_muted(True)
         assert sat._is_streaming_audio is False
+
+    def test_muting_is_saved_in_preferences(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        sat._set_muted(True)
+        assert sat.state.preferences.muted == 1
+        assert Preferences.from_dict(json.loads(sat.state.preferences_path.read_text(encoding="utf-8"))).muted == 1
+
+    def test_unmuting_is_saved_in_preferences(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        sat._set_muted(True)
+        sat._set_muted(False)
+        assert sat.state.preferences.muted == 0
+        assert Preferences.from_dict(json.loads(sat.state.preferences_path.read_text(encoding="utf-8"))).muted == 0
 
 
 # ---------------------------------------------------------------------------

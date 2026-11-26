@@ -112,6 +112,7 @@ class Preferences:
     volume: Optional[float] = None
     thinking_sound: int = 0  # 0 = disabled, 1 = enabled
     button_controls_locked: int = 0  # 0 = buttons enabled (default), 1 = buttons locked
+    muted: int = 0  # 0 = microphone active (default), 1 = muted
     wake_word_1_sensitivity: Optional[float] = None
     wake_word_2_sensitivity: Optional[float] = None
     stop_word_sensitivity: Optional[float] = None
