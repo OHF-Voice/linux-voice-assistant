@@ -5,23 +5,65 @@
 
 The Linux audio stack consists of multiple layers working together:
 
-```mermaid
-flowchart TB
-    subgraph host["Host system"]
-        apps["User applications<br>Browser, media player, voice assistant, etc."]
-        sound["PipeWire / PulseAudio (sound server)<br>Audio mixing and routing<br>Device abstraction<br>Network audio support<br>Per-application volume control"]
-        alsa["ALSA (Advanced Linux Sound Architecture)<br>Kernel-level audio driver framework<br>Direct hardware access<br>Controls: /dev/snd/"]
-        hw["Hardware (sound card)<br>Microphone, speaker, DSP/codec"]
-        sockets["LVA_XDG_RUNTIME_DIR=/run/user/1000<br>Socket: /run/user/1000/pipewire-0<br>Socket: /run/user/1000/pulse/native"]
-        apps --> sound --> alsa --> hw
-        sound --- sockets
-    end
-    subgraph container["Docker container"]
-        lva["Container process (Linux Voice Assistant)<br>Accesses audio via the PipeWire/PulseAudio client library<br>Uses the same LVA_XDG_RUNTIME_DIR socket path<br><br>LVA_XDG_RUNTIME_DIR=/run/user/1000 (host path)<br>AUDIO_INPUT_DEVICE=default<br>AUDIO_OUTPUT_DEVICE=pulse"]
-        mounts["Device access<br>Socket: /run/user/1000/pipewire-0 (volume mount)<br>Socket: /run/user/1000/pulse/native (volume mount)"]
-        mounts --- lva
-    end
-    sockets -->|"Device passthrough"| mounts
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     HOST SYSTEM                             │
+│  ┌─────────────────────────────────────────────────────┐    │
+│  │              User Applications                      │    │
+│  │  (Browser, Media Player, Voice Assistant, etc.)     │    │
+│  └────────────────┬────────────────────────────────────┘    │
+│                   │                                         │
+│  ┌────────────────▼────────────────────────────────────┐    │
+│  │         PipeWire / PulseAudio                       │    │
+│  │         (Sound Server)                              │    │
+│  │  - Audio mixing & routing                           │    │
+│  │  - Device abstraction                               │    │
+│  │  - Network audio support                            │    │
+│  │  - Per-application volume control                   │    │
+│  └────────────────┬────────────────────────────────────┘    │
+│                   │                                         │
+│  ┌────────────────▼────────────────────────────────────┐    │
+│  │              ALSA                                   │    │
+│  │  (Advanced Linux Sound Architecture)                │    │
+│  │  - Kernel-level audio driver framework              │    │
+│  │  - Direct hardware access                           │    │
+│  │  - Controls: /dev/snd/                              │    │
+│  └────────────────┬────────────────────────────────────┘    │
+│                   │                                         │
+│  ┌────────────────▼────────────────────────────────────┐    │
+│  │           Hardware (Sound Card)                     │    │
+│  │   ┌─────────┐  ┌─────────┐  ┌───────────────────┐   │    │
+│  │   │Microphon│  │ Speaker │  │   DSP/Codec       │   │    │
+│  │   └─────────┘  └─────────┘  └───────────────────┘   │    │
+│  └─────────────────────────────────────────────────────┘    │
+│                                                             │
+│  LVA_XDG_RUNTIME_DIR=/run/user/1000                             │
+│  └── Socket: /run/user/1000/pipewire-0                      │
+│      Socket: /run/user/1000/pulse/native                    │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              │ Device Passthrough
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│                   DOCKER CONTAINER                          │
+│  ┌─────────────────────────────────────────────────────┐    │
+│  │              Container Process                      │    │
+│  │  (Linux Voice Assistant)                            │    │
+│  │                                                     │    │
+│  │  Accesses audio via:                                │    │
+│  │  - PipeWire/PulseAudio client library               │    │
+│  │  - Uses same LVA_XDG_RUNTIME_DIR socket path            │    │
+│  │                                                     │    │
+│  │  Environment Variables:                             │    │
+│  │  - LVA_XDG_RUNTIME_DIR=/run/user/1000 (host path)       │    │
+│  │  - AUDIO_INPUT_DEVICE="default"                     │    │
+│  │  - AUDIO_OUTPUT_DEVICE="pulse"                      │    │
+│  └─────────────────────────────────────────────────────┘    │
+│                                                             │
+│  Device Access:                                             │
+│  - Socket: /run/user/1000/pipewire-0 (volume mount)         │
+│  - Socket: /run/user/1000/pulse/native (volume mount)       │
+└─────────────────────────────────────────────────────────────┘
 ```
 
 ### How it works:
@@ -36,11 +78,14 @@ flowchart TB
    - The container user must have matching UID/GID with host user or the audio group is added.
 
 3. **Communication Flow**:
-   ```mermaid
-   flowchart LR
-       app["Container app"] --> client["PipeWire client library"]
-       client -->|"via mounted socket"| server["Host PipeWire / PulseAudio"]
-       server -->|"via ALSA drivers"| hw["Hardware<br>(audio data flows to the hardware)"]
+   ```
+Container App → PipeWire Client Library → Host PipeWire/PulseAudio
+      ↓                                         ↓
+(via mounted socket)                    (via ALSA drivers)
+      ↓                                         ↓
+┌─────────────────────────────────────────────────────┐
+│              Audio Data flows to Hardware           │
+└─────────────────────────────────────────────────────┘
    ```
 
 4. **Key Configuration Points**:
