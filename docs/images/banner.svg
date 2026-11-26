@@ -1,5 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="400" height="60" viewBox="0 0 400 60" role="img" aria-label="Linux Voice Assistant: a local voice satellite for Home Assistant.">
-  <title>Linux Voice Assistant: a local voice satellite for Home Assistant.</title>
+<svg xmlns="http://www.w3.org/2000/svg" width="400" height="60" viewBox="0 0 400 60" role="img" aria-label="Linux-Voice-Assistant: a local voice satellite for Home Assistant.">
+  <title>Linux-Voice-Assistant: a local voice satellite for Home Assistant.</title>
   <defs>
     <clipPath id="round"><rect width="400" height="60" rx="8"/></clipPath>
   </defs>
@@ -21,7 +21,7 @@
 
   <!-- Texts -->
   <g font-family="Verdana, DejaVu Sans, sans-serif" fill="#fff">
-    <text x="80" y="19" font-size="12.5" font-weight="700">Linux Voice Assistant</text>
+    <text x="80" y="19" font-size="12.5" font-weight="700">Linux-Voice-Assistant</text>
     <text x="80" y="34" font-size="10.5" fill="#c9d1db">Local voice satellite for Home Assistant</text>
     <text x="80" y="49" font-size="10.5" fill="#c9d1db">Wake word, speech, timers</text>
   </g>

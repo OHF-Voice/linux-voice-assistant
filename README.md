@@ -12,7 +12,7 @@ Because it runs on a full Linux system and offers access significantly more loca
 
 News about this software: [Discussion #495](https://github.com/OHF-Voice/linux-voice-assistant/discussions/495).
 
-![Linux Voice Assistant](docs/images/banner.svg)
+![Linux-Voice-Assistant](docs/images/banner.svg)
 
 [![A project from the Open Home Foundation](https://www.openhomefoundation.org/badges/ohf-project.png)](https://www.openhomefoundation.org/)
 
