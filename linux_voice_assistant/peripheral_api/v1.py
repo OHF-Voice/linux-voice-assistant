@@ -588,10 +588,7 @@ class PeripheralApiV1:
         entity = state.mute_switch_entity
         entity._switch_state = muted  # pylint: disable=protected-access
 
-        # pylint: disable=no-name-in-module
-        from aioesphomeapi.api_pb2 import SwitchStateResponse  # type: ignore[attr-defined]
-
-        satellite.send_messages([SwitchStateResponse(key=entity.key, state=muted)])
+        satellite.send_messages([entity.state_message()])
 
     # ------------------------------------------------------------------
     # Event emission

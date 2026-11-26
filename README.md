@@ -25,6 +25,7 @@ Because it runs on a full Linux system and offers access significantly more loca
 - Prebuild docker image available on [GitHub Container Registry](https://github.com/OHF-Voice/linux-voice-assistant/pkgs/container/linux-voice-assistant)
 - Prebuild [Raspberry Pi image](https://github.com/florian-asche/PiCompose)
 - Supports [Websocket API](./docs/peripheral_api/readme.md) for peripherals (e.g. buttons, LEDs, etc.) to integrate with the voice assistant
+- Hardware mute: with `--enable-remote-unmute 0`, only a peripheral (e.g. a physical mute switch) can unmute the microphone, Home Assistant cannot (see [Mute](./docs/configuration.md#mute-switch))
 
 Planning for future features is discussed in [Discussion #495](https://github.com/OHF-Voice/linux-voice-assistant/discussions/495).
 ## Requirements
@@ -123,6 +124,7 @@ usage: __main__.py [-h] [--name NAME] [--audio-input-device AUDIO_INPUT_DEVICE] 
 | `--peripheral-port`             | Port for the peripheral WebSocket API                                                  | 6055                                 |
 | `--peripheral-volume-step`      | Volume change per button press, 0.0–1.0                                                | %(default)s                          |
 | `--peripheral-startup-wait`     | Seconds to wait for peripherals to register entities                                   | 2.0                                  |
+| `--enable-remote-unmute`        | `1`: Home Assistant can mute and unmute; `0`: only a peripheral can unmute             | 1                                    |
 | `--disable-peripheral-api`      | Disable the peripheral WebSocket API entirely                                          | False                                |
 | `--enable-zeroconf`             | Announce LVA via mDNS; `0` turns it off, then add it manually in Home Assistant (host IP and `--port`) | 1                                    |
 | `--debug`                       | Print DEBUG messages to console                                                        | False                                |

@@ -231,6 +231,8 @@ class ServerState:
     button_controls_locked: bool = False
     output_only: bool = False
     muted: bool = False
+    # --enable-remote-unmute: Home Assistant may mute and unmute. If False, only a peripheral can unmute.
+    remote_unmute_enabled: bool = True
     connected: bool = False
     volume: float = 1.0
     oww_probability_cutoff: float = 0.7  # Dynamic threshold for OpenWakeWord

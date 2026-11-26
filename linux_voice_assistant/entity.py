@@ -5,9 +5,11 @@ from typing import Callable, List, Optional, Union
 
 # pylint: disable=no-name-in-module
 from aioesphomeapi.api_pb2 import (  # type: ignore[attr-defined]
+    BinarySensorStateResponse,
     EventResponse,
     LightCommandRequest,
     LightStateResponse,
+    ListEntitiesBinarySensorResponse,
     ListEntitiesEventResponse,
     ListEntitiesLightResponse,
     ListEntitiesMediaPlayerResponse,
@@ -336,7 +338,12 @@ class MuteSwitchEntity(ESPHomeEntity):
         object_id: str,
         get_muted: Callable[[], bool],
         set_muted: Callable[[bool], None],
+        remote_unmute_enabled: bool = True,
     ) -> None:
+        """
+        A Mute switch in Home Assistant, or a read-only Mute status when remote unmute is disabled.
+        :param remote_unmute_enabled: Whether Home Assistant may change the mute. If False, the entity is a binary sensor and only a peripheral can unmute.
+        """
         ESPHomeEntity.__init__(self, server)
 
         self.key = key
@@ -344,6 +351,7 @@ class MuteSwitchEntity(ESPHomeEntity):
         self.object_id = object_id
         self._get_muted = get_muted
         self._set_muted = set_muted
+        self._remote_unmute_enabled = remote_unmute_enabled
         self._switch_state = self._get_muted()  # Sync internal state with actual muted value on init
 
     def update_set_muted(self, set_muted: Callable[[bool], None]) -> None:
@@ -358,26 +366,41 @@ class MuteSwitchEntity(ESPHomeEntity):
         # Sync internal switch state with the actual mute state.
         self._switch_state = self._get_muted()
 
+    def state_message(self) -> Union[SwitchStateResponse, BinarySensorStateResponse]:
+        """The current mute state, to send to Home Assistant."""
+        if self._remote_unmute_enabled:
+            return SwitchStateResponse(key=self.key, state=self._switch_state)
+        return BinarySensorStateResponse(key=self.key, state=self._switch_state)
+
     def handle_message(self, msg: message.Message) -> Iterable[message.Message]:
-        if isinstance(msg, SwitchCommandRequest) and (msg.key == self.key):
+        if isinstance(msg, SwitchCommandRequest) and (msg.key == self.key) and self._remote_unmute_enabled:
             # User toggled the switch - update our internal state and trigger actions
             new_state = bool(msg.state)
             self._switch_state = new_state
             self._set_muted(new_state)
             # Return the new state immediately
-            yield SwitchStateResponse(key=self.key, state=self._switch_state)
+            yield self.state_message()
         elif isinstance(msg, ListEntitiesRequest):
-            yield ListEntitiesSwitchResponse(
-                object_id=self.object_id,
-                key=self.key,
-                name=self.name,
-                entity_category=EntityCategory.CONFIG,
-                icon="mdi:microphone-off",
-            )
+            if self._remote_unmute_enabled:
+                yield ListEntitiesSwitchResponse(
+                    object_id=self.object_id,
+                    key=self.key,
+                    name=self.name,
+                    entity_category=EntityCategory.CONFIG,
+                    icon="mdi:microphone-off",
+                )
+            else:
+                yield ListEntitiesBinarySensorResponse(
+                    object_id=self.object_id,
+                    key=self.key,
+                    name=self.name,
+                    entity_category=EntityCategory.DIAGNOSTIC,
+                    icon="mdi:microphone-off",
+                )
         elif isinstance(msg, SubscribeHomeAssistantStatesRequest):
             # Always return our internal switch state
             self.sync_with_state()
-            yield SwitchStateResponse(key=self.key, state=self._switch_state)
+            yield self.state_message()
 
 
 class ThinkingSoundEntity(ESPHomeEntity):

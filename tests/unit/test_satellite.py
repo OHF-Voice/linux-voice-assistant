@@ -38,6 +38,13 @@ class TestInit:
         assert sat.state.mute_switch_entity is not None
         assert isinstance(sat.state.mute_switch_entity, MuteSwitchEntity)
 
+    def test_mute_entity_is_switch_by_default(self, tmp_path):
+        assert make_satellite(tmp_path).state.mute_switch_entity._remote_unmute_enabled is True  # pylint: disable=protected-access
+
+    def test_mute_entity_is_status_when_remote_unmute_disabled(self, tmp_path):
+        sat = make_satellite(tmp_path, {"remote_unmute_enabled": False})
+        assert sat.state.mute_switch_entity._remote_unmute_enabled is False  # pylint: disable=protected-access
+
     def test_thinking_sound_entity_created(self, tmp_path):
         from linux_voice_assistant.entity import ThinkingSoundEntity
 

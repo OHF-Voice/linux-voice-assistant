@@ -425,8 +425,45 @@ class TestMute:
         await dispatch(server, "mute_on")
 
         server._state.satellite._set_muted.assert_called_once_with(True)  # pylint: disable=protected-access
-        message = server._state.satellite.send_messages.call_args.args[0][0]  # pylint: disable=protected-access
-        assert (message.key, message.state) == (7, True)
+        assert entity._switch_state is True  # pylint: disable=protected-access
+        server._state.satellite.send_messages.assert_called_once_with([entity.state_message.return_value])  # pylint: disable=protected-access
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("remote_unmute_enabled,message_type", [(True, "SwitchStateResponse"), (False, "BinarySensorStateResponse")])
+    async def test_home_assistant_gets_the_message_of_the_real_mute_entity(self, tmp_path, remote_unmute_enabled, message_type):
+        from linux_voice_assistant.entity import MuteSwitchEntity
+
+        server = make_server(tmp_path)
+        entity = MuteSwitchEntity(
+            server=MagicMock(),
+            key=7,
+            name="Mute",
+            object_id="mute",
+            get_muted=lambda: False,
+            set_muted=MagicMock(),
+            remote_unmute_enabled=remote_unmute_enabled,
+        )
+        server._state.mute_switch_entity = entity  # pylint: disable=protected-access
+
+        await dispatch(server, "mute_on")
+
+        (message,) = server._state.satellite.send_messages.call_args.args[0]  # pylint: disable=protected-access
+        assert (type(message).__name__, message.key, message.state) == (message_type, 7, True)
+
+    @pytest.mark.asyncio
+    async def test_a_peripheral_can_unmute_while_remote_unmute_is_disabled(self, tmp_path):
+        server = make_server(tmp_path, remote_unmute_enabled=False)
+        server._state.muted = True  # pylint: disable=protected-access
+
+        await dispatch(server, "mute_off")
+
+        server._state.satellite._set_muted.assert_called_once_with(False)  # pylint: disable=protected-access
+
+    @pytest.mark.asyncio
+    async def test_a_peripheral_can_mute_while_remote_unmute_is_disabled(self, tmp_path):
+        server = make_server(tmp_path, remote_unmute_enabled=False)
+        await dispatch(server, "mute_on")
+        server._state.satellite._set_muted.assert_called_once_with(True)  # pylint: disable=protected-access
 
     @pytest.mark.asyncio
     async def test_mute_off(self, tmp_path):

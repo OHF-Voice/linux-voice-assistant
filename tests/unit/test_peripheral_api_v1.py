@@ -308,6 +308,17 @@ class TestDispatchMute:
         satellite._set_muted.assert_called_once_with(False)  # pylint: disable=protected-access
 
     @pytest.mark.asyncio
+    async def test_unmute_mic_works_when_remote_unmute_disabled(self, tmp_path):
+        state = make_state(tmp_path, muted=True, remote_unmute_enabled=False)
+        satellite = MagicMock()
+        state.satellite = satellite
+        server = make_server(state)
+
+        await dispatch(server, LVACommand.UNMUTE_MIC.value)
+
+        satellite._set_muted.assert_called_once_with(False)  # pylint: disable=protected-access
+
+    @pytest.mark.asyncio
     async def test_unmute_mic_noop_when_already_unmuted(self, tmp_path):
         state = make_state(tmp_path, muted=False)
         satellite = MagicMock()

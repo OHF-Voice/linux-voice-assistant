@@ -21,8 +21,6 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set
 
-from aioesphomeapi.api_pb2 import SwitchStateResponse  # type: ignore[attr-defined]  # pylint: disable=no-name-in-module
-
 from .v2_status import StatusInputs, V2Status, derive_status, pipeline_state_after, status_messages
 from .v2_timers import TimerInfo, summarize_timers, update_timers
 from .versions import SUPPORTED_VERSIONS
@@ -221,14 +219,18 @@ class PeripheralApiV2:
         state.hardware_mute_type = mute_type
 
     def _set_mic_muted(self, state: "ServerState", satellite: Any, muted: bool) -> None:
-        """Mute or unmute the microphone like the Mute switch does, and tell Home Assistant."""
+        """
+        Mute or unmute the microphone like the Mute switch does, and tell Home Assistant.
+
+        A peripheral may also unmute while ``--enable-remote-unmute`` is off, because only Home Assistant is kept from unmuting then.
+        """
         if satellite is None or state.muted == muted:
             return
         satellite._set_muted(muted)  # pylint: disable=protected-access
         entity = state.mute_switch_entity
         if entity is not None:
             entity._switch_state = muted  # pylint: disable=protected-access
-            satellite.send_messages([SwitchStateResponse(key=entity.key, state=muted)])
+            satellite.send_messages([entity.state_message()])
 
     def _set_volume_command(self, state: "ServerState", satellite: Any, data: Any) -> None:
         volume = data.get("volume") if isinstance(data, dict) else None

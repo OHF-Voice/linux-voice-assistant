@@ -52,7 +52,7 @@ The reduced API for the Linux Peripherals Controller. LVA reports what it knows 
   - `start_listening`: like the start-listening button. Ignored while muted, with no wake word active, or while a pipeline runs. Also silences a ringing timer.
   - `stop`: stops the reply, announcement and pipeline, like the stop word. Ignored while a timer rings, and never touches the music.
   - `timer_stop`: stops a ringing timer. Ignored if none rings.
-  - `mute_on`, `mute_off`: like the Mute switch, with its sound. Ignored if already in that state.
+  - `mute_on`, `mute_off`: like the Mute switch, with its sound. Ignored if already in that state. A peripheral can also unmute while `--enable-remote-unmute 0` (only Home Assistant is kept from it, see [behavior.md](behavior.md#mute)), and Home Assistant is told through the Mute entity, which is a read-only sensor then.
   - `volume_up`, `volume_down`: change the volume by `--peripheral-volume-step` and play the volume step sound (`sounds/volume_step.wav`). At the limit (`volume_up` at 100 %, `volume_down` at 0 %) nothing changes and the volume limit sound (`sounds/volume_limit.wav`) plays instead. Neither sound has an option.
   - `volume_set`: sets 0 to 100 %, values outside are clamped, no sound.
   - `button_pressed`: LVA plays the sound for `double`, `triple` and `long` (`--button-double-press-sound`, `--button-triple-press-sound`, `--button-long-press-sound`). `single` plays nothing.
