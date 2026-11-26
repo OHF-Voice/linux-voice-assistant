@@ -124,22 +124,26 @@ A second announcement replaces the first one. A media player announcement asks f
 
 ## Timers
 
-Timers are created by voice ("set a timer for 5 minutes") and managed by Home Assistant. LVA shows and rings them.
+Timers are created by voice ("set a timer for 5 minutes") and managed by Home Assistant. LVA shows and rings them. LVA also counts every running timer down itself, so a timer still rings when Home Assistant is not reachable at the moment it ends.
 
 | Event | What happens |
 |-------|--------------|
-| Timer started / updated | Peripherals receive `timer_ticking` / `timer_updated` with the remaining time (for example to show a countdown on LEDs). |
-| Timer cancelled | The countdown is cleared on peripherals (`timer_updated` with 0 seconds left) and the assistant returns to idle. |
-| **Timer finished** | The music is **ducked to 50 %**, the stop word becomes active and the timer sound (`--timer-finished-sound`) plays on repeat with a 1 second pause between repetitions. |
+| Timer started / updated | Peripherals receive `timer_ticking` / `timer_updated` with the remaining time (for example to show a countdown on LEDs). LVA starts or corrects its own countdown with the remaining time from Home Assistant. |
+| Timer cancelled | The countdown is cleared on peripherals (`timer_updated` with 0 seconds left), LVA drops its own countdown and the assistant returns to idle. |
+| **Timer finished** | The music is **ducked to 50 %**, the stop word becomes active and the timer sound (`--timer-finished-sound`) plays on repeat with a 1 second pause between repetitions. The ringing starts when Home Assistant reports the timer as finished or when LVA's own countdown reaches zero, whichever comes first. The timer rings only once, even if both happen. |
+| Home Assistant is not reachable when a timer ends | LVA's own countdown reaches zero and the timer rings as above, up to about 1 second later than its end time. |
+| Connection to Home Assistant is lost while a timer rings | The timer keeps ringing until it is stopped or stops automatically. When the last Home Assistant client disconnects, the music is no longer ducked for the timer. |
 | Timer is ringing and you say the **stop word** | The ringing stops, music is restored, the assistant goes idle. |
 | Timer is ringing and you say the **wake word** or press the **start-listening button** | The ringing stops and a normal interaction begins. |
-| Timer is ringing and a peripheral sends `stop_timer_ringing` or `stop_pipeline` | The ringing stops, music is restored, the assistant goes idle. |
-| Nobody reacts | The timer **stops ringing automatically** after `--timer-max-ring-seconds` (default 900 s = 15 minutes) and the music is restored. |
+| Timer is ringing and a peripheral sends `stop_timer_ringing` or `stop_pipeline` | The ringing stops, music is restored, the assistant goes idle. This also works while Home Assistant is not connected. |
+| Nobody reacts | The timer **stops ringing automatically** after `--timer-max-ring-seconds` (default 900 s = 15 minutes), the music is restored and the assistant goes idle. |
 
 Notes:
 
 - A timer finishing does not stop or pause the music. It is only ducked, so a ringing timer is audible over it.
 - While the assistant is muted, the stop word and the wake word do not work. Unmute first, or stop the ringing with a peripheral button.
+- Only one timer rings at a time. A timer that ends while another one rings does not ring.
+- LVA's own countdown lives in memory only. After a restart of LVA it is gone until Home Assistant reports the timer again.
 
 ---
 
