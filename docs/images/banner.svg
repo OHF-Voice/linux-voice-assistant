@@ -21,7 +21,7 @@
 
   <!-- Texts -->
   <g font-family="Verdana, DejaVu Sans, sans-serif" fill="#fff">
-    <text x="80" y="19" font-size="12.5" font-weight="700">Linux-Voice-Assistant</text>
+    <text x="80" y="19" font-size="12.5" font-weight="700">Linux Voice Assistant</text>
     <text x="80" y="34" font-size="10.5" fill="#c9d1db">Local voice satellite for Home Assistant</text>
     <text x="80" y="49" font-size="10.5" fill="#c9d1db">Wake word, speech, timers</text>
   </g>
