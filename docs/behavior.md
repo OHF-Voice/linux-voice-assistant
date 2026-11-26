@@ -2,7 +2,7 @@
 
 This page describes what Linux Voice Assistant (LVA) does in everyday situations, from the user's point of view: what happens to music when you talk to the assistant, what happens when a timer rings, what the stop word does, and so on.
 
-For the list of Home Assistant entities see [configuration.md](configuration.md). For the events sent to hardware peripherals see [peripheral_api.md](peripheral_api.md).
+For the list of Home Assistant entities see [configuration.md](configuration.md). For the events sent to hardware peripherals see [peripheral_api.md](development/peripheral_api.md).
 
 ---
 
@@ -64,7 +64,7 @@ Details:
 - **Continued conversation.** If Home Assistant asks a follow-up question, the assistant listens again after the reply, without a wake word. It waits `--continue-conversation-delay` (default 0.5 s) after the reply so the microphone does not record the tail of its own voice. Music stays ducked through the whole conversation and is restored only when the conversation ends. The follow-up runs on the same pipeline as the wake word that started the conversation. After a button press or an announcement from Home Assistant there is no wake word, so the first pipeline is used. If you mute the assistant during that delay, the follow-up is skipped and music is restored.
 - **Wake word while a timer rings.** Saying the wake word silences the ringing timer and starts a normal interaction.
 - **Starting by button.** A peripheral button can start listening without a wake word. Instead of the wake sound, the start-listening sound (`--start-listening-sound`) plays; everything else is identical. This also silences a ringing timer. It does nothing while no wake word is active, see below.
-- **Errors.** If the pipeline reports an error, peripherals receive a `pipeline_error` event. See [peripheral_api.md](peripheral_api.md).
+- **Errors.** If the pipeline reports an error, peripherals receive a `pipeline_error` event. See [peripheral_api.md](development/peripheral_api.md).
 - **Two wake words.** Home Assistant can activate up to two wake words at once. Each has its own sensitivity setting (*Wake Word 1/2 Sensitivity*). A word keeps its slot while the other one changes, and always uses the sensitivity of its own slot, also when it is the only active word.
 - **Wake word locations.** Wake words are read from `wakewords/internal`, `wakewords/downloaded` and `wakewords/custom` (root: `--wake-word-root-dir`), each with a `microwakeword` and an `openwakeword` subdirectory. The same model in two directories is two separate wake words. `--wake-model` and `--wake-model-2` accept the file name (`hey_jarvis`) or the name in the selection (`Internal - MWW - Hey Jarvis`). If a file name exists in more than one origin, `custom` wins over `downloaded`, which wins over `internal`. The same applies to the stop word. Wake words that Home Assistant sends are stored in `downloaded`.
 - **Wake word names.** Every wake word has a name made of origin, engine and the phrase from its `.json` file, for example `Download - OWW - Hey Jarvis` (`Internal`, `Download`, `Custom` and `MWW`, `OWW`). It is the name in the wake word selection in Home Assistant and also the phrase LVA sends with a voice request, because Home Assistant compares both to choose the pipeline of a wake word. If two wake words of one origin and engine have the same phrase, only the last one found is used and a warning is logged.
@@ -218,7 +218,7 @@ If the second attempt also fails, the assistant logs the error and exits with a 
 
 ## Buttons (peripherals)
 
-If a peripheral (such as a HAT with buttons) is connected through the [peripheral API](peripheral_api.md), it can trigger the following. What a physical button does is defined by the peripheral, not by LVA.
+If a peripheral (such as a HAT with buttons) is connected through the [peripheral API](development/peripheral_api.md), it can trigger the following. What a physical button does is defined by the peripheral, not by LVA.
 
 | Action | Result |
 |--------|--------|
@@ -240,7 +240,7 @@ This table describes API version 1. Version 2 offers fewer commands, see [Periph
 
 > **Status:** specified here, implementation follows. Until then LVA only offers version 1 on every path.
 
-The [peripheral API](peripheral_api.md) is versioned, so a peripheral written for an older version keeps working when a newer one appears. A peripheral chooses the version by the path of the WebSocket URL:
+The [peripheral API](development/peripheral_api.md) is versioned, so a peripheral written for an older version keeps working when a newer one appears. A peripheral chooses the version by the path of the WebSocket URL:
 
 | URL | Version |
 |-----|---------|
