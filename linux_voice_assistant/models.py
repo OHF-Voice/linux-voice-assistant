@@ -17,7 +17,6 @@ if TYPE_CHECKING:
         ButtonEventSensorEntity,
         ButtonLockEntity,
         ESPHomeEntity,
-        HardwareMuteSwitchEntity,
         LEDLightEntity,
         MediaPlayerEntity,
         MicSettingEntity,
@@ -186,12 +185,6 @@ class ServerState:
     satellite: "Optional[VoiceSatelliteProtocol]" = None
     connections: "List[VoiceSatelliteProtocol]" = field(default_factory=list)
     mute_switch_entity: "Optional[MuteSwitchEntity]" = None
-    # Hardware mute of the microphone, as reported by a version 2 peripheral. The switch only exists once a peripheral has reported
-    # (pending_hardware_mute), the values are None until then. LVA only stores them: its own mute (``muted``) is not changed by them.
-    pending_hardware_mute: bool = False
-    hardware_mute_switch_entity: "Optional[HardwareMuteSwitchEntity]" = None
-    hardware_muted: Optional[bool] = None
-    hardware_mute_possible: Optional[bool] = None
     thinking_sound_entity: "Optional[ThinkingSoundEntity]" = None
     button_event_sensor_entity: "Optional[ButtonEventSensorEntity]" = None
 

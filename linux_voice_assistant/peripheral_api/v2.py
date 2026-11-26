@@ -1,16 +1,14 @@
 """WebSocket peripheral API, version 2.
 
 The reduced API for the Linux Peripherals Controller: the status of the assistant and a few commands. LVA creates no Home
-Assistant entities for a version 2 client, except the Hardware Mute switch. The specification is ``docs/peripheral_api/v2.md``.
+Assistant entities for a version 2 client. The specification is ``docs/peripheral_api/v2.md``.
 
 Events  (LVA → peripheral): {"event": "<name>", "data": {...}}
 Commands (peripheral → LVA): {"command": "<name>", "data": {...}}
 
 Events: hello, lva_status, state, mute_status, volume_status, timer_status, timer_remaining_time, timer_remaining_percentage,
-media_player_status, pipeline_error, timer_auto_stopped, hardware_mute_status, hardware_mute_possible, hardware_mute_on,
-hardware_mute_off.
-Commands: start_listening, stop, mute_on, mute_off, volume_up, volume_down, volume_set, timer_stop, button_pressed,
-hardware_mute_status, hardware_mute_possible.
+media_player_status, pipeline_error, timer_auto_stopped.
+Commands: start_listening, stop, mute_on, mute_off, volume_up, volume_down, volume_set, timer_stop, button_pressed.
 """
 
 from __future__ import annotations
@@ -24,7 +22,6 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set
 
 from aioesphomeapi.api_pb2 import SwitchStateResponse  # type: ignore[attr-defined]  # pylint: disable=no-name-in-module
 
-from .late_entity_reconnect import LateEntityReconnect
 from .v2_status import StatusInputs, V2Status, derive_status, pipeline_state_after, status_messages
 from .v2_timers import TimerInfo, summarize_timers, update_timers
 from .versions import SUPPORTED_VERSIONS
@@ -61,7 +58,6 @@ class PeripheralApiV2:
         self._timers: Dict[str, TimerInfo] = {}
         self._status: Optional[V2Status] = None
         self._ticker: Optional[asyncio.Task] = None
-        self._late_reconnect = LateEntityReconnect()
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -80,7 +76,6 @@ class PeripheralApiV2:
         if self._ticker is not None:
             self._ticker.cancel()
             self._ticker = None
-        self._late_reconnect.cancel()
 
     # ------------------------------------------------------------------
     # Client handling and events
@@ -94,10 +89,10 @@ class PeripheralApiV2:
 
         try:
             await websocket.send(json.dumps({"event": "hello", "data": {"api_version": "v2", "supported_versions": list(SUPPORTED_VERSIONS)}}))
-            for message in status_messages(None, self._current_status()) + self._hardware_mute_messages():
+            for message in status_messages(None, self._current_status()):
                 await websocket.send(json.dumps(message))
             async for raw in websocket:
-                await self._dispatch_command(raw, websocket)
+                await self._dispatch_command(raw)
         except Exception as exc:  # pylint: disable=broad-except
             _LOGGER.debug("Peripheral client %s error: %s", addr, exc)
         finally:
@@ -130,34 +125,12 @@ class PeripheralApiV2:
             await self._broadcast(messages)
         self._keep_ticker_running()
 
-    async def request_hardware_mute(self, muted: bool) -> None:
-        """
-        Ask the peripherals to mute or unmute the hardware of the microphone, because the Hardware Mute switch was changed.
-        :param muted: True to mute the hardware.
-        The request is only sent if a peripheral has said that the hardware mute is possible and one is connected. Otherwise it is
-        ignored, and Home Assistant is told the state again so that the switch jumps back.
-        """
-        state = self._state
-        if state is None:
-            return
-        if state.hardware_mute_possible is not True or not self._clients:
-            _LOGGER.debug(
-                "Ignoring the request to %s the hardware mute: possible=%s, %d peripheral(s) connected",
-                "set" if muted else "clear",
-                state.hardware_mute_possible,
-                len(self._clients),
-            )
-            self._tell_home_assistant_hardware_mute()
-            return
-        _LOGGER.debug("Asking the peripherals to %s the hardware mute", "set" if muted else "clear")
-        await self._broadcast([{"event": "hardware_mute_on" if muted else "hardware_mute_off"}])
-
     # ------------------------------------------------------------------
     # Commands
     # ------------------------------------------------------------------
 
-    async def _dispatch_command(self, raw: str, sender: Any = None) -> None:
-        """Parse and execute a JSON command from the peripheral. ``sender`` is the client it came from."""
+    async def _dispatch_command(self, raw: str) -> None:
+        """Parse and execute a JSON command from the peripheral."""
         try:
             msg = json.loads(raw)
         except json.JSONDecodeError:
@@ -192,42 +165,8 @@ class PeripheralApiV2:
             self._set_volume_command(state, satellite, data)
         elif command == "button_pressed":
             self._play_button_sound(state, data)
-        elif command == "hardware_mute_status":
-            await self._set_hardware_muted(state, data, sender)
-        elif command == "hardware_mute_possible":
-            await self._set_hardware_mute_possible(state, data, sender)
         else:
             _LOGGER.warning("Peripheral (API v2): unknown command '%s'", command)
-
-    async def _set_hardware_muted(self, state: "ServerState", data: Any, sender: Any) -> None:
-        """Take over the hardware mute state that a peripheral reported. LVA's own mute is not changed."""
-        status = data.get("status") if isinstance(data, dict) else None
-        if status not in ("muted", "unmuted"):
-            _LOGGER.warning("Peripheral (API v2): invalid status in hardware_mute_status command: %s", status)
-            return
-        muted = status == "muted"
-        if state.hardware_muted == muted:
-            _LOGGER.debug("Hardware mute is already reported as %s", status)
-            return
-        _LOGGER.debug("Hardware mute reported: %s", status)
-        state.hardware_muted = muted
-        self._register_hardware_mute(state)
-        self._tell_home_assistant_hardware_mute()
-        await self._broadcast([{"event": "hardware_mute_status", "data": {"status": status}}], exclude=sender)
-
-    async def _set_hardware_mute_possible(self, state: "ServerState", data: Any, sender: Any) -> None:
-        """Take over whether a peripheral can mute the hardware."""
-        possible = data.get("possible") if isinstance(data, dict) else None
-        if not isinstance(possible, bool):
-            _LOGGER.warning("Peripheral (API v2): invalid possible in hardware_mute_possible command: %s", possible)
-            return
-        if state.hardware_mute_possible == possible:
-            _LOGGER.debug("Hardware mute possible is already reported as %s", possible)
-            return
-        _LOGGER.debug("Hardware mute possible reported: %s", possible)
-        state.hardware_mute_possible = possible
-        self._register_hardware_mute(state)
-        await self._broadcast([{"event": "hardware_mute_possible", "data": {"possible": possible}}], exclude=sender)
 
     def _set_mic_muted(self, state: "ServerState", satellite: Any, muted: bool) -> None:
         """Mute or unmute the microphone like the Mute switch does, and tell Home Assistant."""
@@ -307,43 +246,8 @@ class PeripheralApiV2:
         )
         return derive_status(inputs, self._status)
 
-    def _register_hardware_mute(self, state: "ServerState") -> None:
-        """
-        Add the Hardware Mute switch the first time a peripheral reports a hardware mute value.
-
-        Home Assistant only sees an entity that appears later after it connected again, so it is reconnected once.
-        """
-        if state.pending_hardware_mute:
-            return
-        state.pending_hardware_mute = True
-        _LOGGER.info("Hardware mute switch registered by peripheral")
-        if state.satellite is not None:
-            state.satellite.register_pending_hardware_mute()
-        self._late_reconnect.schedule(state, self._loop, "hardware_mute", "hardware_mute")
-
-    def _hardware_mute_messages(self) -> List[Dict[str, Any]]:
-        """The hardware mute values that a peripheral reported, for a client that connects."""
-        state = self._state
-        if state is None:
-            return []
-        messages: List[Dict[str, Any]] = []
-        if state.hardware_muted is not None:
-            messages.append({"event": "hardware_mute_status", "data": {"status": "muted" if state.hardware_muted else "unmuted"}})
-        if state.hardware_mute_possible is not None:
-            messages.append({"event": "hardware_mute_possible", "data": {"possible": state.hardware_mute_possible}})
-        return messages
-
-    def _tell_home_assistant_hardware_mute(self) -> None:
-        """Tell every Home Assistant client the hardware mute state, so the Hardware Mute switch shows it."""
-        state = self._state
-        entity = state.hardware_mute_switch_entity if state is not None else None
-        if state is not None and entity is not None:
-            state.broadcast([entity.state_message()])
-
-    async def _broadcast(self, messages: List[Dict[str, Any]], exclude: Any = None) -> None:
+    async def _broadcast(self, messages: List[Dict[str, Any]]) -> None:
         for ws in list(self._clients):
-            if ws is exclude:
-                continue
             try:
                 for message in messages:
                     await ws.send(json.dumps(message))

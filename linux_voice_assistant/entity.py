@@ -380,60 +380,6 @@ class MuteSwitchEntity(ESPHomeEntity):
             yield SwitchStateResponse(key=self.key, state=self._switch_state)
 
 
-class HardwareMuteSwitchEntity(ESPHomeEntity):
-    """
-    Switch for the hardware mute of the microphone, which a version 2 peripheral reports and carries out.
-
-    It shows the state that the peripheral reported, not the one that was asked for. Switching it only asks the peripheral to mute
-    or unmute the hardware, so it jumps back when that is not possible. It only exists once a peripheral has reported a hardware
-    mute, because most devices have none.
-    """
-
-    def __init__(
-        self,
-        server: APIServer,
-        key: int,
-        name: str,
-        object_id: str,
-        get_muted: Callable[[], bool],
-        request_muted: Callable[[bool], None],
-    ) -> None:
-        ESPHomeEntity.__init__(self, server)
-
-        self.key = key
-        self.name = name
-        self.object_id = object_id
-        self._get_muted = get_muted
-        self._request_muted = request_muted
-
-    def update_get_muted(self, get_muted: Callable[[], bool]) -> None:
-        # Update the callback used to read the hardware mute state.
-        self._get_muted = get_muted
-
-    def update_request_muted(self, request_muted: Callable[[bool], None]) -> None:
-        # Update the callback used to ask for another hardware mute state.
-        self._request_muted = request_muted
-
-    def state_message(self) -> SwitchStateResponse:
-        """The state to tell Home Assistant: what the peripheral reported."""
-        return SwitchStateResponse(key=self.key, state=self._get_muted())
-
-    def handle_message(self, msg: message.Message) -> Iterable[message.Message]:
-        if isinstance(msg, SwitchCommandRequest) and (msg.key == self.key):
-            self._request_muted(bool(msg.state))
-            yield self.state_message()
-        elif isinstance(msg, ListEntitiesRequest):
-            yield ListEntitiesSwitchResponse(
-                object_id=self.object_id,
-                key=self.key,
-                name=self.name,
-                entity_category=EntityCategory.CONFIG,
-                icon="mdi:microphone-off",
-            )
-        elif isinstance(msg, SubscribeHomeAssistantStatesRequest):
-            yield self.state_message()
-
-
 class ThinkingSoundEntity(ESPHomeEntity):
     def __init__(
         self,
@@ -969,7 +915,6 @@ __all__ = [
     "ESPHomeEntity",
     "MediaPlayerEntity",
     "MuteSwitchEntity",
-    "HardwareMuteSwitchEntity",
     "ThinkingSoundEntity",
     "LEDLightEntity",
     "ButtonEventSensorEntity",

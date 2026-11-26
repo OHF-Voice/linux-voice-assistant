@@ -219,36 +219,6 @@ class TestRefreshStatusSync:
         assert mock_run.call_args.args[1] is loop
 
 
-class TestRequestHardwareMuteSync:
-    def test_noop_when_no_loop(self):
-        PeripheralAPIServer().request_hardware_mute_sync(True)  # should not raise
-
-    def test_noop_when_loop_closed(self):
-        server = PeripheralAPIServer()
-        loop = MagicMock()
-        loop.is_closed.return_value = True
-        server._loop = loop
-
-        with patch("asyncio.run_coroutine_threadsafe") as mock_run:
-            server.request_hardware_mute_sync(True)
-
-        mock_run.assert_not_called()
-
-    def test_only_versions_with_a_hardware_mute_are_asked(self):
-        server = PeripheralAPIServer()
-        loop = MagicMock()
-        loop.is_closed.return_value = False
-        server._loop = loop
-
-        with patch("asyncio.run_coroutine_threadsafe") as mock_run:
-            server.request_hardware_mute_sync(True)
-            for call in mock_run.call_args_list:
-                call.args[0].close()
-
-        assert mock_run.call_count == 1
-        assert mock_run.call_args.args[1] is loop
-
-
 class TestEmitEventSync:
     def test_noop_when_no_loop(self):
         PeripheralAPIServer().emit_event_sync(LVAEvent.IDLE)  # should not raise

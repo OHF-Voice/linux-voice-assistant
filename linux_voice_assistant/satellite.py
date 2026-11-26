@@ -53,7 +53,6 @@ from .api_server import APIServer
 from .entity import (
     ButtonEventSensorEntity,
     ButtonLockEntity,
-    HardwareMuteSwitchEntity,
     LEDLightEntity,
     MediaPlayerEntity,
     MicSettingEntity,
@@ -345,8 +344,6 @@ class VoiceSatelliteProtocol(APIServer):
         # Materialise ButtonLockEntity if a peripheral already registered
         # the button-lock switch before this satellite was constructed.
         self.register_pending_button_lock()
-        # Materialise the Hardware Mute switch if a version 2 peripheral already reported a hardware mute.
-        self.register_pending_hardware_mute()
 
         # ---- Instance variables ----
 
@@ -497,36 +494,6 @@ class VoiceSatelliteProtocol(APIServer):
         entity.sync_with_state()
         _LOGGER.info("Button lock switch entity materialised")
 
-    def register_pending_hardware_mute(self) -> None:
-        """Materialise the Hardware Mute switch once a version 2 peripheral has reported a hardware mute.
-
-        Called from __init__ (an HA reconnect while the peripheral stayed connected) and from the version 2 API when the first
-        report arrives. Safe to call multiple times: an existing entity is only reattached to this satellite.
-        """
-        if not self.state.pending_hardware_mute:
-            return
-
-        entity = self.state.hardware_mute_switch_entity
-        if entity is not None:
-            entity.server = self
-            entity.update_get_muted(lambda: bool(self.state.hardware_muted))
-            entity.update_request_muted(self._request_hardware_mute)
-            if entity not in self.state.entities:
-                self.state.entities.append(entity)
-            return
-
-        entity = HardwareMuteSwitchEntity(
-            server=self,
-            key=len(self.state.entities),
-            name="Hardware Mute",
-            object_id="hardware_mute",
-            get_muted=lambda: bool(self.state.hardware_muted),
-            request_muted=self._request_hardware_mute,
-        )
-        self.state.entities.append(entity)
-        self.state.hardware_mute_switch_entity = entity
-        _LOGGER.info("Hardware mute switch entity materialised")
-
     def _on_led_light_changed(self, object_id: str) -> None:
         """Forward an HA Light entity change to peripherals as light_command.
 
@@ -598,12 +565,6 @@ class VoiceSatelliteProtocol(APIServer):
         # Sync entity state
         if self.state.stop_sensitivity_number_entity is not None:
             self.state.stop_sensitivity_number_entity.sync_with_state()
-
-    def _request_hardware_mute(self, muted: bool) -> None:
-        """Ask the peripherals to mute or unmute the hardware, because the Hardware Mute switch was changed in Home Assistant."""
-        api = self.state.peripheral_api
-        if api is not None:
-            api.request_hardware_mute_sync(muted)
 
     def _set_muted(self, new_state: bool) -> None:
         self.state.muted = bool(new_state)

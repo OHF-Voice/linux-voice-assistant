@@ -437,51 +437,6 @@ class TestMediaPlayerEntityAnnouncing:
         entity.pause()
 
 
-class TestHardwareMuteSwitchEntity:
-    @staticmethod
-    def make(muted=False):
-        from linux_voice_assistant.entity import HardwareMuteSwitchEntity
-
-        request = MagicMock()
-        entity = HardwareMuteSwitchEntity(server=make_server(), key=7, name="Hardware Mute", object_id="hardware_mute", get_muted=lambda: muted, request_muted=request)
-        return entity, request
-
-    def test_it_is_listed_with_its_name_and_key(self):
-        entity, _ = self.make()
-        (response,) = entity.handle_message(ListEntitiesRequest())
-        assert (response.name, response.object_id, response.key, response.disabled_by_default) == ("Hardware Mute", "hardware_mute", 7, False)
-
-    @pytest.mark.parametrize("muted", [True, False])
-    def test_it_shows_the_state_that_was_reported(self, muted):
-        entity, _ = self.make(muted)
-        (response,) = entity.handle_message(SubscribeHomeAssistantStatesRequest())
-        assert (response.key, response.state) == (7, muted)
-
-    @pytest.mark.parametrize("requested", [True, False])
-    def test_switching_asks_for_the_change_and_answers_with_the_real_state(self, requested):
-        entity, request = self.make(muted=not requested)
-        (response,) = entity.handle_message(SwitchCommandRequest(key=7, state=requested))
-        request.assert_called_once_with(requested)
-        assert response.state is (not requested)
-
-    def test_a_command_for_another_entity_is_ignored(self):
-        entity, request = self.make()
-        assert not list(entity.handle_message(SwitchCommandRequest(key=8, state=True)))
-        request.assert_not_called()
-
-    def test_callbacks_can_be_replaced(self):
-        entity, request = self.make()
-        replaced = MagicMock()
-        entity.update_request_muted(replaced)
-        entity.update_get_muted(lambda: True)
-
-        (response,) = entity.handle_message(SwitchCommandRequest(key=7, state=False))
-
-        request.assert_not_called()
-        replaced.assert_called_once_with(False)
-        assert response.state is True
-
-
 # ---------------------------------------------------------------------------
 # MuteSwitchEntity
 # ---------------------------------------------------------------------------
