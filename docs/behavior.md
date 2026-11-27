@@ -36,7 +36,7 @@ The music player can be sent to a different sound card with `--music-output-devi
 Two rules apply everywhere:
 
 - **Music is never ended by the assistant on its own.** During a conversation it is lowered (*ducked*). During a TTS / announcement sent to the media player (for example `tts.speak` with `announce: true`) it is **ducked** for the duration of the announcement and then restored, and the media player reports `announcing`. Only an explicit *stop* from Home Assistant or a peripheral, or losing the connection to Home Assistant (see below), stops it for good.
-- **Ducking** means the music volume is reduced to **50 %** of the volume you set. When the interaction is over it returns to 100 % of your set volume. The music stays ducked as long as something still wants it ducked: a conversation, a ringing timer, a voice announcement and a media player announcement ask for it separately, so the music returns to full volume only when all of them are over. For example, a timer that is stopped during a conversation does not end the ducking of the conversation. When the last Home Assistant client disconnects, all of them are released.
+- **Ducking** means the music volume is reduced to **50 %** of the volume you set. When the interaction is over it returns to 100 % of your set volume. The music stays ducked as long as something still wants it ducked: a conversation, a ringing timer, a voice announcement and a media player announcement ask for it separately, so the music returns to full volume only when all of them are over. For example, a timer that is stopped during a conversation does not end the ducking of the conversation. When the last Home Assistant client disconnects, all of them are released, except the one of a ringing timer, which keeps ringing.
 - **Pause mode (`--mpv-player-duck-mode pause`, `MPV_PLAYER_DUCK_MODE=pause`).** The default is `duck`, which lowers the volume as described above. With `pause` the music of LVA is **paused** instead of lowered, and resumed when the last reason for ducking is over. Music that was already paused stays paused. A pause or stop from Home Assistant or a peripheral during that time takes over, so the music is not resumed against it. While it is paused for ducking, the media player keeps reporting `playing`. Music that is started while it is ducked plays at full volume, because nothing pauses it again. The option only applies to the music player, not to the voice player (announcements, chimes, TTS, timer sound).
 
 ---
@@ -123,22 +123,53 @@ A second announcement replaces the first one. A media player announcement asks f
 
 ## Timers
 
-Timers are created by voice ("set a timer for 5 minutes") and managed by Home Assistant. LVA shows and rings them.
+Timers are created by voice ("set a timer for 5 minutes") and managed by Home Assistant. LVA keeps its own list of all timers, with the statuses of Home Assistant (`active`, `paused`, `finished`, `cancelled`), counts them down itself and rings them. The list is stored in `preferences.json` on every change, so it outlives a lost connection and a restart of LVA.
 
 | Event | What happens |
 |-------|--------------|
-| Timer started / updated | Peripherals receive `timer_ticking` / `timer_updated` with the remaining time (for example to show a countdown on LEDs). |
-| Timer cancelled | The countdown is cleared on peripherals (`timer_updated` with 0 seconds left) and the assistant returns to idle. |
-| **Timer finished** | The music is **ducked to 50 %**, the stop word becomes active and the timer sound (`--timer-finished-sound`) plays on repeat with a 1 second pause between repetitions. |
-| Timer is ringing and you say the **stop word** | The ringing stops, music is restored, the assistant goes idle. |
-| Timer is ringing and you say the **wake word** or press the **start-listening button** | The ringing stops and a normal interaction begins. |
-| Timer is ringing and a peripheral sends `stop_timer_ringing` or `stop_pipeline` | The ringing stops, music is restored, the assistant goes idle. |
-| Nobody reacts | The timer **stops ringing automatically** after `--timer-max-ring-seconds` (default 900 s = 15 minutes) and the music is restored. Peripherals receive `timer_auto_stopped`, then `idle`, so they can show that the timer was not dismissed. |
+| Timer started / updated | The timer is added to the list or its end time is set again. A timer that Home Assistant reports as paused is kept with the time it had left and does not count down. Peripherals receive `timer_ticking` / `timer_updated` with the remaining time (for example to show a countdown on LEDs). |
+| Timer cancelled | The timer is set to `cancelled`. If it was ringing, its ringing stops. Peripherals receive `timer_updated` with 0 seconds left. If no other timer counts down, is paused or rings, the assistant returns to idle. If another one counts down or is paused, peripherals receive `timer_ticking` for it instead (the one that ends first). |
+| **Timer finished** (from Home Assistant) | The timer is due now, so it rings at once, see the next line. If it is `finished` already (it rings, or its ringing has ended), nothing happens. |
+| **Time is up** | LVA checks its list once a second. A timer whose end time has passed starts ringing, whether Home Assistant is connected or not: the music is **ducked to 50 %**, the stop word becomes active, peripherals receive `timer_ringing` and the timer sound (`--timer-finished-sound`) plays on repeat with a 1 second pause between repetitions. |
+| A second timer finishes while one rings | Peripherals receive `timer_ringing` for it too. The sound keeps playing once, it does not play twice. |
+| Timer is ringing and you say the **stop word** | **All** ringing timers stop, music is restored, the assistant goes idle. |
+| Timer is ringing and you say the **wake word** or press the **start-listening button** | All ringing timers stop and a normal interaction begins. |
+| Timer is ringing and a peripheral sends `stop_timer_ringing` or `stop_pipeline` | All ringing timers stop, music is restored, the assistant goes idle. |
+| Nobody reacts | Each timer **stops ringing automatically** `--timer-max-ring-seconds` (default 900 s = 15 minutes) after it started ringing. Peripherals receive `timer_auto_stopped` (with how long it rang) for it. When the last ringing timer has stopped, the music is restored and peripherals receive `idle`, so they can show that the timer was not dismissed. |
+
+A timer that stopped ringing stays `finished` and does not ring again. `finished` and `cancelled` timers are deleted from the list 7 days after they ended, a `paused` timer that Home Assistant did not report in its last list (or if there is no list) 7 days after its last change (info log).
+
+**Without Home Assistant.** When the last Home Assistant client disconnects, the timers keep counting. A ringing timer keeps ringing, the stop word stays active for it and the music stays ducked for it. Conversation, announcement and music playback are stopped as before. While Home Assistant is offline, timers finish and ring as usual, and the stop word, the buttons and the peripheral commands stop them (`start_listening` only stops the ringing, there is no pipeline to start). The wake word is not listened for. Timers cannot be created or cancelled by voice.
+
+**After a restart of LVA.** The stored list is loaded. A timer that was ringing rings again right after the start, for the full `--timer-max-ring-seconds`. A timer whose time ran out while LVA was not running rings right after the start.
+
+**Merge with the list of Home Assistant.** Home Assistant sends no timer list when LVA connects, and the timer events of a disconnect are lost. So after every connect (also at the start of LVA), once Home Assistant accepts actions from the device, LVA asks for its own timer list with the action `timer_list.get_timers` and merges it by timer id:
+
+| Case | What LVA does |
+|------|---------------|
+| In Home Assistant `active` or `paused`, not in LVA | Taken over. |
+| In Home Assistant and in LVA, different | The values of Home Assistant are taken (end time, time left, status). A timer that rang in LVA and is running again in Home Assistant stops ringing. |
+| In Home Assistant `finished`, in LVA `active` or `paused` | It rings right away. |
+| In Home Assistant `cancelled`, in LVA not | Set to `cancelled`. If it was ringing, its ringing stops. |
+| In Home Assistant `finished` or `cancelled`, not in LVA | Ignored. |
+| The same in both | Nothing. |
+| Not in Home Assistant, in LVA | Kept, because Home Assistant forgets its timers when it restarts. It rings when its time is up. |
+
+If the list changed and no timer rings, peripherals receive `timer_ticking` for the timer that is shown. If Home Assistant cannot perform the action (no `timer_list` yet, or the ESPHome option *Allow the device to perform Home Assistant actions* is off) or does not answer within 10 s, LVA logs a hint once per run (info) and works with its own list and the events only.
+
+**Known limits.**
+
+- Without the merge (see above), LVA only hears about timers through the events Home Assistant sends while it is connected: a timer cancelled in Home Assistant while LVA was not connected still rings in LVA. With the merge, a timer that is created and ends completely while LVA is not connected still does not ring, because Home Assistant reports it as `finished` and finished timers unknown to LVA are ignored.
+- A timer cancelled in Home Assistant and evicted from its archive before LVA reconnects looks like one that Home Assistant forgot in a restart. LVA keeps it and rings it.
+- After a restart of Home Assistant, the timers still in LVA cannot be cancelled by voice (Home Assistant has forgotten them). They end when they ring and are stopped, or after `--timer-max-ring-seconds` of ringing.
+- Stopping a ringing timer is not reported to Home Assistant.
+- An announcement while a timer rings replaces the timer sound. The timer still counts as ringing, but its sound does not come back and, once the announcement is over, the stop word no longer stops it. The wake word, the buttons, the peripheral commands and `--timer-max-ring-seconds` still end it. This was already so before LVA kept its own timer list.
 
 Notes:
 
 - A timer finishing does not stop or pause the music. It is only ducked, so a ringing timer is audible over it.
 - While the assistant is muted, the stop word and the wake word do not work. Unmute first, or stop the ringing with a peripheral button.
+- **Time.** The end time of a timer comes from Home Assistant, so LVA compares its timers on the time of Home Assistant. It asks Home Assistant for its time right after connecting and then every 30 s while connected, and keeps the difference to its own clock (accurate to about half a second). The difference is not stored. Until the first answer after a start of LVA, LVA uses its own clock; offline after a connection, it uses the last known difference. If the difference is more than 10 s, an error is logged at every check: the clock of the device is probably not set. If LVA starts without Home Assistant and its clock is not set yet, stored timers ring too early or too late until the clock is set or Home Assistant is connected.
 
 ---
 
@@ -235,7 +266,7 @@ The peripheral API is versioned. Choosing a version and what LVA does in each ve
   - With `--host` the address is fixed by the user and is never checked or replaced.
   - A connection that is still open when the address changes is not closed by the move, keepalive ends it if it is dead.
 - When Home Assistant **reconnects** (for example after a restart), settings and entities are kept. Playback is not interrupted as long as at least one client is still connected.
-- When the **last** client disconnects, LVA **stops music and assistant playback** and goes idle. It keeps waiting for Home Assistant to reconnect.
+- When the **last** client disconnects, LVA **stops music and assistant playback** and goes idle. It keeps waiting for Home Assistant to reconnect. A ringing timer is the exception: it keeps ringing, see [Timers](#timers).
 - Peripherals are told when Home Assistant is connected (`zeroconf` event with status `connected`) and when it is lost (`disconnected`).
 
 ---

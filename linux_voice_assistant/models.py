@@ -9,6 +9,10 @@ from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Union
 
+from .home_assistant_timers import TimerSync
+from .timer_alarm import TimerAlarm
+from .timers import TimerList
+
 if TYPE_CHECKING:
     from google.protobuf import message
     from pymicro_wakeword import MicroWakeWord
@@ -121,6 +125,7 @@ class Preferences:
     mic_noise_suppression: int = 0
     mic_volume: int = 100  # 0–100, default maximum
     applied_migrations: List[int] = field(default_factory=list)  # numbers of the one-time migrations that already ran
+    timers: List[Dict[str, Any]] = field(default_factory=list)  # the timer list, see timers.py
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "Preferences":
@@ -247,7 +252,18 @@ class ServerState:
     mic_volume: int = 100  # 0–100, default maximum
     audio_input_channels: int = 1  # number of mic channels to capture
     timer_max_ring_seconds: float = 900.0
+    # The timer list. It outlives the connection to Home Assistant and is stored in the preferences.
+    timers: TimerList = field(default_factory=TimerList)
+    # Rings the timers of the list. Created with the state, see __post_init__.
+    timer_alarm: TimerAlarm = field(init=False, repr=False)
+    # Seconds the clock of Home Assistant is ahead of the own clock, see home_assistant_time.py. Not stored.
+    home_assistant_time_offset: float = 0.0
+    # Requests for the timer list of Home Assistant, see home_assistant_timers.py.
+    timer_sync: TimerSync = field(default_factory=TimerSync)
     listen_during_wake_sound: bool = False
+
+    def __post_init__(self) -> None:
+        self.timer_alarm = TimerAlarm(self)
 
     def broadcast(self, msgs: "Iterable[message.Message]") -> None:
         """Send messages to every connected API client.
@@ -325,6 +341,11 @@ class ServerState:
         self.mic_volume = volume_int
         self.preferences.mic_volume = volume_int
         _LOGGER.info("Saving mic_volume %s to %s", volume_int, self.preferences_path)
+        self.preferences.save(self.preferences_path)
+
+    def persist_timers(self) -> None:
+        """Store the timer list in the preferences file."""
+        self.preferences.timers = self.timers.to_dicts()
         self.preferences.save(self.preferences_path)
 
 

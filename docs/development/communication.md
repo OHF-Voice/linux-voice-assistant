@@ -81,7 +81,7 @@ LVA pretends to be an ESPHome device. Home Assistant connects **to** LVA (LVA is
 4. Home Assistant asks for `DeviceInfoRequest`, `ListEntitiesRequest` and `SubscribeStatesRequest` / `SubscribeHomeAssistantStatesRequest`. Every entity answers for itself (see [configuration.md](../configuration.md)), and the current states are replayed.
 5. Home Assistant sends `VoiceAssistantConfigurationRequest` and LVA answers with the available and active wake words (at most 2 active). Home Assistant changes the selection with `VoiceAssistantSetConfiguration`. The result is stored in the preferences file.
 
-Each Home Assistant connection gets its own protocol instance, but the settings, entities and players live in one shared state and survive reconnects. When the **last** connection closes, playback is stopped. See [behavior.md](../behavior.md#connection-to-home-assistant).
+Each Home Assistant connection gets its own protocol instance, but the settings, entities and players live in one shared state and survive reconnects. When the **last** connection closes, playback is stopped, except a ringing timer. See [behavior.md](../behavior.md#connection-to-home-assistant).
 
 ### Messages LVA receives and sends
 
@@ -92,7 +92,9 @@ Each Home Assistant connection gets its own protocol instance, but the settings,
 | `VoiceAssistantEventResponse` | HA → LVA | Progress of the run: `RUN_START`, `STT_*`, `INTENT_*`, `TTS_*`, `RUN_END`, `ERROR` |
 | `VoiceAssistantAnnounceRequest` | HA → LVA | Play an announcement, optionally with a pre-announce sound and a follow-up conversation |
 | `VoiceAssistantAnnounceFinished` | LVA → HA | Playback of a reply or announcement has ended |
-| `VoiceAssistantTimerEventResponse` | HA → LVA | Timer started, updated, cancelled or finished |
+| `VoiceAssistantTimerEventResponse` | HA → LVA | Timer started, updated, cancelled or finished. Applied to the timer list of LVA, see [behavior.md](../behavior.md#timers) |
+| `HomeassistantActionRequest` (`timer_list.get_timers`, `wants_response`) / `HomeassistantActionResponse` | LVA → HA / HA → LVA | After `SubscribeHomeassistantServicesRequest` of a connection, LVA asks for its timer list and merges the answer ([`home_assistant_timers.py`](../../linux_voice_assistant/home_assistant_timers.py)). Home Assistant answers with the timers of this device only. Needs the ESPHome option *Allow the device to perform Home Assistant actions* |
+| `GetTimeRequest` / `GetTimeResponse` | LVA → HA / HA → LVA | LVA asks for the time of Home Assistant after connecting and every 30 s, and compares its timers on it ([`home_assistant_time.py`](../../linux_voice_assistant/home_assistant_time.py)) |
 | `MediaPlayerCommandRequest` | HA → LVA | Play, pause, stop, volume, mute and URL for music or announcements |
 | `Switch`/`Number`/`Select`/`LightCommandRequest` | HA → LVA | Changes of the device page entities |
 | state responses | LVA → HA | New entity state, sent to all connected clients |
