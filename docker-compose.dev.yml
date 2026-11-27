@@ -43,7 +43,6 @@ services:
 
   # Linux Voice Assistant
   linux-voice-assistant:
-    container_name: linux-voice-assistant
     image: "${LVA_IMAGE:-ghcr.io/ohf-voice/linux-voice-assistant-pr}:${LVA_IMAGE_TAG:-nightly}"
     restart: unless-stopped
     network_mode: "host"
