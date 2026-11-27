@@ -68,7 +68,30 @@ class Migration591:
         return ids_by_name
 
 
-_MIGRATIONS: Sequence[Type[Migration591]] = (Migration591,)
+class Migration644:
+    """
+    Pull request 644 (plain wake word phrases) renames the wake words in Home Assistant, for example from "Internal - MWW - Hey Jarvis" to "Hey Jarvis".
+    The stored wake words do not change. Home Assistant has to be made to restore its wake word selection, see wake_word_reload.py.
+    """
+
+    id = 644
+
+    @staticmethod
+    def migrate(preferences: Preferences, available_wake_words: Dict[str, AvailableWakeWord]) -> Preferences:  # pylint: disable=unused-argument
+        """
+        Marks that the names of the wake words changed, if wake words were chosen before.
+        :param preferences: Preferences as loaded from the preferences file.
+        :param available_wake_words: Dictionary with all available wake words, not used.
+        :return: Preferences with `wake_word_names_changed` set if any wake word is stored.
+        """
+        if not any(stored is not None for stored in preferences.active_wake_words):
+            return preferences
+
+        _LOGGER.info("The names of the wake words in Home Assistant changed, its wake word selection is restored on the next connection")
+        return replace(preferences, wake_word_names_changed=True)
+
+
+_MIGRATIONS: Sequence[Type[Union[Migration591, Migration644]]] = (Migration591, Migration644)
 
 
 def migrate_preferences(preferences: Preferences, available_wake_words: Dict[str, AvailableWakeWord]) -> Preferences:

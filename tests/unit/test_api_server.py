@@ -174,6 +174,14 @@ class TestConnection:
         server.connection_lost(None)
         assert server._loop is None
 
+    def test_close_connection_closes_the_transport(self):
+        server = make_server()
+        transport = server._transport
+
+        server.close_connection()
+
+        transport.close.assert_called_once_with()
+
 
 # ---------------------------------------------------------------------------
 # HelloRequest → HelloResponse
