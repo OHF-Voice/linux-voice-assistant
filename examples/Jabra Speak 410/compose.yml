@@ -12,7 +12,6 @@
 services:
   jabra-peripheral:
     image: ghcr.io/machineonamission/lva-jabra-speak-410:main
-    container_name: jabra-peripheral
     restart: unless-stopped
 
     # -----------------------------------------------------------------------
