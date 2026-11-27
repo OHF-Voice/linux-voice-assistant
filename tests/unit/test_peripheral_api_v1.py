@@ -483,29 +483,36 @@ class TestDispatchVolume:
 # ---------------------------------------------------------------------------
 
 
+def _ring(state):
+    """Let a timer of the timer list ring, then forget the calls that made it ring."""
+    from aioesphomeapi.model import VoiceAssistantTimerEventType
+
+    from linux_voice_assistant.timers import TimerEvent
+
+    state.timer_alarm.handle_event(TimerEvent(VoiceAssistantTimerEventType.VOICE_ASSISTANT_TIMER_FINISHED, "t1", "pasta", 60, 0, True))
+    state.tts_player.reset_mock()
+    state.music_player.reset_mock()
+
+
 class TestDispatchStopTimerRinging:
     @pytest.mark.asyncio
     async def test_stops_ringing_timer(self, tmp_path):
         state = make_state(tmp_path)
-        satellite = MagicMock()
-        satellite._timer_finished = True  # pylint: disable=protected-access
-        state.satellite = satellite
-        state.active_wake_words.add(state.stop_word.id)
+        state.satellite = MagicMock()
+        _ring(state)
         server = make_server(state)
 
         await dispatch(server, LVACommand.STOP_TIMER_RINGING.value)
 
-        assert satellite._timer_finished is False  # pylint: disable=protected-access
+        assert not state.timer_alarm.ringing
         assert state.stop_word.id not in state.active_wake_words
         state.tts_player.stop.assert_called_once()
-        satellite.unduck.assert_called_once_with(owner="timer")
+        state.music_player.unduck.assert_called_once_with(owner="timer")
 
     @pytest.mark.asyncio
     async def test_noop_when_not_ringing(self, tmp_path):
         state = make_state(tmp_path)
-        satellite = MagicMock()
-        satellite._timer_finished = False  # pylint: disable=protected-access
-        state.satellite = satellite
+        state.satellite = MagicMock()
         server = make_server(state)
 
         await dispatch(server, LVACommand.STOP_TIMER_RINGING.value)
@@ -513,12 +520,37 @@ class TestDispatchStopTimerRinging:
         state.tts_player.stop.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_noop_when_no_satellite(self, tmp_path):
+    async def test_stops_ringing_timer_without_home_assistant(self, tmp_path):
         state = make_state(tmp_path)
         state.satellite = None
+        _ring(state)
         server = make_server(state)
 
-        await dispatch(server, LVACommand.STOP_TIMER_RINGING.value)  # should not raise
+        await dispatch(server, LVACommand.STOP_TIMER_RINGING.value)
+
+        assert not state.timer_alarm.ringing
+
+
+class TestTimerCommandsWithoutHomeAssistant:
+    @pytest.mark.asyncio
+    async def test_stop_pipeline_stops_a_ringing_timer(self, tmp_path):
+        state = make_state(tmp_path)
+        state.satellite = None
+        _ring(state)
+
+        await dispatch(make_server(state), LVACommand.STOP_PIPELINE.value)
+
+        assert not state.timer_alarm.ringing
+
+    @pytest.mark.asyncio
+    async def test_start_listening_stops_a_ringing_timer(self, tmp_path):
+        state = make_state(tmp_path)
+        state.satellite = None
+        _ring(state)
+
+        await dispatch(make_server(state), LVACommand.START_LISTENING.value)
+
+        assert not state.timer_alarm.ringing
 
 
 # ---------------------------------------------------------------------------

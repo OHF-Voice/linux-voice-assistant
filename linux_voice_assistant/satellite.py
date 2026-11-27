@@ -18,12 +18,15 @@ from aioesphomeapi.api_pb2 import (  # type: ignore[attr-defined]
     AuthenticationRequest,
     DeviceInfoRequest,
     DeviceInfoResponse,
+    GetTimeResponse,
+    HomeassistantActionResponse,
     LightCommandRequest,
     ListEntitiesDoneResponse,
     ListEntitiesRequest,
     MediaPlayerCommandRequest,
     NumberCommandRequest,
     SelectCommandRequest,
+    SubscribeHomeassistantServicesRequest,
     SubscribeHomeAssistantStatesRequest,
     SubscribeStatesRequest,
     SwitchCommandRequest,
@@ -62,9 +65,11 @@ from .entity import (
     WakeWord1SensitivityNumberEntity,
     WakeWord2SensitivityNumberEntity,
 )
+from .home_assistant_time import check_clock_offset, clock_offset, request_time_periodically
+from .home_assistant_timers import GET_TIMERS_TIMEOUT_SECONDS, get_timers_request
 from .models import AvailableWakeWord, DetectionResult, ServerState, WakeWordType
 from .peripheral_api import LVAEvent
-from .util import call_all
+from .timers import TimerEvent
 from .wake_word import find_matching_wake_word_id, wake_word_display_name, wake_word_ids_for_selections, wake_word_selections_for_ids
 from .wake_word_detection import has_active_wake_word
 
@@ -362,12 +367,11 @@ class VoiceSatelliteProtocol(APIServer):
         # follow-up request without it would run the first pipeline instead of the one
         # the user woke up. Empty after a button press or an HA announcement.
         self._wake_word_phrase = ""
-        self._timer_finished = False
-        self._timer_ring_start: Optional[float] = None
         self._processing = False
         self._pipeline_active = False
         self._external_wake_words: Dict[str, VoiceAssistantExternalWakeWord] = {}
         self._disconnect_event = asyncio.Event()
+        self._time_requests: Optional[asyncio.Task] = None
 
     # ------------------------------------------------------------------
     # Peripheral API helper
@@ -391,7 +395,7 @@ class VoiceSatelliteProtocol(APIServer):
     @property
     def timer_ringing(self) -> bool:
         """True while a timer rings."""
-        return self._timer_finished
+        return self.state.timer_alarm.ringing
 
     @property
     def announcing(self) -> bool:
@@ -682,40 +686,7 @@ class VoiceSatelliteProtocol(APIServer):
         msg: VoiceAssistantTimerEventResponse,
     ) -> None:
         _LOGGER.debug("Timer event: type=%s", event_type.name)
-
-        # Build countdown data from the protobuf message fields.
-        # total_seconds: the original timer duration.
-        # seconds_left:  remaining seconds at the time of this event.
-        timer_data = {
-            "id": msg.timer_id,
-            "name": msg.name,
-            "total_seconds": msg.total_seconds,
-            "seconds_left": msg.seconds_left,
-        }
-
-        if event_type == VoiceAssistantTimerEventType.VOICE_ASSISTANT_TIMER_STARTED:
-            self._emit(LVAEvent.TIMER_TICKING, timer_data)
-
-        elif event_type == VoiceAssistantTimerEventType.VOICE_ASSISTANT_TIMER_UPDATED:
-            self._emit(LVAEvent.TIMER_UPDATED, timer_data)
-
-        elif event_type == VoiceAssistantTimerEventType.VOICE_ASSISTANT_TIMER_CANCELLED:
-            # Report the cancel as a zeroed update before going idle. Every
-            # shipped peripheral already reads `seconds_left` from
-            # `timer_updated`, and none of them treats zero as "ringing",
-            # that is `timer_ringing`, so the countdown clears without any
-            # peripheral having to learn a new event.
-            self._emit(LVAEvent.TIMER_UPDATED, {**timer_data, "seconds_left": 0})
-            self._emit(LVAEvent.IDLE)
-
-        elif event_type == VoiceAssistantTimerEventType.VOICE_ASSISTANT_TIMER_FINISHED:
-            if not self._timer_finished:
-                self.state.active_wake_words.add(self.state.stop_word.id)
-                self._timer_finished = True
-                self._timer_ring_start = time.monotonic()
-                self.duck(owner="timer")
-                self._emit(LVAEvent.TIMER_RINGING, timer_data)
-                self._play_timer_finished()
+        self.state.timer_alarm.handle_event(TimerEvent(event_type, msg.timer_id, msg.name, msg.total_seconds, msg.seconds_left, msg.is_active))
 
     # ------------------------------------------------------------------
     # Message routing
@@ -751,6 +722,19 @@ class VoiceSatelliteProtocol(APIServer):
 
         elif isinstance(msg, VoiceAssistantTimerEventResponse):
             self.handle_timer_event(VoiceAssistantTimerEventType(msg.event_type), msg)
+
+        elif isinstance(msg, SubscribeHomeassistantServicesRequest):
+            # Home Assistant accepts actions from now on, so the timer list it kept while LVA was away can be read
+            self._request_timer_list()
+
+        elif isinstance(msg, HomeassistantActionResponse):
+            timers = self.state.timer_sync.handle_response(msg.call_id, msg.success, msg.error_message, msg.response_data, self.state.timer_alarm.now())
+            if timers is not None:
+                self.state.timer_alarm.merge(timers)
+
+        elif isinstance(msg, GetTimeResponse):
+            self.state.home_assistant_time_offset = clock_offset(msg.epoch_seconds, time.time())
+            check_clock_offset(self.state.home_assistant_time_offset)
 
         elif isinstance(msg, DeviceInfoRequest):
             _LOGGER.debug("Device info request")
@@ -962,15 +946,10 @@ class VoiceSatelliteProtocol(APIServer):
         _LOGGER.debug("Detected wake word: %s", wake_word_phrase)
         self._wake_word_phrase = wake_word_phrase
 
-        timer_was_ringing = self._timer_finished
-        self._timer_finished = False
-        self._timer_ring_start = None
-        _LOGGER.debug("Stopping timer finished sound")
         self._pipeline_active = True
         self._emit(LVAEvent.WAKE_WORD_DETECTED, self._detection_event_data(detection))
         self.duck()
-        if timer_was_ringing:
-            self.unduck(owner="timer")
+        self.state.timer_alarm.stop_ringing(report_idle=False)
         if self.state.listen_during_wake_sound:
             _LOGGER.debug("Starting audio streaming immediately (listen_during_wake_sound enabled)")
             self.state.tts_player.play(self.state.wakeup_sound)
@@ -1027,14 +1006,9 @@ class VoiceSatelliteProtocol(APIServer):
 
         _LOGGER.debug("Button start_listening triggered")
         self._wake_word_phrase = ""
-        timer_was_ringing = self._timer_finished
-        self._timer_finished = False
-        self._timer_ring_start = None
-        _LOGGER.debug("Stopping timer finished sound")
         self._pipeline_active = True
         self.duck()
-        if timer_was_ringing:
-            self.unduck(owner="timer")
+        self.state.timer_alarm.stop_ringing(report_idle=False)
         self.state.tts_player.play(
             self.state.start_listening_sound,
             done_callback=self._on_start_listening_sound_finished,
@@ -1051,14 +1025,7 @@ class VoiceSatelliteProtocol(APIServer):
         self.state.active_wake_words.discard(self.state.stop_word.id)
         self._pipeline_active = False
 
-        if self._timer_finished:
-            self._timer_finished = False
-            self._timer_ring_start = None
-            self.unduck(owner="timer")
-            self.state.tts_player.stop()
-            self._emit(LVAEvent.IDLE)
-            _LOGGER.debug("Stopping timer finished sound")
-        else:
+        if not self.state.timer_alarm.stop_ringing():
             # tts_player.stop() invokes the done_callback (_tts_finished),
             # so we don't call _tts_finished() again explicitly.
             self.state.tts_player.stop()
@@ -1153,42 +1120,6 @@ class VoiceSatelliteProtocol(APIServer):
         _LOGGER.debug("Unduck requested by %s", owner)
         self.state.music_player.unduck(owner=owner)
 
-    # ------------------------------------------------------------------
-    # Timer finished loop
-    # ------------------------------------------------------------------
-
-    def _play_timer_finished(self) -> None:
-        if not self._timer_finished:
-            _LOGGER.debug("Timer finished sound stopped")
-            self.unduck(owner="timer")
-            self._timer_ring_start = None
-            return
-
-        # Auto-stop after timer_max_ring_seconds
-        if self._timer_ring_start is not None:
-            elapsed = time.monotonic() - self._timer_ring_start
-            if elapsed >= self.state.timer_max_ring_seconds:
-                _LOGGER.info(
-                    "Timer auto-stopped after %.0f seconds (max=%.0f)",
-                    elapsed,
-                    self.state.timer_max_ring_seconds,
-                )
-                self._timer_finished = False
-                self._timer_ring_start = None
-                self.state.active_wake_words.discard(self.state.stop_word.id)
-                self.unduck(owner="timer")
-                self._emit(LVAEvent.TIMER_AUTO_STOPPED, {"seconds": round(elapsed)})
-                self._emit(LVAEvent.IDLE)
-                return
-
-        self.state.tts_player.play(
-            self.state.timer_finished_sound,
-            done_callback=lambda: call_all(
-                lambda: time.sleep(1.0),
-                self._play_timer_finished,
-            ),
-        )
-
     def connection_made(self, transport) -> None:
         super().connection_made(transport)
         # Track every live connection so asynchronous entity-state changes can be
@@ -1204,12 +1135,14 @@ class VoiceSatelliteProtocol(APIServer):
         super().connection_lost(exc)
 
         self._disconnect_event.set()
+        if self._time_requests is not None:
+            self._time_requests.cancel()
+            self._time_requests = None
         self._is_streaming_audio = False
         self._tts_url = None
         self._tts_played = False
         self._continue_conversation = False
         self._announce_ducking = False
-        self._timer_finished = False
         self._pipeline_active = False
 
         # Deregister this connection.
@@ -1228,13 +1161,16 @@ class VoiceSatelliteProtocol(APIServer):
             except Exception:  # pylint: disable=broad-except
                 _LOGGER.exception("Failed to stop music player during disconnect")
 
-            for owner in ("conversation", "timer", "announce"):
+            # A ringing timer keeps ringing without Home Assistant, with its sound, its ducking and the stop word.
+            timer_ringing = self.state.timer_alarm.ringing
+            for owner in ("conversation", "announce") if timer_ringing else ("conversation", "timer", "announce"):
                 self.unduck(owner=owner)
 
-            try:
-                self.state.tts_player.stop()
-            except Exception:  # pylint: disable=broad-except
-                _LOGGER.exception("Failed to stop TTS player during disconnect")
+            if not timer_ringing:
+                try:
+                    self.state.tts_player.stop()
+                except Exception:  # pylint: disable=broad-except
+                    _LOGGER.exception("Failed to stop TTS player during disconnect")
 
             self.state.stop_word.is_active = False  # type: ignore[attr-defined]
             self.state.connected = False
@@ -1282,6 +1218,15 @@ class VoiceSatelliteProtocol(APIServer):
 
             # Notify peripherals that Home Assistant is now connected
             self._emit(LVAEvent.ZEROCONF, {"status": "connected"})
+
+            if self._loop is not None and self._time_requests is None:
+                self._time_requests = self._loop.create_task(request_time_periodically(self.send_messages))
+
+    def _request_timer_list(self) -> None:
+        call_id = self.state.timer_sync.start_request()
+        self.send_messages([get_timers_request(call_id)])
+        if self._loop is not None:
+            self._loop.call_later(GET_TIMERS_TIMEOUT_SECONDS, self.state.timer_sync.give_up, call_id)
 
     # ------------------------------------------------------------------
     # External wake word download

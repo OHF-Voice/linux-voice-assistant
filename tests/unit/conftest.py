@@ -80,7 +80,7 @@ def make_state(tmp_path=None, **overrides):
 
     # Auto-fill any other required (no-default) field we didn't anticipate.
     for f in fields(ServerState):
-        if f.name in values:
+        if f.name in values or not f.init:
             continue
         no_default = f.default is MISSING and f.default_factory is MISSING  # type: ignore[misc]
         if no_default:

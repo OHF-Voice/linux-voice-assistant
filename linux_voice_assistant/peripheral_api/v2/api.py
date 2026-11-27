@@ -20,13 +20,12 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set
 
 from ..versions import SUPPORTED_VERSIONS
 from .status import StatusInputs, V2Status, derive_status, pipeline_state_after, status_messages
-from .timers import TimerInfo, drop_stopped_timers, summarize_timers, update_timers
+from .timers import TimerSummary, has_running_timer, summarize_timers
 
 if TYPE_CHECKING:
     from ...models import ServerState
@@ -58,7 +57,6 @@ class PeripheralApiV2:
         self._state: Optional[ServerState] = None
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._pipeline_state = "idle"
-        self._timers: Dict[str, TimerInfo] = {}
         self._status: Optional[V2Status] = None
         self._ticker: Optional[asyncio.Task] = None
         self._timer_auto_stopped = False
@@ -110,9 +108,9 @@ class PeripheralApiV2:
         :param data: Data of the event.
         """
         self._pipeline_state = pipeline_state_after(event.value, self._pipeline_state)
-        self._timers = update_timers(self._timers, event.value, data, time.monotonic())
         if event.value == "timer_auto_stopped":
-            self._timer_auto_stopped = True
+            # Several timers can ring: only the one whose end left none ringing is reported as stopped on its own
+            self._timer_auto_stopped = not self._ringing()
         await self.refresh_status()
         if self._pipeline_state == "pipeline_error":
             self._pipeline_state = "idle"
@@ -122,8 +120,6 @@ class PeripheralApiV2:
         """Work out the status again and send what changed."""
         if self._state is None:
             return
-        ringing = self._ringing()
-        self._timers = drop_stopped_timers(self._timers, ringing)
         current = self._current_status()
         if current.timer_status != "ringing":
             self._timer_auto_stopped = False
@@ -183,16 +179,18 @@ class PeripheralApiV2:
         satellite = state.satellite
 
         if command == "listening_start":
-            if satellite is not None and not state.muted:
-                satellite.start_listening()
+            if not state.muted:
+                if satellite is not None:
+                    satellite.start_listening()
+                else:
+                    state.timer_alarm.stop_ringing()
                 # It ends a ringing timer without an event, so the status is worked out again right away
                 await self.refresh_status()
         elif command == "listening_stop":
-            if satellite is not None and not satellite.timer_ringing:
+            if satellite is not None and not state.timer_alarm.ringing:
                 satellite.stop()
         elif command == "timer_stop":
-            if satellite is not None and satellite.timer_ringing:
-                satellite.stop()
+            state.timer_alarm.stop_ringing()
         elif command in ("muted_on", "muted_off"):
             self._set_mic_muted(state, satellite, command == "muted_on")
         elif command in ("volume_up", "volume_down"):
@@ -299,16 +297,11 @@ class PeripheralApiV2:
     def _current_status(self) -> V2Status:
         """Work out the status from the state of LVA."""
         state = self._state
-        now = time.monotonic()
         if state is None:
-            return derive_status(
-                StatusInputs(False, False, 0.0, False, self._pipeline_state, "idle", summarize_timers(self._timers, now, False)),
-                self._status,
-            )
+            return derive_status(StatusInputs(False, False, 0.0, False, self._pipeline_state, "idle", TimerSummary("idle", 0, 0)), self._status)
 
         satellite = state.satellite
         entity = state.media_player_entity
-        ringing = self._ringing()
         announcing = bool((satellite is not None and satellite.announcing) or (entity is not None and entity.announcing))
         media_state = _MEDIA_STATE_NAMES.get(entity.state.name, "idle") if entity is not None else "idle"
         inputs = StatusInputs(
@@ -318,14 +311,13 @@ class PeripheralApiV2:
             announcing=announcing,
             pipeline_state=self._pipeline_state,
             media_state=media_state,
-            timer=summarize_timers(self._timers, now, ringing),
+            timer=summarize_timers(state.timers.timers, state.timer_alarm.now()),
             timer_auto_stopped=self._timer_auto_stopped,
         )
         return derive_status(inputs, self._status)
 
     def _ringing(self) -> bool:
-        satellite = self._state.satellite if self._state is not None else None
-        return bool(satellite is not None and satellite.timer_ringing)
+        return bool(self._state is not None and self._state.timer_alarm.ringing)
 
     async def _broadcast(self, messages: List[Dict[str, Any]]) -> None:
         for ws in list(self._clients):
@@ -337,11 +329,12 @@ class PeripheralApiV2:
 
     def _keep_ticker_running(self) -> None:
         """Count the time left of the timers down once a second while one counts down."""
-        if not self._timers or (self._ticker is not None and not self._ticker.done()) or self._loop is None:
+        state = self._state
+        if state is None or not has_running_timer(state.timers.timers) or (self._ticker is not None and not self._ticker.done()) or self._loop is None:
             return
 
         async def _tick() -> None:
-            while self._timers:
+            while has_running_timer(state.timers.timers):
                 await asyncio.sleep(1.0)
                 await self.refresh_status()
 
