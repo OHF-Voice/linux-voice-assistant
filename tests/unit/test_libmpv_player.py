@@ -36,6 +36,16 @@ class TestInit:
 
         assert mock_mpv.call_args.kwargs["demuxer_max_bytes"] == "16MiB"
 
+    def test_video_and_subtitles_are_disabled(self):
+        with patch("linux_voice_assistant.player.libmpv.mpv.MPV", return_value=MagicMock()) as mock_mpv:
+            from linux_voice_assistant.player.libmpv import LibMpvPlayer
+
+            LibMpvPlayer()
+
+        assert mock_mpv.call_args.kwargs["video"] is False
+        assert mock_mpv.call_args.kwargs["sub"] is False
+        assert mock_mpv.call_args.kwargs["audio_display"] is False
+
 
 class TestVolumeLog:
     def test_logger_name_contains_player_name(self):

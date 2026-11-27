@@ -38,9 +38,12 @@ class LibMpvPlayer(AudioPlayer):
         self._duck_factor: float = 1.0  # 0.0 – 1.0
 
         # mpv setup
+        # LVA only plays audio. Subtitle tracks are disabled as well as video, because selecting one
+        # starts libass and with it Fontconfig, even when no video is shown.
         self._mpv = mpv.MPV(
             audio_display=False,
             video=False,
+            sub=False,
             log_handler=self._on_mpv_log,
             loglevel="error",
             cache="yes",
