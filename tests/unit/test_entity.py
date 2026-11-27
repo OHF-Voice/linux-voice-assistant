@@ -1,8 +1,12 @@
 """Unit tests for ESPHome entity classes."""
 
+import logging
 from unittest.mock import MagicMock
 
+import pytest
 from aioesphomeapi.api_pb2 import (  # type: ignore[attr-defined]
+    BinarySensorStateResponse,
+    ListEntitiesBinarySensorResponse,
     ListEntitiesMediaPlayerResponse,
     ListEntitiesNumberResponse,
     ListEntitiesRequest,
@@ -199,6 +203,14 @@ class TestMediaPlayerEntityVolume:
         msgs = list(entity.handle_message(msg))
         assert msgs == [] or not any(isinstance(m, MediaPlayerStateResponse) for m in msgs)
 
+    @pytest.mark.parametrize("msg", [SwitchCommandRequest(key=1, state=True), NumberCommandRequest(key=1, state=0.5), SelectCommandRequest(key=1, state="a")])
+    def test_command_for_other_entity_type_is_ignored_silently(self, msg, caplog):
+        entity = make_media_player(key=0)
+        with caplog.at_level(logging.DEBUG):
+            msgs = list(entity.handle_message(msg))
+        assert msgs == []
+        assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
+
 
 class TestMediaPlayerEntityMuteUnmute:
     def test_mute_sets_volume_to_zero(self):
@@ -268,6 +280,63 @@ class TestMediaPlayerEntityPlayback:
         entity.music_player.resume.assert_called_once()
 
 
+class TestMediaPlayerEntityDirectControl:
+    def test_pause_returns_paused_state(self):
+        entity = make_media_player()
+        response = entity.pause()
+        entity.music_player.pause.assert_called_once()
+        assert response.state == MediaPlayerState.PAUSED
+        assert entity.state == MediaPlayerState.PAUSED
+
+    def test_resume_returns_playing_state(self):
+        entity = make_media_player()
+        response = entity.resume()
+        entity.music_player.resume.assert_called_once()
+        assert response.state == MediaPlayerState.PLAYING
+
+    def test_stop_returns_idle_state(self):
+        entity = make_media_player()
+        entity.state = MediaPlayerState.PLAYING
+        response = entity.stop()
+        entity.music_player.stop.assert_called_once()
+        assert response.state == MediaPlayerState.IDLE
+
+    def test_set_volume_sets_players_and_persists(self):
+        entity = make_media_player(initial_volume=1.0)
+        entity.set_volume(0.4)
+        entity.music_player.set_volume.assert_called_with(40)
+        entity.announce_player.set_volume.assert_called_with(40)
+        entity.server.state.persist_volume.assert_called_once_with(0.4)
+        assert entity.volume == 0.4
+        assert entity.previous_volume == 0.4
+
+    def test_set_volume_without_server_state_warns(self, caplog):
+        entity = make_media_player()
+        entity.server = MagicMock(spec=[])
+        with caplog.at_level("WARNING"):
+            entity.set_volume(0.4)
+        assert "Cannot persist volume" in caplog.text
+        assert entity.volume == 0.4
+
+    def test_mute_persists_zero_volume(self):
+        entity = make_media_player(initial_volume=0.8)
+        entity._set_muted(True)
+        entity.server.state.persist_volume.assert_called_once_with(0)
+
+    def test_unmute_persists_restored_volume(self):
+        entity = make_media_player(initial_volume=0.8)
+        entity._set_muted(True)
+        entity.server.state.persist_volume.reset_mock()
+        entity._set_muted(False)
+        entity.server.state.persist_volume.assert_called_once_with(0.8)
+        entity.music_player.set_volume.assert_called_with(80)
+
+    def test_setting_the_current_mute_state_changes_nothing(self):
+        entity = make_media_player(initial_volume=0.8)
+        entity._set_muted(False)
+        entity.server.state.persist_volume.assert_not_called()
+
+
 class TestMediaPlayerEntityAnnouncement:
     @staticmethod
     def _announce(entity):
@@ -275,26 +344,44 @@ class TestMediaPlayerEntityAnnouncement:
         done_callback = entity.announce_player.play.call_args.kwargs["done_callback"]
         return msgs, done_callback
 
-    def test_playing_music_is_paused_and_resumed(self):
+    def test_playing_music_is_ducked_and_restored(self):
         entity = make_media_player()
         entity.music_player.is_paused = False
         entity.music_player.is_playing = True
 
         _, done_callback = self._announce(entity)
-        entity.music_player.pause.assert_called_once()
-        entity.music_player.resume.assert_not_called()
+        entity.music_player.duck.assert_called_once_with(owner="media_announcement")
+        entity.music_player.pause.assert_not_called()
+        entity.music_player.unduck.assert_not_called()
 
         done_callback()
-        entity.music_player.resume.assert_called_once()
+        entity.music_player.unduck.assert_called_once_with(owner="media_announcement")
+        entity.music_player.resume.assert_not_called()
+        assert entity.state == MediaPlayerState.PLAYING
+
+    def test_state_is_announcing_until_the_announcement_is_over(self):
+        entity = make_media_player()
+        entity.music_player.is_paused = False
+        entity.music_player.is_playing = True
+
+        msgs, done_callback = self._announce(entity)
+
+        assert msgs[0].state == MediaPlayerState.ANNOUNCING
+        assert entity.state == MediaPlayerState.ANNOUNCING
+        done_callback()
+        assert entity.state == MediaPlayerState.PLAYING
 
     def test_paused_music_stays_paused(self):
         entity = make_media_player()
         entity.music_player.is_paused = True
         entity.music_player.is_playing = True
 
-        _, done_callback = self._announce(entity)
+        msgs, done_callback = self._announce(entity)
+        assert msgs[0].state == MediaPlayerState.ANNOUNCING
         done_callback()
 
+        entity.music_player.duck.assert_not_called()
+        entity.music_player.unduck.assert_not_called()
         entity.music_player.pause.assert_not_called()
         entity.music_player.resume.assert_not_called()
         assert entity.state == MediaPlayerState.PAUSED
@@ -304,11 +391,43 @@ class TestMediaPlayerEntityAnnouncement:
         entity.music_player.is_paused = False
         entity.music_player.is_playing = False
 
-        _, done_callback = self._announce(entity)
+        msgs, done_callback = self._announce(entity)
+        assert msgs[0].state == MediaPlayerState.ANNOUNCING
         done_callback()
 
+        entity.music_player.duck.assert_not_called()
         entity.music_player.resume.assert_not_called()
         assert entity.state == MediaPlayerState.IDLE
+
+    def test_done_callback_of_the_caller_is_called(self):
+        entity = make_media_player()
+        entity.music_player.is_paused = False
+        entity.music_player.is_playing = False
+        caller_callback = MagicMock()
+
+        list(entity.play("http://example.com/tts.mp3", announcement=True, done_callback=caller_callback))
+        entity.announce_player.play.call_args.kwargs["done_callback"]()
+
+        caller_callback.assert_called_once()
+
+    def test_second_announcement_unducks_once(self):
+        entity = make_media_player()
+        entity.music_player.is_paused = False
+        entity.music_player.is_playing = True
+
+        self._announce(entity)
+        _, done_callback = self._announce(entity)
+        done_callback()
+        done_callback()
+
+        entity.music_player.unduck.assert_called_once_with(owner="media_announcement")
+
+    def test_announcement_does_not_change_music_state_message_of_music_playback(self):
+        entity = make_media_player()
+
+        msgs = list(entity.play("http://example.com/song.mp3"))
+
+        assert msgs[0].state == MediaPlayerState.PLAYING
 
 
 # ---------------------------------------------------------------------------
@@ -375,6 +494,44 @@ class TestMuteSwitchEntity:
         entity.update_get_muted(new_get_muted)
         entity.sync_with_state()
         assert entity._switch_state is True
+
+
+# ---------------------------------------------------------------------------
+# MuteSwitchEntity with remote unmute disabled
+# ---------------------------------------------------------------------------
+
+
+class TestMuteSwitchEntityRemoteUnmuteDisabled:
+    def make_status(self, muted=True):
+        from linux_voice_assistant.entity import MuteSwitchEntity
+
+        set_muted = MagicMock()
+        entity = MuteSwitchEntity(
+            server=make_server(),
+            key=3,
+            name="Mute",
+            object_id="mute",
+            get_muted=lambda: muted,
+            set_muted=set_muted,
+            remote_unmute_enabled=False,
+        )
+        return entity, set_muted
+
+    def test_list_entities_yields_binary_sensor(self):
+        msgs = list(self.make_status()[0].handle_message(ListEntitiesRequest()))
+        assert [(type(m), m.object_id) for m in msgs] == [(ListEntitiesBinarySensorResponse, "mute")]
+
+    def test_subscribe_states_yields_mute_state(self):
+        msgs = list(self.make_status(muted=True)[0].handle_message(SubscribeHomeAssistantStatesRequest()))
+        assert [(type(m), m.key, m.state) for m in msgs] == [(BinarySensorStateResponse, 3, True)]
+
+    def test_switch_command_ignored(self):
+        entity, set_muted = self.make_status(muted=True)
+        assert not list(entity.handle_message(SwitchCommandRequest(key=3, state=False)))
+        set_muted.assert_not_called()
+
+    def test_state_message_is_binary_sensor_state(self):
+        assert isinstance(self.make_status()[0].state_message(), BinarySensorStateResponse)
 
 
 # ---------------------------------------------------------------------------

@@ -65,6 +65,8 @@ from .entity import (
 from .models import AvailableWakeWord, DetectionResult, ServerState, WakeWordType
 from .peripheral_api import LVAEvent
 from .util import call_all
+from .wake_word import find_matching_wake_word_id, wake_word_display_name, wake_word_ids_for_selections, wake_word_selections_for_ids
+from .wake_word_detection import has_active_wake_word
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -140,6 +142,7 @@ class VoiceSatelliteProtocol(APIServer):
                 object_id="mute",
                 get_muted=lambda: self.state.muted,
                 set_muted=self._set_muted,
+                remote_unmute_enabled=state.remote_unmute_enabled,
             )
             self.state.entities.append(mute_switch)
             self.state.mute_switch_entity = mute_switch
@@ -313,7 +316,7 @@ class VoiceSatelliteProtocol(APIServer):
                 key=len(self.state.entities),
                 name="Mic Volume",
                 object_id="mic_volume",
-                min_value=1.0,
+                min_value=0.0,
                 max_value=100.0,
                 get_value=lambda: float(self.state.mic_volume),
                 set_value=lambda val: self.state.persist_mic_volume(float(val)),
@@ -354,6 +357,7 @@ class VoiceSatelliteProtocol(APIServer):
         self._intent_started = False
         self._stt_text_received = False
         self._continue_conversation = False
+        self._announce_ducking = False
         # Phrase that started the conversation. HA selects the pipeline from it, so a
         # follow-up request without it would run the first pipeline instead of the one
         # the user woke up. Empty after a button press or an HA announcement.
@@ -509,12 +513,12 @@ class VoiceSatelliteProtocol(APIServer):
         else:
             _LOGGER.debug("Thinking sound disabled")
             pass
-        self.state.save_preferences()
+        self.state.preferences.save(self.state.preferences_path)
 
     def _set_button_controls_locked(self, new_state: bool) -> None:
         self.state.button_controls_locked = bool(new_state)
         self.state.preferences.button_controls_locked = 1 if self.state.button_controls_locked else 0
-        self.state.save_preferences()
+        self.state.preferences.save(self.state.preferences_path)
 
         if self.state.button_controls_locked:
             _LOGGER.debug("On-board button controls locked")
@@ -529,7 +533,7 @@ class VoiceSatelliteProtocol(APIServer):
     def _set_sensitivity_1(self, new_value: float) -> None:
         self.state.wake_word_1_threshold = float(new_value)
         self.state.preferences.wake_word_1_sensitivity = float(new_value)
-        self.state.save_preferences()
+        self.state.preferences.save(self.state.preferences_path)
         _LOGGER.debug("Wake Word 1 Sensitivity value set to: %s", new_value)
         # Sync entity state
         if self.state.sensitivity_1_number_entity is not None:
@@ -538,7 +542,7 @@ class VoiceSatelliteProtocol(APIServer):
     def _set_sensitivity_2(self, new_value: float) -> None:
         self.state.wake_word_2_threshold = float(new_value)
         self.state.preferences.wake_word_2_sensitivity = float(new_value)
-        self.state.save_preferences()
+        self.state.preferences.save(self.state.preferences_path)
         _LOGGER.debug("Wake Word 2 Sensitivity value set to: %s", new_value)
         # Sync entity state
         if self.state.sensitivity_2_number_entity is not None:
@@ -547,7 +551,7 @@ class VoiceSatelliteProtocol(APIServer):
     def _set_stop_sensitivity(self, new_value: float) -> None:
         self.state.stop_word_threshold = float(new_value)
         self.state.preferences.stop_word_sensitivity = float(new_value)
-        self.state.save_preferences()
+        self.state.preferences.save(self.state.preferences_path)
         _LOGGER.debug("Stop Word Sensitivity value set to: %s", new_value)
         # Sync entity state
         if self.state.stop_sensitivity_number_entity is not None:
@@ -555,6 +559,8 @@ class VoiceSatelliteProtocol(APIServer):
 
     def _set_muted(self, new_state: bool) -> None:
         self.state.muted = bool(new_state)
+        self.state.preferences.muted = 1 if self.state.muted else 0
+        self.state.preferences.save(self.state.preferences_path)
         self._emit(LVAEvent.MUTED, {"muted": self.state.muted})
 
         if self.state.muted:
@@ -694,7 +700,7 @@ class VoiceSatelliteProtocol(APIServer):
                 self.state.active_wake_words.add(self.state.stop_word.id)
                 self._timer_finished = True
                 self._timer_ring_start = time.monotonic()
-                self.duck()
+                self.duck(owner="timer")
                 self._emit(LVAEvent.TIMER_RINGING, timer_data)
                 self._play_timer_finished()
 
@@ -725,7 +731,8 @@ class VoiceSatelliteProtocol(APIServer):
             self._continue_conversation = msg.start_conversation
             self._wake_word_phrase = ""
 
-            self.duck()
+            self._announce_ducking = True
+            self.duck(owner="announce")
             self._emit(LVAEvent.TTS_SPEAKING)
             self.state.tts_player.play(urls, done_callback=self._tts_finished)
 
@@ -779,7 +786,7 @@ class VoiceSatelliteProtocol(APIServer):
             available_wake_words = [
                 VoiceAssistantWakeWord(
                     id=ww.id,
-                    wake_word=ww.wake_word,
+                    wake_word=ww.id,
                     trained_languages=ww.trained_languages,
                 )
                 for ww in self.state.available_wake_words.values()
@@ -799,15 +806,16 @@ class VoiceSatelliteProtocol(APIServer):
                     continue
 
                 _LOGGER.debug("      → Adding to available wake words")
+                external_id = wake_word_display_name("downloaded", WakeWordType.MICRO_WAKE_WORD, eww.wake_word)
                 available_wake_words.append(
                     VoiceAssistantWakeWord(
-                        id=eww.id,
-                        wake_word=eww.wake_word,
+                        id=external_id,
+                        wake_word=external_id,
                         trained_languages=eww.trained_languages,
                     )
                 )
 
-                self._external_wake_words[eww.id] = eww
+                self._external_wake_words[external_id] = eww
                 _LOGGER.debug("      → Stored in external wake words cache")
 
             active_ww_ids = [ww_id for ww_id in self.state.wake_words if ww_id in self.state.active_wake_words]
@@ -828,12 +836,17 @@ class VoiceSatelliteProtocol(APIServer):
 
             # Get old positions before modification
             old_positions: Dict[str, int] = {}
-            for idx, ww_id in enumerate(self.state.preferences.active_wake_words):
+            stored_wake_word_ids = wake_word_ids_for_selections(self.state.preferences.active_wake_words, self.state.available_wake_words)
+            for idx, ww_id in enumerate(stored_wake_word_ids):
                 if ww_id is not None and idx < 2:
                     old_positions[ww_id] = idx
 
             # Process new active wake words
-            for wake_word_id in msg.active_wake_words:
+            for requested_id in msg.active_wake_words:
+                wake_word_id = find_matching_wake_word_id(self.state.available_wake_words, requested_id) or requested_id
+                if wake_word_id != requested_id:
+                    _LOGGER.debug("Wake word id '%s' from Home Assistant resolved to '%s'", requested_id, wake_word_id)
+
                 if wake_word_id in self.state.wake_words:
                     # Already active
                     active_wake_words.add(wake_word_id)
@@ -888,8 +901,8 @@ class VoiceSatelliteProtocol(APIServer):
             _LOGGER.debug("Active wake words: %s", active_wake_words)
             _LOGGER.debug("Wake word positions: [0]=%s, [1]=%s", new_wake_words[0], new_wake_words[1])
 
-            self.state.preferences.active_wake_words = new_wake_words
-            self.state.save_preferences()
+            self.state.preferences.active_wake_words = wake_word_selections_for_ids(new_wake_words, self.state.available_wake_words)
+            self.state.preferences.save(self.state.preferences_path)
             self.state.wake_words_changed = True
 
     # ------------------------------------------------------------------
@@ -911,6 +924,11 @@ class VoiceSatelliteProtocol(APIServer):
     # Wake word / stop
     # ------------------------------------------------------------------
 
+    @property
+    def pipeline_active(self) -> bool:
+        """Whether a voice pipeline is running, in which case wake words are ignored."""
+        return self._pipeline_active
+
     def wakeup(self, wake_word: Union[MicroWakeWord, OpenWakeWord], detection: Optional[DetectionResult] = None) -> None:
         """
         Start the voice pipeline after a wake word detection.
@@ -926,16 +944,20 @@ class VoiceSatelliteProtocol(APIServer):
             _LOGGER.debug("Ignoring wake word - pipeline already active")
             return
 
-        wake_word_phrase = wake_word.wake_word  # type: ignore[union-attr]
+        # Home Assistant compares the phrase with the name in the wake word selection, which is the id of the wake word
+        wake_word_phrase = detection.wake_word_id if detection is not None else wake_word.wake_word  # type: ignore[union-attr]
         _LOGGER.debug("Detected wake word: %s", wake_word_phrase)
         self._wake_word_phrase = wake_word_phrase
 
+        timer_was_ringing = self._timer_finished
         self._timer_finished = False
         self._timer_ring_start = None
         _LOGGER.debug("Stopping timer finished sound")
         self._pipeline_active = True
         self._emit(LVAEvent.WAKE_WORD_DETECTED, self._detection_event_data(detection))
         self.duck()
+        if timer_was_ringing:
+            self.unduck(owner="timer")
         if self.state.listen_during_wake_sound:
             _LOGGER.debug("Starting audio streaming immediately (listen_during_wake_sound enabled)")
             self.state.tts_player.play(self.state.wakeup_sound)
@@ -958,20 +980,14 @@ class VoiceSatelliteProtocol(APIServer):
 
     def _start_audio_streaming(self, wake_word_phrase: str) -> None:
         """Start streaming audio during wake sound detection."""
-        _LOGGER.debug(
-            "Starting audio streaming for: %s",
-            wake_word_phrase,
-        )
+        _LOGGER.debug("Sending VoiceAssistantRequest to Home Assistant with wake_word_phrase '%s'", wake_word_phrase)
         self.send_messages([VoiceAssistantRequest(start=True, wake_word_phrase=wake_word_phrase)])
         self._is_streaming_audio = True
         self._emit(LVAEvent.LISTENING)
 
     def _on_wakeup_sound_finished(self, wake_word_phrase: str) -> None:
         """Callback invoked when the wakeup chime finishes; begin STT streaming."""
-        _LOGGER.debug(
-            "Wakeup sound finished, starting audio streaming for: %s",
-            wake_word_phrase,
-        )
+        _LOGGER.debug("Wakeup sound finished, sending VoiceAssistantRequest to Home Assistant with wake_word_phrase '%s'", wake_word_phrase)
         self.send_messages([VoiceAssistantRequest(start=True, wake_word_phrase=wake_word_phrase)])
         self._is_streaming_audio = True
         self._emit(LVAEvent.LISTENING)
@@ -988,17 +1004,24 @@ class VoiceSatelliteProtocol(APIServer):
         if self.state.muted:
             return
 
+        if not has_active_wake_word(self.state):
+            _LOGGER.debug("Ignoring start_listening - no wake word is active")
+            return
+
         if self._pipeline_active:
             _LOGGER.debug("Ignoring start_listening - pipeline already active")
             return
 
         _LOGGER.debug("Button start_listening triggered")
         self._wake_word_phrase = ""
+        timer_was_ringing = self._timer_finished
         self._timer_finished = False
         self._timer_ring_start = None
         _LOGGER.debug("Stopping timer finished sound")
         self._pipeline_active = True
         self.duck()
+        if timer_was_ringing:
+            self.unduck(owner="timer")
         self.state.tts_player.play(
             self.state.start_listening_sound,
             done_callback=self._on_start_listening_sound_finished,
@@ -1006,7 +1029,7 @@ class VoiceSatelliteProtocol(APIServer):
 
     def _on_start_listening_sound_finished(self) -> None:
         """Callback invoked when the start-listening chime finishes; begin STT streaming."""
-        _LOGGER.debug("Start-listening sound finished, starting audio streaming")
+        _LOGGER.debug("Start-listening sound finished, sending VoiceAssistantRequest to Home Assistant with an empty wake_word_phrase")
         self.send_messages([VoiceAssistantRequest(start=True, wake_word_phrase="")])
         self._is_streaming_audio = True
         self._emit(LVAEvent.LISTENING)
@@ -1018,7 +1041,7 @@ class VoiceSatelliteProtocol(APIServer):
         if self._timer_finished:
             self._timer_finished = False
             self._timer_ring_start = None
-            self.unduck()
+            self.unduck(owner="timer")
             self.state.tts_player.stop()
             self._emit(LVAEvent.IDLE)
             _LOGGER.debug("Stopping timer finished sound")
@@ -1053,6 +1076,13 @@ class VoiceSatelliteProtocol(APIServer):
         self.send_messages([VoiceAssistantAnnounceFinished()])
         self._emit(LVAEvent.TTS_FINISHED)
 
+        if self._announce_ducking:
+            self._announce_ducking = False
+            if self._continue_conversation:
+                # The conversation takes over the ducking of an announcement without a gap
+                self.duck(owner="conversation")
+            self.unduck(owner="announce")
+
         if self._continue_conversation:
             self._continue_conversation = False
             # Keep pipeline active during the settle delay so the mic stays closed
@@ -1067,6 +1097,7 @@ class VoiceSatelliteProtocol(APIServer):
                     self._pipeline_active = False
                     self.unduck()
                     return
+                _LOGGER.debug("Sending VoiceAssistantRequest to Home Assistant with wake_word_phrase '%s' (continued conversation)", self._wake_word_phrase)
                 self.send_messages([VoiceAssistantRequest(start=True, wake_word_phrase=self._wake_word_phrase)])
                 self._is_streaming_audio = True
                 _LOGGER.debug("Continued conversation started")
@@ -1093,13 +1124,21 @@ class VoiceSatelliteProtocol(APIServer):
     # Ducking
     # ------------------------------------------------------------------
 
-    def duck(self) -> None:
-        _LOGGER.debug("Ducking music")
-        self.state.music_player.duck()
+    def duck(self, owner: str = "conversation") -> None:
+        """
+        Duck the music. It stays ducked until every owner has called :meth:`unduck`.
+        :param owner: ``conversation``, ``timer`` (ringing) or ``announce`` (voice announcements).
+        """
+        _LOGGER.debug("Duck requested by %s", owner)
+        self.state.music_player.duck(owner=owner)
 
-    def unduck(self) -> None:
-        _LOGGER.debug("Unducking music")
-        self.state.music_player.unduck()
+    def unduck(self, owner: str = "conversation") -> None:
+        """
+        End the ducking of an owner. The volume is restored when no owner is left.
+        :param owner: The owner that called :meth:`duck`.
+        """
+        _LOGGER.debug("Unduck requested by %s", owner)
+        self.state.music_player.unduck(owner=owner)
 
     # ------------------------------------------------------------------
     # Timer finished loop
@@ -1108,7 +1147,7 @@ class VoiceSatelliteProtocol(APIServer):
     def _play_timer_finished(self) -> None:
         if not self._timer_finished:
             _LOGGER.debug("Timer finished sound stopped")
-            self.unduck()
+            self.unduck(owner="timer")
             self._timer_ring_start = None
             return
 
@@ -1124,7 +1163,7 @@ class VoiceSatelliteProtocol(APIServer):
                 self._timer_finished = False
                 self._timer_ring_start = None
                 self.state.active_wake_words.discard(self.state.stop_word.id)
-                self.unduck()
+                self.unduck(owner="timer")
                 return
 
         self.state.tts_player.play(
@@ -1154,12 +1193,14 @@ class VoiceSatelliteProtocol(APIServer):
         self._tts_url = None
         self._tts_played = False
         self._continue_conversation = False
+        self._announce_ducking = False
         self._timer_finished = False
         self._pipeline_active = False
 
         # Deregister this connection.
         if self in self.state.connections:
             self.state.connections.remove(self)
+        self.state.client_disconnected.set()
 
         # Only tear down shared playback/state when the LAST client disconnects.
         # Otherwise a secondary client (a diagnostic tool, a second dashboard, or
@@ -1171,6 +1212,9 @@ class VoiceSatelliteProtocol(APIServer):
                 self.state.music_player.stop()
             except Exception:  # pylint: disable=broad-except
                 _LOGGER.exception("Failed to stop music player during disconnect")
+
+            for owner in ("conversation", "timer", "announce"):
+                self.unduck(owner=owner)
 
             try:
                 self.state.tts_player.stop()
@@ -1229,7 +1273,7 @@ class VoiceSatelliteProtocol(APIServer):
     # ------------------------------------------------------------------
 
     def _download_external_wake_word(self, external_wake_word: VoiceAssistantExternalWakeWord) -> Optional[AvailableWakeWord]:
-        eww_dir = self.state.download_dir / "external_wake_words"
+        eww_dir = self.state.wake_word_root / "downloaded" / "microwakeword"
         eww_dir.mkdir(parents=True, exist_ok=True)
 
         config_path = eww_dir / f"{external_wake_word.id}.json"
@@ -1284,9 +1328,11 @@ class VoiceSatelliteProtocol(APIServer):
                     shutil.copyfileobj(request, model_file)
 
         return AvailableWakeWord(
-            id=external_wake_word.id,
+            id=wake_word_display_name("downloaded", WakeWordType.MICRO_WAKE_WORD, external_wake_word.wake_word),
             type=WakeWordType.MICRO_WAKE_WORD,
             wake_word=external_wake_word.wake_word,
             trained_languages=external_wake_word.trained_languages,
             wake_word_path=config_path,
+            origin="downloaded",
+            file_id=external_wake_word.id,
         )

@@ -30,6 +30,9 @@ from cryptography.exceptions import InvalidTag
 from google.protobuf import message
 from noise.connection import NoiseConnection  # type: ignore[import-untyped]
 
+from .network import apply_keepalive
+from .preamble_hint import describe_unexpected_preamble
+
 PROTO_TO_MESSAGE_TYPE = {v: k for k, v in MESSAGE_TYPE_TO_PROTO.items()}
 
 _LOGGER = logging.getLogger(__name__)
@@ -186,6 +189,7 @@ class APIServer(asyncio.Protocol):
     def connection_made(self, transport) -> None:
         self._transport = transport
         self._writelines = transport.writelines
+        apply_keepalive(transport.get_extra_info("socket"))
         try:
             self._loop = asyncio.get_running_loop()
         except RuntimeError:
@@ -210,6 +214,8 @@ class APIServer(asyncio.Protocol):
             # Read preamble, which should always 0x00
             if (preamble := self._read_varuint()) != 0x00:
                 _LOGGER.error("Incorrect preamble: %s", preamble)
+                if (hint := describe_unexpected_preamble(preamble)) is not None:
+                    _LOGGER.error("Hint for incorrect preamble %s: %s", preamble, hint)
                 return
 
             if (length := self._read_varuint()) == -1:

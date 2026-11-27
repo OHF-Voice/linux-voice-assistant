@@ -5,9 +5,11 @@ from typing import Callable, List, Optional, Union
 
 # pylint: disable=no-name-in-module
 from aioesphomeapi.api_pb2 import (  # type: ignore[attr-defined]
+    BinarySensorStateResponse,
     EventResponse,
     LightCommandRequest,
     LightStateResponse,
+    ListEntitiesBinarySensorResponse,
     ListEntitiesEventResponse,
     ListEntitiesLightResponse,
     ListEntitiesMediaPlayerResponse,
@@ -85,6 +87,8 @@ class MediaPlayerEntity(ESPHomeEntity):
         self.previous_volume = 1.0
         self.music_player = music_player
         self.announce_player = announce_player
+        self._announcing = False
+        self._ducked_music = False
         self._on_volume_changed = on_volume_changed
         self.apply_volume_from_state(initial_volume)
         self._log = logging.getLogger(f"{self.__class__.__name__}[{self.key}]")
@@ -110,31 +114,7 @@ class MediaPlayerEntity(ESPHomeEntity):
     ) -> Iterable[message.Message]:
         if announcement:
             self._log.debug("PLAY: announcement true")
-            if self.music_player.is_paused:
-                # Announce, keep music paused
-                self.announce_player.play(
-                    url,
-                    done_callback=lambda: call_all(
-                        lambda: self._broadcast_state([self._update_state(MediaPlayerState.PAUSED)]),
-                        done_callback,
-                    ),
-                )
-            elif self.music_player.is_playing:
-                # Announce, resume music
-                self.music_player.pause()
-                self.announce_player.play(
-                    url,
-                    done_callback=lambda: call_all(self.music_player.resume, done_callback),
-                )
-            else:
-                # Announce, idle
-                self.announce_player.play(
-                    url,
-                    done_callback=lambda: call_all(
-                        lambda: self._broadcast_state([self._update_state(MediaPlayerState.IDLE)]),
-                        done_callback,
-                    ),
-                )
+            self.announce_player.play(url, done_callback=self._begin_announcement(done_callback))
         else:
             self._log.debug("PLAY: announcement false")
             # Music
@@ -146,14 +126,40 @@ class MediaPlayerEntity(ESPHomeEntity):
                 ),
             )
 
-        yield self._update_state(MediaPlayerState.PLAYING)
+        yield self._update_state(MediaPlayerState.ANNOUNCING if announcement else MediaPlayerState.PLAYING)
+
+    def pause(self) -> MediaPlayerStateResponse:
+        """Pause the music. Also used for peripheral commands."""
+        self._log.debug("Executing PAUSE")
+        self.music_player.pause()
+        return self._update_state(MediaPlayerState.PAUSED)
+
+    def resume(self) -> MediaPlayerStateResponse:
+        """Resume the music. Also used for peripheral commands."""
+        self._log.debug("Executing PLAY / RESUME")
+        self.music_player.resume()
+        return self._update_state(MediaPlayerState.PLAYING)
+
+    def stop(self) -> MediaPlayerStateResponse:
+        """Stop the music. Also used for peripheral commands."""
+        self._log.debug("Executing STOP")
+        self.music_player.stop()
+        return self._update_state(MediaPlayerState.IDLE)
+
+    def set_volume(self, volume: float) -> None:
+        """
+        Set the volume of the players and save it. Also used for peripheral commands.
+        :param volume: Volume 0.0 to 1.0.
+        """
+        self._apply_volume(volume, persist=True)
+        if hasattr(self.server, "state") and getattr(self.server, "state", None) is not None:
+            self._log.debug("Persisting volume to preferences")
+            self.server.state.persist_volume(self.volume)
+        else:
+            self._log.warning("Cannot persist volume - server.state not available")
 
     def handle_message(self, msg: message.Message) -> Iterable[message.Message]:
         self._log.debug("handle_message called with msg: %s", msg)
-
-        # Suppress warning for irrelevant NumberCommandRequest
-        if isinstance(msg, (NumberCommandRequest, SelectCommandRequest)):
-            return
 
         if isinstance(msg, MediaPlayerCommandRequest) and (msg.key == self.key):
             self._log.debug("MediaPlayerCommandRequest matched for this key")
@@ -169,51 +175,27 @@ class MediaPlayerEntity(ESPHomeEntity):
                 command = MediaPlayerCommand(msg.command)
 
                 if msg.command == MediaPlayerCommand.PAUSE:
-                    self._log.debug("Executing PAUSE")
-                    self.music_player.pause()
-                    yield self._update_state(MediaPlayerState.PAUSED)
+                    yield self.pause()
 
                 elif msg.command == MediaPlayerCommand.PLAY:
-                    self._log.debug("Executing PLAY / RESUME")
-                    self.music_player.resume()
-                    yield self._update_state(MediaPlayerState.PLAYING)
+                    yield self.resume()
 
                 elif command == MediaPlayerCommand.STOP:
-                    self._log.debug("Executing STOP")
-                    self.music_player.stop()
-                    yield self._update_state(MediaPlayerState.IDLE)
+                    yield self.stop()
 
                 elif command == MediaPlayerCommand.MUTE:
                     self._log.debug("Executing MUTE")
-                    if not self.muted:
-                        self.previous_volume = self.volume
-                        self.volume = 0
-                        self.music_player.set_volume(0)
-                        self.announce_player.set_volume(0)
-                        self.muted = True
-                        if hasattr(self.server, "state") and getattr(self.server, "state", None) is not None:
-                            self.server.state.persist_volume(self.volume)
+                    self._set_muted(True)
                     yield self._update_state(self.state)
 
                 elif command == MediaPlayerCommand.UNMUTE:
                     self._log.debug("Executing UNMUTE")
-                    if self.muted:
-                        self.volume = self.previous_volume
-                        self.music_player.set_volume(int(self.volume * 100))
-                        self.announce_player.set_volume(int(self.volume * 100))
-                        self.muted = False
-                        if hasattr(self.server, "state") and getattr(self.server, "state", None) is not None:
-                            self.server.state.persist_volume(self.volume)
+                    self._set_muted(False)
                     yield self._update_state(self.state)
 
             elif msg.has_volume:
                 self._log.debug("Message has volume: %.2f", msg.volume)
-                self._apply_volume(msg.volume, persist=True)
-                if hasattr(self.server, "state") and getattr(self.server, "state", None) is not None:
-                    self._log.debug("Persisting volume to preferences")
-                    self.server.state.persist_volume(self.volume)
-                else:
-                    self._log.warning("Cannot persist volume - server.state not available")
+                self.set_volume(msg.volume)
                 yield self._update_state(self.state)
 
         elif isinstance(msg, ListEntitiesRequest):
@@ -228,8 +210,6 @@ class MediaPlayerEntity(ESPHomeEntity):
         elif isinstance(msg, SubscribeHomeAssistantStatesRequest):
             self._log.debug("SubscribeHomeAssistantStatesRequest received")
             yield self._get_state_message()
-        else:
-            self._log.warning("Unknown message type received: %s", type(msg))
 
     def _update_state(self, new_state: MediaPlayerState) -> MediaPlayerStateResponse:
         self._log.debug("SET NEW STATE: %s => %s", self.state, new_state)
@@ -282,6 +262,59 @@ class MediaPlayerEntity(ESPHomeEntity):
         if self._on_volume_changed and persist:
             self._on_volume_changed(normalized)
 
+    def _begin_announcement(self, done_callback: Optional[Callable[[], None]]) -> Callable[[], None]:
+        """
+        Duck the music while an announcement plays and report ``announcing``.
+        :param done_callback: Callback of the announcement.
+        :return: The callback, extended to restore the volume and the state when the announcement is over.
+        """
+        self._announcing = True
+        self._ducked_music = self.music_player.is_playing and not self.music_player.is_paused
+        self._log.debug("Announcement starts (music playing: %s, paused: %s)", self.music_player.is_playing, self.music_player.is_paused)
+        if self._ducked_music:
+            self.music_player.duck(owner="media_announcement")
+
+        return lambda: call_all(self._announcement_finished, done_callback)
+
+    def _announcement_finished(self) -> None:
+        if not self._announcing:
+            return
+
+        self._announcing = False
+        self._log.debug("Announcement over, restoring (ducked music: %s)", self._ducked_music)
+        if self._ducked_music:
+            self._ducked_music = False
+            self.music_player.unduck(owner="media_announcement")
+
+        if self.music_player.is_paused:
+            new_state = MediaPlayerState.PAUSED
+        elif self.music_player.is_playing:
+            new_state = MediaPlayerState.PLAYING
+        else:
+            new_state = MediaPlayerState.IDLE
+        self._broadcast_state([self._update_state(new_state)])
+
+    def _set_muted(self, muted: bool) -> None:
+        """
+        Mute or unmute the players. The volume before the mute is restored on unmute.
+        :param muted: True to mute.
+        """
+        if muted == self.muted:
+            return
+
+        if muted:
+            self.previous_volume = self.volume
+            self.volume = 0
+            self.music_player.set_volume(0)
+            self.announce_player.set_volume(0)
+        else:
+            self.volume = self.previous_volume
+            self.music_player.set_volume(int(self.volume * 100))
+            self.announce_player.set_volume(int(self.volume * 100))
+        self.muted = muted
+        if hasattr(self.server, "state") and getattr(self.server, "state", None) is not None:
+            self.server.state.persist_volume(self.volume)
+
 
 # -----------------------------------------------------------------------------
 
@@ -295,7 +328,12 @@ class MuteSwitchEntity(ESPHomeEntity):
         object_id: str,
         get_muted: Callable[[], bool],
         set_muted: Callable[[bool], None],
+        remote_unmute_enabled: bool = True,
     ) -> None:
+        """
+        A Mute switch in Home Assistant, or a read-only Mute status when remote unmute is disabled.
+        :param remote_unmute_enabled: Whether Home Assistant may change the mute. If False, the entity is a binary sensor and only a peripheral can unmute.
+        """
         ESPHomeEntity.__init__(self, server)
 
         self.key = key
@@ -303,6 +341,7 @@ class MuteSwitchEntity(ESPHomeEntity):
         self.object_id = object_id
         self._get_muted = get_muted
         self._set_muted = set_muted
+        self._remote_unmute_enabled = remote_unmute_enabled
         self._switch_state = self._get_muted()  # Sync internal state with actual muted value on init
 
     def update_set_muted(self, set_muted: Callable[[bool], None]) -> None:
@@ -317,26 +356,41 @@ class MuteSwitchEntity(ESPHomeEntity):
         # Sync internal switch state with the actual mute state.
         self._switch_state = self._get_muted()
 
+    def state_message(self) -> Union[SwitchStateResponse, BinarySensorStateResponse]:
+        """The current mute state, to send to Home Assistant."""
+        if self._remote_unmute_enabled:
+            return SwitchStateResponse(key=self.key, state=self._switch_state)
+        return BinarySensorStateResponse(key=self.key, state=self._switch_state)
+
     def handle_message(self, msg: message.Message) -> Iterable[message.Message]:
-        if isinstance(msg, SwitchCommandRequest) and (msg.key == self.key):
+        if isinstance(msg, SwitchCommandRequest) and (msg.key == self.key) and self._remote_unmute_enabled:
             # User toggled the switch - update our internal state and trigger actions
             new_state = bool(msg.state)
             self._switch_state = new_state
             self._set_muted(new_state)
             # Return the new state immediately
-            yield SwitchStateResponse(key=self.key, state=self._switch_state)
+            yield self.state_message()
         elif isinstance(msg, ListEntitiesRequest):
-            yield ListEntitiesSwitchResponse(
-                object_id=self.object_id,
-                key=self.key,
-                name=self.name,
-                entity_category=EntityCategory.CONFIG,
-                icon="mdi:microphone-off",
-            )
+            if self._remote_unmute_enabled:
+                yield ListEntitiesSwitchResponse(
+                    object_id=self.object_id,
+                    key=self.key,
+                    name=self.name,
+                    entity_category=EntityCategory.CONFIG,
+                    icon="mdi:microphone-off",
+                )
+            else:
+                yield ListEntitiesBinarySensorResponse(
+                    object_id=self.object_id,
+                    key=self.key,
+                    name=self.name,
+                    entity_category=EntityCategory.DIAGNOSTIC,
+                    icon="mdi:microphone-off",
+                )
         elif isinstance(msg, SubscribeHomeAssistantStatesRequest):
             # Always return our internal switch state
             self.sync_with_state()
-            yield SwitchStateResponse(key=self.key, state=self._switch_state)
+            yield self.state_message()
 
 
 class ThinkingSoundEntity(ESPHomeEntity):

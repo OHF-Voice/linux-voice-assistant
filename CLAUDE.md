@@ -9,6 +9,7 @@ Dense codebase map for AI agents. `AGENTS.md` (imported above) holds the rules; 
 | Task | Command | Time |
 |------|---------|------|
 | All unit tests | `./script/tests` | ~2 s (386 tests) |
+| End-to-end tests (real LVA, virtual mic/speaker, fake HA; needs PulseAudio, see `tests/e2e/README.md`) | `./script/e2e` (LVA tests: `--ignore=tests/e2e/peripheral_api`, peripheral API tests: `tests/e2e/peripheral_api`) | ~4.5 min (40 tests: 23 LVA, 17 peripheral API) |
 | One file / one test | `.venv/bin/python -m pytest tests/unit/test_satellite.py -k timer -q` | <1 s |
 | All lint | `./script/lint` | ~15 s |
 | Auto-format | `./script/lint_black --auto && ./script/lint_isort --auto` | |
@@ -42,7 +43,7 @@ Thread-safety rules:
 - `state.entities` persists across reconnects. **Entity `key` = `len(state.entities)` at creation time.** Never reorder or remove entities. Append only.
 - `state.connections` lists all live protocol instances. Use `state.broadcast(msgs)` for asynchronous state changes so every client gets them. `satellite.send_messages` reaches only one client.
 - `Preferences` is loaded with `Preferences.from_dict()`, which drops unknown keys and logs a warning. Adding a field with a default is safe. **Renaming a field silently loses the stored value**, because the old key is dropped and the new one falls back to its default. Migrate the value explicitly if a rename is unavoidable.
-- Persist helpers: `save_preferences()`, `persist_volume()` (it also emits `volume_changed`/`volume_muted` to peripherals), `persist_mic_gain/noise/volume()`.
+- Persist helpers: `state.preferences.save(state.preferences_path)`, `persist_volume()` (it also emits `volume_changed`/`volume_muted` to peripherals), `persist_mic_gain/noise/volume()`.
 - `oww_*_probability_cutoff` fields are legacy and unused. The thresholds in use are `wake_word_1_threshold`, `wake_word_2_threshold` and `stop_word_threshold`.
 
 ## Module map
@@ -52,14 +53,18 @@ Thread-safety rules:
 | `__main__.py` | argparse, resolve net/MAC/name, load prefs + models, build `ServerState`, start servers, `process_audio()` loop | Creates a throwaway `VoiceSatelliteProtocol(state)` before binding to catch `__init__` errors early. Binds with 15 retries on EADDRINUSE. Waits `--peripheral-startup-wait` s before serving, so peripherals can register entities first. |
 | `api_server.py` | Minimal plaintext ESPHome frame parser/writer (`asyncio.Protocol`) | Answers Hello/Auth/Ping/Disconnect itself. Everything else goes to `handle_message()`, which is a **generator** yielding responses. |
 | `satellite.py` | `VoiceSatelliteProtocol(APIServer)`: entity creation, message routing, voice pipeline, timers, TTS, ducking, external wake word download | See "Voice pipeline state" below. |
-| `entity.py` | ESPHome entities. Each implements `handle_message(msg)` and yields responses for `ListEntitiesRequest`, `SubscribeHomeAssistantStatesRequest`, and its own `*CommandRequest` filtered by `msg.key == self.key` | `MediaPlayerEntity`, `MuteSwitchEntity`, `ThinkingSoundEntity`, `MicSettingEntity` (Number, or Select if `options`), `WakeWord1/2SensitivityNumberEntity`, `StopWordSensitivityNumberEntity`, `LEDLightEntity`, `ButtonEventSensorEntity`, `ButtonLockEntity`. Old aliases are at the bottom. |
-| `peripheral_api.py` | WebSocket server. `LVAEvent` (LVA→peripheral), `LVACommand` (peripheral→LVA), snapshot + replay of the last state event on connect | The module docstring is the protocol spec and must stay in sync with `docs/peripheral_api.md`. |
-| `wake_word.py` | `find_available_wake_words()` (globs `*.json` top-level only), `load_wake_models()` (fallback chain: requested → `--wake-model` → `okay_nabu` → first available), `load_stop_model()` | openWakeWord ids are versioned (`hey_jarvis_v0.1`). Prefix matching handles them. |
+| `entity.py` | ESPHome entities. Each implements `handle_message(msg)` and yields responses for `ListEntitiesRequest`, `SubscribeHomeAssistantStatesRequest`, and its own `*CommandRequest` filtered by `msg.key == self.key` | `MediaPlayerEntity`, `MuteSwitchEntity` (a read-only binary sensor instead of a switch with `--enable-remote-unmute 0`), `ThinkingSoundEntity`, `MicSettingEntity` (Number, or Select if `options`), `WakeWord1/2SensitivityNumberEntity`, `StopWordSensitivityNumberEntity`, `LEDLightEntity`, `ButtonEventSensorEntity`, `ButtonLockEntity`. Old aliases are at the bottom. |
+| `peripheral_api.py` | WebSocket server. `LVAEvent` (LVA→peripheral), `LVACommand` (peripheral→LVA), snapshot + replay of the last state event on connect | The module docstring is the protocol spec and must stay in sync with `docs/development/peripheral_api.md`. |
+| `wake_word.py` | `wake_word_display_name()` (name of a wake word: origin - engine - phrase, e.g. `Internal - MWW - Hey Jarvis`; it is the wake word id at runtime, the HA selection name and the `wake_word_phrase` sent to HA), `find_matching_wake_word_id()` (id or file name to id, custom wins), `wake_word_ids_for_selections()` / `wake_word_selections_for_ids()` (preferences hold `WakeWordSelection(origin, engine, file_id)`, runtime uses the name), `find_available_wake_words()` (globs `*.json` top-level only, stores the parent directory name as `origin`), `load_wake_models()` (fallback chain: requested → `--wake-model` → `okay_nabu` → first available), `load_stop_model()` | openWakeWord ids are versioned (`hey_jarvis_v0.1`). Prefix matching handles them. |
+| `wake_word_detection.py` | Slot-ordered active wake words, per-slot thresholds, `gate_wake_words()` (pause while a pipeline runs, reset on resume), `process_wake_words()` (scoring, mute, refractory) | Pure functions, called once from `process_audio()`. Slot comes from `preferences.active_wake_words`, not from dict order. |
+| `migrations.py` | `migrate_preferences()`: one-time migrations of `preferences.json`, run in `main()` before the wake words load. Each migration is a class named after the PR that introduced it (`Migration591`, with `id` and `migrate()`), added to `_MIGRATIONS`, and its `id` is recorded in `Preferences.applied_migrations` | Returns new preferences, the caller saves them. |
+| `stop_word.py` | `process_stop_word()`: stop model runs only while its id is in `active_wake_words`, reset on activation | Same gating pattern as wake words. |
 | `models.py` | `WakeWordType`, `AvailableWakeWord` (`.load()`), `LightRegistration`, `Preferences`, `ServerState`, `initial_stop_word_threshold()` | |
 | `mpv_player.py` | `MpvMediaPlayer`: playlist (list of URLs), done_callback, duck/unduck | `stop()` **invokes** the pending done_callback. |
-| `player/libmpv.py` | `LibMpvPlayer`: real mpv wrapper, effective volume = user × duck factor | Only an `end-file` with reason 0 (EOF) fires the callback. `stop(for_replacement=True)` drops the callback. Many debug logs wrongly say "unduck() called", so don't rely on them. |
+| `player/libmpv.py` | `LibMpvPlayer`: real mpv wrapper, effective volume = user × duck factor | Only an `end-file` with reason 0 (EOF) fires the callback. `stop(for_replacement=True)` drops the callback. Both mpv players have a name (`music`, `tts`) that is part of the logger name; `Volume (<reason>): set X x duck Y = Z` shows the effective volume. |
 | `webrtc.py` | `WebRTCProcessor`: 10 ms (320 byte) framing for `webrtc_noise_gain` | Can return `b""` while buffering. The audio loop then skips the chunk. |
-| `zeroconf.py` | mDNS registration | |
+| `zeroconf.py` | mDNS registration, `update_address()` announces another IP without restarting mDNS | `start_discovery()` returns None when mDNS is disabled. |
+| `network.py` | Connection health and address of the ESPHome server. `apply_keepalive()` (TCP keepalive on every accepted socket, called from `APIServer.connection_made`, fixed timings, ends half-open connections after about 10 s if the kernel accepts all options; each option is set on its own and `KeepaliveResult` says which ones failed, with a warning in the log). `changed_address()` (pure) and `follow_interface_address()` loop. `EsphomeEndpoint`: owns the listening server, `apply(ip)` binds the new listener before closing the old one and updates mDNS | The loop runs on `state.client_disconnected` (set in `connection_lost` for **every** client) and, as a fallback, every 30 s (`ADDRESS_CHECK_INTERVAL_SECONDS`). Retries with backoff (1 s up to 60 s) while the interface has no address or applying fails. Not started with `--host`. `EsphomeEndpoint.apply()` is idempotent: a retry after a failed mDNS update does not bind twice. |
 | `util.py` | `get_version()` (reads `version.txt`), `get_esphome_version()`, `call_all()`, interface/IP detection | |
 
 Two mpv players share the volume: `state.tts_player` (announcements, chimes, TTS, timer) and `state.music_player` (media, can use `--music-output-device`). The pipeline ducks only `music_player`.
@@ -76,6 +81,8 @@ Flow: `wakeup()` (audio thread) → blocked if `state.muted` or `_pipeline_activ
 - `INTENT_END` with `continue_conversation=1`: remember it
 - `TTS_END`: `play_tts()`, which is idempotent via `_tts_played`
 - `RUN_END`: if no TTS was played, call `_tts_finished()` now. Otherwise `_pipeline_active` stays True until playback ends, so speaker audio can't trigger the wake word.
+
+Ducking has owners (`duck(owner=...)`/`unduck(owner=...)` on the satellite and on `MpvMediaPlayer`; free text, but `MpvMediaPlayer` accepts only the known owners and raises `ValueError` otherwise): `conversation` (default), `timer` (ringing) and `announce` (voice announcements, handed over to `conversation` when `start_conversation` is set) and `media_announcement` (media player announcements, in `MediaPlayerEntity`). The volume is restored when the last owner has unducked. With `--mpv-player-duck-mode pause` the music player (not the voice player) pauses instead of lowering the volume; `MpvMediaPlayer.is_paused` does not count a pause that only served ducking. A new reason to duck gets its own owner, and whoever ducks must unduck with the same owner.
 
 `_tts_finished()` sends `VoiceAssistantAnnounceFinished`, removes the stop word from the active set, then either restarts listening after `continue_conversation_delay` (via `threading.Timer`) or unducks and emits `idle`.
 
@@ -103,14 +110,14 @@ Wake word slots: HA can activate up to 2 wake words. `preferences.active_wake_wo
 1. `__main__.py` argparse. If the app needs it at runtime, add a `ServerState` field with a default (otherwise `make_state()` in conftest has to handle it).
 2. `docker-entrypoint.sh` env → flag mapping.
 3. `.env.example`.
-4. `docs/install_application.md`: systemd `Environment=` block and the env var reference table.
-5. `README.md` parameter table.
+4. `docs/installation_part2_application.md`: systemd `Environment=` block.
+5. `docs/configuration.md` (section "Parameter overview"): one row with parameter, env var, description and default.
 
 Existing env quirk: `REFACTORY_SECONDS` is misspelled on purpose (it's the public name). Don't "fix" it.
 
 **New peripheral event or command**
 1. Add a member to the `LVAEvent`/`LVACommand` enum and a branch in `_dispatch_command`.
-2. Update the module docstring in `peripheral_api.py` and `docs/peripheral_api.md`.
+2. Update the module docstring in `peripheral_api.py` and `docs/development/peripheral_api.md`.
 3. If it represents an ongoing visual state, add it to `_STATE_EVENTS` in `emit_event()` (it's replayed on connect).
 4. Maybe update `examples/*` peripherals and `examples/Peripheral web console/`, since #423 touched all of them.
 5. Tests in `tests/unit/test_peripheral_api.py` (`dispatch()` helper).
@@ -122,7 +129,17 @@ Existing env quirk: `REFACTORY_SECONDS` is misspelled on purpose (it's the publi
 4. Persist through `Preferences` if needed.
 5. Document it in `docs/configuration.md`.
 
-**New preference**: add the field with a default to `Preferences`, read it in `main()` before `ServerState` is built, and write it through a `persist_*`/setter that calls `save_preferences()`.
+**New preference**: add the field with a default to `Preferences`, read it in `main()` before `ServerState` is built, and write it through a `persist_*`/setter that calls `state.preferences.save(state.preferences_path)`.
+
+## Code structure for new logic
+
+`process_audio()` in `__main__.py` and `satellite.py` are already large. Do not grow them.
+
+- Put new logic that can run on its own (detection, gating, filtering, state decisions) into its own module under `linux_voice_assistant/`, as a plain function that takes the state it needs as parameters and returns the result. Keep mutable state in the caller (for example a flag passed in and returned) instead of module globals.
+- Leave only a single call in `__main__.py` / `satellite.py`. Do not hide threading, I/O or hardware access in the new module, so it stays unit-testable with `make_state()` and mocks.
+- Add `tests/unit/test_<module>.py` for every new module (see Tests below).
+- Log decisions (detected, gated, reset) at debug level with the value and the threshold, in the style of the existing wake word log lines.
+- Do not refactor unrelated code in the same change. Extract only the logic you are touching.
 
 ## Tests
 
@@ -134,24 +151,31 @@ Existing env quirk: `REFACTORY_SECONDS` is misspelled on purpose (it's the publi
 
 ## Gotchas
 
-- `ServerState.audio_input_channels` defaults to 1 and argparse (`--audio-input-channels`) also defaults to **1**, so the effective default is mono. The option only controls capture (2 = mic + AEC reference channel). What is streamed (`data` = channel 0 after WebRTC, `data2` = channel 0 before WebRTC) does not depend on it. Audio flow: see `docs/audio_pipeline.md`.
-- In Docker the working directory is `/app`, so the default `--download-dir` is `/app/local` (a named volume in `docker-compose.yml`). Bare metal uses `local/` inside the repo.
+- `ServerState.audio_input_channels` defaults to 1 and argparse (`--audio-input-channels`) also defaults to **1**, so the effective default is mono. The option only controls capture (2 = mic + AEC reference channel). What is streamed (`data` = channel 0 after WebRTC, `data2` = channel 0 before WebRTC) does not depend on it. Audio flow: see `docs/development/audio_pipeline.md`.
+- In Docker the working directory is `/app`, so the default `--wake-word-root-dir` is `/app/wakewords`. Below it, `internal` ships in the image, `downloaded` and `custom` are named volumes (`wakeword_downloaded`, `wakeword_custom`) and each has a `microwakeword` and an `openwakeword` subdirectory. `__main__.py` builds the search list lowest priority first (internal, downloaded, custom) and creates all directories. HA wake words (always microWakeWord) are stored in `downloaded/microwakeword`. The removed `--wake-word-dir` / `--download-dir` (and `WAKE_WORD_DIR`, which the Docker entrypoint still passes on) are still accepted and ignored with a warning (`warn_about_removed_options()` in `util.py`). Bare metal uses `wakewords/` inside the repo.
 - Paths in `.env.example` and the docs are written for the container (`/app/...`). The systemd examples use `/home/pi/linux-voice-assistant/...`.
 - `mypy` runs non-strict with `python_version = 3.11` (`mypy.ini`). Don't use syntax newer than 3.11.
 - The Docker image is **not** built locally by compose. `docker-compose.yml` pulls `ghcr.io/ohf-voice/linux-voice-assistant:${LVA_IMAGE_TAG:-latest}` (dev file: `-pr` image, tag `nightly`). The `Dockerfile` installs the pinned `aioesphomeapi` through `./script/setup`, so a fresh build always matches `pyproject.toml`. If a user reports an `AttributeError` on an aioesphomeapi symbol that exists in `.venv`, first suspect a stale or wrong image tag (check `LVA_IMAGE_TAG` in `.env`) before changing code. `satellite.py` guards `MULTI_CHANNEL_AUDIO` with `getattr` as a safety net only.
 - Some older docstrings in modules not touched recently may still be Google style. New code must use the Sphinx `:param:` style from AGENTS.md.
 
+## Defaults of CLI options
+
+Set the default of a CLI option as a literal in its `parser.add_argument(default=...)` in `__main__.py`, not in a module constant that `__main__.py` imports. Everyone who looks for the default finds it next to the option, its help text and `%(default)s`.
+
 ## Documentation map
 
 | Doc | Contents |
 |-----|----------|
-| `README.md` | Features, hardware, CLI parameter table, dev setup |
-| `docs/install.md` → `install_audioserver.md`, `install_application.md` | Install flow (PipeWire/PulseAudio, Docker Compose, systemd, env var reference, wake word lists) |
+| `README.md` | Features, hardware, install entry points, dev setup |
+| `docs/configuration.md` | Parameter overview at the top (CLI option, env var, description, default), then every HA device-page entity, from the user's view |
+| `docs/installation.md` → `installation_part1_audioserver.md`, `installation_part2_application.md` | Install flow (PipeWire/PulseAudio, Docker Compose, systemd) |
+| `docs/features.md` | Feature guides: AEC, listen during wake sound, API encryption, own sound files, wake words (models, directories, custom), stop word |
 | `docs/behavior.md` | User-visible behavior (phases, ducking, stop word, timers, announcements). Binding for code changes, see AGENTS.md |
-| `docs/configuration.md` | Every HA device-page entity, from the user's view |
-| `docs/peripheral_api.md` | Full WebSocket protocol for peripheral authors |
-| `docs/audio_pipeline.md` | Mic input to HA streaming: capture, Mic Volume scalar, WebRTC, wake/stop word, `VoiceAssistantAudio` data/data2 |
-| `docs/enabling_aec.md` | Echo cancellation via PulseAudio/PipeWire |
+| `docs/development/peripheral_api.md` | Full WebSocket protocol for peripheral authors |
+| `docs/development/communication.md` | Overview of the ESPHome API, mDNS and peripheral WebSocket interfaces, the voice request sequence, startup order, threads |
+| `tests/e2e/README.md` | End-to-end test setup: virtual mic/speaker, fake Home Assistant, marker tones, CI job |
+| `docs/development/audio_pipeline.md` | Mic input to HA streaming: capture, Mic Volume scalar, WebRTC, wake/stop word, `VoiceAssistantAudio` data/data2 |
+| `docs/features.md` | Echo cancellation via PulseAudio/PipeWire |
 | `docs/debugging.md` | Audio stack / container socket troubleshooting |
 | `examples/*/` | Peripheral containers (Satellite1, ReSpeaker 2/4-mic, USB array, Jabra, web console) using the WebSocket API |
 | `.github/workflow.md` | Docker build workflows (release/nightly/PR) |
@@ -159,7 +183,10 @@ Existing env quirk: `REFACTORY_SECONDS` is misspelled on purpose (it's the publi
 
 ## Contribution constraints
 
+- **Never commit or push directly to `main`**, whatever the instruction says (even "commit and push to main"). Every change, documentation only included, goes on its own branch and into a PR against `main`. If asked to push to `main`, do not do it: say so and offer a branch and a PR instead.
 - PR titles describe the change functionally, with **no** `feat:`/`fix:` prefixes. Labels come from the ticked box in `.github/PULL_REQUEST_TEMPLATE.md`.
 - `.github/AI_POLICY.md`: no autonomous contributions, a human must review everything, and nothing is posted to GitHub without explicit consent.
+- The PR template checkbox "The code change is tested and works locally." may only be ticked by a human, by hand. AI agents never tick it, whatever tests they ran, and leave it unchecked in every PR description they write.
 - `CHANGELOG.md` is generated from release notes. Don't edit it by hand.
+- `breaking_change.md` is written by workflows (`.github/scripts/breaking_change.py`) from the "Breaking change migration" section of `breaking-change` PRs. Don't edit it by hand. Details: `.github/workflow.md`.
 - AGENTS.md mentions a `stable` branch for backports, but `origin` currently has none. Check `git branch -r` before suggesting `backport-to-stable`.

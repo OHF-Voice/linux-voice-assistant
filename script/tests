@@ -18,5 +18,6 @@ else:
     python_exe = "python3"
 
 
-subprocess.check_call([python_exe, "-m", "pytest"] + _TEST_DIRS)
+# Extra arguments go to pytest, for example --junitxml=<file>
+subprocess.check_call([python_exe, "-m", "pytest"] + _TEST_DIRS + sys.argv[1:])
 

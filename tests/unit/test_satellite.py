@@ -1,10 +1,12 @@
 """Unit tests for VoiceSatelliteProtocol logic."""
 
-from unittest.mock import MagicMock, patch
+import json
+from unittest.mock import MagicMock, call, patch
 
 import pytest
+from aioesphomeapi.api_pb2 import VoiceAssistantAnnounceRequest  # type: ignore[attr-defined]  # pylint: disable=no-name-in-module
 
-from linux_voice_assistant.models import DetectionResult
+from linux_voice_assistant.models import DetectionResult, Preferences
 from linux_voice_assistant.peripheral_api import LVAEvent
 from tests.unit.conftest import make_satellite, make_state
 
@@ -35,6 +37,13 @@ class TestInit:
         sat = make_satellite(tmp_path)
         assert sat.state.mute_switch_entity is not None
         assert isinstance(sat.state.mute_switch_entity, MuteSwitchEntity)
+
+    def test_mute_entity_is_switch_by_default(self, tmp_path):
+        assert make_satellite(tmp_path).state.mute_switch_entity._remote_unmute_enabled is True  # pylint: disable=protected-access
+
+    def test_mute_entity_is_status_when_remote_unmute_disabled(self, tmp_path):
+        sat = make_satellite(tmp_path, {"remote_unmute_enabled": False})
+        assert sat.state.mute_switch_entity._remote_unmute_enabled is False  # pylint: disable=protected-access
 
     def test_thinking_sound_entity_created(self, tmp_path):
         from linux_voice_assistant.entity import ThinkingSoundEntity
@@ -146,6 +155,19 @@ class TestSetMuted:
         sat._is_streaming_audio = True
         sat._set_muted(True)
         assert sat._is_streaming_audio is False
+
+    def test_muting_is_saved_in_preferences(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        sat._set_muted(True)
+        assert sat.state.preferences.muted == 1
+        assert Preferences.from_dict(json.loads(sat.state.preferences_path.read_text(encoding="utf-8"))).muted == 1
+
+    def test_unmuting_is_saved_in_preferences(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        sat._set_muted(True)
+        sat._set_muted(False)
+        assert sat.state.preferences.muted == 0
+        assert Preferences.from_dict(json.loads(sat.state.preferences_path.read_text(encoding="utf-8"))).muted == 0
 
 
 # ---------------------------------------------------------------------------
@@ -337,6 +359,69 @@ class TestWakeWordDetectionEvent:
         sat._emit.assert_called_once_with(LVAEvent.WAKE_WORD_DETECTED, None)
 
 
+class TestWakeWordPhraseLogging:
+    def test_streaming_start_logs_phrase(self, tmp_path, caplog):
+        sat = make_satellite(tmp_path)
+        sat.send_messages = MagicMock()
+
+        with caplog.at_level("DEBUG"):
+            sat._start_audio_streaming("Hey Jarvis")
+
+        assert "with wake_word_phrase 'Hey Jarvis'" in caplog.text
+
+    def test_streaming_after_wake_sound_logs_phrase(self, tmp_path, caplog):
+        sat = make_satellite(tmp_path)
+        sat.send_messages = MagicMock()
+
+        with caplog.at_level("DEBUG"):
+            sat._on_wakeup_sound_finished("Hey Jarvis")
+
+        assert "with wake_word_phrase 'Hey Jarvis'" in caplog.text
+
+
+class TestWakeWordPhraseSent:
+    def test_phrase_is_the_name_of_the_detected_wake_word(self, tmp_path):
+        # Home Assistant compares the phrase with the name in the wake word selection to choose the pipeline.
+        sat = make_satellite(tmp_path)
+        sat.send_messages = MagicMock()
+
+        sat.wakeup(MagicMock(wake_word="Hey Jarvis"), DetectionResult("Internal - MWW - Hey Jarvis", 0, 0.9))
+
+        assert sat._wake_word_phrase == "Internal - MWW - Hey Jarvis"
+
+    def test_phrase_of_the_model_is_used_without_a_detection(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        sat.send_messages = MagicMock()
+
+        sat.wakeup(MagicMock(wake_word="Hey Jarvis"))
+
+        assert sat._wake_word_phrase == "Hey Jarvis"
+
+
+class TestStartListening:
+    def test_plays_the_start_listening_sound_with_an_active_wake_word(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        sat.state.wake_words = {"Internal - MWW - Hey Jarvis": MagicMock()}
+        sat.state.active_wake_words = {"Internal - MWW - Hey Jarvis"}
+
+        sat.start_listening()
+
+        sat.state.tts_player.play.assert_called_once()
+        assert sat._pipeline_active is True
+
+    def test_is_ignored_without_an_active_wake_word(self, tmp_path, caplog):
+        sat = make_satellite(tmp_path)
+        sat.state.wake_words = {"Internal - MWW - Hey Jarvis": MagicMock()}
+        sat.state.active_wake_words = set()
+
+        with caplog.at_level("DEBUG"):
+            sat.start_listening()
+
+        sat.state.tts_player.play.assert_not_called()
+        assert sat._pipeline_active is False
+        assert "Ignoring start_listening - no wake word is active" in caplog.text
+
+
 class TestContinueConversation:
     def _follow_up_request(self, sat):
         sat.send_messages = MagicMock()
@@ -359,8 +444,20 @@ class TestContinueConversation:
         assert request.start
         assert request.wake_word_phrase == "Hey Jarvis"
 
+    def test_follow_up_logs_phrase(self, tmp_path, caplog):
+        sat = make_satellite(tmp_path)
+        sat.wakeup(MagicMock(wake_word="Hey Jarvis"))
+        sat._pipeline_active = False
+
+        with caplog.at_level("DEBUG"):
+            self._follow_up_request(sat)
+
+        assert "wake_word_phrase 'Hey Jarvis' (continued conversation)" in caplog.text
+
     def test_follow_up_after_button_press_has_no_phrase(self, tmp_path):
         sat = make_satellite(tmp_path)
+        sat.state.wake_words = {"Internal - MWW - Hey Jarvis": MagicMock()}
+        sat.state.active_wake_words = {"Internal - MWW - Hey Jarvis"}
         sat._wake_word_phrase = "Hey Jarvis"
         sat.start_listening()
         sat._pipeline_active = False
@@ -379,12 +476,102 @@ class TestDuckUnduck:
     def test_duck_calls_music_player_duck(self, tmp_path):
         sat = make_satellite(tmp_path)
         sat.duck()
-        sat.state.music_player.duck.assert_called_once()
+        sat.state.music_player.duck.assert_called_once_with(owner="conversation")
 
     def test_unduck_calls_music_player_unduck(self, tmp_path):
         sat = make_satellite(tmp_path)
         sat.unduck()
-        sat.state.music_player.unduck.assert_called_once()
+        sat.state.music_player.unduck.assert_called_once_with(owner="conversation")
+
+    def test_duck_passes_owner(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        sat.duck(owner="timer")
+        sat.unduck(owner="timer")
+        sat.state.music_player.duck.assert_called_once_with(owner="timer")
+        sat.state.music_player.unduck.assert_called_once_with(owner="timer")
+
+
+class TestDuckOwnersInSatellite:
+    def test_timer_finished_ducks_for_timer(self, tmp_path):
+        from aioesphomeapi.model import VoiceAssistantTimerEventType
+
+        sat = make_satellite(tmp_path)
+        sat.state.peripheral_api = MagicMock()
+        sat.handle_timer_event(VoiceAssistantTimerEventType.VOICE_ASSISTANT_TIMER_FINISHED, _timer_msg())
+        sat.state.music_player.duck.assert_called_once_with(owner="timer")
+
+    def test_stop_while_ringing_unducks_timer_only(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        sat._timer_finished = True
+        sat.stop()
+        sat.state.music_player.unduck.assert_called_once_with(owner="timer")
+
+    def test_wakeup_while_ringing_hands_ducking_to_conversation(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        sat._timer_finished = True
+        sat.state.music_player.reset_mock()
+        sat.wakeup(MagicMock(wake_word="Hey Jarvis"))
+
+        assert sat.state.music_player.mock_calls == [call.duck(owner="conversation"), call.unduck(owner="timer")]
+
+    def test_button_while_ringing_hands_ducking_to_conversation(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        sat.state.wake_words = {"okay_nabu": MagicMock()}
+        sat.state.active_wake_words = {"okay_nabu"}
+        sat._timer_finished = True
+        sat.state.music_player.reset_mock()
+        sat.start_listening()
+
+        assert sat.state.music_player.mock_calls == [call.duck(owner="conversation"), call.unduck(owner="timer")]
+
+    def test_wakeup_without_ringing_timer_does_not_unduck_timer(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        sat.state.music_player.reset_mock()
+        sat.wakeup(MagicMock(wake_word="Hey Jarvis"))
+
+        assert sat.state.music_player.mock_calls == [call.duck(owner="conversation")]
+
+    def test_button_without_ringing_timer_does_not_unduck_timer(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        sat.state.wake_words = {"okay_nabu": MagicMock()}
+        sat.state.active_wake_words = {"okay_nabu"}
+        sat.state.music_player.reset_mock()
+        sat.start_listening()
+
+        assert sat.state.music_player.mock_calls == [call.duck(owner="conversation")]
+
+    def test_announcement_ducks_for_announce(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        list(sat.handle_message(VoiceAssistantAnnounceRequest(media_id="http://x/a.mp3")))
+        sat.state.music_player.duck.assert_called_once_with(owner="announce")
+
+    def test_announcement_end_unducks_announce_and_conversation(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        list(sat.handle_message(VoiceAssistantAnnounceRequest(media_id="http://x/a.mp3")))
+        sat.state.tts_player.play.call_args.kwargs["done_callback"]()
+
+        assert call.unduck(owner="announce") in sat.state.music_player.mock_calls
+        assert sat._announce_ducking is False
+
+    def test_announcement_with_start_conversation_hands_over_without_gap(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        list(sat.handle_message(VoiceAssistantAnnounceRequest(media_id="http://x/a.mp3", start_conversation=True)))
+        sat.state.music_player.reset_mock()
+        with patch("linux_voice_assistant.satellite.threading.Timer"):
+            sat.state.tts_player.play.call_args.kwargs["done_callback"]()
+
+        assert sat.state.music_player.mock_calls == [call.duck(owner="conversation"), call.unduck(owner="announce")]
+
+    def test_tts_finished_without_announcement_does_not_touch_announce_owner(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        sat._tts_finished()
+        assert call.unduck(owner="announce") not in sat.state.music_player.mock_calls
+
+    def test_last_client_lost_releases_every_owner(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        sat.connection_lost(None)
+        for owner in ("conversation", "timer", "announce"):
+            assert call.unduck(owner=owner) in sat.state.music_player.mock_calls
 
 
 # ---------------------------------------------------------------------------
@@ -505,6 +692,17 @@ class TestConnectionLost:
         sat.connection_lost(None)
         assert sat.state.connected is False
 
+    def test_client_lost_signals_address_check(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        sat.connection_lost(None)
+        assert sat.state.client_disconnected.is_set()
+
+    def test_client_lost_signals_address_check_while_another_client_is_connected(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        sat.state.connections.append(MagicMock())
+        sat.connection_lost(None)
+        assert sat.state.client_disconnected.is_set()
+
     def test_connection_lost_clears_satellite_reference(self, tmp_path):
         sat = make_satellite(tmp_path)
         sat.connection_lost(None)
@@ -612,7 +810,7 @@ class TestDownloadExternalWakeWord:
 
         sat = make_satellite(tmp_path)
         model_bytes = b"tflite-model"
-        eww_dir = sat.state.download_dir / "external_wake_words"
+        eww_dir = sat.state.wake_word_root / "downloaded" / "microwakeword"
         eww_dir.mkdir(parents=True)
         (eww_dir / "custom.json").write_text("{}")
         (eww_dir / "custom.tflite").write_bytes(model_bytes)
@@ -632,12 +830,34 @@ class TestDownloadExternalWakeWord:
 
         mock_urlopen.assert_not_called()
         assert result is not None
-        assert result.id == "custom"
+        assert result.id == "Download - MWW - Custom"
+        assert result.file_id == "custom"
 
 
 # ---------------------------------------------------------------------------
 # VoiceAssistantSetConfiguration
 # ---------------------------------------------------------------------------
+
+
+class TestConfigurationRequest:
+    def test_wake_word_names_contain_origin_and_engine(self, tmp_path):
+        from aioesphomeapi.api_pb2 import VoiceAssistantConfigurationRequest, VoiceAssistantConfigurationResponse
+
+        from linux_voice_assistant.models import AvailableWakeWord, WakeWordType
+
+        sat = make_satellite(tmp_path)
+        sat.state.available_wake_words = {
+            "Internal - OWW - Hey Jarvis": AvailableWakeWord("Internal - OWW - Hey Jarvis", WakeWordType.OPEN_WAKE_WORD, "Hey Jarvis", ["en"], tmp_path / "hey_jarvis_v0.1.json", origin="internal"),
+            "Custom - MWW - Okay Nabu": AvailableWakeWord("Custom - MWW - Okay Nabu", WakeWordType.MICRO_WAKE_WORD, "Okay Nabu", ["en"], tmp_path / "okay_nabu.json", origin="custom"),
+        }
+
+        responses = list(sat.handle_message(VoiceAssistantConfigurationRequest()))
+
+        response = next(msg for msg in responses if isinstance(msg, VoiceAssistantConfigurationResponse))
+        assert {ww.id: ww.wake_word for ww in response.available_wake_words} == {
+            "Internal - OWW - Hey Jarvis": "Internal - OWW - Hey Jarvis",
+            "Custom - MWW - Okay Nabu": "Custom - MWW - Okay Nabu",
+        }
 
 
 class TestSetConfiguration:
@@ -659,6 +879,22 @@ class TestSetConfiguration:
         assert sat.state.active_wake_words == {"hey_jarvis"}
         assert sat.state.wake_words_changed is True
 
+    def test_former_id_from_home_assistant_is_resolved_to_the_wake_word(self, tmp_path):
+        from aioesphomeapi.api_pb2 import VoiceAssistantSetConfiguration
+
+        from linux_voice_assistant.models import AvailableWakeWord, WakeWordSelection, WakeWordType
+
+        sat = self._make_sat(tmp_path, [])
+        word = AvailableWakeWord("Internal - MWW - Hey Jarvis", WakeWordType.MICRO_WAKE_WORD, "Hey Jarvis", ["en"], tmp_path / "hey_jarvis.json", origin="internal", file_id="hey_jarvis")
+        sat.state.available_wake_words = {word.id: word}
+
+        with patch.object(AvailableWakeWord, "load", return_value=MagicMock()):
+            list(sat.handle_message(VoiceAssistantSetConfiguration(active_wake_words=["hey_jarvis"])))
+
+        assert list(sat.state.wake_words) == ["Internal - MWW - Hey Jarvis"]
+        assert sat.state.active_wake_words == {"Internal - MWW - Hey Jarvis"}
+        assert sat.state.preferences.active_wake_words == [WakeWordSelection("internal", "mww", "hey_jarvis"), None]
+
     def test_unknown_only_selection_keeps_loaded_models(self, tmp_path):
         from aioesphomeapi.api_pb2 import VoiceAssistantSetConfiguration
 
@@ -668,3 +904,14 @@ class TestSetConfiguration:
 
         assert list(sat.state.wake_words) == ["okay_nabu"]
         assert sat.state.active_wake_words == set()
+
+
+class TestPipelineActiveProperty:
+    def test_reflects_internal_flag(self, tmp_path):
+        satellite = make_satellite(tmp_path)
+
+        satellite._pipeline_active = False
+        assert satellite.pipeline_active is False
+
+        satellite._pipeline_active = True
+        assert satellite.pipeline_active is True
