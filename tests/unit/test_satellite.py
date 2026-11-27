@@ -1,10 +1,11 @@
 """Unit tests for VoiceSatelliteProtocol logic."""
 
 import json
+import logging
 from unittest.mock import MagicMock, call, patch
 
 import pytest
-from aioesphomeapi.api_pb2 import VoiceAssistantAnnounceRequest  # type: ignore[attr-defined]  # pylint: disable=no-name-in-module
+from aioesphomeapi.api_pb2 import MediaPlayerCommandRequest, VoiceAssistantAnnounceRequest  # type: ignore[attr-defined]  # pylint: disable=no-name-in-module
 
 from linux_voice_assistant.models import DetectionResult, Preferences
 from linux_voice_assistant.peripheral_api import LVAEvent
@@ -533,6 +534,25 @@ class TestDuckUnduck:
         sat.unduck(owner="timer")
         sat.state.music_player.duck.assert_called_once_with(owner="timer")
         sat.state.music_player.unduck.assert_called_once_with(owner="timer")
+
+
+class TestEmitMediaPlaying:
+    def test_sent_by_the_status_poll_not_for_a_sendspin_url(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        sat._emit = MagicMock()
+        list(sat.handle_message(MediaPlayerCommandRequest(key=999, has_media_url=True, media_url="sendspin://current")))
+        sat._emit.assert_not_called()
+        sat.emit_media_playing()
+        sat._emit.assert_called_once_with(LVAEvent.MEDIA_PLAYER_PLAYING)
+
+    def test_skipped_during_a_conversation(self, tmp_path, caplog):
+        sat = make_satellite(tmp_path)
+        sat._emit = MagicMock()
+        sat._pipeline_active = True
+        with caplog.at_level(logging.DEBUG, logger="linux_voice_assistant.satellite"):
+            sat.emit_media_playing()
+        sat._emit.assert_not_called()
+        assert "Not sending media_player_playing for Sendspin, a conversation is running" in caplog.text
 
 
 class TestDuckOwnersInSatellite:

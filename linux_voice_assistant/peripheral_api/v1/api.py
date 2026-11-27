@@ -51,7 +51,7 @@ Feedback events emitted by LVA
               by ``idle`` once no timer rings any more.
               The timer events are sent per timer from the timer list of LVA,
               also while Home Assistant is not connected.
-  media_player_playing  Emitted when HA sends music/media to the music_player
+  media_player_playing  Emitted when HA sends music/media to the music_player, or a Sendspin player starts playing (not during a conversation)
                         (non-announcement playback). Not emitted for TTS or
                         voice pipeline announcements — those use tts_speaking.
   volume_changed        data: {"volume": 0.0–1.0}

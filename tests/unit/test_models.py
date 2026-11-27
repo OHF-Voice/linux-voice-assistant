@@ -391,3 +391,24 @@ class TestInitialStopWordThreshold:
         from linux_voice_assistant.models import initial_stop_word_threshold
 
         assert initial_stop_word_threshold(-0.5) == pytest.approx(0.0)
+
+
+# ---------------------------------------------------------------------------
+# ServerState.duck_music / unduck_music
+# ---------------------------------------------------------------------------
+
+
+class TestDuckMusic:
+    def test_ducks_the_music_player(self, tmp_path):
+        state = make_server_state(tmp_path)
+        state.duck_music(owner="timer")
+        state.unduck_music(owner="timer")
+        state.music_player.duck.assert_called_once_with(owner="timer")
+        state.music_player.unduck.assert_called_once_with(owner="timer")
+
+    def test_ducks_the_sendspin_player_too(self, tmp_path):
+        state = make_server_state(tmp_path, sendspin_player=Mock())
+        state.duck_music(owner="conversation")
+        state.unduck_music(owner="conversation")
+        state.sendspin_player.duck.assert_called_once_with(owner="conversation")
+        state.sendspin_player.unduck.assert_called_once_with(owner="conversation")
