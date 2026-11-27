@@ -8,7 +8,7 @@ Dense codebase map for AI agents. `AGENTS.md` (imported above) holds the rules; 
 
 | Task | Command | Time |
 |------|---------|------|
-| All unit tests | `./script/tests` | ~2 s (386 tests) |
+| All unit tests | `./script/tests` | ~13 s (920 tests) |
 | End-to-end tests (real LVA, virtual mic/speaker, fake HA; needs PulseAudio, see `tests/e2e/README.md`) | `./script/e2e` (LVA tests: `--ignore=tests/e2e/peripheral_api`, peripheral API tests: `tests/e2e/peripheral_api`) | ~4.5 min (41 tests: 23 LVA, 18 peripheral API) |
 | One file / one test | `.venv/bin/python -m pytest tests/unit/test_satellite.py -k timer -q` | <1 s |
 | All lint | `./script/lint` | ~15 s |
@@ -102,7 +102,7 @@ Wake word slots: HA can activate up to 2 wake words. `preferences.active_wake_wo
 
 **HA quirk:** `ButtonEventSensorEntity` must not yield an `EventResponse` with an empty `event_type`. HA then fails the whole config entry.
 
-**Feature detection on aioesphomeapi:** `_HAS_AUDIO_DATA2` checks the protobuf descriptor. Do this for newer proto fields, because `aioesphomeapi` is pinned (`==45.3.1`).
+**Feature detection on aioesphomeapi:** `_HAS_AUDIO_DATA2` checks the protobuf descriptor. Do this for newer proto fields, because `aioesphomeapi` is pinned (`==46.30.1`).
 
 ## Change checklists
 

@@ -15,7 +15,7 @@ on:
     paths-ignore:
       - "**.md"
       - "docs/**"
-  pull_request_target:
+  pull_request:
     types: [opened, synchronize, reopened]
     paths-ignore:
       - "**.md"
@@ -26,16 +26,11 @@ jobs:
     name: LVA
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    # Pull requests need the approval of the pr-build environment like the PR image build, because their code runs on a trusted trigger
-    environment: ${{ github.event_name == 'pull_request_target' && 'pr-build' || null }}
     permissions:
       contents: read
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
-        with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
-          allow-unsafe-pr-checkout: true
 
       - name: Set up Python 3.12
         uses: actions/setup-python@v7
@@ -76,7 +71,7 @@ jobs:
 
       - name: Upload LVA log and test results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: e2e-results
           path: ${{ runner.temp }}/e2e-results
@@ -86,16 +81,11 @@ jobs:
     name: LVA-Peripheral-API-V1
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    # Pull requests need the approval of the pr-build environment like the PR image build, because their code runs on a trusted trigger
-    environment: ${{ github.event_name == 'pull_request_target' && 'pr-build' || null }}
     permissions:
       contents: read
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
-        with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
-          allow-unsafe-pr-checkout: true
 
       - name: Set up Python 3.12
         uses: actions/setup-python@v7
@@ -136,7 +126,7 @@ jobs:
 
       - name: Upload LVA log and test results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: e2e-peripheral-results
           path: ${{ runner.temp }}/e2e-peripheral-results
