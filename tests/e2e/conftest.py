@@ -11,6 +11,7 @@ import os
 import shutil
 import socket
 import subprocess
+from dataclasses import dataclass
 from pathlib import Path
 from typing import AsyncIterator, Iterator
 
@@ -18,6 +19,7 @@ import pytest
 
 from .audio import SpeakerRecorder, VirtualAudio
 from .fake_ha import FakeHomeAssistant, FixtureServer
+from .fake_sendspin import FakeSendspinPlayer
 from .lva import LvaProcess
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
@@ -106,6 +108,26 @@ def auto_stop_lva(virtual_audio: VirtualAudio, tmp_path_factory: pytest.TempPath
         _store_log(process, "lva-auto-stop.log")
 
 
+@dataclass
+class SendspinSetup:
+    """An LVA instance that controls a fake Sendspin player in one duck mode."""
+
+    lva: LvaProcess
+    player: FakeSendspinPlayer
+
+
+@pytest.fixture(scope="session")
+def sendspin_stop(virtual_audio: VirtualAudio, tmp_path_factory: pytest.TempPathFactory) -> Iterator[SendspinSetup]:
+    """LVA with --sendspin-player-duck-mode stop and a fake Sendspin player that plays."""
+    yield from _sendspin_setup("stop", tmp_path_factory)
+
+
+@pytest.fixture(scope="session")
+def sendspin_duck(virtual_audio: VirtualAudio, tmp_path_factory: pytest.TempPathFactory) -> Iterator[SendspinSetup]:
+    """LVA with --sendspin-player-duck-mode duck and a fake Sendspin player that plays."""
+    yield from _sendspin_setup("duck", tmp_path_factory)
+
+
 @pytest.fixture
 async def ha(lva: LvaProcess) -> AsyncIterator[FakeHomeAssistant]:
     home_assistant = FakeHomeAssistant()
@@ -113,6 +135,26 @@ async def ha(lva: LvaProcess) -> AsyncIterator[FakeHomeAssistant]:
     await asyncio.sleep(SETTLE_SECONDS)
     yield home_assistant
     await home_assistant.disconnect()
+
+
+def _sendspin_setup(duck_mode: str, tmp_path_factory: pytest.TempPathFactory) -> Iterator[SendspinSetup]:
+    player = FakeSendspinPlayer(tmp_path_factory.mktemp(f"sendspin-{duck_mode}"))
+    player.start()
+    process = LvaProcess(
+        _free_port(),
+        _free_port(),
+        tmp_path_factory.mktemp(f"lva-sendspin-{duck_mode}"),
+        extra_args=["--sendspin-control-dir", str(player.directory), "--sendspin-player-duck-mode", duck_mode],
+    )
+    process.start()
+    try:
+        if not process.wait_for_log("Server started", LVA_START_TIMEOUT):
+            raise RuntimeError(f"LVA did not start:\n{process.full_log()}")
+        yield SendspinSetup(lva=process, player=player)
+    finally:
+        process.stop()
+        player.stop()
+        _store_log(process, f"lva-sendspin-{duck_mode}.log")
 
 
 def _store_log(process: LvaProcess, file_name: str) -> None:

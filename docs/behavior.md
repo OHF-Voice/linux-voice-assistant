@@ -11,6 +11,7 @@ For the list of Home Assistant entities see [configuration.md](configuration.md)
 - [Basics: two audio channels](#basics-two-audio-channels)
 - [Talking to the assistant](#talking-to-the-assistant)
 - [Music and media playback](#music-and-media-playback)
+  - [Sendspin player](#sendspin-player)
 - [Announcements](#announcements)
 - [Timers](#timers)
 - [The stop word](#the-stop-word)
@@ -90,6 +91,53 @@ Music started from Home Assistant (a media player service call or the media play
 
 If music is paused when you start talking to the assistant, it stays paused. Ducking only changes the volume (or pauses the music in `pause` mode, which resumes only music that it paused itself). The music is not resumed automatically at the end of a conversation.
 
+### Sendspin player
+
+A Sendspin player (`sendspin-cli`, for example the [Music Assistant Local Audio add-on](https://github.com/music-assistant/local-audio-addon)) plays outside LVA, so LVA cannot control it through mpv. LVA drives it through the control socket of the player (`control.sock` in `--sendspin-control-dir`, default `/run/sendspin-cli/socket`) and treats it as the music of the media player entity. This is the Sendspin bridge, on by default (`--enable-sendspin-bridge 1`, `ENABLE_SENDSPIN_BRIDGE=1`). With `--enable-sendspin-bridge 0` LVA leaves the player alone and works as without it.
+
+| Situation | Sendspin player / media player entity |
+|-----------|---------------------------------------|
+| Sendspin plays and LVA's own music player does not | The entity reports `playing`. In every other case (paused, stopped, unknown, not connected to a server, socket unreachable) it reports `idle`, like an ESPHome device: LVA counts only `playing` as playing. LVA's own music has priority: while it plays or is paused, the entity shows that. |
+| Pause / Stop from Home Assistant while Sendspin is `playing` | Sent to the Sendspin player (`pause`, `stop`) instead of LVA's music player. The entity then reports `idle`. |
+| Play from Home Assistant while LVA's own music neither plays nor is paused | Sent to the Sendspin player (`play`), which continues where it stopped. If LVA's music is paused, Play resumes it. |
+| Music started from Home Assistant (`media_player.play_media` without `announce`) while Sendspin is `playing` | Sendspin is **stopped** and LVA's music plays, so only one of them plays. `stop` is a command for the whole Sendspin group. |
+| Sendspin starts playing while LVA's own music plays or is paused | LVA's music is **stopped**, so only one of them plays. |
+| Sendspin starts playing | Peripherals get `media_player_playing` (version 1), like for music from Home Assistant. Not while a conversation is running, so it does not replace the state of the conversation. |
+| Volume or mute set on the media player entity (Home Assistant or peripheral) | Applied to LVA's own volume as before **and** sent to the Sendspin player as its group volume / mute. |
+| Volume or mute changed at the Sendspin group (Music Assistant, another player) while Sendspin plays | The entity follows it, so the volume of the card and LVA's shared volume ([Volume](#volume)) change too. Not taken over while LVA ducks the player (in every duck mode, until the last reason for ducking is over, because the group volume is then not the real volume) and for 2 s after LVA set the volume itself. A change made during that time is taken over with the next status after the ducking. |
+| `media_player.play_media` with `sendspin://current` | Resumes the Sendspin player. |
+| `media_player.play_media` with any other `sendspin://` URL | Ignored with a warning. LVA cannot make the player connect to a server, the player announces itself over mDNS. |
+| Ducking (wake word, button, conversation, voice or media player announcement, timer ringing) | Depends on `--sendspin-player-duck-mode`, see below. The ducking ends when the last of them is over, like for LVA's own music. |
+| Last Home Assistant client disconnects | The Sendspin player is **not** stopped and keeps playing. Ducking that ends with the connection ends for it too. |
+
+**Ducking modes** (`--sendspin-player-duck-mode`, `SENDSPIN_PLAYER_DUCK_MODE`):
+
+- **`pulse` (default).** LVA lowers the **sound stream** of the player in PulseAudio/PipeWire to 50 % of its volume and gives it its volume back afterwards. The player keeps playing. LVA itself sends nothing to the Sendspin group, but the Local Audio add-on notices the change of its stream volume and passes it on to its Sendspin group as a change in percent. So the other players of the group are ducked as well, as expected, and Music Assistant shows the lowered group volume. When LVA gives the stream its volume back, the group follows again. (Observed with the Local Audio add-on, in the LVA log as group volume 10 → 5 → 10 during a conversation; not checked in the sources of `sendspin-cli`.) LVA finds the stream by its application name `sendspin-cli` (`application.name`, or `application.process.binary` when the player plays through the ALSA plugin). It needs the same sound server as the player (in Docker `PULSE_SERVER` of both containers), and the control socket to see that the player plays: like the other modes, `pulse` acts only while the player plays, a player that is paused, stopped or not connected to a server is left alone until it starts playing while ducking is still active.
+  - A player that starts playing while ducking is active is ducked within about a second, when LVA reads its status. Once LVA has asked for its stream to be ducked, a new stream of the player (for example after the player restarted it) is lowered as soon as it appears. Only a stream at the volume it had before ducking is lowered, and only a stream still at the ducked volume gets its volume back: a stream whose volume someone changed in the meantime is left alone.
+  - The sound server remembers the last volume of an application (stream-restore) and gives it to the next stream of the player. So LVA keeps the volume before and after ducking until it is restored: in `preferences.json` (`sendspin_stream_ducked_from`, `sendspin_stream_ducked_to`), also across a restart of LVA. If the player has no stream when ducking ends, the next stream that starts at the ducked volume gets its volume back.
+  - If the sound server cannot be reached, LVA logs a warning once and tries again after 1 s, then 2 s, 4 s and so on up to every 60 s. Nothing is ducked meanwhile. If the player plays but no stream of it is found when ducking starts (for example because it plays through ALSA), nothing is ducked and LVA logs an error (`Cannot duck: no stream of sendspin-cli found in the sound server`). LVA does not switch to another mode.
+  - All channels of the stream get the same volume (the mean of the channels before), so a balance set on the stream is lost by ducking.
+  - LVA does not take this lowered group volume over into its own volume (see the table above), so the reply of the assistant is not lowered with it.
+- **`stop`.** If the player is **playing**, it is **stopped** and started again when ducking ends. The volume is not touched. The stop applies to the whole Sendspin group. A player that is paused, stopped or not connected to a server is left alone, unless it starts playing while ducking is still active: then it is stopped within about a second.
+- **`duck`.** If the player is **playing**, the volume of the **whole Sendspin group** is set to 50 % of its current value and restored when ducking ends. Every player of the group and Music Assistant follow it. A volume change made by someone else while it is ducked is overwritten when ducking ends. A volume set on the media player entity meanwhile becomes the real volume: the group stays ducked relative to it and is restored to it. LVA keeps the volumes before and after ducking in `preferences.json` (`sendspin_ducked_from`, `sendspin_ducked_to`). If LVA starts and finds them, it sets the group volume back once the player answers, but only if it still is the ducked value.
+
+Further details:
+
+- The status is read from the player once a second (`status-kv`), so a change shows up in Home Assistant after up to about a second.
+- Without a Sendspin player the socket does not exist and nothing is controlled through it. If the socket is missing, cannot be opened or the player does not answer within 1 s, nothing is paused, stopped or mirrored and the entity reports `idle` for Sendspin. LVA logs a critical message once when the socket becomes unreachable (including at startup) and an info message once when it is reachable again. While it is unreachable, the socket is tried less often: every 5 s after 30 s, every 30 s after 120 s and every 60 s after 600 s. `pulse` ducking needs the socket too, to see that the player plays.
+- A stop that Music Assistant sends keeps the position, and `sendspin-cli` then reports `paused`. LVA treats everything that is not `playing` as stopped.
+- A stop does not take the player out of its group. The control socket of `sendspin-cli` has no command for that.
+- Whether Sendspin is supported and the pairing token of the player are not announced to Home Assistant.
+
+#### Control socket protocol
+
+Plain text over a Unix stream socket, one request per connection:
+
+1. LVA connects and sends one line, for example `status-kv\n`, `vol 25\n`, `pause\n` or `play\n`.
+2. The player answers with `ok` or `error <kind>: <reason>` as the first line and closes the connection. `status-kv` continues with `key=value` lines.
+3. LVA reads `state` (`playing`, also `playing (speed …)`; anything else counts as idle), `group_volume` and `group_muted` from `status-kv`.
+4. Other requests LVA sends: `play`, `pause`, `stop`, `vol <0-100>` and `mute on|off`.
+
 ---
 
 ## Announcements
@@ -109,7 +157,7 @@ If the announcement was started with `start_conversation`, the assistant listens
 
 ### Media player announcements and TTS (`announce: true`)
 
-Triggered by a `media_player.play_media` call with `announce: true` on the LVA media player, which is also what `tts.speak` with `announce: true` does. The music is **ducked to 50 %** while the announcement is spoken, like on ESPHome devices, and the media player reports `announcing` until the announcement is over.
+Triggered by a `media_player.play_media` call with `announce: true` on the LVA media player, which is also what `tts.speak` with `announce: true` does. The music is **ducked to 50 %** while the announcement is spoken, like on ESPHome devices, and the media player reports `announcing` until the announcement is over. A Sendspin player is ducked as well, see [Sendspin player](#sendspin-player).
 
 | Music state when the announcement arrives | What happens |
 |-------------------------------------------|--------------|
@@ -266,7 +314,7 @@ The peripheral API is versioned. Choosing a version and what LVA does in each ve
   - With `--host` the address is fixed by the user and is never checked or replaced.
   - A connection that is still open when the address changes is not closed by the move, keepalive ends it if it is dead.
 - When Home Assistant **reconnects** (for example after a restart), settings and entities are kept. Playback is not interrupted as long as at least one client is still connected.
-- When the **last** client disconnects, LVA **stops music and assistant playback** and goes idle. It keeps waiting for Home Assistant to reconnect. A ringing timer is the exception: it keeps ringing, see [Timers](#timers).
+- When the **last** client disconnects, LVA **stops music and assistant playback** and goes idle. A Sendspin player is not stopped, see [Sendspin player](#sendspin-player). It keeps waiting for Home Assistant to reconnect. A ringing timer is the exception: it keeps ringing, see [Timers](#timers).
 - Peripherals are told when Home Assistant is connected (`zeroconf` event with status `connected`) and when it is lost (`disconnected`).
 
 ---
@@ -284,6 +332,7 @@ The peripheral API is versioned. Choosing a version and what LVA does in each ve
 | Media player announcement, music paused | Stays paused |
 | Timer finishes | Ducked while ringing, restored when ringing stops |
 | Stop word said | Music is not stopped, only restored from ducking |
+| Same situations with a Sendspin player | While it plays: its stream lowered to 50 % (`pulse`, default), stopped (`stop`) or its group volume lowered to 50 % (`duck`), see [Sendspin player](#sendspin-player) |
 | Mute switch toggled | Unchanged |
 | Media player stop (Home Assistant / peripheral) | Stopped |
 | Last Home Assistant client disconnects | Stopped |

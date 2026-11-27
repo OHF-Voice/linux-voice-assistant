@@ -54,6 +54,7 @@ from pyopen_wakeword import OpenWakeWord
 
 from .api_server import APIServer
 from .entity import (
+    SENDSPIN_URI_PREFIX,
     ButtonEventSensorEntity,
     ButtonLockEntity,
     LEDLightEntity,
@@ -128,6 +129,7 @@ class VoiceSatelliteProtocol(APIServer):
                 music_player=state.music_player,
                 announce_player=state.tts_player,
                 initial_volume=state.volume,
+                sendspin_player=state.sendspin_player,
             )
             self.state.entities.append(self.state.media_player_entity)
         elif self.state.media_player_entity not in self.state.entities:
@@ -376,6 +378,13 @@ class VoiceSatelliteProtocol(APIServer):
     # ------------------------------------------------------------------
     # Peripheral API helper
     # ------------------------------------------------------------------
+
+    def emit_media_playing(self) -> None:
+        """Tell the peripherals that a Sendspin player started playing. Skipped while a conversation runs, so it does not replace its state."""
+        if self._pipeline_active:
+            _LOGGER.debug("Not sending media_player_playing for Sendspin, a conversation is running")
+            return
+        self._emit(LVAEvent.MEDIA_PLAYER_PLAYING)
 
     def _emit(
         self,
@@ -767,8 +776,8 @@ class VoiceSatelliteProtocol(APIServer):
 
             # Emit peripheral event when background music starts playing.
             # Announcements (TTS) are explicitly excluded — those are covered
-            # by TTS_SPEAKING.
-            if isinstance(msg, MediaPlayerCommandRequest) and msg.has_media_url:
+            # by TTS_SPEAKING. A sendspin:// URL is reported by the Sendspin status poll once the player plays.
+            if isinstance(msg, MediaPlayerCommandRequest) and msg.has_media_url and not msg.media_url.startswith(SENDSPIN_URI_PREFIX):
                 is_announcement = msg.has_announcement and msg.announcement
                 if not is_announcement:
                     self._emit(LVAEvent.MEDIA_PLAYER_PLAYING)
@@ -1110,7 +1119,7 @@ class VoiceSatelliteProtocol(APIServer):
         :param owner: ``conversation``, ``timer`` (ringing) or ``announce`` (voice announcements).
         """
         _LOGGER.debug("Duck requested by %s", owner)
-        self.state.music_player.duck(owner=owner)
+        self.state.duck_music(owner=owner)
 
     def unduck(self, owner: str = "conversation") -> None:
         """
@@ -1118,7 +1127,7 @@ class VoiceSatelliteProtocol(APIServer):
         :param owner: The owner that called :meth:`duck`.
         """
         _LOGGER.debug("Unduck requested by %s", owner)
-        self.state.music_player.unduck(owner=owner)
+        self.state.unduck_music(owner=owner)
 
     def connection_made(self, transport) -> None:
         super().connection_made(transport)

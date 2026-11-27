@@ -21,6 +21,26 @@ services:
       - sounds_custom:/app/sounds/custom
     restart: "no"
 
+  # Bring the Python environment of the image up to the dependencies in the mounted pyproject.toml, so that a branch
+  # with a new dependency runs without a new image. The environment lives in the volume venv, which Docker fills
+  # from the image the first time. The image has no pip in its environment, so the pip of the image's Python installs
+  # into it (--python). Packages without a wheel cannot be built here, the image has no compiler.
+  # After a new image: docker volume rm <project>_venv, so that the environment is taken from the image again.
+  venv:
+    image: "${LVA_IMAGE:-ghcr.io/ohf-voice/linux-voice-assistant-pr}:${LVA_IMAGE_TAG:-nightly}"
+    entrypoint: []
+    user: "0:0"
+    working_dir: /app
+    command: "pip --python /app/.venv/bin/python install --no-cache-dir --disable-pip-version-check /app"
+    volumes:
+      - venv:/app/.venv
+      - ./pyproject.toml:/app/pyproject.toml:ro
+      - ./setup.cfg:/app/setup.cfg:ro
+      - ./linux_voice_assistant:/app/linux_voice_assistant:ro
+      - ./version.txt:/app/version.txt:ro
+      - ./version_githash.txt:/app/version_githash.txt:ro
+    restart: "no"
+
   # Linux Voice Assistant
   linux-voice-assistant:
     container_name: linux-voice-assistant
@@ -51,6 +71,11 @@ services:
       # Pulseaudio
       # /run/user/1000:/run/user/1000
       - ${LVA_XDG_RUNTIME_DIR:-/run/user/1000}:${LVA_XDG_RUNTIME_DIR:-/run/user/1000}
+      # Control socket of a Sendspin player, see SENDSPIN_CONTROL_DIR in .env. The directory is mounted at the same path, not the
+      # socket, so that the player can create the socket again when it restarts.
+      - ${SENDSPIN_CONTROL_DIR:-/run/sendspin-cli/socket}:${SENDSPIN_CONTROL_DIR:-/run/sendspin-cli/socket}
+      # Python environment, see the service venv
+      - venv:/app/.venv
       # Mount source code for development
       - ./linux_voice_assistant:/app/linux_voice_assistant
       - ./sounds:/app/sounds
@@ -60,7 +85,10 @@ services:
       - ./version.txt:/app/version.txt
       - ./version_githash.txt:/app/version_githash.txt
     depends_on:
-      - fix-permissions
+      fix-permissions:
+        condition: service_completed_successfully
+      venv:
+        condition: service_completed_successfully
     # Health check for process
     healthcheck:
       test: ["CMD", "pgrep", "-f", "linux_voice_assistant"]
@@ -80,3 +108,4 @@ volumes:
   wakeword_custom:
   configuration:
   sounds_custom:
+  venv:
