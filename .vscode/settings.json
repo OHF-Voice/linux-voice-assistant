@@ -9,5 +9,6 @@
   "python.formatting.provider": "none",
   "python.terminal.activateEnvironment": true,
   "python.terminal.executeInShell": true,
-  "python.pythonPath": "./.venv/bin/python"
+  "python.pythonPath": "./.venv/bin/python",
+  "python.terminal.useEnvFile": true
 }
