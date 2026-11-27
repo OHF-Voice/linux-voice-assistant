@@ -46,8 +46,11 @@ Feedback events emitted by LVA
   timer_updated   data: {"id": str, "name": str, "total_seconds": int, "seconds_left": int}
   timer_ringing   data: {"id": str, "name": str, "total_seconds": int, "seconds_left": int}
   timer_auto_stopped    data: {"seconds": int}
-              The ringing timer stopped on its own after ``--timer-max-ring-seconds``
-              (``seconds`` is how long it rang). Followed by ``idle``.
+              A ringing timer stopped on its own after ``--timer-max-ring-seconds``
+              (``seconds`` is how long it rang). Sent for every timer, followed
+              by ``idle`` once no timer rings any more.
+              The timer events are sent per timer from the timer list of LVA,
+              also while Home Assistant is not connected.
   media_player_playing  Emitted when HA sends music/media to the music_player
                         (non-announcement playback). Not emitted for TTS or
                         voice pipeline announcements — those use tts_speaking.
@@ -80,12 +83,13 @@ Commands accepted from the peripheral container
                     thinking, speaking or wake word active. Calls satellite.stop() which
                     cleans up STT streaming, sends VoiceAssistantAnnounceFinished
                     to HA, unducking music, and emits idle to peripherals.
+                    Without Home Assistant it only stops the ringing timers.
   mute_mic
   unmute_mic
   volume_up
   volume_down
   set_volume        data: {"volume": 0.0–1.0}
-  stop_timer_ringing
+  stop_timer_ringing    Stop all ringing timers, also without Home Assistant.
   pause_media_player
   resume_media_player
   stop_media_player
@@ -342,7 +346,11 @@ class PeripheralApiV1:
         satellite = state.satellite
 
         if command == LVACommand.START_LISTENING:
-            if satellite is None or state.muted:
+            if state.muted:
+                return
+            if satellite is None:
+                # Without Home Assistant there is no pipeline to start, but a ringing timer is still stopped
+                state.timer_alarm.stop_ringing()
                 return
             satellite.start_listening()  # plays sound, then starts pipeline
 
@@ -351,6 +359,8 @@ class PeripheralApiV1:
             # listening, thinking, speaking or wake word active.
             if satellite is not None:
                 satellite.stop()
+            else:
+                state.timer_alarm.stop_ringing()
 
         elif command == LVACommand.MUTE_MIC:
             if satellite is not None and not state.muted:
@@ -376,14 +386,7 @@ class PeripheralApiV1:
             self._set_volume(state, satellite, max(0.0, min(1.0, float(volume))))
 
         elif command == LVACommand.STOP_TIMER_RINGING:
-            if satellite is None:
-                return
-            if getattr(satellite, "_timer_finished", False):
-                satellite._timer_finished = False  # pylint: disable=protected-access
-                state.active_wake_words.discard(state.stop_word.id)
-                state.tts_player.stop()
-                satellite.unduck(owner="timer")
-                await self.emit_event(LVAEvent.IDLE)
+            state.timer_alarm.stop_ringing()
 
         elif command in (LVACommand.STOP_MEDIA_PLAYER, LVACommand.PAUSE_MEDIA_PLAYER, LVACommand.RESUME_MEDIA_PLAYER):
             self._control_media_player(state, satellite, LVACommand(command))
