@@ -51,11 +51,11 @@ class TestConfigurationRequestOffers:
     async def test_offers_are_logged_with_every_field_and_a_summary(self, tmp_path, caplog):
         sat = make_satellite(tmp_path)
 
-        with caplog.at_level(logging.DEBUG, logger="linux_voice_assistant.satellite"):
+        with caplog.at_level(logging.DEBUG):
             list(sat.handle_message(VoiceAssistantConfigurationRequest(external_wake_words=[make_offer(), make_offer("oww", "Other", model_type="openWakeWord")])))
 
         assert "External wake word from Home Assistant: id=custom, wake_word='Custom', type=micro" in caplog.text
-        assert f"Offered as '{OFFER_ID}', downloaded when chosen" in caplog.text
+        assert f"Wake word 'custom' from Home Assistant offered as 'Download from HA - Custom' (id '{OFFER_ID}'), downloaded when chosen" in caplog.text
         assert "Not offered: model type 'openWakeWord' is not supported" in caplog.text
         assert "Home Assistant offers 2 wake words for download, 1 of them usable" in caplog.text
 
@@ -63,10 +63,10 @@ class TestConfigurationRequestOffers:
         sat = make_satellite(tmp_path)
         sat.state.available_wake_words = {OFFER_ID: _downloaded(tmp_path)}
 
-        with caplog.at_level(logging.DEBUG, logger="linux_voice_assistant.satellite"):
+        with caplog.at_level(logging.DEBUG):
             list(sat.handle_message(VoiceAssistantConfigurationRequest(external_wake_words=[make_offer()])))
 
-        assert f"Offered as '{OFFER_ID}', already downloaded" in caplog.text
+        assert f"Wake word 'custom' from Home Assistant not offered as download: already downloaded as '{OFFER_ID}'" in caplog.text
 
 
 class TestDownloadOffTheEventLoop:

@@ -154,6 +154,10 @@ class APIServer(asyncio.Protocol):
 
             self.send_messages(msgs)
 
+    def close_connection(self) -> None:
+        """Closes the connection to the client. Home Assistant reconnects at once, as after any unexpected disconnect."""
+        self._close()
+
     def send_messages(self, msgs: Iterable[message.Message]):
         if self._writelines is None or not msgs:
             return

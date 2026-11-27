@@ -37,6 +37,7 @@ from .util import (
 )
 from .wake_word import find_available_wake_words, load_stop_model, load_wake_models, wake_word_ids_for_selections, wake_word_selections_for_ids
 from .wake_word_detection import ActiveWakeWord, apply_sensitivities, gate_wake_words, process_wake_words, select_active_wake_words, wake_words_need_refresh
+from .wake_word_names import replace_hidden_wake_words
 from .webrtc import WebRTCProcessor
 from .zeroconf import start_discovery
 
@@ -532,10 +533,16 @@ async def main() -> None:
     if args.mic_noise_suppression > 0:
         preferences.mic_noise_suppression = args.mic_noise_suppression
 
+    stored_wake_word_ids = wake_word_ids_for_selections(preferences.active_wake_words, available_wake_words)
+    active_wake_word_ids = replace_hidden_wake_words(stored_wake_word_ids, available_wake_words)
+    if active_wake_word_ids != stored_wake_word_ids:
+        preferences.active_wake_words = wake_word_selections_for_ids(active_wake_word_ids, available_wake_words)
+        preferences.save(preferences_path)
+
     # Load wake/stop models
     wake_models, wake_word_slots, fallback_used = load_wake_models(
         available_wake_words,
-        [word for word in wake_word_ids_for_selections(preferences.active_wake_words, available_wake_words) if word is not None],
+        [word for word in active_wake_word_ids if word is not None],
         first_default_wake_word_id=args.wake_model,
         second_default_wake_word_id=args.wake_model_2,
     )

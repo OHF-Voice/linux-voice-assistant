@@ -69,6 +69,8 @@ from .timers import TimerEvent
 from .wake_word import find_matching_wake_word_id, wake_word_ids_for_selections, wake_word_selections_for_ids
 from .wake_word_detection import has_active_wake_word
 from .wake_word_download import describe_external_wake_word, download_external_wake_word, external_wake_word_id, is_supported, wake_words_to_download
+from .wake_word_names import name_for_wake_word_id, offered_wake_words
+from .wake_word_reload import RECONNECT_DELAY_SECONDS, HandshakeAction, WakeWordListReload, handshake_action, reported_active_wake_words
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -368,6 +370,8 @@ class VoiceSatelliteProtocol(APIServer):
         self._processing = False
         self._pipeline_active = False
         self._external_wake_words: Dict[str, VoiceAssistantExternalWakeWord] = {}
+        # Set when LVA closes the connection itself to make Home Assistant read the wake word list again; music keeps playing then.
+        self._keep_music_on_disconnect = False
         self._disconnect_event = asyncio.Event()
         self._time_requests: Optional[asyncio.Task] = None
 
@@ -785,55 +789,35 @@ class VoiceSatelliteProtocol(APIServer):
             _LOGGER.debug("✅ Received VoiceAssistantConfigurationRequest from Home Assistant")
             _LOGGER.debug("   -> Request contains %d external wake words", len(msg.external_wake_words))
 
-            available_wake_words = [
-                VoiceAssistantWakeWord(
-                    id=ww.id,
-                    wake_word=ww.id,
-                    trained_languages=ww.trained_languages,
-                )
-                for ww in self.state.available_wake_words.values()
-            ]
-
-            # Log available internal wake words first
-            internal_ww_count = len(self.state.available_wake_words)
-            _LOGGER.debug("   -> Found %d internal available wake words", internal_ww_count)
-            for ww in available_wake_words:
-                _LOGGER.debug("      - %s: '%s' (langs: %s)", ww.id, ww.wake_word, ww.trained_languages)
-
-            offered = 0
+            self._external_wake_words = {}
             for eww in msg.external_wake_words:
                 _LOGGER.debug("   -> External wake word from Home Assistant: %s", describe_external_wake_word(eww))
                 if not is_supported(eww):
                     _LOGGER.debug("      → Not offered: model type '%s' is not supported, only microWakeWord", eww.model_type)
                     continue
 
-                external_id = external_wake_word_id(eww)
-                if external_id in self.state.available_wake_words:
-                    _LOGGER.debug("      → Offered as '%s', already downloaded (%s)", external_id, self.state.available_wake_words[external_id].wake_word_path)
-                else:
-                    _LOGGER.debug("      → Offered as '%s', downloaded when chosen", external_id)
-                available_wake_words.append(
-                    VoiceAssistantWakeWord(
-                        id=external_id,
-                        wake_word=external_id,
-                        trained_languages=eww.trained_languages,
-                    )
-                )
-                self._external_wake_words[external_id] = eww
-                offered += 1
+                self._external_wake_words[external_wake_word_id(eww)] = eww
 
             if msg.external_wake_words:
-                _LOGGER.info("Home Assistant offers %d wake words for download, %d of them usable", len(msg.external_wake_words), offered)
+                _LOGGER.info("Home Assistant offers %d wake words for download, %d of them usable", len(msg.external_wake_words), len(self._external_wake_words))
 
-            active_ww_ids = [ww_id for ww_id in self.state.wake_words if ww_id in self.state.active_wake_words]
+            offered = offered_wake_words(self.state.available_wake_words, self._external_wake_words)
+            _LOGGER.debug("   -> Offering %d wake words to Home Assistant", len(offered))
+            for ww in offered:
+                _LOGGER.debug("      - %s: '%s' (langs: %s)", ww.id, ww.name, list(ww.trained_languages))
+
+            action = handshake_action(self.state.wake_word_list_reload)
+            slot_ids = wake_word_ids_for_selections(self.state.preferences.active_wake_words, self.state.available_wake_words)
+            active_ww_ids = reported_active_wake_words(slot_ids, set(self.state.wake_words) & self.state.active_wake_words, action.report_first_only)
             _LOGGER.debug("   -> Active wake word IDs: %s", active_ww_ids)
 
             yield VoiceAssistantConfigurationResponse(
-                available_wake_words=available_wake_words,
+                available_wake_words=[VoiceAssistantWakeWord(id=ww.id, wake_word=ww.name, trained_languages=list(ww.trained_languages)) for ww in offered],
                 active_wake_words=active_ww_ids,
                 max_active_wake_words=2,
             )
 
+            self._apply_handshake_action(action)
             _LOGGER.info("✅ Connected to Home Assistant - Configuration handshake completed")
             _LOGGER.debug("✅ VoiceAssistantConfigurationResponse sent successfully")
         elif isinstance(msg, VoiceAssistantSetConfiguration):
@@ -878,8 +862,8 @@ class VoiceSatelliteProtocol(APIServer):
             _LOGGER.debug("Ignoring wake word - pipeline already active")
             return
 
-        # Home Assistant compares the phrase with the name in the wake word selection, which is the id of the wake word
-        wake_word_phrase = detection.wake_word_id if detection is not None else wake_word.wake_word  # type: ignore[union-attr]
+        # Home Assistant compares the phrase with the name in its wake word selection to choose the pipeline
+        wake_word_phrase = name_for_wake_word_id(detection.wake_word_id, self.state.available_wake_words) if detection is not None else wake_word.wake_word  # type: ignore[union-attr]
         _LOGGER.debug("Detected wake word: %s", wake_word_phrase)
         self._wake_word_phrase = wake_word_phrase
 
@@ -1093,10 +1077,13 @@ class VoiceSatelliteProtocol(APIServer):
         # that belongs to a client still connected.
         if not self.state.connections:
             # Stop any ongoing audio playback and wake/stop word processing.
-            try:
-                self.state.music_player.stop()
-            except Exception:  # pylint: disable=broad-except
-                _LOGGER.exception("Failed to stop music player during disconnect")
+            if self._keep_music_on_disconnect:
+                _LOGGER.debug("Music keeps playing: LVA closed the connection itself so Home Assistant reads the wake word list again")
+            else:
+                try:
+                    self.state.music_player.stop()
+                except Exception:  # pylint: disable=broad-except
+                    _LOGGER.exception("Failed to stop music player during disconnect")
 
             # A ringing timer keeps ringing without Home Assistant, with its sound, its ducking and the stop word.
             timer_ringing = self.state.timer_alarm.ringing
@@ -1202,6 +1189,7 @@ class VoiceSatelliteProtocol(APIServer):
         :param downloads: Offered wake words of that selection that are not on disk yet.
         """
         directory = self.state.wake_word_root / "downloaded" / "microwakeword"
+        downloaded = False
         for external_wake_word in downloads:
             try:
                 model_info = await asyncio.to_thread(download_external_wake_word, external_wake_word, directory)
@@ -1215,8 +1203,13 @@ class VoiceSatelliteProtocol(APIServer):
 
             _LOGGER.info("Wake word '%s' downloaded as '%s'", external_wake_word.id, model_info.id)
             self.state.available_wake_words[model_info.id] = model_info
+            downloaded = True
 
         self._activate_wake_words(requested_ids)
+        if downloaded:
+            _LOGGER.info("Wake word names changed by the download, Home Assistant reconnects to read the wake word list again")
+            self.state.wake_word_list_reload = WakeWordListReload.NAMES_CHANGED
+            self._reconnect_home_assistant()
 
     def _activate_wake_words(self, requested_ids: List[str]) -> None:
         """
@@ -1289,3 +1282,36 @@ class VoiceSatelliteProtocol(APIServer):
         self.state.preferences.active_wake_words = wake_word_selections_for_ids(new_wake_words, self.state.available_wake_words)
         self.state.preferences.save(self.state.preferences_path)
         self.state.wake_words_changed = True
+
+    # ------------------------------------------------------------------
+    # Wake word list in Home Assistant
+    # ------------------------------------------------------------------
+
+    def _apply_handshake_action(self, action: HandshakeAction) -> None:
+        """Moves on to the next step of reloading the wake word list after a configuration handshake, see wake_word_reload.py."""
+        if action.next_step != self.state.wake_word_list_reload:
+            _LOGGER.debug("Wake word list reload: %s -> %s", self.state.wake_word_list_reload.value, action.next_step.value)
+        self.state.wake_word_list_reload = action.next_step
+        if action.next_step == WakeWordListReload.NONE and self.state.preferences.wake_word_names_changed:
+            self.state.preferences.wake_word_names_changed = False
+            self.state.preferences.save(self.state.preferences_path)
+
+        if action.reconnect:
+            self._reconnect_home_assistant()
+
+    def _reconnect_home_assistant(self) -> None:
+        """Closes every client connection after a short delay, so Home Assistant reconnects and reads the wake word list again. Music keeps playing."""
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            _LOGGER.warning("Home Assistant cannot be reconnected outside the event loop")
+            return
+
+        _LOGGER.debug("Closing %d connection(s) in %.1f s so Home Assistant reads the wake word list again", len(self.state.connections), RECONNECT_DELAY_SECONDS)
+        loop.call_later(RECONNECT_DELAY_SECONDS, self._close_connections_for_reload)
+
+    def _close_connections_for_reload(self) -> None:
+        """Closes every client connection and keeps the music playing."""
+        for connection in list(self.state.connections):
+            connection._keep_music_on_disconnect = True  # pylint: disable=protected-access
+            connection.close_connection()
