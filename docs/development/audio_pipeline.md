@@ -208,7 +208,7 @@ The wake word runs on the same audio as the stream. Attenuation from Mic Volume 
 
 ## How Home Assistant and aioesphomeapi treat `data2`
 
-**Status: derived from reading the code, not reproduced on a running system.** Sources: the `aioesphomeapi` repository (`origin/main`, 46.22.0; LVA pins 45.3.1, whose installed package also contains the `data2` field and the flag) and Home Assistant Core (`homeassistant/components/esphome/assist_satellite.py`, `stt/models.py`, `wyoming/stt.py`, `cloud/stt.py`; commit not recorded). Behavior may differ in other Home Assistant versions.
+**Status: derived from reading the code, not reproduced on a running system.** Sources: the `aioesphomeapi` repository (`origin/main`, 46.22.0; LVA pins 46.30.1, whose installed package also contains the `data2` field and the `MULTI_CHANNEL_AUDIO` flag) and Home Assistant Core (`homeassistant/components/esphome/assist_satellite.py`, `stt/models.py`, `wyoming/stt.py`, `cloud/stt.py`; commit not recorded). Behavior may differ in other Home Assistant versions.
 
 **Protocol (aioesphomeapi)**
 

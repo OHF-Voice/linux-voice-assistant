@@ -30,3 +30,4 @@ CLAUDE.local.md
 
 # Python bytecode
 __pycache__/
+.pytest_cache
