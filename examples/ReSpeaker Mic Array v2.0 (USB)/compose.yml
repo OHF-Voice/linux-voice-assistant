@@ -14,7 +14,6 @@ services:
   respeaker-usb-peripheral:
     build: .
     image: ohf/respeaker-usb-peripheral:local
-    container_name: respeaker-usb-peripheral
     restart: unless-stopped
 
     # -----------------------------------------------------------------------

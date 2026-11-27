@@ -12,7 +12,6 @@ services:
   satellite1-peripheral:
     build: .
     image: lva/satellite1_hat_board:local
-    container_name: satellite1_hat_board
     restart: unless-stopped
 
     # -----------------------------------------------------------------------
