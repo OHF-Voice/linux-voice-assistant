@@ -155,14 +155,14 @@ The device page shows one or two wake word selects (**Wake Word 1**, **Wake Word
 
 <img src="./images/wake_word.png" alt="Wake word select" width="289">
 
-Each name in the dropdown shows where the wake word comes from (`Internal`, `Download` or `Custom`) and its engine, for example `Internal - OWW - Hey Jarvis`. **OWW** is [openWakeWord](https://github.com/dscripka/openWakeWord) and **MWW** is [microWakeWord](https://github.com/kahrendt/microWakeWord). You can mix both engines:
+The dropdown shows microWakeWord models by their phrase (`Hey Jarvis`) and openWakeWord models with ` (OWW)` (`Hey Jarvis (OWW)`). If one engine has the same phrase in several places, only one is listed (custom before downloaded before internal). Wake words that Home Assistant offers for download are listed as `Download from HA - <phrase>` until they are downloaded. [openWakeWord](https://github.com/dscripka/openWakeWord) and [microWakeWord](https://github.com/kahrendt/microWakeWord) can be mixed:
 
 - **microWakeWord** models are lighter and run on lower-end devices. They are in the `wakewords/<origin>/microwakeword` directories.
 - **openWakeWord** models are more accurate. They are in the `wakewords/<origin>/openwakeword` directories.
 
 **No wake word.** If you set both selects to *No wake word*, no wake word starts the assistant, and a button cannot start listening either. After a restart LVA uses the default wake words again, because none are stored.
 
-**After updating from an older version.** Home Assistant remembers the text of each select itself, and the names of the wake words changed (for example `Hey Jarvis` is now `Internal - MWW - Hey Jarvis`). LVA keeps your stored wake words, but a select with an old name shows *No wake word*, or one select shows a wake word and the other none, although LVA has both active. LVA cannot change what Home Assistant remembers. Choose the wake word again in each select. If a select keeps showing the old name, set it to *No wake word* once and then choose the wake word.
+**After updating from an older version.** Home Assistant remembers the text of each select itself, and the names of the wake words changed (for example `Internal - MWW - Hey Jarvis` is now `Hey Jarvis`). LVA keeps your stored wake words and makes Home Assistant reconnect twice after the update, so the first select shows the wake word again. With two active wake words, the second select shows *No wake word*: choose the wake word again there. If a select keeps showing an old name, set it to *No wake word* once and then choose the wake word.
 
 The [Wake Word section](features.md#wake-word) of the installation guide lists all bundled models and explains how to add custom ones.
 

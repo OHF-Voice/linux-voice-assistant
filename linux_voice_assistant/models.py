@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Union
 from .home_assistant_timers import TimerSync
 from .timer_alarm import TimerAlarm
 from .timers import TimerList
+from .wake_word_reload import WakeWordListReload
 
 if TYPE_CHECKING:
     from google.protobuf import message
@@ -126,6 +127,8 @@ class Preferences:
     mic_noise_suppression: int = 0
     mic_volume: int = 100  # 0–100, default maximum
     applied_migrations: List[int] = field(default_factory=list)  # numbers of the one-time migrations that already ran
+    # Set when the names of the wake words in Home Assistant changed and its selection still has to be restored, see wake_word_reload.py.
+    wake_word_names_changed: bool = False
     timers: List[Dict[str, Any]] = field(default_factory=list)  # the timer list, see timers.py
     # Group volume of a Sendspin player before and after ducking (``duck`` mode). Set only while ducked, so that a restart can restore it.
     sendspin_ducked_from: Optional[int] = None
@@ -273,8 +276,13 @@ class ServerState:
     # Download of wake words chosen in Home Assistant, see wake_word_download.py. A newer selection cancels it, also from a new connection.
     wake_word_download: "Optional[asyncio.Task]" = None
 
+    # Step of making Home Assistant read the wake word list again, see wake_word_reload.py. Not stored; starts from the preferences.
+    wake_word_list_reload: WakeWordListReload = WakeWordListReload.NONE
+
     def __post_init__(self) -> None:
         self.timer_alarm = TimerAlarm(self)
+        if self.preferences.wake_word_names_changed:
+            self.wake_word_list_reload = WakeWordListReload.NAMES_CHANGED
 
     def broadcast(self, msgs: "Iterable[message.Message]") -> None:
         """Send messages to every connected API client.
