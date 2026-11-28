@@ -12,7 +12,6 @@ services:
   respeaker4mic-peripheral:
     build: .
     image: lva/respeaker-4mic-hat:local
-    container_name: respeaker-4mic-hat
     restart: unless-stopped
 
     # -----------------------------------------------------------------------
