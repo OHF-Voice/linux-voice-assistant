@@ -92,6 +92,20 @@ def peripheral_lva(virtual_audio: VirtualAudio, tmp_path_factory: pytest.TempPat
         _store_log(process, "lva-peripheral.log")
 
 
+@pytest.fixture(scope="session")
+def auto_stop_lva(virtual_audio: VirtualAudio, tmp_path_factory: pytest.TempPathFactory) -> Iterator[LvaProcess]:
+    """A third LVA whose ringing timer stops after 3 s, so a test can wait for the timer to stop on its own (the default is 900 s)."""
+    process = LvaProcess(_free_port(), _free_port(), tmp_path_factory.mktemp("lva-auto-stop"), extra_args=["--timer-max-ring-seconds", "3"])
+    process.start()
+    try:
+        if not process.wait_for_log("Server started", LVA_START_TIMEOUT):
+            raise RuntimeError(f"LVA did not start:\n{process.full_log()}")
+        yield process
+    finally:
+        process.stop()
+        _store_log(process, "lva-auto-stop.log")
+
+
 @pytest.fixture
 async def ha(lva: LvaProcess) -> AsyncIterator[FakeHomeAssistant]:
     home_assistant = FakeHomeAssistant()

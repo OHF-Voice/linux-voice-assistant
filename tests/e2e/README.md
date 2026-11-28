@@ -44,7 +44,7 @@ No real microphone, speaker or Home Assistant is involved. The tests show that L
 
 ## Peripheral API tests
 
-`peripheral_api/` tests the peripheral WebSocket API the way a peripheral uses it, modelled on `examples/Peripheral web console`: the same registrations (light, button, button lock), the same commands and the events the console reacts to. They run against a second LVA instance (`peripheral_lva`), because registering entities adds them to the device and makes LVA reconnect Home Assistant once, which would change the entity list the other tests check. Run them alone with `./script/e2e tests/e2e/peripheral_api`, they have their own job `LVA-Peripheral-API-V1` in `e2e-tests.yml`.
+`peripheral_api/` tests the peripheral WebSocket API the way a peripheral uses it, modelled on `examples/Peripheral web console`: the same registrations (light, button, button lock), the same commands and the events the console reacts to. They run against a second LVA instance (`peripheral_lva`), because registering entities adds them to the device and makes LVA reconnect Home Assistant once, which would change the entity list the other tests check. One test needs a ringing timer that stops after 3 s (`--timer-max-ring-seconds 3`), so it runs against a third instance (`auto_stop_lva`). Run them alone with `./script/e2e tests/e2e/peripheral_api`, they have their own job `LVA-Peripheral-API-V1` in `e2e-tests.yml`.
 
 ## Fixtures
 

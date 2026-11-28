@@ -2,7 +2,7 @@
 
 This page describes what Linux Voice Assistant (LVA) does in everyday situations, from the user's point of view: what happens to music when you talk to the assistant, what happens when a timer rings, what the stop word does, and so on.
 
-For the list of Home Assistant entities see [configuration.md](configuration.md). For the events sent to hardware peripherals see [peripheral_api.md](development/peripheral_api.md).
+For the list of Home Assistant entities see [configuration.md](configuration.md). For the events sent to hardware peripherals see [peripheral_api/readme.md](peripheral_api/readme.md), for what peripherals can trigger see the specification of each version ([v1](peripheral_api/v1.md), [v2](peripheral_api/v2.md)).
 
 ---
 
@@ -16,7 +16,6 @@ For the list of Home Assistant entities see [configuration.md](configuration.md)
 - [The stop word](#the-stop-word)
 - [Mute](#mute)
 - [Volume](#volume)
-- [Buttons (peripherals)](#buttons-peripherals)
 - [Peripheral API versions](#peripheral-api-versions)
 - [Connection to Home Assistant](#connection-to-home-assistant)
 - [Quick reference: what happens to music?](#quick-reference-what-happens-to-music)
@@ -64,7 +63,7 @@ Details:
 - **Continued conversation.** If Home Assistant asks a follow-up question, the assistant listens again after the reply, without a wake word. It waits `--continue-conversation-delay` (default 0.5 s) after the reply so the microphone does not record the tail of its own voice. Music stays ducked through the whole conversation and is restored only when the conversation ends. The follow-up runs on the same pipeline as the wake word that started the conversation. After a button press or an announcement from Home Assistant there is no wake word, so the first pipeline is used. If you mute the assistant during that delay, the follow-up is skipped and music is restored.
 - **Wake word while a timer rings.** Saying the wake word silences the ringing timer and starts a normal interaction.
 - **Starting by button.** A peripheral button can start listening without a wake word. Instead of the wake sound, the start-listening sound (`--start-listening-sound`) plays; everything else is identical. This also silences a ringing timer. It does nothing while no wake word is active, see below.
-- **Errors.** If the pipeline reports an error, peripherals receive a `pipeline_error` event. See [peripheral_api.md](development/peripheral_api.md).
+- **Errors.** If the pipeline reports an error, version 1 peripherals receive a `pipeline_error` event, version 2 peripherals the state `pipeline_error`. See [peripheral_api/readme.md](peripheral_api/readme.md).
 - **Two wake words.** Home Assistant can activate up to two wake words at once. Each has its own sensitivity setting (*Wake Word 1/2 Sensitivity*). A word keeps its slot while the other one changes, and always uses the sensitivity of its own slot, also when it is the only active word.
 - **Wake word locations.** Wake words are read from `wakewords/internal`, `wakewords/downloaded` and `wakewords/custom` (root: `--wake-word-root-dir`), each with a `microwakeword` and an `openwakeword` subdirectory. The same model in two directories is two separate wake words. `--wake-model` and `--wake-model-2` accept the file name (`hey_jarvis`) or the name in the selection (`Internal - MWW - Hey Jarvis`). If a file name exists in more than one origin, `custom` wins over `downloaded`, which wins over `internal`. The same applies to the stop word. Wake words that Home Assistant sends are stored in `downloaded`.
 - **Wake word names.** Every wake word has a name made of origin, engine and the phrase from its `.json` file, for example `Download - OWW - Hey Jarvis` (`Internal`, `Download`, `Custom` and `MWW`, `OWW`). It is the name in the wake word selection in Home Assistant and also the phrase LVA sends with a voice request, because Home Assistant compares both to choose the pipeline of a wake word. If two wake words of one origin and engine have the same phrase, only the last one found is used and a warning is logged.
@@ -134,7 +133,7 @@ Timers are created by voice ("set a timer for 5 minutes") and managed by Home As
 | Timer is ringing and you say the **stop word** | The ringing stops, music is restored, the assistant goes idle. |
 | Timer is ringing and you say the **wake word** or press the **start-listening button** | The ringing stops and a normal interaction begins. |
 | Timer is ringing and a peripheral sends `stop_timer_ringing` or `stop_pipeline` | The ringing stops, music is restored, the assistant goes idle. |
-| Nobody reacts | The timer **stops ringing automatically** after `--timer-max-ring-seconds` (default 900 s = 15 minutes) and the music is restored. |
+| Nobody reacts | The timer **stops ringing automatically** after `--timer-max-ring-seconds` (default 900 s = 15 minutes) and the music is restored. Peripherals receive `timer_auto_stopped`, then `idle`, so they can show that the timer was not dismissed. |
 
 Notes:
 
@@ -189,11 +188,13 @@ When unmuted, the unmute sound (`--unmute-sound`) plays and the assistant return
 
 **Remote unmute.** `--enable-remote-unmute` (`ENABLE_REMOTE_UNMUTE`, `1` by default) decides who may unmute:
 
-- `1`: Home Assistant's **Mute** switch and peripherals (`mute_mic` / `unmute_mic`) can mute and unmute.
-- `0`: only a peripheral can unmute (`unmute_mic`, for example a physical mute switch). Home Assistant has no **Mute** switch, it shows the mute state in a read-only **Mute** sensor instead.
+- `1`: Home Assistant's **Mute** switch and peripherals (`mute_mic` / `unmute_mic` in peripheral API version 1, `muted_on` / `muted_off` in version 2) can mute and unmute.
+- `0`: only a peripheral can unmute (`unmute_mic` / `muted_off`, for example a physical mute switch). Home Assistant has no **Mute** switch, it shows the mute state in a read-only **Mute** sensor instead.
 - The setting is only read at startup and is not saved in `preferences.json`.
 
 Do not confuse this with the **media player mute**, which sets the shared volume to 0, see below.
+
+Some hardware can also mute its microphone itself. That **hardware mute** is separate from this switch: LVA only learns about it from a version 2 peripheral, see [peripheral_api/v2.md](peripheral_api/v2.md#hardware-mute). LVA does not mute because the hardware is muted and the other way round, and Home Assistant sees the hardware mute through the peripheral, not through LVA.
 
 ---
 
@@ -216,87 +217,9 @@ If the second attempt also fails, the assistant logs the error and exits with a 
 
 ---
 
-## Buttons (peripherals)
-
-If a peripheral (such as a HAT with buttons) is connected through the [peripheral API](development/peripheral_api.md), it can trigger the following. What a physical button does is defined by the peripheral, not by LVA.
-
-| Action | Result |
-|--------|--------|
-| Start listening | Plays the start-listening sound and begins an interaction without a wake word. Also silences a ringing timer. Ignored while muted or while no wake word is active. |
-| Stop pipeline | Stops the current reply or a ringing timer, same as the stop word. |
-| Mute / unmute microphone | Same as the Mute switch. |
-| Volume up / down / set | Changes the shared volume by `--peripheral-volume-step`. |
-| Stop / pause / resume media | Controls the music player directly. |
-| Single press | Reported to Home Assistant as a `single_press` event (no sound). |
-| Double / triple / long press | Plays the matching sound (`--button-double-press-sound`, `--button-triple-press-sound`, `--button-long-press-sound`) and reports the event to Home Assistant so you can use it in automations. |
-
-The *Disable button controls* switch (if the peripheral provides it) lets you lock the physical buttons from Home Assistant.
-
-This table describes API version 1. Version 2 offers fewer commands, see [Peripheral API versions](#peripheral-api-versions).
-
----
-
 ## Peripheral API versions
 
-> **Status:** specified here, implementation follows. Until then LVA only offers version 1 on every path.
-
-The [peripheral API](development/peripheral_api.md) is versioned, so a peripheral written for an older version keeps working when a newer one appears. A peripheral chooses the version by the path of the WebSocket URL:
-
-| URL | Version |
-|-----|---------|
-| `ws://<host>:6055/v1` | Version 1 |
-| `ws://<host>:6055/v2` | Version 2 |
-| `ws://<host>:6055/` (no path) | Version 1, so peripherals written before versioning keep working unchanged |
-
-- **One version per connection.** Clients of different versions can be connected at the same time. Each one only sees the events and commands of its own version.
-- **Versions are separate.** Each version has its own implementation and its own specification page (`docs/peripheral_api/v1.md`, `docs/peripheral_api/v2.md`). A change to one version never changes another. Version 1 is the API as it was before versioning and is only changed to fix bugs.
-- **Unknown version.** A path that is not a supported version is refused and LVA logs the versions it supports.
-- **Removing a version** is a breaking change and is announced as such. No version is removed without that.
-- **Hello.** Version 2 starts every connection with a `hello` event with `api_version` and `supported_versions`, followed by the current state (see Events below).
-
-### Version 2
-
-Version 2 is the reduced API for the [Linux Peripherals Controller](https://github.com/OHF-Voice/linux-peripherals-controller) (LPC). It only carries what LVA knows and does: the state of the assistant and a few commands. Everything that belongs to hardware or to Home Assistant entities (LEDs, buttons, sensors, child lock) is handled by the peripheral itself, which talks to Home Assistant on its own. LVA creates **no** Home Assistant entities for a version 2 client and plays **no** button sounds for it.
-
-Events and commands are JSON messages as in version 1: `{"event": "<name>", "data": {...}}` and `{"command": "<name>", "data": {...}}`.
-
-**Events (LVA → peripheral).** An event is only sent when its value changes. Right after `hello`, the peripheral receives all of the following once, in this order, so it knows the current state without waiting.
-
-| Event | Data | Meaning |
-|-------|------|---------|
-| `lva_status` | `{"status": "connected" \| "disconnected"}` | `connected` while at least one Home Assistant client is connected. |
-| `state` | `{"state": "idle" \| "listening" \| "thinking" \| "tts" \| "announce"}` | What the assistant is doing, see below. |
-| `mute_status` | `{"muted": bool}` | Microphone mute (the Mute switch), not the media player mute. |
-| `volume_status` | `{"volume": int}` | Shared volume in percent, 0 to 100. The media player mute shows as 0. |
-| `timer_status` | `{"status": "idle" \| "active" \| "ringing"}` | `active` while at least one timer is counting down and none rings, `ringing` while a timer rings, otherwise `idle`. |
-| `media_player_status` | `{"status": "idle" \| "playing" \| "silent" \| "pause"}` | State of the music player. `silent` is playing with the volume at 0 %. Music that is only paused for ducking (`pause` duck mode) still reports `playing`. |
-
-The `state` values:
-
-| State | From | Until |
-|-------|------|-------|
-| `listening` | The wake word is detected or listening is started by a command. The wake sound is part of it. | Speech recognition has ended. |
-| `thinking` | Home Assistant processes the request. | The reply starts playing, or the run ends. |
-| `tts` | The spoken reply plays. | Playback ends. |
-| `announce` | A voice announcement or a media player announcement (`announce: true`) plays. | Playback ends. |
-| `idle` | Everything else, also while muted and while a timer rings. | |
-
-A follow-up question (continued conversation) goes `tts`, then `listening` again. A pipeline error ends in `idle`, version 2 has no separate error event.
-
-**Commands (peripheral → LVA).**
-
-| Command | Data | Effect |
-|---------|------|--------|
-| `start_listening` | none | Starts listening without a wake word, with the start-listening sound. Ignored while muted, while no wake word is active or while a pipeline is already running. Also silences a ringing timer. |
-| `stop` | none | Stops the running reply or announcement and the pipeline, like the stop word does for them. Does not touch a ringing timer or the music. |
-| `mute_on` / `mute_off` | none | Same as the Mute switch: the mute or unmute sound plays. Ignored if the microphone is already in that state. |
-| `volume_up` / `volume_down` | none | Changes the shared volume by `--peripheral-volume-step`. |
-| `volume_set` | `{"volume": int}` | Sets the shared volume to 0 to 100 %. Values outside are clamped. |
-| `timer_stop` | none | Stops a ringing timer and restores the music. Ignored if no timer rings. |
-
-- **Volume limit feedback.** `volume_up` while the volume is already 100 % plays a short feedback sound on the assistant player and changes nothing. `volume_down` at 0 % does nothing.
-- **Invalid commands.** An unknown command or invalid data is ignored and logged as a warning. The connection stays open.
-- **No Home Assistant side effects.** Commands change the assistant exactly as the same action from Home Assistant would (Home Assistant sees the new volume, mute state and media state).
+The peripheral API is versioned. Choosing a version and what LVA does in each version is described in [peripheral_api/readme.md](peripheral_api/readme.md) and the specification of each version.
 
 ---
 

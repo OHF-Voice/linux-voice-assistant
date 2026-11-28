@@ -1,4 +1,7 @@
-"""WebSocket peripheral API.
+"""WebSocket peripheral API, version 1.
+
+This is the API as it was before versioning. It is frozen: it only gets bug fixes. New features go into a newer version.
+The event ``timer_auto_stopped`` was added as a bug fix: a timer that stopped ringing on its own was never reported.
 
 Bridges LVA state to a separate peripheral container (LEDs, buttons, HAT boards).
 
@@ -42,6 +45,9 @@ Feedback events emitted by LVA
   timer_ticking   data: {"id": str, "name": str, "total_seconds": int, "seconds_left": int}
   timer_updated   data: {"id": str, "name": str, "total_seconds": int, "seconds_left": int}
   timer_ringing   data: {"id": str, "name": str, "total_seconds": int, "seconds_left": int}
+  timer_auto_stopped    data: {"seconds": int}
+              The ringing timer stopped on its own after ``--timer-max-ring-seconds``
+              (``seconds`` is how long it rang). Followed by ``idle``.
   media_player_playing  Emitted when HA sends music/media to the music_player
                         (non-announcement playback). Not emitted for TTS or
                         voice pipeline announcements — those use tts_speaking.
@@ -129,7 +135,7 @@ from typing import TYPE_CHECKING, Any, Dict, Optional, Set
 from aioesphomeapi.api_pb2 import MediaPlayerStateResponse  # type: ignore[attr-defined]  # pylint: disable=no-name-in-module
 
 if TYPE_CHECKING:
-    from .models import ServerState
+    from ...models import ServerState
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -144,6 +150,7 @@ class LVAEvent(str, Enum):
 
     WAKE_WORD_DETECTED = "wake_word_detected"
     LISTENING = "listening"
+    SPEECH_DETECTED = "speech_detected"
     STT_TEXT = "stt_text"
     THINKING = "thinking"
     TTS_TEXT = "tts_text"
@@ -156,6 +163,7 @@ class LVAEvent(str, Enum):
     TIMER_TICKING = "timer_ticking"
     TIMER_UPDATED = "timer_updated"
     TIMER_RINGING = "timer_ringing"
+    TIMER_AUTO_STOPPED = "timer_auto_stopped"
     MEDIA_PLAYER_PLAYING = "media_player_playing"
     VOLUME_CHANGED = "volume_changed"
     VOLUME_MUTED = "volume_muted"
@@ -192,36 +200,24 @@ class LVACommand(str, Enum):
 # ---------------------------------------------------------------------------
 
 
-class PeripheralAPIServer:
+class PeripheralApiV1:
     """
-    WebSocket server that bridges LVA state to a peripheral container.
+    Version 1 of the peripheral API: events, commands and snapshot for one connected peripheral client set.
 
-    Usage
-    -----
-    1. Construct in ``__main__.main()``.
-    2. ``peripheral_api.set_state(state)`` once ``ServerState`` exists.
-    3. ``await peripheral_api.start()`` inside the running event loop.
-    4. Call ``emit_event_sync()`` from any thread (mpv callbacks, audio thread).
+    The WebSocket server itself (bind, routing by version) is ``PeripheralAPIServer``, which calls
+    ``handle_client()`` for every client that asked for version 1.
     """
 
     DEFAULT_VOLUME_STEP: float = 0.05
     LATE_ENTITY_RECONNECT_DEBOUNCE_S: float = 1.5
     LATE_ENTITY_RECONNECT_COOLDOWN_S: float = 60.0
 
-    def __init__(
-        self,
-        host: str = "0.0.0.0",
-        port: int = 6055,
-        volume_step: float = DEFAULT_VOLUME_STEP,
-    ) -> None:
-        self._host = host
-        self._port = port
+    def __init__(self, volume_step: float = DEFAULT_VOLUME_STEP) -> None:
         self._volume_step = volume_step
 
         self._clients: Set[Any] = set()
         self._state: Optional[ServerState] = None
         self._loop: Optional[asyncio.AbstractEventLoop] = None
-        self._server: Any = None
 
         # Last conversation exchange — sent in the snapshot to newly-connecting clients
         self._last_stt_text: Optional[str] = None
@@ -247,34 +243,22 @@ class PeripheralAPIServer:
         """Attach the shared ``ServerState`` so commands can read/mutate it."""
         self._state = state
 
-    async def start(self) -> None:
-        """Start the WebSocket server inside the running event loop."""
-        try:
-            from websockets.server import serve  # type: ignore[import]
-        except ImportError:
-            _LOGGER.error("websockets package not installed – peripheral API disabled. Install with: pip install websockets")
-            return
-
-        self._loop = asyncio.get_running_loop()
-        self._server = await serve(self._handle_client, self._host, self._port)
-        _LOGGER.info("Peripheral API listening at ws://%s:%d", self._host, self._port)
+    def set_loop(self, loop: asyncio.AbstractEventLoop) -> None:
+        """Attach the running event loop, used to schedule the late entity reconnect."""
+        self._loop = loop
 
     async def stop(self) -> None:
-        """Gracefully shut down the server and all client connections."""
+        """Cancel pending work. The server closes the client connections."""
         if self._pending_entity_reconnect_task is not None:
             self._pending_entity_reconnect_task.cancel()
             self._pending_entity_reconnect_task = None
-
-        if self._server is not None:
-            self._server.close()
-            await self._server.wait_closed()
-            _LOGGER.info("Peripheral API stopped")
 
     # ------------------------------------------------------------------
     # Client handling
     # ------------------------------------------------------------------
 
-    async def _handle_client(self, websocket: Any) -> None:
+    async def handle_client(self, websocket: Any) -> None:
+        """Serve one peripheral client until it disconnects."""
         addr = getattr(websocket, "remote_address", "unknown")
         self._clients.add(websocket)
         _LOGGER.info("Peripheral client connected: %s", addr)
@@ -446,7 +430,7 @@ class PeripheralAPIServer:
         Idempotent on object_id: repeat registrations (e.g. after a
         peripheral reconnect) keep the existing entity and its state.
         """
-        from .models import LightRegistration  # local import to avoid a cycle
+        from ...models import LightRegistration  # local import to avoid a cycle
 
         object_id = str(data.get("object_id", "")).strip()
         if not object_id:
@@ -616,7 +600,9 @@ class PeripheralAPIServer:
         event: LVAEvent,
         data: Optional[Dict[str, Any]] = None,
     ) -> None:
-        """Broadcast an event to all connected peripheral clients."""
+        """Broadcast an event to all connected peripheral clients. ``speech_detected`` exists only in version 2 and is not sent."""
+        if event == LVAEvent.SPEECH_DETECTED:
+            return
         # Cache the last conversation text so newly-connecting clients get it in the snapshot
         if event == LVAEvent.STT_TEXT and data:
             self._last_stt_text = data.get("text")
@@ -676,22 +662,6 @@ class PeripheralAPIServer:
             event.value,
             len(self._clients),
         )
-
-    def emit_event_sync(
-        self,
-        event: LVAEvent,
-        data: Optional[Dict[str, Any]] = None,
-    ) -> None:
-        """
-        Thread-safe fire-and-forget event emission.
-
-        Safe to call from mpv callbacks, the audio processing thread, or any
-        non-async context while the asyncio event loop is running.
-        """
-        loop = self._loop
-        if loop is None or loop.is_closed():
-            return
-        asyncio.run_coroutine_threadsafe(self.emit_event(event, data), loop)
 
     def _set_volume(self, state: "ServerState", satellite: Any, volume: float) -> None:
         """

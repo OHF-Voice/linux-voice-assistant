@@ -279,6 +279,30 @@ async def test_timer_events_and_stop_timer_ringing(session: PeripheralSession, s
     assert not await speaker.wait_for_sound(speaker.mark(), timeout=2), "the timer kept ringing"
 
 
+async def test_timer_that_nobody_stops_ends_on_its_own_and_is_reported(auto_stop_lva: LvaProcess) -> None:
+    """A ringing timer that nobody stops ends after --timer-max-ring-seconds. The peripheral gets timer_auto_stopped with how long it rang, then idle."""
+    ha = FakeHomeAssistant()
+    await ha.connect(auto_stop_lva.api_port)
+    peripheral = PeripheralClient()
+    await peripheral.connect(auto_stop_lva.peripheral_port)
+    await asyncio.sleep(SETTLE_SECONDS)
+    events = peripheral.mark()
+
+    try:
+        ha.timer_event(VoiceAssistantTimerEventType.VOICE_ASSISTANT_TIMER_FINISHED, "t3", 60, 0)
+        await peripheral.wait_for("timer_ringing", events)
+
+        stopped = await peripheral.wait_for("timer_auto_stopped", events, timeout=15)
+        await peripheral.wait_for("idle", events)
+    finally:
+        await peripheral.disconnect()
+        await ha.disconnect()
+
+    assert stopped["data"]["seconds"] >= 3, "the event must say how long the timer rang"
+    names = peripheral.names_since(events)
+    assert "idle" in names[names.index("timer_auto_stopped") + 1 :], "idle must follow timer_auto_stopped"
+
+
 async def test_cancelled_timer_clears_the_countdown_and_returns_to_idle(session: PeripheralSession) -> None:
     """A cancelled timer clears the countdown on the peripheral and LVA returns to idle."""
     ha, peripheral = session.ha, session.peripheral

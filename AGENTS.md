@@ -5,7 +5,7 @@
 - NEVER automatically reply on Github (PRs or Discussions) without explicit consent from the developer.
 - Always run `./script/lint` and `./script/tests` after code changes to ensure standards are met.
 
-- `docs/behavior.md` is the source of truth for user-visible behavior. Follow it when changing code. If the code contradicts it, ask which one is wrong instead of silently picking one.
+- `docs/behavior.md` is the source of truth for user-visible behavior, and `docs/peripheral_api/v1.md` / `v2.md` for what LVA does for peripherals (per API version). Follow them when changing code. If the code contradicts it, ask which one is wrong instead of silently picking one.
 - When a change alters user-visible behavior, update `docs/behavior.md` in the same change and list every behavior change separately under "Behavior changes" in the PR description (see `.github/PULL_REQUEST_TEMPLATE.md`).
 
 ### End-to-end tests (`tests/e2e/`)
@@ -43,7 +43,7 @@ LVA always means **Linux Voice Assistant**, this project.
 - `linux_voice_assistant/player/libmpv.py` - libmpv wrapper: playback, thread-safe state, volume/ducking, end-of-file callbacks
 - `linux_voice_assistant/entity.py` - Entity definitions (MediaPlayer, MuteSwitch, etc.)
 - `linux_voice_assistant/api_server.py` - ESPHome API server 
-- `linux_voice_assistant/peripheral_api.py` - Peripheral WebSocket API server
+- `linux_voice_assistant/peripheral_api/` - Peripheral WebSocket API server, one module per API version
 - `linux_voice_assistant/models.py` - Preferences and ServerState dataclasses
 
 ## Development Commands

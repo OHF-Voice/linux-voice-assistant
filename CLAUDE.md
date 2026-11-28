@@ -8,8 +8,8 @@ Dense codebase map for AI agents. `AGENTS.md` (imported above) holds the rules; 
 
 | Task | Command | Time |
 |------|---------|------|
-| All unit tests | `./script/tests` | ~5 s (686 tests) |
-| End-to-end tests (real LVA, virtual mic/speaker, fake HA; needs PulseAudio, see `tests/e2e/README.md`) | `./script/e2e` (LVA tests: `--ignore=tests/e2e/peripheral_api`, peripheral API tests: `tests/e2e/peripheral_api`) | ~4.5 min (40 tests: 23 LVA, 17 peripheral API) |
+| All unit tests | `./script/tests` | ~13 s (920 tests) |
+| End-to-end tests (real LVA, virtual mic/speaker, fake HA; needs PulseAudio, see `tests/e2e/README.md`) | `./script/e2e` (LVA tests: `--ignore=tests/e2e/peripheral_api`, peripheral API tests: `tests/e2e/peripheral_api`) | ~4.5 min (41 tests: 23 LVA, 18 peripheral API) |
 | One file / one test | `.venv/bin/python -m pytest tests/unit/test_satellite.py -k timer -q` | <1 s |
 | All lint | `./script/lint` | ~15 s |
 | Auto-format | `./script/lint_black --auto && ./script/lint_isort --auto` | |
@@ -54,7 +54,7 @@ Thread-safety rules:
 | `api_server.py` | Minimal plaintext ESPHome frame parser/writer (`asyncio.Protocol`) | Answers Hello/Auth/Ping/Disconnect itself. Everything else goes to `handle_message()`, which is a **generator** yielding responses. |
 | `satellite.py` | `VoiceSatelliteProtocol(APIServer)`: entity creation, message routing, voice pipeline, timers, TTS, ducking, external wake word download | See "Voice pipeline state" below. |
 | `entity.py` | ESPHome entities. Each implements `handle_message(msg)` and yields responses for `ListEntitiesRequest`, `SubscribeHomeAssistantStatesRequest`, and its own `*CommandRequest` filtered by `msg.key == self.key` | `MediaPlayerEntity`, `MuteSwitchEntity` (a read-only binary sensor instead of a switch with `--enable-remote-unmute 0`), `ThinkingSoundEntity`, `MicSettingEntity` (Number, or Select if `options`), `WakeWord1/2SensitivityNumberEntity`, `StopWordSensitivityNumberEntity`, `LEDLightEntity`, `ButtonEventSensorEntity`, `ButtonLockEntity`. Old aliases are at the bottom. |
-| `peripheral_api.py` | WebSocket server. `LVAEvent` (LVA→peripheral), `LVACommand` (peripheral→LVA), snapshot + replay of the last state event on connect | The module docstring is the protocol spec and must stay in sync with `docs/development/peripheral_api.md`. |
+| `peripheral_api/` | Versioned WebSocket API, one folder per version: `server.py` (bind, routing by URL path, emits to every version), `versions.py` (`resolve_version()`, handler protocol), `v1/api.py` (frozen, `PeripheralApiV1`), `v2/api.py` (`PeripheralApiV2`, reduced status API; works its status out from `ServerState` after every event, with the pure logic in `v2/status.py` and `v2/timers.py`). In version 2 a message is an `event` when it reports something and a `command` when it asks for something, whatever the direction (the peripheral reports the hardware mute with events, LVA asks to switch it with commands). State changes without an event (media player, media announcement) call `PeripheralAPIServer.refresh_status_sync()`. `LVAEvent` (LVA→peripheral), `LVACommand` (peripheral→LVA), snapshot + replay of the last state event on connect | The module docstring is the protocol spec and must stay in sync with `docs/peripheral_api/readme.md`. |
 | `wake_word.py` | `wake_word_display_name()` (name of a wake word: origin - engine - phrase, e.g. `Internal - MWW - Hey Jarvis`; it is the wake word id at runtime, the HA selection name and the `wake_word_phrase` sent to HA), `find_matching_wake_word_id()` (id or file name to id, custom wins), `wake_word_ids_for_selections()` / `wake_word_selections_for_ids()` (preferences hold `WakeWordSelection(origin, engine, file_id)`, runtime uses the name), `find_available_wake_words()` (globs `*.json` top-level only, stores the parent directory name as `origin`), `load_wake_models()` (fallback chain: requested → `--wake-model` → `okay_nabu` → first available), `load_stop_model()` | openWakeWord ids are versioned (`hey_jarvis_v0.1`). Prefix matching handles them. |
 | `wake_word_detection.py` | Slot-ordered active wake words, per-slot thresholds, `gate_wake_words()` (pause while a pipeline runs, reset on resume), `process_wake_words()` (scoring, mute, refractory) | Pure functions, called once from `process_audio()`. Slot comes from `preferences.active_wake_words`, not from dict order. |
 | `migrations.py` | `migrate_preferences()`: one-time migrations of `preferences.json`, run in `main()` before the wake words load. Each migration is a class named after the PR that introduced it (`Migration591`, with `id` and `migrate()`), added to `_MIGRATIONS`, and its `id` is recorded in `Preferences.applied_migrations` | Returns new preferences, the caller saves them. |
@@ -117,10 +117,10 @@ Existing env quirk: `REFACTORY_SECONDS` is misspelled on purpose (it's the publi
 
 **New peripheral event or command**
 1. Add a member to the `LVAEvent`/`LVACommand` enum and a branch in `_dispatch_command`.
-2. Update the module docstring in `peripheral_api.py` and `docs/development/peripheral_api.md`.
+2. Update the module docstring in the module of that version (`peripheral_api/v1/api.py`, `v2/api.py`) and its spec page (`docs/peripheral_api/vN.md`). Version 1 is frozen: only bug fixes (`timer_auto_stopped` is one), new features go into a newer version.
 3. If it represents an ongoing visual state, add it to `_STATE_EVENTS` in `emit_event()` (it's replayed on connect).
 4. Maybe update `examples/*` peripherals and `examples/Peripheral web console/`, since #423 touched all of them.
-5. Tests in `tests/unit/test_peripheral_api.py` (`dispatch()` helper).
+5. Tests in `tests/unit/test_peripheral_api_v1.py` (`dispatch()` helper). Server and routing: `test_peripheral_api.py`, `test_peripheral_api_versions.py`.
 
 **New HA-visible entity**
 1. Class in `entity.py` (+ `__all__`).
@@ -171,7 +171,7 @@ Set the default of a CLI option as a literal in its `parser.add_argument(default
 | `docs/installation.md` → `installation_part1_audioserver.md`, `installation_part2_application.md` | Install flow (PipeWire/PulseAudio, Docker Compose, systemd) |
 | `docs/features.md` | Feature guides: AEC, listen during wake sound, API encryption, own sound files, wake words (models, directories, custom), stop word |
 | `docs/behavior.md` | User-visible behavior (phases, ducking, stop word, timers, announcements). Binding for code changes, see AGENTS.md |
-| `docs/development/peripheral_api.md` | Full WebSocket protocol for peripheral authors |
+| `docs/peripheral_api/readme.md` | Versions of the WebSocket API and how to choose one. The protocol of each version and what LVA does for a peripheral is in `docs/peripheral_api/vN.md`. Binding for code changes, see AGENTS.md |
 | `docs/development/communication.md` | Overview of the ESPHome API, mDNS and peripheral WebSocket interfaces, the voice request sequence, startup order, threads |
 | `tests/e2e/README.md` | End-to-end test setup: virtual mic/speaker, fake Home Assistant, marker tones, CI job |
 | `docs/development/audio_pipeline.md` | Mic input to HA streaming: capture, Mic Volume scalar, WebRTC, wake/stop word, `VoiceAssistantAudio` data/data2 |

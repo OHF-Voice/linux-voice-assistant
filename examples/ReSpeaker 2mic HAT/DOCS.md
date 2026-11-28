@@ -91,7 +91,7 @@ On connect the controller registers a Light entity with LVA, which appears in Ho
 |---|---|
 | `Voice Assistant` (default) | Run the pipeline animations from the table above. Wake word and Listening are tinted with the HA color; brightness scales every animation. |
 
-Like the Home Assistant Voice PE, this example exposes a single Voice Assistant effect: the pipeline animations always run and can't be switched off from HA. The peripheral protocol itself accepts any number of effects, so your own integration is free to declare more (a color loop, a static accent, and so on) — see the [peripheral API docs](../../docs/development/peripheral_api.md).
+Like the Home Assistant Voice PE, this example exposes a single Voice Assistant effect: the pipeline animations always run and can't be switched off from HA. The peripheral protocol itself accepts any number of effects, so your own integration is free to declare more (a color loop, a static accent, and so on) — see the [peripheral API docs](../../docs/peripheral_api/readme.md).
 
 ### Brightness, on/off, and color
 

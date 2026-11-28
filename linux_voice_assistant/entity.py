@@ -128,6 +128,11 @@ class MediaPlayerEntity(ESPHomeEntity):
 
         yield self._update_state(MediaPlayerState.ANNOUNCING if announcement else MediaPlayerState.PLAYING)
 
+    @property
+    def announcing(self) -> bool:
+        """True while a media player announcement plays."""
+        return self._announcing
+
     def pause(self) -> MediaPlayerStateResponse:
         """Pause the music. Also used for peripheral commands."""
         self._log.debug("Executing PAUSE")
@@ -215,7 +220,15 @@ class MediaPlayerEntity(ESPHomeEntity):
         self._log.debug("SET NEW STATE: %s => %s", self.state, new_state)
         self._log.debug("SET NEW STATE: %s => %s", self.state.name, new_state.name)
         self.state = new_state
+        self._notify_peripherals()
         return self._get_state_message()
+
+    def _notify_peripherals(self) -> None:
+        """Tell the peripheral API that the media player state changed, which has no event of its own."""
+        state = getattr(self.server, "state", None)
+        api = getattr(state, "peripheral_api", None)
+        if api is not None:
+            api.refresh_status_sync()
 
     def _get_state_message(self) -> MediaPlayerStateResponse:
         return MediaPlayerStateResponse(

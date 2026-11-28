@@ -34,7 +34,7 @@ News about this software: [Discussion #495](https://github.com/OHF-Voice/linux-v
   - Music is ducked or paused while the assistant talks (`--mpv-player-duck-mode`)
   - Mic volume, gain and noise suppression (WebRTC), adjustable at runtime
 - **Peripherals**
-  - [WebSocket API](./docs/development/peripheral_api.md) for buttons, LEDs and other hardware (API version 1)
+  - [WebSocket API](./docs/peripheral_api/readme.md) for buttons, LEDs and other hardware (API versions 1 and 2)
   - Single, double, triple and long press events are sent to Home Assistant, double, triple and long press with their own sounds
   - Button lock switch, LED light entity and remote mute (`--enable-remote-unmute`)
   - Software mute: with `--enable-remote-unmute 0`, only a peripheral (e.g. a physical mute switch) can unmute the microphone, Home Assistant cannot (see [Mute](./docs/configuration.md#mute-switch)). This is independent of a hardware mute of the microphone.
