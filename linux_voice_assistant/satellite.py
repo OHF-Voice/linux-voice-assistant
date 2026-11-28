@@ -1,17 +1,12 @@
 """Voice satellite protocol."""
 
 import asyncio
-import hashlib
 import logging
-import posixpath
-import shutil
 import threading
 import time
 from collections.abc import Iterable
 from functools import partial
 from typing import Any, Dict, List, Optional, Set, Union
-from urllib.parse import urlparse, urlunparse
-from urllib.request import urlopen
 
 # pylint: disable=no-name-in-module
 from aioesphomeapi.api_pb2 import (  # type: ignore[attr-defined]
@@ -68,11 +63,12 @@ from .entity import (
 )
 from .home_assistant_time import check_clock_offset, clock_offset, request_time_periodically
 from .home_assistant_timers import GET_TIMERS_TIMEOUT_SECONDS, get_timers_request
-from .models import AvailableWakeWord, DetectionResult, ServerState, WakeWordType
+from .models import DetectionResult, ServerState
 from .peripheral_api import LVAEvent
 from .timers import TimerEvent
-from .wake_word import find_matching_wake_word_id, wake_word_display_name, wake_word_ids_for_selections, wake_word_selections_for_ids
+from .wake_word import find_matching_wake_word_id, wake_word_ids_for_selections, wake_word_selections_for_ids
 from .wake_word_detection import has_active_wake_word
+from .wake_word_download import describe_external_wake_word, download_external_wake_word, external_wake_word_id, is_supported, wake_words_to_download
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -804,15 +800,18 @@ class VoiceSatelliteProtocol(APIServer):
             for ww in available_wake_words:
                 _LOGGER.debug("      - %s: '%s' (langs: %s)", ww.id, ww.wake_word, ww.trained_languages)
 
+            offered = 0
             for eww in msg.external_wake_words:
-                _LOGGER.debug("   -> Processing external wake word: id=%s, word='%s', type=%s", eww.id, eww.wake_word, eww.model_type)
-
-                if eww.model_type != "micro":
-                    _LOGGER.debug("      → Skipping: not micro model type")
+                _LOGGER.debug("   -> External wake word from Home Assistant: %s", describe_external_wake_word(eww))
+                if not is_supported(eww):
+                    _LOGGER.debug("      → Not offered: model type '%s' is not supported, only microWakeWord", eww.model_type)
                     continue
 
-                _LOGGER.debug("      → Adding to available wake words")
-                external_id = wake_word_display_name("downloaded", WakeWordType.MICRO_WAKE_WORD, eww.wake_word)
+                external_id = external_wake_word_id(eww)
+                if external_id in self.state.available_wake_words:
+                    _LOGGER.debug("      → Offered as '%s', already downloaded (%s)", external_id, self.state.available_wake_words[external_id].wake_word_path)
+                else:
+                    _LOGGER.debug("      → Offered as '%s', downloaded when chosen", external_id)
                 available_wake_words.append(
                     VoiceAssistantWakeWord(
                         id=external_id,
@@ -820,9 +819,11 @@ class VoiceSatelliteProtocol(APIServer):
                         trained_languages=eww.trained_languages,
                     )
                 )
-
                 self._external_wake_words[external_id] = eww
-                _LOGGER.debug("      → Stored in external wake words cache")
+                offered += 1
+
+            if msg.external_wake_words:
+                _LOGGER.info("Home Assistant offers %d wake words for download, %d of them usable", len(msg.external_wake_words), offered)
 
             active_ww_ids = [ww_id for ww_id in self.state.wake_words if ww_id in self.state.active_wake_words]
             _LOGGER.debug("   -> Active wake word IDs: %s", active_ww_ids)
@@ -836,80 +837,7 @@ class VoiceSatelliteProtocol(APIServer):
             _LOGGER.info("✅ Connected to Home Assistant - Configuration handshake completed")
             _LOGGER.debug("✅ VoiceAssistantConfigurationResponse sent successfully")
         elif isinstance(msg, VoiceAssistantSetConfiguration):
-            # Change active wake words
-            active_wake_words: Set[str] = set()
-            new_wake_words: List[Optional[str]] = [None, None]
-
-            # Get old positions before modification
-            old_positions: Dict[str, int] = {}
-            stored_wake_word_ids = wake_word_ids_for_selections(self.state.preferences.active_wake_words, self.state.available_wake_words)
-            for idx, ww_id in enumerate(stored_wake_word_ids):
-                if ww_id is not None and idx < 2:
-                    old_positions[ww_id] = idx
-
-            # Process new active wake words
-            for requested_id in msg.active_wake_words:
-                wake_word_id = find_matching_wake_word_id(self.state.available_wake_words, requested_id) or requested_id
-                if wake_word_id != requested_id:
-                    _LOGGER.debug("Wake word id '%s' from Home Assistant resolved to '%s'", requested_id, wake_word_id)
-
-                if wake_word_id in self.state.wake_words:
-                    # Already active
-                    active_wake_words.add(wake_word_id)
-                else:
-                    model_info = self.state.available_wake_words.get(wake_word_id)
-                    if not model_info:
-                        # Check external wake words (may require download)
-                        external_wake_word = self._external_wake_words.get(wake_word_id)
-                        if not external_wake_word:
-                            continue
-
-                        model_info = self._download_external_wake_word(external_wake_word)
-                        if not model_info:
-                            continue
-
-                        self.state.available_wake_words[wake_word_id] = model_info
-
-                    _LOGGER.debug("Loading wake word: %s", model_info.wake_word_path)
-                    self.state.wake_words[wake_word_id] = model_info.load()
-
-                    _LOGGER.info("Wake word set: %s", wake_word_id)
-                    active_wake_words.add(wake_word_id)
-
-            # Keep old positions
-            remaining_ww = list(active_wake_words)
-            placed = set()
-
-            # First, place Wake Words in their old positions.
-            for ww_id in remaining_ww:
-                if ww_id in old_positions:
-                    pos = old_positions[ww_id]
-                    if pos < 2:
-                        new_wake_words[pos] = ww_id
-                        placed.add(ww_id)
-
-            # Add remaining wake words to free slots
-            free_slots = [i for i in range(2) if new_wake_words[i] is None]
-            for ww_id in remaining_ww:
-                if ww_id not in placed and free_slots:
-                    pos = free_slots.pop(0)
-                    new_wake_words[pos] = ww_id
-                    placed.add(ww_id)
-
-            # If only one wake word is left and it was at position 1, position 0 remains None
-            # Position 2 automatically stays None if not occupied
-
-            if active_wake_words:
-                # Replace the dict instead of deleting keys so the audio thread never iterates a dict that changes size.
-                self.state.wake_words = {ww_id: model for ww_id, model in self.state.wake_words.items() if ww_id in active_wake_words}
-
-            self.state.active_wake_words = active_wake_words
-            _LOGGER.debug("Active wake words: %s", active_wake_words)
-            _LOGGER.debug("Wake word positions: [0]=%s, [1]=%s", new_wake_words[0], new_wake_words[1])
-
-            self.state.preferences.active_wake_words = wake_word_selections_for_ids(new_wake_words, self.state.available_wake_words)
-            self.state.preferences.save(self.state.preferences_path)
-            self.state.wake_words_changed = True
+            self._set_active_wake_words(list(msg.active_wake_words))
 
     # ------------------------------------------------------------------
     # Audio streaming
@@ -1238,70 +1166,126 @@ class VoiceSatelliteProtocol(APIServer):
             self._loop.call_later(GET_TIMERS_TIMEOUT_SECONDS, self.state.timer_sync.give_up, call_id)
 
     # ------------------------------------------------------------------
-    # External wake word download
+    # Active wake words
     # ------------------------------------------------------------------
 
-    def _download_external_wake_word(self, external_wake_word: VoiceAssistantExternalWakeWord) -> Optional[AvailableWakeWord]:
-        eww_dir = self.state.wake_word_root / "downloaded" / "microwakeword"
-        eww_dir.mkdir(parents=True, exist_ok=True)
+    def _set_active_wake_words(self, requested_ids: List[str]) -> None:
+        """
+        Activates the wake words Home Assistant chose. Offered wake words that are not on disk yet are downloaded in a worker thread first.
+        :param requested_ids: Wake word ids from `VoiceAssistantSetConfiguration.active_wake_words`.
 
-        config_path = eww_dir / f"{external_wake_word.id}.json"
-        should_download_config = not config_path.exists()
+        A newer selection cancels a download that is still running, so only the newest selection is applied.
+        """
+        running = self.state.wake_word_download
+        if running is not None and not running.done():
+            _LOGGER.debug("Wake word download cancelled: Home Assistant sent a newer selection %s", requested_ids)
+            running.cancel()
+        self.state.wake_word_download = None
 
-        # Check if we need to download the model file
-        model_path = eww_dir / f"{external_wake_word.id}.tflite"
-        should_download_model = True
-        if model_path.exists():
-            model_size = model_path.stat().st_size
-            if model_size == external_wake_word.model_size:
-                with open(model_path, "rb") as model_file:
-                    model_hash = hashlib.file_digest(model_file, "sha256").hexdigest()
+        downloads = wake_words_to_download(requested_ids, self.state.available_wake_words, self._external_wake_words)
+        if not downloads:
+            self._activate_wake_words(requested_ids)
+            return
 
-                if model_hash == external_wake_word.model_hash:
-                    should_download_model = False
-                    _LOGGER.debug(
-                        "Model size and hash match for %s. Skipping download.",
-                        external_wake_word.id,
-                    )
+        if self._loop is None:
+            _LOGGER.warning("Wake words %s cannot be downloaded without a running connection, skipped", [eww.id for eww in downloads])
+            self._activate_wake_words(requested_ids)
+            return
 
-        if should_download_config or should_download_model:
-            # Download config
-            _LOGGER.debug("Downloading %s to %s", external_wake_word.url, config_path)
-            with urlopen(external_wake_word.url) as request:
-                if request.status != 200:
-                    _LOGGER.warning(
-                        "Failed to download: %s, status=%s",
-                        external_wake_word.url,
-                        request.status,
-                    )
-                    return None
+        _LOGGER.info("Downloading wake words %s, the active wake words change when the download has finished", [eww.id for eww in downloads])
+        self.state.wake_word_download = self._loop.create_task(self._download_and_activate_wake_words(requested_ids, downloads))
 
-                with open(config_path, "wb") as model_file:
-                    shutil.copyfileobj(request, model_file)
+    async def _download_and_activate_wake_words(self, requested_ids: List[str], downloads: List[VoiceAssistantExternalWakeWord]) -> None:
+        """
+        Downloads offered wake words in a worker thread, then activates the selection.
+        :param requested_ids: Wake word ids from `VoiceAssistantSetConfiguration.active_wake_words`.
+        :param downloads: Offered wake words of that selection that are not on disk yet.
+        """
+        directory = self.state.wake_word_root / "downloaded" / "microwakeword"
+        for external_wake_word in downloads:
+            try:
+                model_info = await asyncio.to_thread(download_external_wake_word, external_wake_word, directory)
+            except Exception:  # pylint: disable=broad-except
+                _LOGGER.exception("Download of wake word '%s' failed", external_wake_word.id)
+                model_info = None
 
-        if should_download_model:
-            # Download model file
-            parsed_url = urlparse(external_wake_word.url)
-            parsed_url = parsed_url._replace(
-                path=posixpath.join(posixpath.dirname(parsed_url.path), model_path.name),
-            )
-            model_url = urlunparse(parsed_url)
+            if model_info is None:
+                _LOGGER.warning("Wake word '%s' could not be downloaded and stays inactive", external_wake_word.id)
+                continue
 
-            _LOGGER.debug("Downloading %s to %s", model_url, model_path)
-            with urlopen(model_url) as request:
-                if request.status != 200:
-                    _LOGGER.warning("Failed to download: %s, status=%s", model_url, request.status)
-                    return None
+            _LOGGER.info("Wake word '%s' downloaded as '%s'", external_wake_word.id, model_info.id)
+            self.state.available_wake_words[model_info.id] = model_info
 
-                with open(model_path, "wb") as model_file:
-                    shutil.copyfileobj(request, model_file)
+        self._activate_wake_words(requested_ids)
 
-        return AvailableWakeWord(
-            id=wake_word_display_name("downloaded", WakeWordType.MICRO_WAKE_WORD, external_wake_word.wake_word),
-            type=WakeWordType.MICRO_WAKE_WORD,
-            wake_word=external_wake_word.wake_word,
-            trained_languages=external_wake_word.trained_languages,
-            wake_word_path=config_path,
-            origin="downloaded",
-            file_id=external_wake_word.id,
-        )
+    def _activate_wake_words(self, requested_ids: List[str]) -> None:
+        """
+        Activates the chosen wake words that are available and keeps each in its slot.
+        :param requested_ids: Wake word ids from `VoiceAssistantSetConfiguration.active_wake_words`.
+        """
+        # Change active wake words
+        active_wake_words: Set[str] = set()
+        new_wake_words: List[Optional[str]] = [None, None]
+
+        # Get old positions before modification
+        old_positions: Dict[str, int] = {}
+        stored_wake_word_ids = wake_word_ids_for_selections(self.state.preferences.active_wake_words, self.state.available_wake_words)
+        for idx, ww_id in enumerate(stored_wake_word_ids):
+            if ww_id is not None and idx < 2:
+                old_positions[ww_id] = idx
+
+        # Process new active wake words
+        for requested_id in requested_ids:
+            wake_word_id = find_matching_wake_word_id(self.state.available_wake_words, requested_id) or requested_id
+            if wake_word_id != requested_id:
+                _LOGGER.debug("Wake word id '%s' from Home Assistant resolved to '%s'", requested_id, wake_word_id)
+
+            if wake_word_id in self.state.wake_words:
+                # Already active
+                active_wake_words.add(wake_word_id)
+            else:
+                model_info = self.state.available_wake_words.get(wake_word_id)
+                if not model_info:
+                    _LOGGER.debug("Wake word '%s' from Home Assistant is not available, skipped", wake_word_id)
+                    continue
+
+                _LOGGER.debug("Loading wake word: %s", model_info.wake_word_path)
+                self.state.wake_words[wake_word_id] = model_info.load()
+
+                _LOGGER.info("Wake word set: %s", wake_word_id)
+                active_wake_words.add(wake_word_id)
+
+        # Keep old positions
+        remaining_ww = list(active_wake_words)
+        placed = set()
+
+        # First, place Wake Words in their old positions.
+        for ww_id in remaining_ww:
+            if ww_id in old_positions:
+                pos = old_positions[ww_id]
+                if pos < 2:
+                    new_wake_words[pos] = ww_id
+                    placed.add(ww_id)
+
+        # Add remaining wake words to free slots
+        free_slots = [i for i in range(2) if new_wake_words[i] is None]
+        for ww_id in remaining_ww:
+            if ww_id not in placed and free_slots:
+                pos = free_slots.pop(0)
+                new_wake_words[pos] = ww_id
+                placed.add(ww_id)
+
+        # If only one wake word is left and it was at position 1, position 0 remains None
+        # Position 2 automatically stays None if not occupied
+
+        if active_wake_words:
+            # Replace the dict instead of deleting keys so the audio thread never iterates a dict that changes size.
+            self.state.wake_words = {ww_id: model for ww_id, model in self.state.wake_words.items() if ww_id in active_wake_words}
+
+        self.state.active_wake_words = active_wake_words
+        _LOGGER.debug("Active wake words: %s", active_wake_words)
+        _LOGGER.debug("Wake word positions: [0]=%s, [1]=%s", new_wake_words[0], new_wake_words[1])
+
+        self.state.preferences.active_wake_words = wake_word_selections_for_ids(new_wake_words, self.state.available_wake_words)
+        self.state.preferences.save(self.state.preferences_path)
+        self.state.wake_words_changed = True

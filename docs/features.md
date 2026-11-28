@@ -198,6 +198,16 @@ In the wake word selection in Home Assistant, the name of a wake word shows wher
 
 </details>
 
+## Wake words from Home Assistant
+
+Home Assistant can hand microWakeWord models to the satellite, so you can keep your own wake words in one place:
+
+1. Put the model and its config into the folder `custom_wake_words` of your Home Assistant configuration (next to `configuration.yaml`), for example `custom_wake_words/hey_test.json` and `custom_wake_words/hey_test.tflite`. The `.json` file needs `"type": "micro"` and a `"wake_word"`; openWakeWord models are not supported here.
+2. **Restart Home Assistant.** Home Assistant reads this folder only once and keeps the result until it restarts, so a model added or changed later is not offered before that.
+3. The wake word now appears in the wake word selection of the satellite. When you choose it, LVA downloads it into `downloaded/microwakeword` in the background and activates it as soon as the download has finished. Until then the previous wake words stay active.
+
+With `--debug`, LVA logs every wake word Home Assistant offers (`External wake word from Home Assistant: …`) and why it is offered or not, and each download step. A failed download is logged as a warning.
+
 # Custom Wake Word
 
 <details>

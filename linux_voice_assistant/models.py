@@ -270,6 +270,8 @@ class ServerState:
     # Requests for the timer list of Home Assistant, see home_assistant_timers.py.
     timer_sync: TimerSync = field(default_factory=TimerSync)
     listen_during_wake_sound: bool = False
+    # Download of wake words chosen in Home Assistant, see wake_word_download.py. A newer selection cancels it, also from a new connection.
+    wake_word_download: "Optional[asyncio.Task]" = None
 
     def __post_init__(self) -> None:
         self.timer_alarm = TimerAlarm(self)
