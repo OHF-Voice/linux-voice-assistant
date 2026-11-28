@@ -51,6 +51,9 @@ ARG TARGETARCH
 ENV LANG C.UTF-8
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
+# The container runs as a user without a home directory (HOME=/). Without a writable cache directory,
+# Fontconfig (loaded through libmpv, for example by libass) logs "Fontconfig error: No writable cache directories" every time it starts.
+ENV XDG_CACHE_HOME=/tmp/.cache
 
 LABEL \
     org.opencontainers.image.authors="Open Home Foundation" \
