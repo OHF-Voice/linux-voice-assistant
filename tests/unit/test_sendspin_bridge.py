@@ -11,14 +11,14 @@ from tests.unit.conftest import make_state
 
 
 def test_bridge_off_creates_nothing():
-    assert create_sendspin_player(False, "/run/sendspin-cli/socket", "pulse", Preferences()) == (None, None)
+    assert create_sendspin_player(False, "/run/sendspin-cli", "pulse", Preferences()) == (None, None)
 
 
 def test_pulse_mode_creates_a_stream_ducker_with_the_saved_ducking():
-    player, stream_ducker = create_sendspin_player(True, "/run/sendspin-cli/socket", "pulse", Preferences(sendspin_stream_ducked_from=0.8, sendspin_stream_ducked_to=0.4))
+    player, stream_ducker = create_sendspin_player(True, "/run/sendspin-cli", "pulse", Preferences(sendspin_stream_ducked_from=0.8, sendspin_stream_ducked_to=0.4))
 
     assert player is not None
-    assert player._socket_path == str(Path("/run/sendspin-cli/socket/control.sock"))  # pylint: disable=protected-access
+    assert player._socket_path == str(Path("/run/sendspin-cli/control.sock"))  # pylint: disable=protected-access
     assert isinstance(stream_ducker, PulseStreamDucker)
     assert stream_ducker._duck == StreamDuck(original=0.8, ducked=0.4)  # pylint: disable=protected-access
 

@@ -97,7 +97,7 @@ If music is paused when you start talking to the assistant, it stays paused. Duc
 
 ### Sendspin player
 
-A Sendspin player (`sendspin-cli`, for example the [Music Assistant Local Audio add-on](https://github.com/music-assistant/local-audio-addon)) plays outside LVA, so LVA cannot control it through mpv. LVA drives it through the control socket of the player (`control.sock` in `--sendspin-control-dir`, default `/run/sendspin-cli/socket`) and treats it as the music of the media player entity. This is the Sendspin bridge, on by default (`--enable-sendspin-bridge 1`, `ENABLE_SENDSPIN_BRIDGE=1`). With `--enable-sendspin-bridge 0` LVA leaves the player alone and works as without it.
+A Sendspin player (`sendspin-cli`, for example the [Music Assistant Local Audio add-on](https://github.com/music-assistant/local-audio-addon)) plays outside LVA, so LVA cannot control it through mpv. LVA drives it through the control socket of the player (`control.sock` in `--sendspin-control-dir`, default `/run/sendspin-cli`) and treats it as the music of the media player entity. This is the Sendspin bridge, on by default (`--enable-sendspin-bridge 1`, `ENABLE_SENDSPIN_BRIDGE=1`). With `--enable-sendspin-bridge 0` LVA leaves the player alone and works as without it.
 
 | Situation | Sendspin player / media player entity |
 |-----------|---------------------------------------|
