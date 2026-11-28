@@ -183,7 +183,7 @@ class TimerAlarm:
         self._ringing = True
         self._round += 1
         self._state.active_wake_words.add(self._state.stop_word.id)
-        self._state.music_player.duck(owner="timer")
+        self._state.duck_music(owner="timer")
         self._play_sound(self._round)
 
     def _end_ringing(self, report_idle: bool) -> None:
@@ -192,7 +192,7 @@ class TimerAlarm:
         self._round += 1
         self._state.active_wake_words.discard(self._state.stop_word.id)
         self._state.tts_player.stop()
-        self._state.music_player.unduck(owner="timer")
+        self._state.unduck_music(owner="timer")
         if report_idle:
             self._emit(LVAEvent.IDLE)
 

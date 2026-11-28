@@ -80,7 +80,7 @@ All command line parameters, their defaults and the matching environment variabl
 
 ### Feature Guides
 
-Setup guides for individual features are in [features](docs/features.md): [echo cancellation](docs/features.md#acoustic-echo-cancellation), [listening during the wake sound](docs/features.md#feature-listen-during-wake-sound), [API encryption](docs/features.md#feature-api-encryption), [own sound files](docs/features.md#use-own-soundfiles), [wake words](docs/features.md#wake-word) (including [custom wake words](docs/features.md#custom-wake-word)) and the [stop word](docs/features.md#stop-word).
+Setup guides for individual features are in [features](docs/features.md): [echo cancellation](docs/features.md#acoustic-echo-cancellation), [listening during the wake sound](docs/features.md#feature-listen-during-wake-sound), [API encryption](docs/features.md#feature-api-encryption), [own sound files](docs/features.md#use-own-soundfiles), [wake words](docs/features.md#wake-word) (including [custom wake words](docs/features.md#custom-wake-word)) and the [stop word](docs/features.md#stop-word). Running LVA together with the Music Assistant Local Audio (Sendspin) player is described in [docs/docker](docs/docker/README.md).
 
 ### Debugging
 

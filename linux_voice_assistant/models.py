@@ -33,6 +33,7 @@ if TYPE_CHECKING:
     )
     from .mpv_player import MpvMediaPlayer
     from .satellite import VoiceSatelliteProtocol
+    from .sendspin_player import SendspinPlayer
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -126,6 +127,12 @@ class Preferences:
     mic_volume: int = 100  # 0–100, default maximum
     applied_migrations: List[int] = field(default_factory=list)  # numbers of the one-time migrations that already ran
     timers: List[Dict[str, Any]] = field(default_factory=list)  # the timer list, see timers.py
+    # Group volume of a Sendspin player before and after ducking (``duck`` mode). Set only while ducked, so that a restart can restore it.
+    sendspin_ducked_from: Optional[int] = None
+    sendspin_ducked_to: Optional[int] = None
+    # Volume of the Sendspin stream in the sound server before and after ducking (``pulse`` mode), 1.0 is 100 %. Set until it is restored.
+    sendspin_stream_ducked_from: Optional[float] = None
+    sendspin_stream_ducked_to: Optional[float] = None
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "Preferences":
@@ -187,6 +194,8 @@ class ServerState:
     continue_conversation_delay: float = 0.5  # seconds to wait after TTS before opening mic
     # ESPHome API encryption key (32 bytes); None serves plaintext only.
     noise_psk: Optional[bytes] = None
+    # Sendspin player controlled through its control socket, None if the Sendspin bridge is off.
+    sendspin_player: "Optional[SendspinPlayer]" = None
 
     media_player_entity: "Optional[MediaPlayerEntity]" = None
     satellite: "Optional[VoiceSatelliteProtocol]" = None
@@ -279,6 +288,24 @@ class ServerState:
             return
         for connection in list(self.connections):
             connection.send_messages(messages)
+
+    def duck_music(self, owner: str) -> None:
+        """
+        Duck the music: LVA's own music player and a Sendspin player. It stays ducked until every owner has called :meth:`unduck_music`.
+        :param owner: ``conversation``, ``timer`` (ringing) or ``announce`` (voice announcements).
+        """
+        self.music_player.duck(owner=owner)
+        if self.sendspin_player is not None:
+            self.sendspin_player.duck(owner=owner)
+
+    def unduck_music(self, owner: str) -> None:
+        """
+        End the ducking of an owner. The music returns when no owner is left.
+        :param owner: The owner that called :meth:`duck_music`.
+        """
+        self.music_player.unduck(owner=owner)
+        if self.sendspin_player is not None:
+            self.sendspin_player.unduck(owner=owner)
 
     def persist_volume(self, volume: float) -> None:
         """Persist the normalized media volume (0.0 - 1.0)."""
