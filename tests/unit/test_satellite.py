@@ -883,7 +883,7 @@ class TestHandleTimerEvent:
 
 
 class TestConfigurationRequest:
-    def test_wake_word_names_contain_origin_and_engine(self, tmp_path):
+    def test_wake_words_are_offered_by_their_name(self, tmp_path):
         from aioesphomeapi.api_pb2 import VoiceAssistantConfigurationRequest, VoiceAssistantConfigurationResponse
 
         from linux_voice_assistant.models import AvailableWakeWord, WakeWordType
@@ -898,8 +898,8 @@ class TestConfigurationRequest:
 
         response = next(msg for msg in responses if isinstance(msg, VoiceAssistantConfigurationResponse))
         assert {ww.id: ww.wake_word for ww in response.available_wake_words} == {
-            "Internal - OWW - Hey Jarvis": "Internal - OWW - Hey Jarvis",
-            "Custom - MWW - Okay Nabu": "Custom - MWW - Okay Nabu",
+            "Internal - OWW - Hey Jarvis": "Hey Jarvis (OWW)",
+            "Custom - MWW - Okay Nabu": "Okay Nabu",
         }
 
 
