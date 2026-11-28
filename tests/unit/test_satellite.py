@@ -1,6 +1,7 @@
 """Unit tests for VoiceSatelliteProtocol logic."""
 
 import json
+import time
 from unittest.mock import MagicMock, call, patch
 
 import pytest
@@ -316,6 +317,57 @@ class TestPlayTts:
 # ---------------------------------------------------------------------------
 
 
+class TestPeripheralStatusProperties:
+    def test_timer_ringing_follows_the_timer_flag(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        assert sat.timer_ringing is False
+        sat._timer_finished = True
+        assert sat.timer_ringing is True
+
+    def test_announcing_follows_the_announcement_flag(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        assert sat.announcing is False
+        sat._announce_ducking = True
+        assert sat.announcing is True
+
+
+class TestTimerAutoStop:
+    def test_auto_stop_sends_the_signal_and_then_idle(self, tmp_path):
+        sat = make_satellite(tmp_path, {"timer_max_ring_seconds": 10.0})
+        sat.state.peripheral_api = MagicMock()
+        sat._timer_finished = True
+        sat._timer_ring_start = time.monotonic() - 20
+
+        sat._play_timer_finished()
+
+        assert sat._timer_finished is False
+        events = sat.state.peripheral_api.emit_event_sync.call_args_list
+        assert events == [call(LVAEvent.TIMER_AUTO_STOPPED, {"seconds": 20}), call(LVAEvent.IDLE, None)]
+        sat.state.tts_player.play.assert_not_called()
+
+    def test_auto_stop_without_peripheral_api(self, tmp_path):
+        sat = make_satellite(tmp_path, {"timer_max_ring_seconds": 10.0})
+        sat.state.peripheral_api = None
+        sat._timer_finished = True
+        sat._timer_ring_start = time.monotonic() - 20
+
+        sat._play_timer_finished()
+
+        assert sat._timer_finished is False
+
+    def test_ringing_goes_on_before_the_limit(self, tmp_path):
+        sat = make_satellite(tmp_path, {"timer_max_ring_seconds": 100.0})
+        sat.state.peripheral_api = MagicMock()
+        sat._timer_finished = True
+        sat._timer_ring_start = time.monotonic()
+
+        sat._play_timer_finished()
+
+        assert sat._timer_finished is True
+        sat.state.peripheral_api.emit_event_sync.assert_not_called()
+        sat.state.tts_player.play.assert_called_once()
+
+
 class TestStop:
     def test_stop_clears_pipeline_active(self, tmp_path):
         sat = make_satellite(tmp_path)
@@ -331,6 +383,7 @@ class TestStop:
 
     def test_stop_calls_tts_player_stop(self, tmp_path):
         sat = make_satellite(tmp_path)
+        sat._timer_finished = False
         sat.stop()
         sat.state.tts_player.stop.assert_called()
 
@@ -501,13 +554,13 @@ class TestDuckOwnersInSatellite:
 
     def test_stop_while_ringing_unducks_timer_only(self, tmp_path):
         sat = make_satellite(tmp_path)
-        sat.state.ringing_timer_id = "timer-1"
+        sat._timer_finished = True
         sat.stop()
         sat.state.music_player.unduck.assert_called_once_with(owner="timer")
 
     def test_wakeup_while_ringing_hands_ducking_to_conversation(self, tmp_path):
         sat = make_satellite(tmp_path)
-        sat.state.ringing_timer_id = "timer-1"
+        sat._timer_finished = True
         sat.state.music_player.reset_mock()
         sat.wakeup(MagicMock(wake_word="Hey Jarvis"))
 
@@ -517,7 +570,7 @@ class TestDuckOwnersInSatellite:
         sat = make_satellite(tmp_path)
         sat.state.wake_words = {"okay_nabu": MagicMock()}
         sat.state.active_wake_words = {"okay_nabu"}
-        sat.state.ringing_timer_id = "timer-1"
+        sat._timer_finished = True
         sat.state.music_player.reset_mock()
         sat.start_listening()
 
@@ -642,6 +695,14 @@ class TestPipelineEndedSound:
         sat.handle_voice_event(VoiceAssistantEventType.VOICE_ASSISTANT_RUN_END, {})
         sat.state.tts_player.play.assert_called_once()
         assert sat.state.tts_player.play.call_args.args[0] == sat.state.pipeline_ended_sound
+
+    def test_speech_detected_by_home_assistant_is_emitted(self, tmp_path):
+        from aioesphomeapi import VoiceAssistantEventType
+
+        sat = make_satellite(tmp_path)
+        sat._emit = MagicMock()
+        sat.handle_voice_event(VoiceAssistantEventType.VOICE_ASSISTANT_STT_VAD_START, {})
+        sat._emit.assert_called_once_with(LVAEvent.SPEECH_DETECTED)
 
     def test_run_ending_after_stt_does_not_play_sound(self, tmp_path):
         # HA ends the run after speech recognition when an automation handles the answer (ask_question).

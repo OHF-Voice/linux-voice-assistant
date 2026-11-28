@@ -430,6 +430,65 @@ class TestMediaPlayerEntityAnnouncement:
         assert msgs[0].state == MediaPlayerState.PLAYING
 
 
+class TestMediaPlayerEntityAnnouncing:
+    @staticmethod
+    def _announce(entity, *, paused, playing):
+        entity.music_player.is_paused = paused
+        entity.music_player.is_playing = playing
+        list(entity.play("http://example.com/tts.mp3", announcement=True))
+        return entity.announce_player.play.call_args.kwargs["done_callback"]
+
+    def test_not_announcing_by_default(self):
+        assert make_media_player().announcing is False
+
+    @pytest.mark.parametrize("paused,playing", [(False, True), (True, True), (False, False)])
+    def test_announcing_while_an_announcement_plays(self, paused, playing):
+        entity = make_media_player()
+
+        done_callback = self._announce(entity, paused=paused, playing=playing)
+        assert entity.announcing is True
+
+        done_callback()
+        assert entity.announcing is False
+
+    def test_music_does_not_count_as_announcing(self):
+        entity = make_media_player()
+        list(entity.play("http://example.com/music.mp3"))
+        assert entity.announcing is False
+
+    def test_peripheral_api_is_told_about_every_state_change(self):
+        entity = make_media_player()
+        api = entity.server.state.peripheral_api
+
+        list(entity.play("http://example.com/music.mp3"))
+        assert api.refresh_status_sync.call_count == 1
+
+        entity.pause()
+        assert api.refresh_status_sync.call_count == 2
+
+    def test_peripheral_api_is_told_when_an_announcement_starts_and_ends(self):
+        entity = make_media_player()
+        api = entity.server.state.peripheral_api
+
+        done_callback = self._announce(entity, paused=False, playing=False)
+        started = api.refresh_status_sync.call_count
+        done_callback()
+
+        assert started >= 1
+        assert api.refresh_status_sync.call_count > started
+
+    def test_no_peripheral_api_does_nothing(self):
+        server = make_server()
+        server.state.peripheral_api = None
+        entity = make_media_player(server)
+        entity.pause()
+
+    def test_server_without_state_does_nothing(self):
+        server = MagicMock(spec=[])
+        entity = make_media_player(server)
+        entity.pause()
+
+
 # ---------------------------------------------------------------------------
 # MuteSwitchEntity
 # ---------------------------------------------------------------------------
