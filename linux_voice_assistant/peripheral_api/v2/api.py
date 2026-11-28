@@ -112,7 +112,8 @@ class PeripheralApiV2:
             # Several timers can ring: only the one whose end left none ringing is reported as stopped on its own
             self._timer_auto_stopped = not self._ringing()
         await self.refresh_status()
-        if self._pipeline_state == "pipeline_error":
+        # Both are short signals, followed by idle at once
+        if self._pipeline_state in ("pipeline_error", "wake_word_rejected"):
             self._pipeline_state = "idle"
             await self.refresh_status()
 

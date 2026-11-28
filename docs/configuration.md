@@ -194,6 +194,13 @@ The **Thinking Sound** switch turns on a short chime that plays while the assist
 
 </details>
 
+<details id="wake-word-verification">
+<summary><b>Wake word verification</b> – Switch: let Home Assistant check detected wake words</summary>
+
+When this switch is on (default) and Home Assistant asks for it, LVA sends the audio from before each detected wake word, so Home Assistant (with the Voice support app) can reject false detections. While this is active no wake sound plays. Turn it off to keep the wake sound: LVA then starts every run as before and Home Assistant does not check the wake word. The setting is stored and takes effect at once. See [behavior.md](behavior.md#wake-word-verification-by-home-assistant).
+
+</details>
+
 <details id="media-player">
 <summary><b>Media Player</b> – Media player: play media, control the volume of music and voice</summary>
 

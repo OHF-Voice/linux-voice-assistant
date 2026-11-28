@@ -182,6 +182,7 @@ class TestProcessWakeWords:
         assert detections[0][1].wake_word_id == "b"
         assert detections[0][1].slot == 1
         assert detections[0][1].score == 0.8
+        assert detections[0][1].threshold == 0.5
         assert last_active == 10.0
         assert model.probability_cutoff == 0.5
 

@@ -173,7 +173,7 @@ def process_wake_words(
 
         if state.refractory_seconds <= 0 or last_active is None or (now - last_active) > state.refractory_seconds:
             _LOGGER.debug("Wake word '%s' accepted (slot %d, probability %.3f, threshold %.3f)", word.id, word.slot, activated, threshold)
-            detections.append((word.model, DetectionResult(word.id, word.slot, activated)))
+            detections.append((word.model, DetectionResult(word.id, word.slot, activated, threshold)))
             last_active = now
         else:
             _LOGGER.debug(

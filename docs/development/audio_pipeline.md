@@ -186,10 +186,15 @@ LVA has no voice activity detection (VAD) of its own. While `_is_streaming_audio
 Audio is sent in these windows only:
 
 - From the wake word (after the wake sound, or immediately with `--listen-during-wake-sound`) until HA ends the speech.
+- While Home Assistant verifies wake words: from the detection, starting with the last 1.5 s before it (see below), until HA ends the speech, rejects the wake word, or gives no verdict within 2 s.
 - From a button start (`start_listening()`) until HA ends the speech.
 - During a continued conversation, from the end of the settle delay until HA ends the speech.
 
 Outside these windows nothing is sent. Wake word and stop word detection run locally on every block and send no audio to HA. Muting also stops the stream immediately.
+
+#### Wake word audio
+
+While Home Assistant asks for wake word audio and the switch *Wake word verification* is on (`satellite.wake_word_audio_active`), `process_audio()` keeps the blocks of both channels in a buffer (`buffer_wake_word_audio()` in `wake_word_audio.py`, at least 1.5 s plus one block). The buffer pauses while muted or while a pipeline runs, and starts empty when it resumes. On a detection the block with the detection is already in the buffer. `wakeup()` cuts each channel to its last 1.5 s on its own (`data` can be a few milliseconds shorter while WebRTC holds back part of a frame), sends the start request with the size per channel and then the audio, split into messages that carry both channels. The level of both channels (peak and RMS in dBFS) is logged at debug level, to find out whether `data2` is loud enough for the verification (the Voice PE amplifies its unprocessed channel by 16 for it).
 
 If nobody speaks, LVA keeps sending until HA's own speech timeout ends the run. That timeout is not configurable in LVA.
 
@@ -202,7 +207,7 @@ After `handle_audio()`, the processed `audio_chunk` feeds the detectors:
 3. If a model fires, the device is not muted and the optional refractory time (`state.refractory_seconds`, default 0 = off, counted from the last accepted detection) has passed, `satellite.wakeup(wake_word)` runs. A detection inside the refractory time is discarded and logged at debug level.
 4. The stop word model runs on every block to keep its state correct. It only acts if `state.stop_word.id` is in `state.active_wake_words` (during TTS, announcements and ringing timers) and the device is not muted. Then `satellite.stop()` is called.
 
-`wakeup()` returns early when muted or when a pipeline is already active. Otherwise it ducks music, plays the wake sound and sends `VoiceAssistantRequest(start=True)`. With `listen_during_wake_sound` the request is sent right away; otherwise after the wake sound has finished. This is what turns streaming on in step 6.
+`wakeup()` returns early when muted or when a pipeline is already active. Otherwise it ducks music, plays the wake sound and sends `VoiceAssistantRequest(start=True)`. With `listen_during_wake_sound` the request is sent right away; otherwise after the wake sound has finished. This is what turns streaming on in step 6. While Home Assistant verifies wake words, `wakeup()` instead sends the request with the wake word audio at once, without wake sound and without ducking (see "Wake word audio" above).
 
 The wake word runs on the same audio as the stream. Attenuation from Mic Volume and the WebRTC result therefore also change detection.
 
@@ -225,6 +230,7 @@ The wake word runs on the same audio as the stream. Attenuation from Mic Volume 
 1. If the satellite advertises `MULTI_CHANNEL_AUDIO`, Home Assistant starts with channel 0 (`data`) for each pipeline run.
 2. At `STT_START` it looks at the engine's `audio_processing` information. If the engine reports `prefers_auto_gain_enabled = False` **and** `prefers_noise_reduction_enabled = False`, Home Assistant switches to channel 1 (`data2`) for the rest of that run.
 3. Home Assistant describes `data2` as "non-enhanced audio", so it treats it as the unprocessed microphone signal.
+4. Since home-assistant/core#189485, a run that starts at speech-to-text, which is every run of LVA because LVA detects the wake word itself, gets its channel once at the start of the run, by the same rule, because wake word audio arrives before `STT_START`. Home Assistant verifies the wake word on that channel and takes the size of the wake word audio from `wake_word_audio_bytes` or `wake_word_audio_bytes2` accordingly.
 
 The Home Assistant Cloud STT reports both preferences as `False`. Wyoming engines report what their `info` message contains. The Speech-to-Phrase source does not set these fields.
 
