@@ -25,6 +25,7 @@ from .network import EsphomeEndpoint, follow_interface_address
 from .peripheral_api import LVAEvent, PeripheralAPIServer
 from .satellite import VoiceSatelliteProtocol
 from .stop_word import process_stop_word
+from .timers import TimerList
 from .util import (
     get_default_interface,
     get_default_ipv4,
@@ -549,6 +550,7 @@ async def main() -> None:
         button_long_press_sound=args.button_long_press_sound,
         preferences=preferences,
         preferences_path=preferences_path,
+        timers=TimerList.from_dicts(preferences.timers),
         refractory_seconds=args.refractory_seconds,
         continue_conversation_delay=args.continue_conversation_delay,
         output_only=args.output_only,
@@ -693,6 +695,8 @@ async def main() -> None:
             )
             await asyncio.sleep(args.peripheral_startup_wait)
 
+    countdown = loop.create_task(state.timer_alarm.run_countdown())
+
     endpoint = EsphomeEndpoint(
         state=state,
         bound_ip=host_ip_address,
@@ -715,6 +719,7 @@ async def main() -> None:
     except KeyboardInterrupt:
         pass
     finally:
+        countdown.cancel()
         await endpoint.close()
         process_audio_thread.join()
         if peripheral_api is not None:
@@ -824,7 +829,9 @@ def process_audio(state: ServerState, mic, block_size: int):
                     if not audio_chunk:
                         continue
 
-                if state.satellite is None or not hasattr(state.satellite, "_is_streaming_audio"):
+                satellite = state.satellite if hasattr(state.satellite, "_is_streaming_audio") else None
+                # Without Home Assistant only the stop word of a ringing timer is listened for
+                if satellite is None and not state.timer_alarm.ringing:
                     continue
 
                 # WAKE WORD
@@ -889,14 +896,15 @@ def process_audio(state: ServerState, mic, block_size: int):
                 try:
                     # data=ch0 (after WebRTC gain/noise suppression), data2=ch0 before any WebRTC processing
                     audio_chunk_2 = audio_chunk_unprocessed
-                    state.satellite.handle_audio(audio_chunk, audio_chunk_2)
+                    if satellite is not None:
+                        satellite.handle_audio(audio_chunk, audio_chunk_2)
 
                     assert micro_features is not None
                     micro_inputs.clear()
                     micro_inputs.extend(micro_features.process_streaming(audio_chunk))
 
-                    wake_word_running = gate_wake_words(wake_words, oww_features, state.satellite.pipeline_active, wake_word_running)
-                    if wake_word_running:
+                    wake_word_running = gate_wake_words(wake_words, oww_features, satellite is None or satellite.pipeline_active, wake_word_running)
+                    if wake_word_running and satellite is not None:
                         if has_oww:
                             assert oww_features is not None
                             oww_inputs.clear()
@@ -905,13 +913,16 @@ def process_audio(state: ServerState, mic, block_size: int):
                         now = time.monotonic()
                         detections, last_active = process_wake_words(state, wake_words, micro_inputs, oww_inputs, last_active, now)
                         for wake_word, detection in detections:
-                            state.satellite.wakeup(wake_word, detection)
+                            satellite.wakeup(wake_word, detection)
 
                     stopped, stop_word_running = process_stop_word(state, micro_inputs, stop_word_running)
 
                     if stopped and (state.stop_word.id in state.active_wake_words) and not state.muted:
                         _LOGGER.debug("Stop word detected")
-                        state.satellite.stop()
+                        if satellite is not None:
+                            satellite.stop()
+                        else:
+                            state.timer_alarm.stop_ringing()
                 except Exception:  # pylint: disable=broad-except
                     _LOGGER.exception("Unexpected error handling audio")
     except Exception:  # pylint: disable=broad-except

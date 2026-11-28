@@ -7,9 +7,12 @@ from typing import Any, Dict, List, Optional
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from aioesphomeapi.model import VoiceAssistantTimerEventType
 
 from linux_voice_assistant.peripheral_api.v1 import LVAEvent
 from linux_voice_assistant.peripheral_api.v2.api import _VOLUME_LIMIT_SOUND, _VOLUME_STEP_SOUND, PeripheralApiV2
+from linux_voice_assistant.timer_alarm import TimerAlarm
+from linux_voice_assistant.timers import TimerEvent
 from tests.unit.conftest import make_state
 
 
@@ -35,13 +38,35 @@ class FakeWebSocket:
 def make_server(tmp_path, **state_overrides) -> PeripheralApiV2:
     server = PeripheralApiV2()
     satellite = MagicMock()
-    satellite.timer_ringing = False
     satellite.announcing = False
     state = make_state(tmp_path, volume=0.5, **state_overrides)
     state.satellite = satellite
+    clock = {"now": 1000.0}
+    state.timer_alarm = TimerAlarm(state, clock=lambda: clock["now"])
+    server.clock = clock  # type: ignore[attr-defined]
     state.connected = True
     server.set_state(state)
     return server
+
+
+def _timer_event(server: PeripheralApiV2, event_type: VoiceAssistantTimerEventType, seconds_left: int = 60) -> None:
+    state = server._state  # pylint: disable=protected-access
+    assert state is not None
+    state.timer_alarm.handle_event(TimerEvent(event_type, "t1", "", 60, seconds_left, True))
+
+
+def _start(server: PeripheralApiV2) -> None:
+    _timer_event(server, VoiceAssistantTimerEventType.VOICE_ASSISTANT_TIMER_STARTED)
+
+
+def _ring(server: PeripheralApiV2) -> None:
+    _timer_event(server, VoiceAssistantTimerEventType.VOICE_ASSISTANT_TIMER_FINISHED, seconds_left=0)
+
+
+def _stop_ringing(server: PeripheralApiV2) -> None:
+    state = server._state  # pylint: disable=protected-access
+    assert state is not None
+    state.timer_alarm.stop_ringing()
 
 
 async def dispatch(server: PeripheralApiV2, command: str, data: Optional[dict] = None) -> None:
@@ -184,6 +209,7 @@ class TestEmitEvent:
         ws = connect(server)
         timer = {"id": "t1", "name": "", "total_seconds": 60, "seconds_left": 60}
 
+        _start(server)
         await server.emit_event(LVAEvent.TIMER_TICKING, timer)
         assert {"event": "timer_status", "data": {"status": "active", "auto_stopped": False}} in ws.sent()
         assert {"event": "timer_remaining_time", "data": {"seconds": 60}} in ws.sent()
@@ -192,12 +218,12 @@ class TestEmitEvent:
         assert {"event": "timer_full_data_set", "data": {"timers": [timer_data]}} in ws.sent()
 
         ws.send.reset_mock()
-        server._state.satellite.timer_ringing = True  # pylint: disable=protected-access
+        _ring(server)
         await server.emit_event(LVAEvent.TIMER_RINGING, {**timer, "seconds_left": 0})
         assert ws.sent()[0] == {"event": "timer_status", "data": {"status": "ringing", "auto_stopped": False}}
 
         ws.send.reset_mock()
-        server._state.satellite.timer_ringing = False  # pylint: disable=protected-access
+        _stop_ringing(server)
         await server.emit_event(LVAEvent.IDLE)
         assert ws.sent() == [{"event": "timer_status", "data": {"status": "idle", "auto_stopped": False}}, {"event": "timer_full_data_set", "data": {"timers": []}}]
         await server.stop()
@@ -205,21 +231,21 @@ class TestEmitEvent:
     @pytest.mark.asyncio
     async def test_auto_stopped_timer_is_reported_before_the_status(self, tmp_path):
         server = make_server(tmp_path)
-        server._state.satellite.timer_ringing = True  # pylint: disable=protected-access
+        _ring(server)
         await server.refresh_status()
         ws = connect(server)
-        server._state.satellite.timer_ringing = False  # pylint: disable=protected-access
+        _stop_ringing(server)
 
         await server.emit_event(LVAEvent.TIMER_AUTO_STOPPED, {"seconds": 900})
 
-        assert ws.sent() == [{"event": "timer_status", "data": {"status": "idle", "auto_stopped": True}}]
+        assert ws.sent() == [{"event": "timer_status", "data": {"status": "idle", "auto_stopped": True}}, {"event": "timer_full_data_set", "data": {"timers": []}}]
 
     @pytest.mark.asyncio
     async def test_auto_stopped_is_only_reported_once(self, tmp_path):
         server = make_server(tmp_path)
-        server._state.satellite.timer_ringing = True  # pylint: disable=protected-access
+        _ring(server)
         await server.refresh_status()
-        server._state.satellite.timer_ringing = False  # pylint: disable=protected-access
+        _stop_ringing(server)
         await server.emit_event(LVAEvent.TIMER_AUTO_STOPPED, {"seconds": 900})
         ws = connect(server)
 
@@ -233,9 +259,11 @@ class TestEmitEvent:
     async def test_cancelled_timer_goes_back_to_idle(self, tmp_path):
         server = make_server(tmp_path)
         timer = {"id": "t1", "name": "", "total_seconds": 60, "seconds_left": 60}
+        _start(server)
         await server.emit_event(LVAEvent.TIMER_TICKING, timer)
         ws = connect(server)
 
+        _timer_event(server, VoiceAssistantTimerEventType.VOICE_ASSISTANT_TIMER_CANCELLED)
         await server.emit_event(LVAEvent.TIMER_UPDATED, {**timer, "seconds_left": 0})
 
         assert {"event": "timer_status", "data": {"status": "idle", "auto_stopped": False}} in ws.sent()
@@ -320,22 +348,24 @@ class TestTicker:
         server = make_server(tmp_path)
         server.set_loop(asyncio.get_running_loop())
         timer = {"id": "t1", "name": "", "total_seconds": 60, "seconds_left": 60}
+        _start(server)
         await server.emit_event(LVAEvent.TIMER_TICKING, timer)
         ws = connect(server)
+        server.clock["now"] += 10  # type: ignore[attr-defined]
 
-        with patch("linux_voice_assistant.peripheral_api.v2.api.time.monotonic", return_value=1000.0):
-            with patch("linux_voice_assistant.peripheral_api.v2.api.asyncio.sleep", AsyncMock()):
-                await server.refresh_status()
-                await asyncio.sleep(0)
-                await asyncio.sleep(0)
+        with patch("linux_voice_assistant.peripheral_api.v2.api.asyncio.sleep", AsyncMock()):
+            await server.refresh_status()
+            await asyncio.sleep(0)
+            await asyncio.sleep(0)
 
-        assert any(m["event"] == "timer_remaining_time" for m in ws.sent())
+        assert {"event": "timer_remaining_time", "data": {"seconds": 50}} in ws.sent()
         await server.stop()
 
     @pytest.mark.asyncio
     async def test_stop_cancels_the_ticker(self, tmp_path):
         server = make_server(tmp_path)
         server.set_loop(asyncio.get_running_loop())
+        _start(server)
         await server.emit_event(LVAEvent.TIMER_TICKING, {"id": "t1", "name": "", "total_seconds": 60, "seconds_left": 60})
         ticker = server._ticker  # pylint: disable=protected-access
         assert ticker is not None
@@ -391,24 +421,24 @@ class TestStartListeningAndStop:
     @pytest.mark.asyncio
     async def test_a_timer_ended_by_a_wake_word_is_reported_before_the_wake_word(self, tmp_path):
         server = make_server(tmp_path)
-        server._state.satellite.timer_ringing = True  # pylint: disable=protected-access
+        _ring(server)
         await server.refresh_status()
         ws = connect(server)
-        server._state.satellite.timer_ringing = False  # pylint: disable=protected-access
+        _stop_ringing(server)
 
         await server.emit_event(LVAEvent.WAKE_WORD_DETECTED)
 
-        assert [m["event"] for m in ws.sent()] == ["timer_status", "state"]
+        assert [m["event"] for m in ws.sent()] == ["timer_status", "timer_full_data_set", "state"]
 
     @pytest.mark.asyncio
     async def test_listening_start_that_ends_a_ringing_timer_updates_the_status_at_once(self, tmp_path):
         server = make_server(tmp_path)
-        server._state.satellite.timer_ringing = True  # pylint: disable=protected-access
+        _ring(server)
         await server.refresh_status()
         ws = connect(server)
 
         def stop_ringing():
-            server._state.satellite.timer_ringing = False  # pylint: disable=protected-access
+            _stop_ringing(server)
 
         server._state.satellite.start_listening.side_effect = stop_ringing  # pylint: disable=protected-access
         await dispatch(server, "listening_start")
@@ -443,7 +473,7 @@ class TestStartListeningAndStop:
     @pytest.mark.asyncio
     async def test_listening_stop_leaves_a_ringing_timer_alone(self, tmp_path):
         server = make_server(tmp_path)
-        server._state.satellite.timer_ringing = True  # pylint: disable=protected-access
+        _ring(server)
         await dispatch(server, "listening_stop")
         server._state.satellite.stop.assert_not_called()  # pylint: disable=protected-access
 
@@ -461,9 +491,26 @@ class TestStartListeningAndStop:
     @pytest.mark.asyncio
     async def test_timer_stop_stops_a_ringing_timer(self, tmp_path):
         server = make_server(tmp_path)
-        server._state.satellite.timer_ringing = True  # pylint: disable=protected-access
+        _ring(server)
         await dispatch(server, "timer_stop")
-        server._state.satellite.stop.assert_called_once()  # pylint: disable=protected-access
+        assert not server._state.timer_alarm.ringing  # pylint: disable=protected-access
+        server._state.satellite.stop.assert_not_called()  # pylint: disable=protected-access
+
+    @pytest.mark.asyncio
+    async def test_timer_stop_works_without_home_assistant(self, tmp_path):
+        server = make_server(tmp_path)
+        _ring(server)
+        server._state.satellite = None  # pylint: disable=protected-access
+        await dispatch(server, "timer_stop")
+        assert not server._state.timer_alarm.ringing  # pylint: disable=protected-access
+
+    @pytest.mark.asyncio
+    async def test_listening_start_without_home_assistant_stops_a_ringing_timer(self, tmp_path):
+        server = make_server(tmp_path)
+        _ring(server)
+        server._state.satellite = None  # pylint: disable=protected-access
+        await dispatch(server, "listening_start")
+        assert not server._state.timer_alarm.ringing  # pylint: disable=protected-access
 
     @pytest.mark.asyncio
     async def test_timer_stop_is_ignored_without_a_ringing_timer(self, tmp_path):
