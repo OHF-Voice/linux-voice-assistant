@@ -9,6 +9,6 @@ contact_links:
   - name: "❓ Questions & how-to (Q&A)"
     url: https://github.com/OHF-Voice/linux-voice-assistant/discussions
     about: Ask how-to questions and search previous answers.
-  - name: "💡 Feature requests & ideas"
+  - name: "💡 Ideas & discussions"
     url: https://github.com/OHF-Voice/linux-voice-assistant/discussions
-    about: Suggest and vote on new features and enhancements.
+    about: Discuss and vote on loose ideas. For a worked-out proposal, use the feature request template.
