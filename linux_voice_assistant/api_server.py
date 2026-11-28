@@ -30,6 +30,7 @@ from cryptography.exceptions import InvalidTag
 from google.protobuf import message
 from noise.connection import NoiseConnection  # type: ignore[import-untyped]
 
+from .network import apply_keepalive
 from .preamble_hint import describe_unexpected_preamble
 
 PROTO_TO_MESSAGE_TYPE = {v: k for k, v in MESSAGE_TYPE_TO_PROTO.items()}
@@ -153,6 +154,10 @@ class APIServer(asyncio.Protocol):
 
             self.send_messages(msgs)
 
+    def close_connection(self) -> None:
+        """Closes the connection to the client. Home Assistant reconnects at once, as after any unexpected disconnect."""
+        self._close()
+
     def send_messages(self, msgs: Iterable[message.Message]):
         if self._writelines is None or not msgs:
             return
@@ -188,6 +193,7 @@ class APIServer(asyncio.Protocol):
     def connection_made(self, transport) -> None:
         self._transport = transport
         self._writelines = transport.writelines
+        apply_keepalive(transport.get_extra_info("socket"))
         try:
             self._loop = asyncio.get_running_loop()
         except RuntimeError:

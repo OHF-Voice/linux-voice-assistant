@@ -10,6 +10,10 @@ This project uses three separate Docker build workflows that automatically build
 | [docker-build-nightly.yml](.github/workflows/docker-build-nightly.yml) | Push to `main` | `nightly` |
 | [docker-build-pr.yml](.github/workflows/docker-build-pr.yml) | Pull requests | `pr-<pr-number>` |
 
+The image workflows are joined by [e2e-tests.yml](.github/workflows/e2e-tests.yml) (E2E-Tests), which builds no image. It runs in the same cases as the image builds: on push to `main` (nightly), on pull requests (pr, on `pull_request`: read-only token and no secrets, so it needs no `pr-build` approval) and on version tags (release), and not for changes that only touch `**.md` or `docs/**`. It has two jobs, each with its own job summary (annotations for failed tests) and artifact with the LVA log and JUnit XML: **LVA** runs `tests/e2e` without `tests/e2e/peripheral_api` (artifact `e2e-results`), **LVA-Peripheral-API-V1** runs `tests/e2e/peripheral_api` only (artifact `e2e-peripheral-results`). See `tests/e2e/README.md`.
+
+The unit test workflow ([unit-tests.yml](.github/workflows/unit-tests.yml)) publishes its result the same way: `./script/tests --junitxml=<file>` writes a JUnit XML, `.github/scripts/junit_summary.py` turns it into the job summary and failure annotations (a long test list is collapsed), and the XML is uploaded as the artifact `unit-results`.
+
 ## Detailed Description
 
 ### Release Workflow (`docker-build-release.yml`)
@@ -34,6 +38,8 @@ Automatically builds nightly images from the main branch.
 
 **Triggers:**
 - Push to `main` branch
+
+**Concurrency:** A new push to `main` cancels a run of this workflow that is still in progress, including all its jobs (`build-and-push-64`, `build-and-push-32`, `merge-32`). Only the newest commit is built, and an outdated run can no longer move the `nightly` tag back to an older image. A cancelled run shows as "cancelled", not as failed.
 
 **Image Tag:**
 ```

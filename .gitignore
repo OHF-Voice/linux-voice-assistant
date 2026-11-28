@@ -27,3 +27,7 @@ version_githash.txt
 # Claude Code (local rules and notes)
 .claude/
 CLAUDE.local.md
+
+# Python bytecode
+__pycache__/
+.pytest_cache

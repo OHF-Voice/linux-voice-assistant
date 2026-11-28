@@ -1,5 +1,6 @@
 """Utility methods."""
 
+import logging
 import re
 from collections.abc import Callable
 from importlib.metadata import PackageNotFoundError, version
@@ -9,6 +10,8 @@ from typing import Optional
 # netifaces lib is from netifaces2
 import netifaces
 from getmac import get_mac_address  # type: ignore
+
+_LOGGER = logging.getLogger(__name__)
 
 # Cache for version to avoid repeated file reading
 _version_cache: Optional[str] = None
@@ -118,3 +121,19 @@ def resolve_mac_address(given: Optional[str], interface: Optional[str]) -> str:
     if not (mac_address := get_mac_address(interface=interface)):
         raise ValueError("No Mac address was found")
     return str(mac_address)
+
+
+def warn_about_removed_options(wake_word_dir: Optional[str], download_dir: Optional[str]) -> None:
+    """
+    Logs a warning for each removed option that is still given, so that an old configuration does not stop LVA from starting.
+    :param wake_word_dir: Value of the removed --wake-word-dir option, or None if it is not given.
+    :param download_dir: Value of the removed --download-dir option, or None if it is not given.
+    """
+    if wake_word_dir is not None:
+        _LOGGER.warning(
+            "--wake-word-dir (WAKE_WORD_DIR) '%s' is ignored. Use --wake-word-root-dir (WAKE_WORD_ROOT_DIR) and put own wake words into <root>/custom/microwakeword or <root>/custom/openwakeword",
+            wake_word_dir,
+        )
+
+    if download_dir is not None:
+        _LOGGER.warning("--download-dir '%s' is ignored. Downloaded wake words are stored in <wake word root>/downloaded", download_dir)

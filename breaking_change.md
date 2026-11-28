@@ -2,6 +2,12 @@
 
 What users have to change when updating. Entries are added automatically when a pull request labelled `breaking-change` is merged, newest first, and grouped under the release that shipped them.
 
+## Unreleased
+
+### #591 Wake word directory layout with internal, downloaded and custom
+
+Wake words are now read from `wakewords/internal`, `wakewords/downloaded` and `wakewords/custom`, each with a `microwakeword` and an `openwakeword` folder. `WAKE_WORD_DIR` (`--wake-word-dir`) and `DOWNLOAD_DIR` (`--download-dir`) are replaced by `WAKE_WORD_ROOT_DIR` (`--wake-word-root-dir`). `WAKE_WORD_DIR` and the command line options are ignored with a warning in the log, `DOWNLOAD_DIR` is ignored without one, and LVA starts with the bundled wake words. Move your own wake words to `custom/microwakeword` or `custom/openwakeword` (in Docker the volume `wakeword_custom`). In your own compose file, replace the volume `wakeword_data` (`/app/local`) with `wakeword_downloaded:/app/wakewords/downloaded`. Wake words that Home Assistant sent before are downloaded again. In Home Assistant the wake words have new names such as `Internal - MWW - Hey Jarvis`. Home Assistant remembers the text of its wake word selects itself, so a select may show "No wake word" or an old name although LVA has the wake word active. Choose the wake word again in each select. If a select keeps showing the old name, set it to "No wake word" once and then choose the wake word.
+
 ## v1.1.16 (2026-10-24)
 
 ### #451 Dual audio channel enhancement

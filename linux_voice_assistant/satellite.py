@@ -1,32 +1,29 @@
 """Voice satellite protocol."""
 
 import asyncio
-import hashlib
 import logging
-import posixpath
-import shutil
 import threading
 import time
 from collections.abc import Iterable
 from functools import partial
 from typing import Any, Dict, List, Optional, Set, Union
-from urllib.parse import urlparse, urlunparse
-from urllib.request import urlopen
 
 # pylint: disable=no-name-in-module
 from aioesphomeapi.api_pb2 import (  # type: ignore[attr-defined]
     AuthenticationRequest,
     DeviceInfoRequest,
     DeviceInfoResponse,
+    GetTimeResponse,
+    HomeassistantActionResponse,
     LightCommandRequest,
     ListEntitiesDoneResponse,
     ListEntitiesRequest,
     MediaPlayerCommandRequest,
     NumberCommandRequest,
     SelectCommandRequest,
+    SubscribeHomeassistantServicesRequest,
     SubscribeHomeAssistantStatesRequest,
     SubscribeStatesRequest,
-    SubscribeVoiceAssistantRequest,
     SwitchCommandRequest,
     VoiceAssistantAnnounceFinished,
     VoiceAssistantAnnounceRequest,
@@ -44,7 +41,6 @@ from aioesphomeapi.core import MESSAGE_TYPE_TO_PROTO
 from aioesphomeapi.model import (
     VoiceAssistantEventType,
     VoiceAssistantFeature,
-    VoiceAssistantSubscriptionFlag,
     VoiceAssistantTimerEventType,
 )
 from google.protobuf import message
@@ -53,6 +49,7 @@ from pyopen_wakeword import OpenWakeWord
 
 from .api_server import APIServer
 from .entity import (
+    SENDSPIN_URI_PREFIX,
     ButtonEventSensorEntity,
     ButtonLockEntity,
     LEDLightEntity,
@@ -64,19 +61,22 @@ from .entity import (
     WakeWord1SensitivityNumberEntity,
     WakeWord2SensitivityNumberEntity,
 )
-from .models import AvailableWakeWord, DetectionResult, ServerState, WakeWordType
+from .home_assistant_time import check_clock_offset, clock_offset, request_time_periodically
+from .home_assistant_timers import GET_TIMERS_TIMEOUT_SECONDS, get_timers_request
+from .models import DetectionResult, ServerState
 from .peripheral_api import LVAEvent
-from .util import call_all
-from .wake_word_audio import WakeWordAudio
+from .timers import TimerEvent
+from .wake_word import find_matching_wake_word_id, wake_word_ids_for_selections, wake_word_selections_for_ids
+from .wake_word_detection import has_active_wake_word
+from .wake_word_download import describe_external_wake_word, download_external_wake_word, external_wake_word_id, is_supported, wake_words_to_download
+from .wake_word_names import name_for_wake_word_id, offered_wake_words
+from .wake_word_reload import RECONNECT_DELAY_SECONDS, HandshakeAction, WakeWordListReload, handshake_action, reported_active_wake_words
 
 _LOGGER = logging.getLogger(__name__)
 
 # Error code Home Assistant sends to the satellites that lost a wake word to another one
 # (homeassistant/components/assist_pipeline, DuplicateWakeUpDetectedError).
 _DUPLICATE_WAKE_UP_CODE = "duplicate_wake_up_detected"
-
-# Seconds Home Assistant has to accept or reject a wake word after the audio verification started (as in Voice PE).
-_WAKE_WORD_VERIFICATION_TIMEOUT_SECONDS = 2.0
 
 PROTO_TO_MESSAGE_TYPE = {v: k for k, v in MESSAGE_TYPE_TO_PROTO.items()}
 
@@ -103,8 +103,6 @@ class VoiceSatelliteProtocol(APIServer):
             )
             # data2 carries the microphone before any LVA processing (WebRTC gain / noise suppression).
             self.supported_features |= VoiceAssistantFeature.MULTI_CHANNEL_AUDIO  # pylint: disable=no-member
-            # microWakeWord detections can be verified by Home Assistant using the audio buffered before the detection.
-            self.supported_features |= VoiceAssistantFeature.WAKE_WORD_AUDIO  # pylint: disable=no-member
 
         existing_mute_switches = [entity for entity in self.state.entities if isinstance(entity, MuteSwitchEntity)]
         existing_media_players = [entity for entity in self.state.entities if isinstance(entity, MediaPlayerEntity)]
@@ -129,6 +127,7 @@ class VoiceSatelliteProtocol(APIServer):
                 music_player=state.music_player,
                 announce_player=state.tts_player,
                 initial_volume=state.volume,
+                sendspin_player=state.sendspin_player,
             )
             self.state.entities.append(self.state.media_player_entity)
         elif self.state.media_player_entity not in self.state.entities:
@@ -148,6 +147,7 @@ class VoiceSatelliteProtocol(APIServer):
                 object_id="mute",
                 get_muted=lambda: self.state.muted,
                 set_muted=self._set_muted,
+                remote_unmute_enabled=state.remote_unmute_enabled,
             )
             self.state.entities.append(mute_switch)
             self.state.mute_switch_entity = mute_switch
@@ -354,8 +354,6 @@ class VoiceSatelliteProtocol(APIServer):
         # ---- Instance variables ----
 
         self._is_streaming_audio = False
-        # Home Assistant asked for the audio buffered before each wake word (subscription flag). Read by the audio thread.
-        self._wake_word_audio_requested = False
         self._tts_url: Optional[str] = None
         self._tts_played = False
         # HA gave this run to another satellite that heard the same wake word.
@@ -364,26 +362,29 @@ class VoiceSatelliteProtocol(APIServer):
         self._intent_started = False
         self._stt_text_received = False
         self._continue_conversation = False
+        self._announce_ducking = False
         # Phrase that started the conversation. HA selects the pipeline from it, so a
         # follow-up request without it would run the first pipeline instead of the one
         # the user woke up. Empty after a button press or an HA announcement.
         self._wake_word_phrase = ""
-        self._timer_finished = False
-        self._timer_ring_start: Optional[float] = None
         self._processing = False
         self._pipeline_active = False
-        # Waiting for Home Assistant to accept or reject the wake word that started the run.
-        self._verifying_wake_word = False
-        self._verification_timer: Optional[threading.Timer] = None
-        self._verification_lock = threading.Lock()
-        # Home Assistant rejected the wake word, so the run that follows (if any) needs no clean up.
-        self._wake_word_rejected = False
         self._external_wake_words: Dict[str, VoiceAssistantExternalWakeWord] = {}
+        # Set when LVA closes the connection itself to make Home Assistant read the wake word list again; music keeps playing then.
+        self._keep_music_on_disconnect = False
         self._disconnect_event = asyncio.Event()
+        self._time_requests: Optional[asyncio.Task] = None
 
     # ------------------------------------------------------------------
     # Peripheral API helper
     # ------------------------------------------------------------------
+
+    def emit_media_playing(self) -> None:
+        """Tell the peripherals that a Sendspin player started playing. Skipped while a conversation runs, so it does not replace its state."""
+        if self._pipeline_active:
+            _LOGGER.debug("Not sending media_player_playing for Sendspin, a conversation is running")
+            return
+        self._emit(LVAEvent.MEDIA_PLAYER_PLAYING)
 
     def _emit(
         self,
@@ -399,6 +400,16 @@ class VoiceSatelliteProtocol(APIServer):
         api = self.state.peripheral_api
         if api is not None:
             api.emit_event_sync(event, data)
+
+    @property
+    def timer_ringing(self) -> bool:
+        """True while a timer rings."""
+        return self.state.timer_alarm.ringing
+
+    @property
+    def announcing(self) -> bool:
+        """True while a voice announcement of Home Assistant plays."""
+        return self._announce_ducking
 
     def register_pending_lights(self) -> None:
         """Materialise LightEntities for peripheral registered lights.
@@ -571,13 +582,14 @@ class VoiceSatelliteProtocol(APIServer):
 
     def _set_muted(self, new_state: bool) -> None:
         self.state.muted = bool(new_state)
+        self.state.preferences.muted = 1 if self.state.muted else 0
+        self.state.preferences.save(self.state.preferences_path)
         self._emit(LVAEvent.MUTED, {"muted": self.state.muted})
 
         if self.state.muted:
             # voice_assistant.stop behavior
             _LOGGER.debug("Muting voice assistant (voice_assistant.stop)")
             self._is_streaming_audio = False
-            self._finish_wake_word_verification()
             self.state.tts_player.stop()
             # Stop any ongoing voice processing
             self.state.stop_word.is_active = False  # type: ignore[attr-defined]
@@ -602,16 +614,10 @@ class VoiceSatelliteProtocol(APIServer):
             self._intent_started = False
             self._stt_text_received = False
             self._continue_conversation = False
-            self._wake_word_rejected = False
             self._pipeline_active = True
 
-        elif event_type == VoiceAssistantEventType.VOICE_ASSISTANT_WAKE_WORD_END:
-            if self._finish_wake_word_verification():
-                # The wake word was verified, so the user is really talking to the assistant now.
-                self.duck()
-
-        elif event_type == VoiceAssistantEventType.VOICE_ASSISTANT_WAKE_WORD_REJECTED:
-            self._handle_wake_word_rejected()
+        elif event_type == VoiceAssistantEventType.VOICE_ASSISTANT_STT_VAD_START:
+            self._emit(LVAEvent.SPEECH_DETECTED)
 
         elif event_type == VoiceAssistantEventType.VOICE_ASSISTANT_INTENT_START:
             self._intent_started = True
@@ -659,11 +665,7 @@ class VoiceSatelliteProtocol(APIServer):
 
         elif event_type == VoiceAssistantEventType.VOICE_ASSISTANT_RUN_END:
             self._is_streaming_audio = False
-            self._finish_wake_word_verification()
-            if self._wake_word_rejected:
-                # Already idle after the rejection: no announce finished, no pipeline ended sound.
-                self._wake_word_rejected = False
-            elif not self._tts_played:
+            if not self._tts_played:
                 self._pipeline_active = False
                 # The pipeline ended sound is for the user's own run, not one another satellite answers
                 # and not one that stopped after speech recognition (the transcript is handled elsewhere).
@@ -679,7 +681,6 @@ class VoiceSatelliteProtocol(APIServer):
             self._stt_text_received = False
 
         elif event_type == VoiceAssistantEventType.VOICE_ASSISTANT_ERROR:
-            self._finish_wake_word_verification()
             self._emit(LVAEvent.PIPELINE_ERROR)
             if data.get("code") == _DUPLICATE_WAKE_UP_CODE:
                 self._run_taken_by_other = True
@@ -694,40 +695,7 @@ class VoiceSatelliteProtocol(APIServer):
         msg: VoiceAssistantTimerEventResponse,
     ) -> None:
         _LOGGER.debug("Timer event: type=%s", event_type.name)
-
-        # Build countdown data from the protobuf message fields.
-        # total_seconds: the original timer duration.
-        # seconds_left:  remaining seconds at the time of this event.
-        timer_data = {
-            "id": msg.timer_id,
-            "name": msg.name,
-            "total_seconds": msg.total_seconds,
-            "seconds_left": msg.seconds_left,
-        }
-
-        if event_type == VoiceAssistantTimerEventType.VOICE_ASSISTANT_TIMER_STARTED:
-            self._emit(LVAEvent.TIMER_TICKING, timer_data)
-
-        elif event_type == VoiceAssistantTimerEventType.VOICE_ASSISTANT_TIMER_UPDATED:
-            self._emit(LVAEvent.TIMER_UPDATED, timer_data)
-
-        elif event_type == VoiceAssistantTimerEventType.VOICE_ASSISTANT_TIMER_CANCELLED:
-            # Report the cancel as a zeroed update before going idle. Every
-            # shipped peripheral already reads `seconds_left` from
-            # `timer_updated`, and none of them treats zero as "ringing",
-            # that is `timer_ringing`, so the countdown clears without any
-            # peripheral having to learn a new event.
-            self._emit(LVAEvent.TIMER_UPDATED, {**timer_data, "seconds_left": 0})
-            self._emit(LVAEvent.IDLE)
-
-        elif event_type == VoiceAssistantTimerEventType.VOICE_ASSISTANT_TIMER_FINISHED:
-            if not self._timer_finished:
-                self.state.active_wake_words.add(self.state.stop_word.id)
-                self._timer_finished = True
-                self._timer_ring_start = time.monotonic()
-                self.duck()
-                self._emit(LVAEvent.TIMER_RINGING, timer_data)
-                self._play_timer_finished()
+        self.state.timer_alarm.handle_event(TimerEvent(event_type, msg.timer_id, msg.name, msg.total_seconds, msg.seconds_left, msg.is_active))
 
     # ------------------------------------------------------------------
     # Message routing
@@ -756,16 +724,26 @@ class VoiceSatelliteProtocol(APIServer):
             self._continue_conversation = msg.start_conversation
             self._wake_word_phrase = ""
 
-            self.duck()
+            self._announce_ducking = True
+            self.duck(owner="announce")
             self._emit(LVAEvent.TTS_SPEAKING)
             self.state.tts_player.play(urls, done_callback=self._tts_finished)
 
         elif isinstance(msg, VoiceAssistantTimerEventResponse):
             self.handle_timer_event(VoiceAssistantTimerEventType(msg.event_type), msg)
 
-        elif isinstance(msg, SubscribeVoiceAssistantRequest):
-            self._wake_word_audio_requested = bool(msg.subscribe and (msg.flags & VoiceAssistantSubscriptionFlag.WAKE_WORD_AUDIO))
-            _LOGGER.debug("Voice assistant subscription: subscribe=%s, flags=%s, wake word audio requested=%s", msg.subscribe, msg.flags, self._wake_word_audio_requested)
+        elif isinstance(msg, SubscribeHomeassistantServicesRequest):
+            # Home Assistant accepts actions from now on, so the timer list it kept while LVA was away can be read
+            self._request_timer_list()
+
+        elif isinstance(msg, HomeassistantActionResponse):
+            timers = self.state.timer_sync.handle_response(msg.call_id, msg.success, msg.error_message, msg.response_data, self.state.timer_alarm.now())
+            if timers is not None:
+                self.state.timer_alarm.merge(timers)
+
+        elif isinstance(msg, GetTimeResponse):
+            self.state.home_assistant_time_offset = clock_offset(msg.epoch_seconds, time.time())
+            check_clock_offset(self.state.home_assistant_time_offset)
 
         elif isinstance(msg, DeviceInfoRequest):
             _LOGGER.debug("Device info request")
@@ -798,8 +776,8 @@ class VoiceSatelliteProtocol(APIServer):
 
             # Emit peripheral event when background music starts playing.
             # Announcements (TTS) are explicitly excluded — those are covered
-            # by TTS_SPEAKING.
-            if isinstance(msg, MediaPlayerCommandRequest) and msg.has_media_url:
+            # by TTS_SPEAKING. A sendspin:// URL is reported by the Sendspin status poll once the player plays.
+            if isinstance(msg, MediaPlayerCommandRequest) and msg.has_media_url and not msg.media_url.startswith(SENDSPIN_URI_PREFIX):
                 is_announcement = msg.has_announcement and msg.announcement
                 if not is_announcement:
                     self._emit(LVAEvent.MEDIA_PLAYER_PLAYING)
@@ -811,121 +789,39 @@ class VoiceSatelliteProtocol(APIServer):
             _LOGGER.debug("✅ Received VoiceAssistantConfigurationRequest from Home Assistant")
             _LOGGER.debug("   -> Request contains %d external wake words", len(msg.external_wake_words))
 
-            available_wake_words = [
-                VoiceAssistantWakeWord(
-                    id=ww.id,
-                    wake_word=ww.wake_word,
-                    trained_languages=ww.trained_languages,
-                )
-                for ww in self.state.available_wake_words.values()
-            ]
-
-            # Log available internal wake words first
-            internal_ww_count = len(self.state.available_wake_words)
-            _LOGGER.debug("   -> Found %d internal available wake words", internal_ww_count)
-            for ww in available_wake_words:
-                _LOGGER.debug("      - %s: '%s' (langs: %s)", ww.id, ww.wake_word, ww.trained_languages)
-
+            self._external_wake_words = {}
             for eww in msg.external_wake_words:
-                _LOGGER.debug("   -> Processing external wake word: id=%s, word='%s', type=%s", eww.id, eww.wake_word, eww.model_type)
-
-                if eww.model_type != "micro":
-                    _LOGGER.debug("      → Skipping: not micro model type")
+                _LOGGER.debug("   -> External wake word from Home Assistant: %s", describe_external_wake_word(eww))
+                if not is_supported(eww):
+                    _LOGGER.debug("      → Not offered: model type '%s' is not supported, only microWakeWord", eww.model_type)
                     continue
 
-                _LOGGER.debug("      → Adding to available wake words")
-                available_wake_words.append(
-                    VoiceAssistantWakeWord(
-                        id=eww.id,
-                        wake_word=eww.wake_word,
-                        trained_languages=eww.trained_languages,
-                    )
-                )
+                self._external_wake_words[external_wake_word_id(eww)] = eww
 
-                self._external_wake_words[eww.id] = eww
-                _LOGGER.debug("      → Stored in external wake words cache")
+            if msg.external_wake_words:
+                _LOGGER.info("Home Assistant offers %d wake words for download, %d of them usable", len(msg.external_wake_words), len(self._external_wake_words))
 
-            active_ww_ids = [ww_id for ww_id in self.state.wake_words if ww_id in self.state.active_wake_words]
+            offered = offered_wake_words(self.state.available_wake_words, self._external_wake_words)
+            _LOGGER.debug("   -> Offering %d wake words to Home Assistant", len(offered))
+            for ww in offered:
+                _LOGGER.debug("      - %s: '%s' (langs: %s)", ww.id, ww.name, list(ww.trained_languages))
+
+            action = handshake_action(self.state.wake_word_list_reload)
+            slot_ids = wake_word_ids_for_selections(self.state.preferences.active_wake_words, self.state.available_wake_words)
+            active_ww_ids = reported_active_wake_words(slot_ids, set(self.state.wake_words) & self.state.active_wake_words, action.report_first_only)
             _LOGGER.debug("   -> Active wake word IDs: %s", active_ww_ids)
 
             yield VoiceAssistantConfigurationResponse(
-                available_wake_words=available_wake_words,
+                available_wake_words=[VoiceAssistantWakeWord(id=ww.id, wake_word=ww.name, trained_languages=list(ww.trained_languages)) for ww in offered],
                 active_wake_words=active_ww_ids,
                 max_active_wake_words=2,
             )
 
+            self._apply_handshake_action(action)
             _LOGGER.info("✅ Connected to Home Assistant - Configuration handshake completed")
             _LOGGER.debug("✅ VoiceAssistantConfigurationResponse sent successfully")
         elif isinstance(msg, VoiceAssistantSetConfiguration):
-            # Change active wake words
-            active_wake_words: Set[str] = set()
-            new_wake_words: List[Optional[str]] = [None, None]
-
-            # Get old positions before modification
-            old_positions: Dict[str, int] = {}
-            for idx, ww_id in enumerate(self.state.preferences.active_wake_words):
-                if ww_id is not None and idx < 2:
-                    old_positions[ww_id] = idx
-
-            # Process new active wake words
-            for wake_word_id in msg.active_wake_words:
-                if wake_word_id in self.state.wake_words:
-                    # Already active
-                    active_wake_words.add(wake_word_id)
-                else:
-                    model_info = self.state.available_wake_words.get(wake_word_id)
-                    if not model_info:
-                        # Check external wake words (may require download)
-                        external_wake_word = self._external_wake_words.get(wake_word_id)
-                        if not external_wake_word:
-                            continue
-
-                        model_info = self._download_external_wake_word(external_wake_word)
-                        if not model_info:
-                            continue
-
-                        self.state.available_wake_words[wake_word_id] = model_info
-
-                    _LOGGER.debug("Loading wake word: %s", model_info.wake_word_path)
-                    self.state.wake_words[wake_word_id] = model_info.load()
-
-                    _LOGGER.info("Wake word set: %s", wake_word_id)
-                    active_wake_words.add(wake_word_id)
-
-            # Keep old positions
-            remaining_ww = list(active_wake_words)
-            placed = set()
-
-            # First, place Wake Words in their old positions.
-            for ww_id in remaining_ww:
-                if ww_id in old_positions:
-                    pos = old_positions[ww_id]
-                    if pos < 2:
-                        new_wake_words[pos] = ww_id
-                        placed.add(ww_id)
-
-            # Add remaining wake words to free slots
-            free_slots = [i for i in range(2) if new_wake_words[i] is None]
-            for ww_id in remaining_ww:
-                if ww_id not in placed and free_slots:
-                    pos = free_slots.pop(0)
-                    new_wake_words[pos] = ww_id
-                    placed.add(ww_id)
-
-            # If only one wake word is left and it was at position 1, position 0 remains None
-            # Position 2 automatically stays None if not occupied
-
-            if active_wake_words:
-                # Replace the dict instead of deleting keys so the audio thread never iterates a dict that changes size.
-                self.state.wake_words = {ww_id: model for ww_id, model in self.state.wake_words.items() if ww_id in active_wake_words}
-
-            self.state.active_wake_words = active_wake_words
-            _LOGGER.debug("Active wake words: %s", active_wake_words)
-            _LOGGER.debug("Wake word positions: [0]=%s, [1]=%s", new_wake_words[0], new_wake_words[1])
-
-            self.state.preferences.active_wake_words = new_wake_words
-            self.state.preferences.save(self.state.preferences_path)
-            self.state.wake_words_changed = True
+            self._set_active_wake_words(list(msg.active_wake_words))
 
     # ------------------------------------------------------------------
     # Audio streaming
@@ -947,16 +843,6 @@ class VoiceSatelliteProtocol(APIServer):
     # ------------------------------------------------------------------
 
     @property
-    def wake_word_audio_requested(self) -> bool:
-        """True while Home Assistant wants the audio buffered before each wake word to verify it."""
-        return self._wake_word_audio_requested
-
-    def wakeup(
-        self,
-        wake_word: Union[MicroWakeWord, OpenWakeWord],
-        detection: Optional[DetectionResult] = None,
-        wake_word_audio: Optional[WakeWordAudio] = None,
-    ) -> None:
     def pipeline_active(self) -> bool:
         """Whether a voice pipeline is running, in which case wake words are ignored."""
         return self._pipeline_active
@@ -965,8 +851,7 @@ class VoiceSatelliteProtocol(APIServer):
         """
         Start the voice pipeline after a wake word detection.
         :param wake_word: The detected wake word model.
-        :param detection: Slot, score and cutoff of the detection, forwarded to peripherals and Home Assistant.
-        :param wake_word_audio: Audio recorded before the detection. Home Assistant verifies the wake word with it, if it asked for that.
+        :param detection: Slot and score of the detection, forwarded to peripherals.
         """
 
         if self.state.muted:
@@ -977,20 +862,15 @@ class VoiceSatelliteProtocol(APIServer):
             _LOGGER.debug("Ignoring wake word - pipeline already active")
             return
 
-        wake_word_phrase = wake_word.wake_word  # type: ignore[union-attr]
+        # Home Assistant compares the phrase with the name in its wake word selection to choose the pipeline
+        wake_word_phrase = name_for_wake_word_id(detection.wake_word_id, self.state.available_wake_words) if detection is not None else wake_word.wake_word  # type: ignore[union-attr]
         _LOGGER.debug("Detected wake word: %s", wake_word_phrase)
         self._wake_word_phrase = wake_word_phrase
 
-        self._timer_finished = False
-        self._timer_ring_start = None
-        _LOGGER.debug("Stopping timer finished sound")
         self._pipeline_active = True
         self._emit(LVAEvent.WAKE_WORD_DETECTED, self._detection_event_data(detection))
-        if wake_word_audio is not None and self._wake_word_audio_requested:
-            self._start_wake_word_verification(wake_word_phrase, detection, wake_word_audio)
-            return
-
         self.duck()
+        self.state.timer_alarm.stop_ringing(report_idle=False)
         if self.state.listen_during_wake_sound:
             _LOGGER.debug("Starting audio streaming immediately (listen_during_wake_sound enabled)")
             self.state.tts_player.play(self.state.wakeup_sound)
@@ -1013,20 +893,14 @@ class VoiceSatelliteProtocol(APIServer):
 
     def _start_audio_streaming(self, wake_word_phrase: str) -> None:
         """Start streaming audio during wake sound detection."""
-        _LOGGER.debug(
-            "Starting audio streaming for: %s",
-            wake_word_phrase,
-        )
+        _LOGGER.debug("Sending VoiceAssistantRequest to Home Assistant with wake_word_phrase '%s'", wake_word_phrase)
         self.send_messages([VoiceAssistantRequest(start=True, wake_word_phrase=wake_word_phrase)])
         self._is_streaming_audio = True
         self._emit(LVAEvent.LISTENING)
 
     def _on_wakeup_sound_finished(self, wake_word_phrase: str) -> None:
         """Callback invoked when the wakeup chime finishes; begin STT streaming."""
-        _LOGGER.debug(
-            "Wakeup sound finished, starting audio streaming for: %s",
-            wake_word_phrase,
-        )
+        _LOGGER.debug("Wakeup sound finished, sending VoiceAssistantRequest to Home Assistant with wake_word_phrase '%s'", wake_word_phrase)
         self.send_messages([VoiceAssistantRequest(start=True, wake_word_phrase=wake_word_phrase)])
         self._is_streaming_audio = True
         self._emit(LVAEvent.LISTENING)
@@ -1043,17 +917,19 @@ class VoiceSatelliteProtocol(APIServer):
         if self.state.muted:
             return
 
+        if not has_active_wake_word(self.state):
+            _LOGGER.debug("Ignoring start_listening - no wake word is active")
+            return
+
         if self._pipeline_active:
             _LOGGER.debug("Ignoring start_listening - pipeline already active")
             return
 
         _LOGGER.debug("Button start_listening triggered")
         self._wake_word_phrase = ""
-        self._timer_finished = False
-        self._timer_ring_start = None
-        _LOGGER.debug("Stopping timer finished sound")
         self._pipeline_active = True
         self.duck()
+        self.state.timer_alarm.stop_ringing(report_idle=False)
         self.state.tts_player.play(
             self.state.start_listening_sound,
             done_callback=self._on_start_listening_sound_finished,
@@ -1061,7 +937,7 @@ class VoiceSatelliteProtocol(APIServer):
 
     def _on_start_listening_sound_finished(self) -> None:
         """Callback invoked when the start-listening chime finishes; begin STT streaming."""
-        _LOGGER.debug("Start-listening sound finished, starting audio streaming")
+        _LOGGER.debug("Start-listening sound finished, sending VoiceAssistantRequest to Home Assistant with an empty wake_word_phrase")
         self.send_messages([VoiceAssistantRequest(start=True, wake_word_phrase="")])
         self._is_streaming_audio = True
         self._emit(LVAEvent.LISTENING)
@@ -1069,16 +945,8 @@ class VoiceSatelliteProtocol(APIServer):
     def stop(self) -> None:
         self.state.active_wake_words.discard(self.state.stop_word.id)
         self._pipeline_active = False
-        self._finish_wake_word_verification()
 
-        if self._timer_finished:
-            self._timer_finished = False
-            self._timer_ring_start = None
-            self.unduck()
-            self.state.tts_player.stop()
-            self._emit(LVAEvent.IDLE)
-            _LOGGER.debug("Stopping timer finished sound")
-        else:
+        if not self.state.timer_alarm.stop_ringing():
             # tts_player.stop() invokes the done_callback (_tts_finished),
             # so we don't call _tts_finished() again explicitly.
             self.state.tts_player.stop()
@@ -1109,6 +977,13 @@ class VoiceSatelliteProtocol(APIServer):
         self.send_messages([VoiceAssistantAnnounceFinished()])
         self._emit(LVAEvent.TTS_FINISHED)
 
+        if self._announce_ducking:
+            self._announce_ducking = False
+            if self._continue_conversation:
+                # The conversation takes over the ducking of an announcement without a gap
+                self.duck(owner="conversation")
+            self.unduck(owner="announce")
+
         if self._continue_conversation:
             self._continue_conversation = False
             # Keep pipeline active during the settle delay so the mic stays closed
@@ -1123,6 +998,7 @@ class VoiceSatelliteProtocol(APIServer):
                     self._pipeline_active = False
                     self.unduck()
                     return
+                _LOGGER.debug("Sending VoiceAssistantRequest to Home Assistant with wake_word_phrase '%s' (continued conversation)", self._wake_word_phrase)
                 self.send_messages([VoiceAssistantRequest(start=True, wake_word_phrase=self._wake_word_phrase)])
                 self._is_streaming_audio = True
                 _LOGGER.debug("Continued conversation started")
@@ -1149,47 +1025,21 @@ class VoiceSatelliteProtocol(APIServer):
     # Ducking
     # ------------------------------------------------------------------
 
-    def duck(self) -> None:
-        _LOGGER.debug("Ducking music")
-        self.state.music_player.duck()
+    def duck(self, owner: str = "conversation") -> None:
+        """
+        Duck the music. It stays ducked until every owner has called :meth:`unduck`.
+        :param owner: ``conversation``, ``timer`` (ringing) or ``announce`` (voice announcements).
+        """
+        _LOGGER.debug("Duck requested by %s", owner)
+        self.state.duck_music(owner=owner)
 
-    def unduck(self) -> None:
-        _LOGGER.debug("Unducking music")
-        self.state.music_player.unduck()
-
-    # ------------------------------------------------------------------
-    # Timer finished loop
-    # ------------------------------------------------------------------
-
-    def _play_timer_finished(self) -> None:
-        if not self._timer_finished:
-            _LOGGER.debug("Timer finished sound stopped")
-            self.unduck()
-            self._timer_ring_start = None
-            return
-
-        # Auto-stop after timer_max_ring_seconds
-        if self._timer_ring_start is not None:
-            elapsed = time.monotonic() - self._timer_ring_start
-            if elapsed >= self.state.timer_max_ring_seconds:
-                _LOGGER.info(
-                    "Timer auto-stopped after %.0f seconds (max=%.0f)",
-                    elapsed,
-                    self.state.timer_max_ring_seconds,
-                )
-                self._timer_finished = False
-                self._timer_ring_start = None
-                self.state.active_wake_words.discard(self.state.stop_word.id)
-                self.unduck()
-                return
-
-        self.state.tts_player.play(
-            self.state.timer_finished_sound,
-            done_callback=lambda: call_all(
-                lambda: time.sleep(1.0),
-                self._play_timer_finished,
-            ),
-        )
+    def unduck(self, owner: str = "conversation") -> None:
+        """
+        End the ducking of an owner. The volume is restored when no owner is left.
+        :param owner: The owner that called :meth:`duck`.
+        """
+        _LOGGER.debug("Unduck requested by %s", owner)
+        self.state.unduck_music(owner=owner)
 
     def connection_made(self, transport) -> None:
         super().connection_made(transport)
@@ -1206,18 +1056,20 @@ class VoiceSatelliteProtocol(APIServer):
         super().connection_lost(exc)
 
         self._disconnect_event.set()
+        if self._time_requests is not None:
+            self._time_requests.cancel()
+            self._time_requests = None
         self._is_streaming_audio = False
         self._tts_url = None
         self._tts_played = False
         self._continue_conversation = False
-        self._timer_finished = False
+        self._announce_ducking = False
         self._pipeline_active = False
-        self._wake_word_audio_requested = False
-        self._finish_wake_word_verification()
 
         # Deregister this connection.
         if self in self.state.connections:
             self.state.connections.remove(self)
+        self.state.client_disconnected.set()
 
         # Only tear down shared playback/state when the LAST client disconnects.
         # Otherwise a secondary client (a diagnostic tool, a second dashboard, or
@@ -1225,15 +1077,24 @@ class VoiceSatelliteProtocol(APIServer):
         # that belongs to a client still connected.
         if not self.state.connections:
             # Stop any ongoing audio playback and wake/stop word processing.
-            try:
-                self.state.music_player.stop()
-            except Exception:  # pylint: disable=broad-except
-                _LOGGER.exception("Failed to stop music player during disconnect")
+            if self._keep_music_on_disconnect:
+                _LOGGER.debug("Music keeps playing: LVA closed the connection itself so Home Assistant reads the wake word list again")
+            else:
+                try:
+                    self.state.music_player.stop()
+                except Exception:  # pylint: disable=broad-except
+                    _LOGGER.exception("Failed to stop music player during disconnect")
 
-            try:
-                self.state.tts_player.stop()
-            except Exception:  # pylint: disable=broad-except
-                _LOGGER.exception("Failed to stop TTS player during disconnect")
+            # A ringing timer keeps ringing without Home Assistant, with its sound, its ducking and the stop word.
+            timer_ringing = self.state.timer_alarm.ringing
+            for owner in ("conversation", "announce") if timer_ringing else ("conversation", "timer", "announce"):
+                self.unduck(owner=owner)
+
+            if not timer_ringing:
+                try:
+                    self.state.tts_player.stop()
+                except Exception:  # pylint: disable=broad-except
+                    _LOGGER.exception("Failed to stop TTS player during disconnect")
 
             self.state.stop_word.is_active = False  # type: ignore[attr-defined]
             self.state.connected = False
@@ -1282,150 +1143,175 @@ class VoiceSatelliteProtocol(APIServer):
             # Notify peripherals that Home Assistant is now connected
             self._emit(LVAEvent.ZEROCONF, {"status": "connected"})
 
+            if self._loop is not None and self._time_requests is None:
+                self._time_requests = self._loop.create_task(request_time_periodically(self.send_messages))
+
+    def _request_timer_list(self) -> None:
+        call_id = self.state.timer_sync.start_request()
+        self.send_messages([get_timers_request(call_id)])
+        if self._loop is not None:
+            self._loop.call_later(GET_TIMERS_TIMEOUT_SECONDS, self.state.timer_sync.give_up, call_id)
+
     # ------------------------------------------------------------------
-    # Wake word audio verification
+    # Active wake words
     # ------------------------------------------------------------------
 
-    def _start_wake_word_verification(self, wake_word_phrase: str, detection: Optional[DetectionResult], wake_word_audio: WakeWordAudio) -> None:
+    def _set_active_wake_words(self, requested_ids: List[str]) -> None:
         """
-        Start the run with the audio buffered before the detection, then wait for Home Assistant to accept or reject the wake word.
-        :param wake_word_phrase: Phrase of the detected wake word.
-        :param detection: Slot, score and cutoff of the detection.
-        :param wake_word_audio: Audio recorded up to and including the block that triggered the detection.
+        Activates the wake words Home Assistant chose. Offered wake words that are not on disk yet are downloaded in a worker thread first.
+        :param requested_ids: Wake word ids from `VoiceAssistantSetConfiguration.active_wake_words`.
+
+        A newer selection cancels a download that is still running, so only the newest selection is applied.
         """
-        _LOGGER.debug(
-            "Starting audio streaming for: %s (verifying the wake word with %d + %d buffered bytes)",
-            wake_word_phrase,
-            wake_word_audio.audio_bytes,
-            wake_word_audio.audio_bytes2,
-        )
-        request = VoiceAssistantRequest(
-            start=True,
-            wake_word_phrase=wake_word_phrase,
-            wake_word_audio_bytes=wake_word_audio.audio_bytes,
-            wake_word_audio_bytes2=wake_word_audio.audio_bytes2,
-        )
-        if detection is not None:
-            request.wake_word_id = detection.wake_word_id
-            if detection.score is not None:
-                request.wake_word_probability = detection.score
-            if detection.cutoff is not None:
-                request.wake_word_probability_cutoff = detection.cutoff
+        running = self.state.wake_word_download
+        if running is not None and not running.done():
+            _LOGGER.debug("Wake word download cancelled: Home Assistant sent a newer selection %s", requested_ids)
+            running.cancel()
+        self.state.wake_word_download = None
 
-        # Home Assistant expects the buffered audio right after the request, followed by the live audio.
-        messages: List[message.Message] = [request]
-        messages.extend(VoiceAssistantAudio(data=chunk, data2=chunk2) for chunk, chunk2 in wake_word_audio.chunks)
-
-        timer = threading.Timer(_WAKE_WORD_VERIFICATION_TIMEOUT_SECONDS, self._on_wake_word_verification_timeout)
-        timer.daemon = True
-        with self._verification_lock:
-            self._verifying_wake_word = True
-            self._verification_timer = timer
-        timer.start()
-
-        self.send_messages(messages)
-        self._is_streaming_audio = True
-        self._emit(LVAEvent.LISTENING)
-
-    def _finish_wake_word_verification(self) -> bool:
-        """Stop waiting for the verdict of Home Assistant. Returns True if a verdict was still pending."""
-        with self._verification_lock:
-            was_verifying = self._verifying_wake_word
-            self._verifying_wake_word = False
-            timer, self._verification_timer = self._verification_timer, None
-        if timer is not None:
-            timer.cancel()
-        return was_verifying
-
-    def _handle_wake_word_rejected(self) -> None:
-        """Home Assistant rejected the wake word: stop streaming and go back to idle without any sound."""
-        _LOGGER.debug("Wake word rejected by Home Assistant")
-        self._finish_wake_word_verification()
-        self._wake_word_rejected = True
-        self._is_streaming_audio = False
-        self._pipeline_active = False
-        self._continue_conversation = False
-        self.state.active_wake_words.discard(self.state.stop_word.id)
-        self.unduck()
-        self._emit(LVAEvent.IDLE)
-
-    def _on_wake_word_verification_timeout(self) -> None:
-        """Abort the run when Home Assistant neither accepted nor rejected the wake word in time."""
-        if not self._finish_wake_word_verification():
+        downloads = wake_words_to_download(requested_ids, self.state.available_wake_words, self._external_wake_words)
+        if not downloads:
+            self._activate_wake_words(requested_ids)
             return
 
-        _LOGGER.warning("Home Assistant did not verify the wake word within %.1f s, aborting the run", _WAKE_WORD_VERIFICATION_TIMEOUT_SECONDS)
-        self._is_streaming_audio = False
-        self.send_messages([VoiceAssistantRequest(start=False)])
-        self._wake_word_rejected = True
-        self._pipeline_active = False
-        self._emit(LVAEvent.PIPELINE_ERROR, {"reason": "wake-word-verification-timeout"})
-        self.unduck()
-        self._emit(LVAEvent.IDLE)
+        if self._loop is None:
+            _LOGGER.warning("Wake words %s cannot be downloaded without a running connection, skipped", [eww.id for eww in downloads])
+            self._activate_wake_words(requested_ids)
+            return
+
+        _LOGGER.info("Downloading wake words %s, the active wake words change when the download has finished", [eww.id for eww in downloads])
+        self.state.wake_word_download = self._loop.create_task(self._download_and_activate_wake_words(requested_ids, downloads))
+
+    async def _download_and_activate_wake_words(self, requested_ids: List[str], downloads: List[VoiceAssistantExternalWakeWord]) -> None:
+        """
+        Downloads offered wake words in a worker thread, then activates the selection.
+        :param requested_ids: Wake word ids from `VoiceAssistantSetConfiguration.active_wake_words`.
+        :param downloads: Offered wake words of that selection that are not on disk yet.
+        """
+        directory = self.state.wake_word_root / "downloaded" / "microwakeword"
+        downloaded = False
+        for external_wake_word in downloads:
+            try:
+                model_info = await asyncio.to_thread(download_external_wake_word, external_wake_word, directory)
+            except Exception:  # pylint: disable=broad-except
+                _LOGGER.exception("Download of wake word '%s' failed", external_wake_word.id)
+                model_info = None
+
+            if model_info is None:
+                _LOGGER.warning("Wake word '%s' could not be downloaded and stays inactive", external_wake_word.id)
+                continue
+
+            _LOGGER.info("Wake word '%s' downloaded as '%s'", external_wake_word.id, model_info.id)
+            self.state.available_wake_words[model_info.id] = model_info
+            downloaded = True
+
+        self._activate_wake_words(requested_ids)
+        if downloaded:
+            _LOGGER.info("Wake word names changed by the download, Home Assistant reconnects to read the wake word list again")
+            self.state.wake_word_list_reload = WakeWordListReload.NAMES_CHANGED
+            self._reconnect_home_assistant()
+
+    def _activate_wake_words(self, requested_ids: List[str]) -> None:
+        """
+        Activates the chosen wake words that are available and keeps each in its slot.
+        :param requested_ids: Wake word ids from `VoiceAssistantSetConfiguration.active_wake_words`.
+        """
+        # Change active wake words
+        active_wake_words: Set[str] = set()
+        new_wake_words: List[Optional[str]] = [None, None]
+
+        # Get old positions before modification
+        old_positions: Dict[str, int] = {}
+        stored_wake_word_ids = wake_word_ids_for_selections(self.state.preferences.active_wake_words, self.state.available_wake_words)
+        for idx, ww_id in enumerate(stored_wake_word_ids):
+            if ww_id is not None and idx < 2:
+                old_positions[ww_id] = idx
+
+        # Process new active wake words
+        for requested_id in requested_ids:
+            wake_word_id = find_matching_wake_word_id(self.state.available_wake_words, requested_id) or requested_id
+            if wake_word_id != requested_id:
+                _LOGGER.debug("Wake word id '%s' from Home Assistant resolved to '%s'", requested_id, wake_word_id)
+
+            if wake_word_id in self.state.wake_words:
+                # Already active
+                active_wake_words.add(wake_word_id)
+            else:
+                model_info = self.state.available_wake_words.get(wake_word_id)
+                if not model_info:
+                    _LOGGER.debug("Wake word '%s' from Home Assistant is not available, skipped", wake_word_id)
+                    continue
+
+                _LOGGER.debug("Loading wake word: %s", model_info.wake_word_path)
+                self.state.wake_words[wake_word_id] = model_info.load()
+
+                _LOGGER.info("Wake word set: %s", wake_word_id)
+                active_wake_words.add(wake_word_id)
+
+        # Keep old positions
+        remaining_ww = list(active_wake_words)
+        placed = set()
+
+        # First, place Wake Words in their old positions.
+        for ww_id in remaining_ww:
+            if ww_id in old_positions:
+                pos = old_positions[ww_id]
+                if pos < 2:
+                    new_wake_words[pos] = ww_id
+                    placed.add(ww_id)
+
+        # Add remaining wake words to free slots
+        free_slots = [i for i in range(2) if new_wake_words[i] is None]
+        for ww_id in remaining_ww:
+            if ww_id not in placed and free_slots:
+                pos = free_slots.pop(0)
+                new_wake_words[pos] = ww_id
+                placed.add(ww_id)
+
+        # If only one wake word is left and it was at position 1, position 0 remains None
+        # Position 2 automatically stays None if not occupied
+
+        if active_wake_words:
+            # Replace the dict instead of deleting keys so the audio thread never iterates a dict that changes size.
+            self.state.wake_words = {ww_id: model for ww_id, model in self.state.wake_words.items() if ww_id in active_wake_words}
+
+        self.state.active_wake_words = active_wake_words
+        _LOGGER.debug("Active wake words: %s", active_wake_words)
+        _LOGGER.debug("Wake word positions: [0]=%s, [1]=%s", new_wake_words[0], new_wake_words[1])
+
+        self.state.preferences.active_wake_words = wake_word_selections_for_ids(new_wake_words, self.state.available_wake_words)
+        self.state.preferences.save(self.state.preferences_path)
+        self.state.wake_words_changed = True
 
     # ------------------------------------------------------------------
-    # External wake word download
+    # Wake word list in Home Assistant
     # ------------------------------------------------------------------
 
-    def _download_external_wake_word(self, external_wake_word: VoiceAssistantExternalWakeWord) -> Optional[AvailableWakeWord]:
-        eww_dir = self.state.download_dir / "external_wake_words"
-        eww_dir.mkdir(parents=True, exist_ok=True)
+    def _apply_handshake_action(self, action: HandshakeAction) -> None:
+        """Moves on to the next step of reloading the wake word list after a configuration handshake, see wake_word_reload.py."""
+        if action.next_step != self.state.wake_word_list_reload:
+            _LOGGER.debug("Wake word list reload: %s -> %s", self.state.wake_word_list_reload.value, action.next_step.value)
+        self.state.wake_word_list_reload = action.next_step
+        if action.next_step == WakeWordListReload.NONE and self.state.preferences.wake_word_names_changed:
+            self.state.preferences.wake_word_names_changed = False
+            self.state.preferences.save(self.state.preferences_path)
 
-        config_path = eww_dir / f"{external_wake_word.id}.json"
-        should_download_config = not config_path.exists()
+        if action.reconnect:
+            self._reconnect_home_assistant()
 
-        # Check if we need to download the model file
-        model_path = eww_dir / f"{external_wake_word.id}.tflite"
-        should_download_model = True
-        if model_path.exists():
-            model_size = model_path.stat().st_size
-            if model_size == external_wake_word.model_size:
-                with open(model_path, "rb") as model_file:
-                    model_hash = hashlib.file_digest(model_file, "sha256").hexdigest()
+    def _reconnect_home_assistant(self) -> None:
+        """Closes every client connection after a short delay, so Home Assistant reconnects and reads the wake word list again. Music keeps playing."""
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            _LOGGER.warning("Home Assistant cannot be reconnected outside the event loop")
+            return
 
-                if model_hash == external_wake_word.model_hash:
-                    should_download_model = False
-                    _LOGGER.debug(
-                        "Model size and hash match for %s. Skipping download.",
-                        external_wake_word.id,
-                    )
+        _LOGGER.debug("Closing %d connection(s) in %.1f s so Home Assistant reads the wake word list again", len(self.state.connections), RECONNECT_DELAY_SECONDS)
+        loop.call_later(RECONNECT_DELAY_SECONDS, self._close_connections_for_reload)
 
-        if should_download_config or should_download_model:
-            # Download config
-            _LOGGER.debug("Downloading %s to %s", external_wake_word.url, config_path)
-            with urlopen(external_wake_word.url) as request:
-                if request.status != 200:
-                    _LOGGER.warning(
-                        "Failed to download: %s, status=%s",
-                        external_wake_word.url,
-                        request.status,
-                    )
-                    return None
-
-                with open(config_path, "wb") as model_file:
-                    shutil.copyfileobj(request, model_file)
-
-        if should_download_model:
-            # Download model file
-            parsed_url = urlparse(external_wake_word.url)
-            parsed_url = parsed_url._replace(
-                path=posixpath.join(posixpath.dirname(parsed_url.path), model_path.name),
-            )
-            model_url = urlunparse(parsed_url)
-
-            _LOGGER.debug("Downloading %s to %s", model_url, model_path)
-            with urlopen(model_url) as request:
-                if request.status != 200:
-                    _LOGGER.warning("Failed to download: %s, status=%s", model_url, request.status)
-                    return None
-
-                with open(model_path, "wb") as model_file:
-                    shutil.copyfileobj(request, model_file)
-
-        return AvailableWakeWord(
-            id=external_wake_word.id,
-            type=WakeWordType.MICRO_WAKE_WORD,
-            wake_word=external_wake_word.wake_word,
-            trained_languages=external_wake_word.trained_languages,
-            wake_word_path=config_path,
-        )
+    def _close_connections_for_reload(self) -> None:
+        """Closes every client connection and keeps the music playing."""
+        for connection in list(self.state.connections):
+            connection._keep_music_on_disconnect = True  # pylint: disable=protected-access
+            connection.close_connection()

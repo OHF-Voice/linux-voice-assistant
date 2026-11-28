@@ -79,13 +79,13 @@ The Linux audio stack consists of multiple layers working together:
 
 3. **Communication Flow**:
    ```
-   Container App → PipeWire Client Library → Host PipeWire/PulseAudio
-         ↓                                         ↓
-   (via mounted socket)                    (via ALSA drivers)
-         ↓                                         ↓
-   ┌─────────────────────────────────────────────────────┐
-   │              Audio Data flows to Hardware           │
-   └─────────────────────────────────────────────────────┘
+Container App → PipeWire Client Library → Host PipeWire/PulseAudio
+      ↓                                         ↓
+(via mounted socket)                    (via ALSA drivers)
+      ↓                                         ↓
+┌─────────────────────────────────────────────────────┐
+│              Audio Data flows to Hardware           │
+└─────────────────────────────────────────────────────┘
    ```
 
 4. **Key Configuration Points**:

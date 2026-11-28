@@ -18,21 +18,26 @@ from pymicro_wakeword import MicroWakeWordFeatures
 from pyopen_wakeword import OpenWakeWord, OpenWakeWordFeatures
 
 from .api_server import create_encryption_key_file, load_encryption_key_file
-from .models import Preferences, ServerState, WakeWordType, initial_stop_word_threshold
+from .migrations import migrate_preferences
+from .models import Preferences, ServerState, initial_stop_word_threshold
 from .mpv_player import MpvMediaPlayer
+from .network import EsphomeEndpoint, follow_interface_address
 from .peripheral_api import LVAEvent, PeripheralAPIServer
 from .satellite import VoiceSatelliteProtocol
+from .sendspin_bridge import create_sendspin_player, start_sendspin_bridge
 from .stop_word import process_stop_word
+from .timers import TimerList
 from .util import (
     get_default_interface,
     get_default_ipv4,
     get_esphome_version,
     get_version,
     resolve_mac_address,
+    warn_about_removed_options,
 )
-from .wake_word import find_available_wake_words, load_stop_model, load_wake_models
-from .wake_word_audio import WakeWordAudioBuffer
-from .wake_word_detection import ActiveWakeWord, apply_sensitivities, gate_wake_words, process_wake_words, select_active_wake_words
+from .wake_word import find_available_wake_words, load_stop_model, load_wake_models, wake_word_ids_for_selections, wake_word_selections_for_ids
+from .wake_word_detection import ActiveWakeWord, apply_sensitivities, gate_wake_words, process_wake_words, select_active_wake_words, wake_words_need_refresh
+from .wake_word_names import replace_hidden_wake_words
 from .webrtc import WebRTCProcessor
 from .zeroconf import start_discovery
 
@@ -80,6 +85,34 @@ async def main() -> None:
         help="mpv name for the music/media output device (defaults to --audio-output-device)",
     )
     parser.add_argument(
+        "--mpv-player-duck-mode",
+        default="duck",
+        choices=("duck", "pause"),
+        help="What the music player does while the assistant talks, an announcement plays or a timer rings: "
+        "duck lowers the volume to 50 %%, pause pauses the music and resumes it afterwards (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--enable-sendspin-bridge",
+        type=int,
+        default=1,
+        choices=(0, 1),
+        help="1 controls a Sendspin player (sendspin-cli, e.g. the Music Assistant Local Audio add-on) through its control socket: "
+        "ducking, media player state, play/pause/stop, volume and mute. 0 turns it off (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--sendspin-control-dir",
+        default="/run/sendspin-cli/socket",
+        help="Directory that holds control.sock, the control socket of the Sendspin player. Nothing is controlled through the socket while it does not exist " "(default: %(default)s)",
+    )
+    parser.add_argument(
+        "--sendspin-player-duck-mode",
+        default="pulse",
+        choices=("pulse", "stop", "duck"),
+        help="What happens to the Sendspin player while the assistant talks, an announcement plays or a timer rings: pulse lowers its sound stream "
+        "in PulseAudio/PipeWire to 50 %% (the Local Audio add-on passes this on to its Sendspin group), stop stops it and starts it again afterwards, duck lowers the volume of the whole "
+        "Sendspin group to 50 %% (default: %(default)s)",
+    )
+    parser.add_argument(
         "--list-output-devices",
         action="store_true",
         help="List audio output devices and exit",
@@ -101,10 +134,19 @@ async def main() -> None:
         help="Number of mic channels to capture (1=mono, 2=mic + AEC reference channel); what is streamed to Home Assistant does not depend on it",
     )
     parser.add_argument(
+        "--wake-word-root-dir",
+        default=_WAKEWORDS_DIR,
+        help="Root directory of the wake word layout: <origin>/<engine> with origin internal, downloaded or custom and engine microwakeword or openwakeword",
+    )
+    parser.add_argument(
         "--wake-word-dir",
-        default=[_WAKEWORDS_DIR],
-        action="append",
-        help="Directory with wake word models (.tflite) and configuration (.json)",
+        default=None,
+        help="Removed and ignored, use --wake-word-root-dir",
+    )
+    parser.add_argument(
+        "--download-dir",
+        default=None,
+        help="Removed and ignored, downloaded wake words are stored in <--wake-word-root-dir>/downloaded",
     )
     parser.add_argument(
         "--wake-model",
@@ -120,11 +162,6 @@ async def main() -> None:
         "--stop-model",
         default="stop",
         help="File name of the stop model",
-    )
-    parser.add_argument(
-        "--download-dir",
-        default=_REPO_DIR / "local",
-        help="Directory to download custom wake word models to",
     )
     parser.add_argument(
         "--refractory-seconds",
@@ -248,6 +285,13 @@ async def main() -> None:
         default=PeripheralAPIServer.DEFAULT_VOLUME_STEP,
         metavar="STEP",
         help="Volume change per button press, 0.0–1.0 (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--enable-remote-unmute",
+        type=int,
+        choices=(0, 1),
+        default=1,
+        help="1: Home Assistant can mute and unmute, like a peripheral (default: %(default)s). 0: only a peripheral can unmute; Home Assistant only shows the mute state.",
     )
     parser.add_argument(
         "--disable-peripheral-api",
@@ -391,14 +435,11 @@ async def main() -> None:
     # Resolve version
     version = get_version()
     _LOGGER.info("Version: %s", version)
+    warn_about_removed_options(args.wake_word_dir, args.download_dir)
 
     # Resolve esphome version
     esphome_version = get_esphome_version()
     _LOGGER.info("ESPHome api version: %s", esphome_version)
-
-    # Resolve download dir
-    args.download_dir = Path(args.download_dir)
-    args.download_dir.mkdir(parents=True, exist_ok=True)
 
     # Resolve microphone
     if args.audio_input_device is not None:
@@ -428,27 +469,12 @@ async def main() -> None:
             sys.exit(1)
 
     # Load available wake words
-    wake_word_dirs = [Path(ww_dir) for ww_dir in args.wake_word_dir]
+    wake_word_root = Path(args.wake_word_root_dir)
+    # Lowest priority first: a wake word id found in a later directory replaces the same id found earlier
+    wake_word_dirs = [wake_word_root / origin / engine for origin in ("internal", "downloaded", "custom") for engine in ("microwakeword", "openwakeword")]
+    for wake_word_dir in wake_word_dirs:
+        wake_word_dir.mkdir(parents=True, exist_ok=True)
 
-    # If the operator explicitly pointed --wake-word-dir (or the WAKE_WORD_DIR
-    # env var) at the openWakeWord subdirectory, prefer resolving --wake-model
-    # to an openWakeWord model of the same name instead of a same-named
-    # microWakeWord one. Checked before the automatic dirs below are appended,
-    # since those always include the openWakeWord path and would otherwise
-    # make every configuration look like an openWakeWord preference.
-    preferred_wake_word_type = WakeWordType.OPEN_WAKE_WORD if any("openwakeword" in str(ww_dir).lower() for ww_dir in wake_word_dirs) else None
-
-    # openWakeWord models ship in their own subdirectory under the default
-    # wakewords dir. find_available_wake_words() only globs the top level of
-    # each directory it's given, so this must be added explicitly or the OWW
-    # models never get discovered (and never show up in the HA dropdown).
-    # Appended after the user-specified dirs so OWW entries are inserted
-    # (and therefore displayed) after the microWakeWord ones.
-    oww_dir = _WAKEWORDS_DIR / "openWakeWord"
-    if oww_dir not in wake_word_dirs:
-        wake_word_dirs.append(oww_dir)
-
-    wake_word_dirs.append(args.download_dir / "external_wake_words")
     available_wake_words = find_available_wake_words(wake_word_dirs, args.stop_model)
 
     # Load preferences
@@ -461,6 +487,11 @@ async def main() -> None:
     else:
         _LOGGER.info("No preferences file found, creating it with the defaults: %s", preferences_path)
         preferences = Preferences()
+        preferences.save(preferences_path)
+
+    migrated_preferences = migrate_preferences(preferences, available_wake_words)
+    if migrated_preferences != preferences:
+        preferences = migrated_preferences
         preferences.save(preferences_path)
 
     # Load volume from preferences on startup, and ensure it's between 0.0 and 1.0
@@ -481,6 +512,9 @@ async def main() -> None:
     # a corrected snapshot after the fact.
     initial_button_controls_locked = bool(preferences.button_controls_locked)
 
+    # The stored mute state must be in place before the first peripheral snapshot and the Mute switch are built, for the same reason.
+    initial_muted = bool(preferences.muted)
+
     if args.enable_thinking_sound:
         preferences.thinking_sound = 1
 
@@ -499,18 +533,25 @@ async def main() -> None:
     if args.mic_noise_suppression > 0:
         preferences.mic_noise_suppression = args.mic_noise_suppression
 
+    stored_wake_word_ids = wake_word_ids_for_selections(preferences.active_wake_words, available_wake_words)
+    active_wake_word_ids = replace_hidden_wake_words(stored_wake_word_ids, available_wake_words)
+    if active_wake_word_ids != stored_wake_word_ids:
+        preferences.active_wake_words = wake_word_selections_for_ids(active_wake_word_ids, available_wake_words)
+        preferences.save(preferences_path)
+
     # Load wake/stop models
     wake_models, wake_word_slots, fallback_used = load_wake_models(
         available_wake_words,
-        [word for word in preferences.active_wake_words if word is not None],
+        [word for word in active_wake_word_ids if word is not None],
         first_default_wake_word_id=args.wake_model,
         second_default_wake_word_id=args.wake_model_2,
-        preferred_type=preferred_wake_word_type,
     )
 
     # TODO: allow openWakeWord for "stop"
-    stop_model = load_stop_model(wake_word_dirs, args.stop_model)
+    stop_model = load_stop_model(list(reversed(wake_word_dirs)), args.stop_model)
     assert stop_model is not None
+
+    sendspin_player, sendspin_stream_ducker = create_sendspin_player(args.enable_sendspin_bridge == 1, args.sendspin_control_dir, args.sendspin_player_duck_mode, preferences)
 
     state = ServerState(
         name=device_name,
@@ -525,8 +566,9 @@ async def main() -> None:
         wake_words=wake_models,
         active_wake_words=set(wake_word_slots),
         stop_word=stop_model,
-        music_player=MpvMediaPlayer(device=args.music_output_device or args.audio_output_device),
-        tts_player=MpvMediaPlayer(device=args.audio_output_device),
+        music_player=MpvMediaPlayer(device=args.music_output_device or args.audio_output_device, name="music", duck_mode=args.mpv_player_duck_mode),
+        tts_player=MpvMediaPlayer(device=args.audio_output_device, name="tts"),
+        sendspin_player=sendspin_player,
         wakeup_sound=args.wakeup_sound,
         start_listening_sound=args.start_listening_sound,
         timer_finished_sound=args.timer_finished_sound,
@@ -540,13 +582,16 @@ async def main() -> None:
         button_long_press_sound=args.button_long_press_sound,
         preferences=preferences,
         preferences_path=preferences_path,
+        timers=TimerList.from_dicts(preferences.timers),
         refractory_seconds=args.refractory_seconds,
         continue_conversation_delay=args.continue_conversation_delay,
         output_only=args.output_only,
-        download_dir=args.download_dir,
+        wake_word_root=wake_word_root,
         volume=initial_volume,
         stop_word_threshold=initial_threshold,
         button_controls_locked=initial_button_controls_locked,
+        muted=initial_muted,
+        remote_unmute_enabled=args.enable_remote_unmute == 1,
         mic_volume=preferences.mic_volume,
         mic_auto_gain=preferences.mic_auto_gain,
         mic_noise_suppression=preferences.mic_noise_suppression,
@@ -558,7 +603,7 @@ async def main() -> None:
     if fallback_used:
         # Fallback to the default model was used, save as active wake words
         _LOGGER.debug("Fallback was used, save default wake words in Preferences.")
-        state.preferences.active_wake_words = list(wake_word_slots)
+        state.preferences.active_wake_words = wake_word_selections_for_ids(list(wake_word_slots), available_wake_words)
         state.active_wake_words = set(wake_word_slots)
         state.wake_words = wake_models
         state.preferences.save(state.preferences_path)
@@ -652,7 +697,7 @@ async def main() -> None:
     process_audio_thread.start()
 
     # Auto discovery (zeroconf, mDNS)
-    await start_discovery(
+    discovery = await start_discovery(
         enabled=args.enable_zeroconf == 1,
         port=args.port,
         name=state.name,
@@ -682,13 +727,35 @@ async def main() -> None:
             )
             await asyncio.sleep(args.peripheral_startup_wait)
 
+    countdown = loop.create_task(state.timer_alarm.run_countdown())
+    sendspin_stream_ducking = start_sendspin_bridge(state, sendspin_stream_ducker)
+
+    endpoint = EsphomeEndpoint(
+        state=state,
+        bound_ip=host_ip_address,
+        server=server,  # type: ignore[arg-type]
+        discovery=discovery,
+        listen=lambda ip_address: loop.create_server(lambda: VoiceSatelliteProtocol(state), host=ip_address, port=args.port),
+    )
+
     try:
-        async with server:  # type: ignore[union-attr]
-            _LOGGER.info("Server started (host=%s, port=%s)", host_ip_address, args.port)
+        _LOGGER.info("Server started (host=%s, port=%s)", host_ip_address, args.port)
+        if network_interface and not args.host:
+            await follow_interface_address(
+                interface=network_interface,
+                bound_ip=host_ip_address,
+                client_disconnected=state.client_disconnected,
+                apply=endpoint.apply,
+            )
+        else:
             await server.serve_forever()  # type: ignore[union-attr]
     except KeyboardInterrupt:
         pass
     finally:
+        countdown.cancel()
+        if sendspin_stream_ducking is not None:
+            sendspin_stream_ducking.cancel()
+        await endpoint.close()
         process_audio_thread.join()
         if peripheral_api is not None:
             await peripheral_api.stop()
@@ -752,6 +819,7 @@ def process_audio(state: ServerState, mic, block_size: int):
     n_channels = state.audio_input_channels
 
     wake_words: List[ActiveWakeWord] = []
+    wake_words_refreshed = False
     micro_features: Optional[MicroWakeWordFeatures] = None
     micro_inputs: List[np.ndarray] = []
 
@@ -761,7 +829,6 @@ def process_audio(state: ServerState, mic, block_size: int):
 
     last_active: Optional[float] = None
     webrtc: Optional[WebRTCProcessor] = None
-    wake_word_audio_buffer = WakeWordAudioBuffer()
     stop_word_running = False
     wake_word_running = False
 
@@ -797,14 +864,17 @@ def process_audio(state: ServerState, mic, block_size: int):
                     if not audio_chunk:
                         continue
 
-                if state.satellite is None or not hasattr(state.satellite, "_is_streaming_audio"):
+                satellite = state.satellite if hasattr(state.satellite, "_is_streaming_audio") else None
+                # Without Home Assistant only the stop word of a ringing timer is listened for
+                if satellite is None and not state.timer_alarm.ringing:
                     continue
 
                 # WAKE WORD
-                if (not wake_words) or (state.wake_words_changed and state.wake_words):
+                if wake_words_need_refresh(state, wake_words_refreshed):
                     # Update list of wake word models to process
                     state.wake_words_changed = False
                     wake_words = select_active_wake_words(state)
+                    wake_words_refreshed = True
 
                     # TODO: Load default stop word value from json into state and preferences missing.
 
@@ -861,73 +931,15 @@ def process_audio(state: ServerState, mic, block_size: int):
                 try:
                     # data=ch0 (after WebRTC gain/noise suppression), data2=ch0 before any WebRTC processing
                     audio_chunk_2 = audio_chunk_unprocessed
-                    state.satellite.handle_audio(audio_chunk, audio_chunk_2)
-
-                    # Buffer the audio before a detection only while Home Assistant verifies wake words, and never while muted.
-                    if state.satellite.wake_word_audio_requested and not state.muted:
-                        wake_word_audio_buffer.append(audio_chunk, audio_chunk_2)
-                    else:
-                        wake_word_audio_buffer.clear()
+                    if satellite is not None:
+                        satellite.handle_audio(audio_chunk, audio_chunk_2)
 
                     assert micro_features is not None
                     micro_inputs.clear()
                     micro_inputs.extend(micro_features.process_streaming(audio_chunk))
 
-                    if has_oww:
-                        assert oww_features is not None
-                        oww_inputs.clear()
-                        oww_inputs.extend(oww_features.process_streaming(audio_chunk))
-
-                    for wake_word_index, wake_word in enumerate(wake_words):
-                        activated: Optional[float] = None
-
-                        # Set dynamic threshold depending on wake word index
-                        if wake_word_index == 0:
-                            threshold = state.wake_word_1_threshold
-                            # _LOGGER.debug("Set wake word %d probability cutoff to %.3f", wake_word_index+1, state.wake_word_1_threshold)
-                        elif wake_word_index == 1:
-                            threshold = state.wake_word_2_threshold
-                            # _LOGGER.debug("Set wake word %d probability cutoff to %.3f", wake_word_index+1, state.wake_word_2_threshold)
-                        else:
-                            threshold = 0.7
-                            # _LOGGER.debug("Set wake word %d probability cutoff to fallback value 0.7", wake_word_index+1)
-
-                        if isinstance(wake_word, MicroWakeWord):
-                            # set microWakeWord cutoff
-                            wake_word.probability_cutoff = threshold
-
-                            for micro_input in micro_inputs:
-                                prob = wake_word.process_streaming_prob(micro_input)
-                                if prob is not None and prob > threshold:
-                                    _LOGGER.debug("Wake word '%s' activated (probability %.3f exceeded threshold %.3f)", wake_word.wake_word, prob, threshold)
-                                    activated = prob if activated is None else max(activated, prob)
-                        elif isinstance(wake_word, OpenWakeWord):
-                            for oww_input in oww_inputs:
-                                for prob in wake_word.process_streaming(oww_input):
-                                    if prob > threshold:
-                                        _LOGGER.debug("Wake word '%s' activated (probability %.3f exceeded threshold %.3f)", wake_word.wake_word, prob, threshold)  # type: ignore[attr-defined]
-                                        activated = prob if activated is None else max(activated, prob)
-
-                        if activated is not None and not state.muted:
-                            # Check refractory
-                            now = time.monotonic()
-                            if (last_active is None) or ((now - last_active) > state.refractory_seconds):
-                                # Only microWakeWord detections are verified by Home Assistant.
-                                wake_word_audio = wake_word_audio_buffer.snapshot() if isinstance(wake_word, MicroWakeWord) and state.satellite.wake_word_audio_requested else None
-                                state.satellite.wakeup(wake_word, DetectionResult(wake_word.id, wake_word_index, activated, threshold), wake_word_audio)
-                                last_active = now
-
-                    # Always process to keep state correct
-                    stopped = False
-
-                    # Apply stop word sensitivity threshold
-                    state.stop_word.probability_cutoff = state.stop_word_threshold
-                    # _LOGGER.debug("Set stop word probability cutoff to %.3f", state.stop_word_threshold)
-                    for micro_input in micro_inputs:
-                        if state.stop_word.process_streaming(micro_input):
-                            stopped = True
-                    wake_word_running = gate_wake_words(wake_words, oww_features, state.satellite.pipeline_active, wake_word_running)
-                    if wake_word_running:
+                    wake_word_running = gate_wake_words(wake_words, oww_features, satellite is None or satellite.pipeline_active, wake_word_running)
+                    if wake_word_running and satellite is not None:
                         if has_oww:
                             assert oww_features is not None
                             oww_inputs.clear()
@@ -936,13 +948,16 @@ def process_audio(state: ServerState, mic, block_size: int):
                         now = time.monotonic()
                         detections, last_active = process_wake_words(state, wake_words, micro_inputs, oww_inputs, last_active, now)
                         for wake_word, detection in detections:
-                            state.satellite.wakeup(wake_word, detection)
+                            satellite.wakeup(wake_word, detection)
 
                     stopped, stop_word_running = process_stop_word(state, micro_inputs, stop_word_running)
 
                     if stopped and (state.stop_word.id in state.active_wake_words) and not state.muted:
                         _LOGGER.debug("Stop word detected")
-                        state.satellite.stop()
+                        if satellite is not None:
+                            satellite.stop()
+                        else:
+                            state.timer_alarm.stop_ringing()
                 except Exception:  # pylint: disable=broad-except
                     _LOGGER.exception("Unexpected error handling audio")
     except Exception:  # pylint: disable=broad-except

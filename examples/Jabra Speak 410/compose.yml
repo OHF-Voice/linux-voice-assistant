@@ -12,7 +12,6 @@
 services:
   jabra-peripheral:
     image: ghcr.io/machineonamission/lva-jabra-speak-410:main
-    container_name: jabra-peripheral
     restart: unless-stopped
 
     # -----------------------------------------------------------------------
@@ -112,7 +111,7 @@ services:
 #    Expose the PipeWire socket from the host to the container as shown in the
 #    volumes section above. See the LVA audio server documentation for the
 #    full procedure:
-#    https://github.com/OHF-Voice/linux-voice-assistant/blob/main/docs/install_audioserver.md
+#    https://github.com/OHF-Voice/linux-voice-assistant/blob/main/docs/installation_part1_audioserver.md
 #
 #    If pw-record is not available inside the container, install wireplumber:
 #        apt-get install wireplumber

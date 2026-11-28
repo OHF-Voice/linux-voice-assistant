@@ -23,8 +23,12 @@ class LibMpvPlayer(AudioPlayer):
     - volume handling with ducking support
     """
 
-    def __init__(self, device: Optional[str] = None) -> None:
-        self._log = logging.getLogger(self.__class__.__name__)
+    def __init__(self, device: Optional[str] = None, name: str = "mpv") -> None:
+        """
+        :param device: mpv audio device name, None for the default.
+        :param name: Name of the player in the log, for example ``music`` or ``tts``.
+        """
+        self._log = logging.getLogger(f"{self.__class__.__name__}[{name}]")
         self._state: PlayerState = PlayerState.IDLE
         self._state_lock = threading.Lock()
         self._last_error: Optional[str] = None
@@ -34,9 +38,12 @@ class LibMpvPlayer(AudioPlayer):
         self._duck_factor: float = 1.0  # 0.0 – 1.0
 
         # mpv setup
+        # LVA only plays audio. Subtitle tracks are disabled as well as video, because selecting one
+        # starts libass and with it Fontconfig, even when no video is shown.
         self._mpv = mpv.MPV(
             audio_display=False,
             video=False,
+            sub=False,
             log_handler=self._on_mpv_log,
             loglevel="error",
             cache="yes",
@@ -134,35 +141,35 @@ class LibMpvPlayer(AudioPlayer):
         Set user volume.
         :param volume: Volume level (0.0–100.0).
         """
-        self._log.debug("set_volume() called")
         with self._state_lock:
             self._user_volume = max(0.0, min(100.0, float(volume)))
-            self._apply_volume()
+            self._apply_volume("set_volume")
 
     def duck(self, factor: float = 0.5) -> None:
         """
         Reduce volume temporarily by a ducking factor.
         :param factor: Ducking factor (0.0–1.0).
         """
-        self._log.debug("duck() called")
         with self._state_lock:
             self._duck_factor = max(0.0, min(1.0, float(factor)))
-            self._apply_volume()
+            self._apply_volume("duck")
 
     def unduck(self) -> None:
         """Restore volume to the user-defined level."""
-        self._log.debug("unduck() called")
         with self._state_lock:
             self._duck_factor = 1.0
-            self._apply_volume()
+            self._apply_volume("unduck")
 
     # -------- Internal helpers --------
 
-    def _apply_volume(self) -> None:
-        """Apply effective volume (user volume × duck factor) to mpv."""
-        self._log.debug("_apply_volume() called")
-        effective = self._user_volume * self._duck_factor
-        self._mpv.volume = max(0.0, min(100.0, effective))
+    def _apply_volume(self, reason: str) -> None:
+        """
+        Apply effective volume (user volume × duck factor) to mpv.
+        :param reason: What changed the volume, for the log.
+        """
+        effective = max(0.0, min(100.0, self._user_volume * self._duck_factor))
+        self._log.debug("Volume (%s): set %.0f x duck %.2f = %.0f", reason, self._user_volume, self._duck_factor, effective)
+        self._mpv.volume = effective
 
     def _cancel_eof_timer(self) -> None:
         """Cancel a pending end-of-playback timer. Must be called with the state lock held."""

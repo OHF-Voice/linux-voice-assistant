@@ -64,6 +64,22 @@ if [ -n "${MUSIC_OUTPUT_DEVICE}" ]; then
   EXTRA_ARGS+=( "--music-output-device" "$MUSIC_OUTPUT_DEVICE" )
 fi
 
+if [ -n "${MPV_PLAYER_DUCK_MODE}" ]; then
+  EXTRA_ARGS+=( "--mpv-player-duck-mode" "$MPV_PLAYER_DUCK_MODE" )
+fi
+
+if [ -n "${ENABLE_SENDSPIN_BRIDGE}" ]; then
+  EXTRA_ARGS+=( "--enable-sendspin-bridge" "$ENABLE_SENDSPIN_BRIDGE" )
+fi
+
+if [ -n "${SENDSPIN_CONTROL_DIR}" ]; then
+  EXTRA_ARGS+=( "--sendspin-control-dir" "$SENDSPIN_CONTROL_DIR" )
+fi
+
+if [ -n "${SENDSPIN_PLAYER_DUCK_MODE}" ]; then
+  EXTRA_ARGS+=( "--sendspin-player-duck-mode" "$SENDSPIN_PLAYER_DUCK_MODE" )
+fi
+
 if [ -n "${MIC_VOLUME}" ]; then
   EXTRA_ARGS+=( "--mic-volume" "$MIC_VOLUME" )
 fi
@@ -88,6 +104,10 @@ if [ "$LISTEN_DURING_WAKE_SOUND" = "1" ]; then
   EXTRA_ARGS+=( "--listen-during-wake-sound" )
 fi
 
+if [ -n "${WAKE_WORD_ROOT_DIR}" ]; then
+  EXTRA_ARGS+=( "--wake-word-root-dir" "$WAKE_WORD_ROOT_DIR" )
+fi
+
 if [ -n "${WAKE_WORD_DIR}" ]; then
   EXTRA_ARGS+=( "--wake-word-dir" "$WAKE_WORD_DIR" )
 fi
@@ -102,10 +122,6 @@ fi
 
 if [ -n "${STOP_MODEL}" ]; then
   EXTRA_ARGS+=( "--stop-model" "$STOP_MODEL" )
-fi
-
-if [ -n "${DOWNLOAD_DIR}" ]; then
-  EXTRA_ARGS+=( "--download-dir" "$DOWNLOAD_DIR" )
 fi
 
 if [ -n "${REFACTORY_SECONDS}" ]; then
@@ -174,6 +190,10 @@ fi
 
 if [ -n "${PERIPHERAL_STARTUP_WAIT}" ]; then
   EXTRA_ARGS+=( "--peripheral-startup-wait" "$PERIPHERAL_STARTUP_WAIT" )
+fi
+
+if [ -n "${ENABLE_REMOTE_UNMUTE}" ]; then
+  EXTRA_ARGS+=( "--enable-remote-unmute" "$ENABLE_REMOTE_UNMUTE" )
 fi
 
 if [ -n "${ENABLE_ZEROCONF}" ]; then
