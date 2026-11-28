@@ -2,7 +2,7 @@
 
 This page describes what Linux Voice Assistant (LVA) does in everyday situations, from the user's point of view: what happens to music when you talk to the assistant, what happens when a timer rings, what the stop word does, and so on.
 
-For the list of Home Assistant entities see [configuration.md](configuration.md). For the events sent to hardware peripherals see [peripheral_api.md](development/peripheral_api.md).
+For the list of Home Assistant entities see [configuration.md](configuration.md). For the events sent to hardware peripherals see [peripheral_api/readme.md](peripheral_api/readme.md), for what peripherals can trigger see the specification of each version ([v1](peripheral_api/v1.md), [v2](peripheral_api/v2.md)).
 
 ---
 
@@ -11,12 +11,12 @@ For the list of Home Assistant entities see [configuration.md](configuration.md)
 - [Basics: two audio channels](#basics-two-audio-channels)
 - [Talking to the assistant](#talking-to-the-assistant)
 - [Music and media playback](#music-and-media-playback)
+  - [Sendspin player](#sendspin-player)
 - [Announcements](#announcements)
 - [Timers](#timers)
 - [The stop word](#the-stop-word)
 - [Mute](#mute)
 - [Volume](#volume)
-- [Buttons (peripherals)](#buttons-peripherals)
 - [Peripheral API versions](#peripheral-api-versions)
 - [Connection to Home Assistant](#connection-to-home-assistant)
 - [Quick reference: what happens to music?](#quick-reference-what-happens-to-music)
@@ -37,7 +37,7 @@ The music player can be sent to a different sound card with `--music-output-devi
 Two rules apply everywhere:
 
 - **Music is never ended by the assistant on its own.** During a conversation it is lowered (*ducked*). During a TTS / announcement sent to the media player (for example `tts.speak` with `announce: true`) it is **ducked** for the duration of the announcement and then restored, and the media player reports `announcing`. Only an explicit *stop* from Home Assistant or a peripheral, or losing the connection to Home Assistant (see below), stops it for good.
-- **Ducking** means the music volume is reduced to **50 %** of the volume you set. When the interaction is over it returns to 100 % of your set volume. The music stays ducked as long as something still wants it ducked: a conversation, a ringing timer, a voice announcement and a media player announcement ask for it separately, so the music returns to full volume only when all of them are over. For example, a timer that is stopped during a conversation does not end the ducking of the conversation. When the last Home Assistant client disconnects, all of them are released.
+- **Ducking** means the music volume is reduced to **50 %** of the volume you set. When the interaction is over it returns to 100 % of your set volume. The music stays ducked as long as something still wants it ducked: a conversation, a ringing timer, a voice announcement and a media player announcement ask for it separately, so the music returns to full volume only when all of them are over. For example, a timer that is stopped during a conversation does not end the ducking of the conversation. When the last Home Assistant client disconnects, all of them are released, except the one of a ringing timer, which keeps ringing.
 - **Pause mode (`--mpv-player-duck-mode pause`, `MPV_PLAYER_DUCK_MODE=pause`).** The default is `duck`, which lowers the volume as described above. With `pause` the music of LVA is **paused** instead of lowered, and resumed when the last reason for ducking is over. Music that was already paused stays paused. A pause or stop from Home Assistant or a peripheral during that time takes over, so the music is not resumed against it. While it is paused for ducking, the media player keeps reporting `playing`. Music that is started while it is ducked plays at full volume, because nothing pauses it again. The option only applies to the music player, not to the voice player (announcements, chimes, TTS, timer sound).
 
 ---
@@ -64,10 +64,14 @@ Details:
 - **Continued conversation.** If Home Assistant asks a follow-up question, the assistant listens again after the reply, without a wake word. It waits `--continue-conversation-delay` (default 0.5 s) after the reply so the microphone does not record the tail of its own voice. Music stays ducked through the whole conversation and is restored only when the conversation ends. The follow-up runs on the same pipeline as the wake word that started the conversation. After a button press or an announcement from Home Assistant there is no wake word, so the first pipeline is used. If you mute the assistant during that delay, the follow-up is skipped and music is restored.
 - **Wake word while a timer rings.** Saying the wake word silences the ringing timer and starts a normal interaction.
 - **Starting by button.** A peripheral button can start listening without a wake word. Instead of the wake sound, the start-listening sound (`--start-listening-sound`) plays; everything else is identical. This also silences a ringing timer. It does nothing while no wake word is active, see below.
-- **Errors.** If the pipeline reports an error, peripherals receive a `pipeline_error` event. See [peripheral_api.md](development/peripheral_api.md).
+- **Errors.** If the pipeline reports an error, version 1 peripherals receive a `pipeline_error` event, version 2 peripherals the state `pipeline_error`. See [peripheral_api/readme.md](peripheral_api/readme.md).
 - **Two wake words.** Home Assistant can activate up to two wake words at once. Each has its own sensitivity setting (*Wake Word 1/2 Sensitivity*). A word keeps its slot while the other one changes, and always uses the sensitivity of its own slot, also when it is the only active word.
-- **Wake word locations.** Wake words are read from `wakewords/internal`, `wakewords/downloaded` and `wakewords/custom` (root: `--wake-word-root-dir`), each with a `microwakeword` and an `openwakeword` subdirectory. The same model in two directories is two separate wake words. `--wake-model` and `--wake-model-2` accept the file name (`hey_jarvis`) or the name in the selection (`Internal - MWW - Hey Jarvis`). If a file name exists in more than one origin, `custom` wins over `downloaded`, which wins over `internal`. The same applies to the stop word. Wake words that Home Assistant sends are stored in `downloaded`.
-- **Wake word names.** Every wake word has a name made of origin, engine and the phrase from its `.json` file, for example `Download - OWW - Hey Jarvis` (`Internal`, `Download`, `Custom` and `MWW`, `OWW`). It is the name in the wake word selection in Home Assistant and also the phrase LVA sends with a voice request, because Home Assistant compares both to choose the pipeline of a wake word. If two wake words of one origin and engine have the same phrase, only the last one found is used and a warning is logged.
+- **Wake word locations.** Wake words are read from `wakewords/internal`, `wakewords/downloaded` and `wakewords/custom` (root: `--wake-word-root-dir`), each with a `microwakeword` and an `openwakeword` subdirectory. The same model in two directories is two separate wake words. `--wake-model` and `--wake-model-2` accept the file name (`hey_jarvis`) or the id of the wake word (`Internal - MWW - Hey Jarvis`). If a file name exists in more than one origin, `custom` wins over `downloaded`, which wins over `internal`. The same applies to the stop word. Wake words that Home Assistant sends are stored in `downloaded`.
+- **Wake words from Home Assistant.** Home Assistant offers the microWakeWord models from its `custom_wake_words` folder for download; they appear in the wake word selection as `Download from HA - <phrase>` (for example `Download from HA - Hey Computer`), unless the file is already in `downloaded` (same file name). If several offers have the same phrase, only the first one is listed (logged at debug level). When one is chosen, LVA downloads it into `downloaded` in the background and activates the new selection when the download has finished. Until then the previous wake words stay active, and the assistant keeps working (Home Assistant connection, peripherals, timers). A model already on disk with the same size and SHA-256 is not downloaded again. If a newer selection arrives during a download, the older selection is not applied. A failed download (network error, Home Assistant not answering for 30 s, HTTP error) is logged as a warning and the rest of the selection becomes active; it leaves no partial file in `downloaded`. Every offered wake word and the reason why it is offered or not is logged at debug level. After a download its name changes to the plain phrase, so LVA makes Home Assistant reload the wake word list (see *Wake word names*).
+- **Wake word names.** Each wake word has an id made of origin, engine and the phrase from its `.json` file, for example `Internal - MWW - Hey Jarvis`. The id is stored, sent to peripherals and logged, and Home Assistant sends it back when a wake word is chosen. Home Assistant shows a different name: microWakeWord models are named by their plain phrase (`Hey Jarvis`), openWakeWord models by their phrase with ` (OWW)` (`Hey Jarvis (OWW)`). LVA adds the suffix when it loads the model; the `.json` file is not changed. On a detection LVA sends this name as the phrase, because Home Assistant compares it with its wake word select to choose the pipeline, and the Voice support app recognizes the plain microWakeWord phrases (`Okay Nabu`, `Hey Jarvis`, `Hey Mycroft`). Each offered wake word and its name are logged at debug level.
+- **One wake word per name.** Home Assistant shows only one option per name, so within one engine LVA offers only one wake word per phrase: `custom` wins over `downloaded`, which wins over `internal`. Phrases are compared without case and surrounding spaces. Each hidden wake word is logged at debug level. A microWakeWord whose phrase is the name of an openWakeWord (for example a custom microWakeWord with the phrase `Hey Jarvis (OWW)`) wins over it, and an error is logged. If two wake words of one origin and engine have the same phrase, only the last one found is used and a warning is logged.
+- **Hidden active wake word.** If an active wake word is hidden by another one with the same name (for example a custom `Hey Jarvis` was added while the internal one was active), LVA switches to the offered one when it loads the wake words at startup and logs it. If that one is already in the other slot, the slot becomes empty.
+- **Reloading the wake word list in Home Assistant.** Home Assistant reads the list of wake words only when it connects. When the names change, Home Assistant no longer finds the option its wake word select had and shows *No wake word*. After a download, LVA closes every connection 1 s after the download, so Home Assistant reconnects at once and reads the new list; after the update that introduced plain phrases, the first connection already reads it. In the handshake with the new list, LVA closes the connection once more 1 s later, and in the handshake after that it reports only the first active wake word, because Home Assistant restores its first wake word select only from *No wake word* and only with exactly one active wake word. Music of LVA's music player keeps playing during these reconnects, also if Home Assistant does not come back. Everything else behaves as on any disconnect (TTS stops, ducking ends, a ringing timer keeps ringing). With two active wake words, Home Assistant's second select shows *No wake word* afterwards, while LVA keeps listening for both; a warning says to choose it again. Until then, changing the first select in Home Assistant deactivates the second wake word, and the second wake word starts the pipeline of the first assistant, because Home Assistant chooses the pipeline by the text of its select.
 - **Stored wake words.** `preferences.json` stores each active wake word with its origin, engine and file name, for example `{"origin": "internal", "engine": "mww", "file_id": "hey_jarvis"}`. Once after the update that introduced this, wake words stored under a former id (`hey_jarvis`) or a name (`Hey Jarvis`, `Hey Jarvis (OWW)` or `Internal - MWW - Hey Jarvis`) are replaced by such an entry and a message is logged. A plain phrase means the microWakeWord model. Values that match nothing are kept and then skipped at startup with a warning. A former id that Home Assistant still sends is resolved to the wake word as well. The numbers of the migrations that ran are stored in `applied_migrations`.
 - **No wake word active.** When both wake word selects in Home Assistant are set to *No wake word*, no wake word starts the assistant, and LVA keeps running without any load. A button cannot start listening either, as it does not while muted. The stored wake words are then empty, so after a restart the default wake words (`--wake-model`) are active again.
 - **Default wake words.** `--wake-model` fills the first slot and `--wake-model-2` the second one, but only while no wake words are stored yet (first start, or after the preferences file was removed). Once the active wake words are stored, the choice made in Home Assistant is kept and both options are ignored. Without `--wake-model-2` (the default), only one wake word is active. If it is unknown, fails to load or is the same as the first wake word, it is skipped with a log message and the assistant starts with one wake word.
@@ -91,6 +95,53 @@ Music started from Home Assistant (a media player service call or the media play
 
 If music is paused when you start talking to the assistant, it stays paused. Ducking only changes the volume (or pauses the music in `pause` mode, which resumes only music that it paused itself). The music is not resumed automatically at the end of a conversation.
 
+### Sendspin player
+
+A Sendspin player (`sendspin-cli`, for example the [Music Assistant Local Audio add-on](https://github.com/music-assistant/local-audio-addon)) plays outside LVA, so LVA cannot control it through mpv. LVA drives it through the control socket of the player (`control.sock` in `--sendspin-control-dir`, default `/run/sendspin-cli`) and treats it as the music of the media player entity. This is the Sendspin bridge, on by default (`--enable-sendspin-bridge 1`, `ENABLE_SENDSPIN_BRIDGE=1`). With `--enable-sendspin-bridge 0` LVA leaves the player alone and works as without it.
+
+| Situation | Sendspin player / media player entity |
+|-----------|---------------------------------------|
+| Sendspin plays and LVA's own music player does not | The entity reports `playing`. In every other case (paused, stopped, unknown, not connected to a server, socket unreachable) it reports `idle`, like an ESPHome device: LVA counts only `playing` as playing. LVA's own music has priority: while it plays or is paused, the entity shows that. |
+| Pause / Stop from Home Assistant while Sendspin is `playing` | Sent to the Sendspin player (`pause`, `stop`) instead of LVA's music player. The entity then reports `idle`. |
+| Play from Home Assistant while LVA's own music neither plays nor is paused | Sent to the Sendspin player (`play`), which continues where it stopped. If LVA's music is paused, Play resumes it. |
+| Music started from Home Assistant (`media_player.play_media` without `announce`) while Sendspin is `playing` | Sendspin is **stopped** and LVA's music plays, so only one of them plays. `stop` is a command for the whole Sendspin group. |
+| Sendspin starts playing while LVA's own music plays or is paused | LVA's music is **stopped**, so only one of them plays. |
+| Sendspin starts playing | Peripherals get `media_player_playing` (version 1), like for music from Home Assistant. Not while a conversation is running, so it does not replace the state of the conversation. |
+| Volume or mute set on the media player entity (Home Assistant or peripheral) | Applied to LVA's own volume as before **and** sent to the Sendspin player as its group volume / mute. |
+| Volume or mute changed at the Sendspin group (Music Assistant, another player) while Sendspin plays | The entity follows it, so the volume of the card and LVA's shared volume ([Volume](#volume)) change too. Not taken over while LVA ducks the player (in every duck mode, until the last reason for ducking is over, because the group volume is then not the real volume) and for 2 s after LVA set the volume itself. A change made during that time is taken over with the next status after the ducking. |
+| `media_player.play_media` with `sendspin://current` | Resumes the Sendspin player. |
+| `media_player.play_media` with any other `sendspin://` URL | Ignored with a warning. LVA cannot make the player connect to a server, the player announces itself over mDNS. |
+| Ducking (wake word, button, conversation, voice or media player announcement, timer ringing) | Depends on `--sendspin-player-duck-mode`, see below. The ducking ends when the last of them is over, like for LVA's own music. |
+| Last Home Assistant client disconnects | The Sendspin player is **not** stopped and keeps playing. Ducking that ends with the connection ends for it too. |
+
+**Ducking modes** (`--sendspin-player-duck-mode`, `SENDSPIN_PLAYER_DUCK_MODE`):
+
+- **`pulse` (default).** LVA lowers the **sound stream** of the player in PulseAudio/PipeWire to 50 % of its volume and gives it its volume back afterwards. The player keeps playing. LVA itself sends nothing to the Sendspin group, but the Local Audio add-on notices the change of its stream volume and passes it on to its Sendspin group as a change in percent. So the other players of the group are ducked as well, as expected, and Music Assistant shows the lowered group volume. When LVA gives the stream its volume back, the group follows again. (Observed with the Local Audio add-on, in the LVA log as group volume 10 → 5 → 10 during a conversation; not checked in the sources of `sendspin-cli`.) LVA finds the stream by its application name `sendspin-cli` (`application.name`, or `application.process.binary` when the player plays through the ALSA plugin). It needs the same sound server as the player (in Docker `PULSE_SERVER` of both containers), and the control socket to see that the player plays: like the other modes, `pulse` acts only while the player plays, a player that is paused, stopped or not connected to a server is left alone until it starts playing while ducking is still active.
+  - A player that starts playing while ducking is active is ducked within about a second, when LVA reads its status. Once LVA has asked for its stream to be ducked, a new stream of the player (for example after the player restarted it) is lowered as soon as it appears. Only a stream at the volume it had before ducking is lowered, and only a stream still at the ducked volume gets its volume back: a stream whose volume someone changed in the meantime is left alone.
+  - The sound server remembers the last volume of an application (stream-restore) and gives it to the next stream of the player. So LVA keeps the volume before and after ducking until it is restored: in `preferences.json` (`sendspin_stream_ducked_from`, `sendspin_stream_ducked_to`), also across a restart of LVA. If the player has no stream when ducking ends, the next stream that starts at the ducked volume gets its volume back.
+  - If the sound server cannot be reached, LVA logs a warning once and tries again after 1 s, then 2 s, 4 s and so on up to every 60 s. Nothing is ducked meanwhile. If the player plays but no stream of it is found when ducking starts (for example because it plays through ALSA), nothing is ducked and LVA logs an error (`Cannot duck: no stream of sendspin-cli found in the sound server`). LVA does not switch to another mode.
+  - All channels of the stream get the same volume (the mean of the channels before), so a balance set on the stream is lost by ducking.
+  - LVA does not take this lowered group volume over into its own volume (see the table above), so the reply of the assistant is not lowered with it.
+- **`stop`.** If the player is **playing**, it is **stopped** and started again when ducking ends. The volume is not touched. The stop applies to the whole Sendspin group. A player that is paused, stopped or not connected to a server is left alone, unless it starts playing while ducking is still active: then it is stopped within about a second.
+- **`duck`.** If the player is **playing**, the volume of the **whole Sendspin group** is set to 50 % of its current value and restored when ducking ends. Every player of the group and Music Assistant follow it. A volume change made by someone else while it is ducked is overwritten when ducking ends. A volume set on the media player entity meanwhile becomes the real volume: the group stays ducked relative to it and is restored to it. LVA keeps the volumes before and after ducking in `preferences.json` (`sendspin_ducked_from`, `sendspin_ducked_to`). If LVA starts and finds them, it sets the group volume back once the player answers, but only if it still is the ducked value.
+
+Further details:
+
+- The status is read from the player once a second (`status-kv`), so a change shows up in Home Assistant after up to about a second.
+- Without a Sendspin player the socket does not exist and nothing is controlled through it. If the socket is missing, cannot be opened or the player does not answer within 1 s, nothing is paused, stopped or mirrored and the entity reports `idle` for Sendspin. LVA logs a critical message once when the socket becomes unreachable (including at startup) and an info message once when it is reachable again. While it is unreachable, the socket is tried less often: every 5 s after 30 s, every 30 s after 120 s and every 60 s after 600 s. `pulse` ducking needs the socket too, to see that the player plays.
+- A stop that Music Assistant sends keeps the position, and `sendspin-cli` then reports `paused`. LVA treats everything that is not `playing` as stopped.
+- A stop does not take the player out of its group. The control socket of `sendspin-cli` has no command for that.
+- Whether Sendspin is supported and the pairing token of the player are not announced to Home Assistant.
+
+#### Control socket protocol
+
+Plain text over a Unix stream socket, one request per connection:
+
+1. LVA connects and sends one line, for example `status-kv\n`, `vol 25\n`, `pause\n` or `play\n`.
+2. The player answers with `ok` or `error <kind>: <reason>` as the first line and closes the connection. `status-kv` continues with `key=value` lines.
+3. LVA reads `state` (`playing`, also `playing (speed …)`; anything else counts as idle), `group_volume` and `group_muted` from `status-kv`.
+4. Other requests LVA sends: `play`, `pause`, `stop`, `vol <0-100>` and `mute on|off`.
+
 ---
 
 ## Announcements
@@ -110,7 +161,7 @@ If the announcement was started with `start_conversation`, the assistant listens
 
 ### Media player announcements and TTS (`announce: true`)
 
-Triggered by a `media_player.play_media` call with `announce: true` on the LVA media player, which is also what `tts.speak` with `announce: true` does. The music is **ducked to 50 %** while the announcement is spoken, like on ESPHome devices, and the media player reports `announcing` until the announcement is over.
+Triggered by a `media_player.play_media` call with `announce: true` on the LVA media player, which is also what `tts.speak` with `announce: true` does. The music is **ducked to 50 %** while the announcement is spoken, like on ESPHome devices, and the media player reports `announcing` until the announcement is over. A Sendspin player is ducked as well, see [Sendspin player](#sendspin-player).
 
 | Music state when the announcement arrives | What happens |
 |-------------------------------------------|--------------|
@@ -124,22 +175,53 @@ A second announcement replaces the first one. A media player announcement asks f
 
 ## Timers
 
-Timers are created by voice ("set a timer for 5 minutes") and managed by Home Assistant. LVA shows and rings them.
+Timers are created by voice ("set a timer for 5 minutes") and managed by Home Assistant. LVA keeps its own list of all timers, with the statuses of Home Assistant (`active`, `paused`, `finished`, `cancelled`), counts them down itself and rings them. The list is stored in `preferences.json` on every change, so it outlives a lost connection and a restart of LVA.
 
 | Event | What happens |
 |-------|--------------|
-| Timer started / updated | Peripherals receive `timer_ticking` / `timer_updated` with the remaining time (for example to show a countdown on LEDs). |
-| Timer cancelled | The countdown is cleared on peripherals (`timer_updated` with 0 seconds left) and the assistant returns to idle. |
-| **Timer finished** | The music is **ducked to 50 %**, the stop word becomes active and the timer sound (`--timer-finished-sound`) plays on repeat with a 1 second pause between repetitions. |
-| Timer is ringing and you say the **stop word** | The ringing stops, music is restored, the assistant goes idle. |
-| Timer is ringing and you say the **wake word** or press the **start-listening button** | The ringing stops and a normal interaction begins. |
-| Timer is ringing and a peripheral sends `stop_timer_ringing` or `stop_pipeline` | The ringing stops, music is restored, the assistant goes idle. |
-| Nobody reacts | The timer **stops ringing automatically** after `--timer-max-ring-seconds` (default 900 s = 15 minutes) and the music is restored. |
+| Timer started / updated | The timer is added to the list or its end time is set again. A timer that Home Assistant reports as paused is kept with the time it had left and does not count down. Peripherals receive `timer_ticking` / `timer_updated` with the remaining time (for example to show a countdown on LEDs). |
+| Timer cancelled | The timer is set to `cancelled`. If it was ringing, its ringing stops. Peripherals receive `timer_updated` with 0 seconds left. If no other timer counts down, is paused or rings, the assistant returns to idle. If another one counts down or is paused, peripherals receive `timer_ticking` for it instead (the one that ends first). |
+| **Timer finished** (from Home Assistant) | The timer is due now, so it rings at once, see the next line. If it is `finished` already (it rings, or its ringing has ended), nothing happens. |
+| **Time is up** | LVA checks its list once a second. A timer whose end time has passed starts ringing, whether Home Assistant is connected or not: the music is **ducked to 50 %**, the stop word becomes active, peripherals receive `timer_ringing` and the timer sound (`--timer-finished-sound`) plays on repeat with a 1 second pause between repetitions. |
+| A second timer finishes while one rings | Peripherals receive `timer_ringing` for it too. The sound keeps playing once, it does not play twice. |
+| Timer is ringing and you say the **stop word** | **All** ringing timers stop, music is restored, the assistant goes idle. |
+| Timer is ringing and you say the **wake word** or press the **start-listening button** | All ringing timers stop and a normal interaction begins. |
+| Timer is ringing and a peripheral sends `stop_timer_ringing` or `stop_pipeline` | All ringing timers stop, music is restored, the assistant goes idle. |
+| Nobody reacts | Each timer **stops ringing automatically** `--timer-max-ring-seconds` (default 900 s = 15 minutes) after it started ringing. Peripherals receive `timer_auto_stopped` (with how long it rang) for it. When the last ringing timer has stopped, the music is restored and peripherals receive `idle`, so they can show that the timer was not dismissed. |
+
+A timer that stopped ringing stays `finished` and does not ring again. `finished` and `cancelled` timers are deleted from the list 7 days after they ended, a `paused` timer that Home Assistant did not report in its last list (or if there is no list) 7 days after its last change (info log).
+
+**Without Home Assistant.** When the last Home Assistant client disconnects, the timers keep counting. A ringing timer keeps ringing, the stop word stays active for it and the music stays ducked for it. Conversation, announcement and music playback are stopped as before. While Home Assistant is offline, timers finish and ring as usual, and the stop word, the buttons and the peripheral commands stop them (`start_listening` only stops the ringing, there is no pipeline to start). The wake word is not listened for. Timers cannot be created or cancelled by voice.
+
+**After a restart of LVA.** The stored list is loaded. A timer that was ringing rings again right after the start, for the full `--timer-max-ring-seconds`. A timer whose time ran out while LVA was not running rings right after the start.
+
+**Merge with the list of Home Assistant.** Home Assistant sends no timer list when LVA connects, and the timer events of a disconnect are lost. So after every connect (also at the start of LVA), once Home Assistant accepts actions from the device, LVA asks for its own timer list with the action `timer_list.get_timers` and merges it by timer id:
+
+| Case | What LVA does |
+|------|---------------|
+| In Home Assistant `active` or `paused`, not in LVA | Taken over. |
+| In Home Assistant and in LVA, different | The values of Home Assistant are taken (end time, time left, status). A timer that rang in LVA and is running again in Home Assistant stops ringing. |
+| In Home Assistant `finished`, in LVA `active` or `paused` | It rings right away. |
+| In Home Assistant `cancelled`, in LVA not | Set to `cancelled`. If it was ringing, its ringing stops. |
+| In Home Assistant `finished` or `cancelled`, not in LVA | Ignored. |
+| The same in both | Nothing. |
+| Not in Home Assistant, in LVA | Kept, because Home Assistant forgets its timers when it restarts. It rings when its time is up. |
+
+If the list changed and no timer rings, peripherals receive `timer_ticking` for the timer that is shown. If Home Assistant cannot perform the action (no `timer_list` yet, or the ESPHome option *Allow the device to perform Home Assistant actions* is off) or does not answer within 10 s, LVA logs a hint once per run (info) and works with its own list and the events only.
+
+**Known limits.**
+
+- Without the merge (see above), LVA only hears about timers through the events Home Assistant sends while it is connected: a timer cancelled in Home Assistant while LVA was not connected still rings in LVA. With the merge, a timer that is created and ends completely while LVA is not connected still does not ring, because Home Assistant reports it as `finished` and finished timers unknown to LVA are ignored.
+- A timer cancelled in Home Assistant and evicted from its archive before LVA reconnects looks like one that Home Assistant forgot in a restart. LVA keeps it and rings it.
+- After a restart of Home Assistant, the timers still in LVA cannot be cancelled by voice (Home Assistant has forgotten them). They end when they ring and are stopped, or after `--timer-max-ring-seconds` of ringing.
+- Stopping a ringing timer is not reported to Home Assistant.
+- An announcement while a timer rings replaces the timer sound. The timer still counts as ringing, but its sound does not come back and, once the announcement is over, the stop word no longer stops it. The wake word, the buttons, the peripheral commands and `--timer-max-ring-seconds` still end it. This was already so before LVA kept its own timer list.
 
 Notes:
 
 - A timer finishing does not stop or pause the music. It is only ducked, so a ringing timer is audible over it.
 - While the assistant is muted, the stop word and the wake word do not work. Unmute first, or stop the ringing with a peripheral button.
+- **Time.** The end time of a timer comes from Home Assistant, so LVA compares its timers on the time of Home Assistant. It asks Home Assistant for its time right after connecting and then every 30 s while connected, and keeps the difference to its own clock (accurate to about half a second). The difference is not stored. Until the first answer after a start of LVA, LVA uses its own clock; offline after a connection, it uses the last known difference. If the difference is more than 10 s, an error is logged at every check: the clock of the device is probably not set. If LVA starts without Home Assistant and its clock is not set yet, stored timers ring too early or too late until the clock is set or Home Assistant is connected.
 
 ---
 
@@ -189,11 +271,13 @@ When unmuted, the unmute sound (`--unmute-sound`) plays and the assistant return
 
 **Remote unmute.** `--enable-remote-unmute` (`ENABLE_REMOTE_UNMUTE`, `1` by default) decides who may unmute:
 
-- `1`: Home Assistant's **Mute** switch and peripherals (`mute_mic` / `unmute_mic`) can mute and unmute.
-- `0`: only a peripheral can unmute (`unmute_mic`, for example a physical mute switch). Home Assistant has no **Mute** switch, it shows the mute state in a read-only **Mute** sensor instead.
+- `1`: Home Assistant's **Mute** switch and peripherals (`mute_mic` / `unmute_mic` in peripheral API version 1, `muted_on` / `muted_off` in version 2) can mute and unmute.
+- `0`: only a peripheral can unmute (`unmute_mic` / `muted_off`, for example a physical mute switch). Home Assistant has no **Mute** switch, it shows the mute state in a read-only **Mute** sensor instead.
 - The setting is only read at startup and is not saved in `preferences.json`.
 
 Do not confuse this with the **media player mute**, which sets the shared volume to 0, see below.
+
+Some hardware can also mute its microphone itself. That **hardware mute** is separate from this switch: LVA only learns about it from a version 2 peripheral, see [peripheral_api/v2.md](peripheral_api/v2.md#hardware-mute). LVA does not mute because the hardware is muted and the other way round, and Home Assistant sees the hardware mute through the peripheral, not through LVA.
 
 ---
 
@@ -216,87 +300,9 @@ If the second attempt also fails, the assistant logs the error and exits with a 
 
 ---
 
-## Buttons (peripherals)
-
-If a peripheral (such as a HAT with buttons) is connected through the [peripheral API](development/peripheral_api.md), it can trigger the following. What a physical button does is defined by the peripheral, not by LVA.
-
-| Action | Result |
-|--------|--------|
-| Start listening | Plays the start-listening sound and begins an interaction without a wake word. Also silences a ringing timer. Ignored while muted or while no wake word is active. |
-| Stop pipeline | Stops the current reply or a ringing timer, same as the stop word. |
-| Mute / unmute microphone | Same as the Mute switch. |
-| Volume up / down / set | Changes the shared volume by `--peripheral-volume-step`. |
-| Stop / pause / resume media | Controls the music player directly. |
-| Single press | Reported to Home Assistant as a `single_press` event (no sound). |
-| Double / triple / long press | Plays the matching sound (`--button-double-press-sound`, `--button-triple-press-sound`, `--button-long-press-sound`) and reports the event to Home Assistant so you can use it in automations. |
-
-The *Disable button controls* switch (if the peripheral provides it) lets you lock the physical buttons from Home Assistant.
-
-This table describes API version 1. Version 2 offers fewer commands, see [Peripheral API versions](#peripheral-api-versions).
-
----
-
 ## Peripheral API versions
 
-> **Status:** specified here, implementation follows. Until then LVA only offers version 1 on every path.
-
-The [peripheral API](development/peripheral_api.md) is versioned, so a peripheral written for an older version keeps working when a newer one appears. A peripheral chooses the version by the path of the WebSocket URL:
-
-| URL | Version |
-|-----|---------|
-| `ws://<host>:6055/v1` | Version 1 |
-| `ws://<host>:6055/v2` | Version 2 |
-| `ws://<host>:6055/` (no path) | Version 1, so peripherals written before versioning keep working unchanged |
-
-- **One version per connection.** Clients of different versions can be connected at the same time. Each one only sees the events and commands of its own version.
-- **Versions are separate.** Each version has its own implementation and its own specification page (`docs/peripheral_api/v1.md`, `docs/peripheral_api/v2.md`). A change to one version never changes another. Version 1 is the API as it was before versioning and is only changed to fix bugs.
-- **Unknown version.** A path that is not a supported version is refused and LVA logs the versions it supports.
-- **Removing a version** is a breaking change and is announced as such. No version is removed without that.
-- **Hello.** Version 2 starts every connection with a `hello` event with `api_version` and `supported_versions`, followed by the current state (see Events below).
-
-### Version 2
-
-Version 2 is the reduced API for the [Linux Peripherals Controller](https://github.com/OHF-Voice/linux-peripherals-controller) (LPC). It only carries what LVA knows and does: the state of the assistant and a few commands. Everything that belongs to hardware or to Home Assistant entities (LEDs, buttons, sensors, child lock) is handled by the peripheral itself, which talks to Home Assistant on its own. LVA creates **no** Home Assistant entities for a version 2 client and plays **no** button sounds for it.
-
-Events and commands are JSON messages as in version 1: `{"event": "<name>", "data": {...}}` and `{"command": "<name>", "data": {...}}`.
-
-**Events (LVA → peripheral).** An event is only sent when its value changes. Right after `hello`, the peripheral receives all of the following once, in this order, so it knows the current state without waiting.
-
-| Event | Data | Meaning |
-|-------|------|---------|
-| `lva_status` | `{"status": "connected" \| "disconnected"}` | `connected` while at least one Home Assistant client is connected. |
-| `state` | `{"state": "idle" \| "listening" \| "thinking" \| "tts" \| "announce"}` | What the assistant is doing, see below. |
-| `mute_status` | `{"muted": bool}` | Microphone mute (the Mute switch), not the media player mute. |
-| `volume_status` | `{"volume": int}` | Shared volume in percent, 0 to 100. The media player mute shows as 0. |
-| `timer_status` | `{"status": "idle" \| "active" \| "ringing"}` | `active` while at least one timer is counting down and none rings, `ringing` while a timer rings, otherwise `idle`. |
-| `media_player_status` | `{"status": "idle" \| "playing" \| "silent" \| "pause"}` | State of the music player. `silent` is playing with the volume at 0 %. Music that is only paused for ducking (`pause` duck mode) still reports `playing`. |
-
-The `state` values:
-
-| State | From | Until |
-|-------|------|-------|
-| `listening` | The wake word is detected or listening is started by a command. The wake sound is part of it. | Speech recognition has ended. |
-| `thinking` | Home Assistant processes the request. | The reply starts playing, or the run ends. |
-| `tts` | The spoken reply plays. | Playback ends. |
-| `announce` | A voice announcement or a media player announcement (`announce: true`) plays. | Playback ends. |
-| `idle` | Everything else, also while muted and while a timer rings. | |
-
-A follow-up question (continued conversation) goes `tts`, then `listening` again. A pipeline error ends in `idle`, version 2 has no separate error event.
-
-**Commands (peripheral → LVA).**
-
-| Command | Data | Effect |
-|---------|------|--------|
-| `start_listening` | none | Starts listening without a wake word, with the start-listening sound. Ignored while muted, while no wake word is active or while a pipeline is already running. Also silences a ringing timer. |
-| `stop` | none | Stops the running reply or announcement and the pipeline, like the stop word does for them. Does not touch a ringing timer or the music. |
-| `mute_on` / `mute_off` | none | Same as the Mute switch: the mute or unmute sound plays. Ignored if the microphone is already in that state. |
-| `volume_up` / `volume_down` | none | Changes the shared volume by `--peripheral-volume-step`. |
-| `volume_set` | `{"volume": int}` | Sets the shared volume to 0 to 100 %. Values outside are clamped. |
-| `timer_stop` | none | Stops a ringing timer and restores the music. Ignored if no timer rings. |
-
-- **Volume limit feedback.** `volume_up` while the volume is already 100 % plays a short feedback sound on the assistant player and changes nothing. `volume_down` at 0 % does nothing.
-- **Invalid commands.** An unknown command or invalid data is ignored and logged as a warning. The connection stays open.
-- **No Home Assistant side effects.** Commands change the assistant exactly as the same action from Home Assistant would (Home Assistant sees the new volume, mute state and media state).
+The peripheral API is versioned. Choosing a version and what LVA does in each version is described in [peripheral_api/readme.md](peripheral_api/readme.md) and the specification of each version.
 
 ---
 
@@ -312,7 +318,7 @@ A follow-up question (continued conversation) goes `tts`, then `listening` again
   - With `--host` the address is fixed by the user and is never checked or replaced.
   - A connection that is still open when the address changes is not closed by the move, keepalive ends it if it is dead.
 - When Home Assistant **reconnects** (for example after a restart), settings and entities are kept. Playback is not interrupted as long as at least one client is still connected.
-- When the **last** client disconnects, LVA **stops music and assistant playback** and goes idle. It keeps waiting for Home Assistant to reconnect.
+- When the **last** client disconnects, LVA **stops music and assistant playback** and goes idle. A Sendspin player is not stopped, see [Sendspin player](#sendspin-player). It keeps waiting for Home Assistant to reconnect. A ringing timer is the exception: it keeps ringing, see [Timers](#timers).
 - Peripherals are told when Home Assistant is connected (`zeroconf` event with status `connected`) and when it is lost (`disconnected`).
 
 ---
@@ -330,6 +336,7 @@ A follow-up question (continued conversation) goes `tts`, then `listening` again
 | Media player announcement, music paused | Stays paused |
 | Timer finishes | Ducked while ringing, restored when ringing stops |
 | Stop word said | Music is not stopped, only restored from ducking |
+| Same situations with a Sendspin player | While it plays: its stream lowered to 50 % (`pulse`, default), stopped (`stop`) or its group volume lowered to 50 % (`duck`), see [Sendspin player](#sendspin-player) |
 | Mute switch toggled | Unchanged |
 | Media player stop (Home Assistant / peripheral) | Stopped |
 | Last Home Assistant client disconnects | Stopped |

@@ -24,7 +24,9 @@ from .mpv_player import MpvMediaPlayer
 from .network import EsphomeEndpoint, follow_interface_address
 from .peripheral_api import LVAEvent, PeripheralAPIServer
 from .satellite import VoiceSatelliteProtocol
+from .sendspin_bridge import create_sendspin_player, start_sendspin_bridge
 from .stop_word import process_stop_word
+from .timers import TimerList
 from .util import (
     get_default_interface,
     get_default_ipv4,
@@ -35,6 +37,7 @@ from .util import (
 )
 from .wake_word import find_available_wake_words, load_stop_model, load_wake_models, wake_word_ids_for_selections, wake_word_selections_for_ids
 from .wake_word_detection import ActiveWakeWord, apply_sensitivities, gate_wake_words, process_wake_words, select_active_wake_words, wake_words_need_refresh
+from .wake_word_names import replace_hidden_wake_words
 from .webrtc import WebRTCProcessor
 from .zeroconf import start_discovery
 
@@ -87,6 +90,27 @@ async def main() -> None:
         choices=("duck", "pause"),
         help="What the music player does while the assistant talks, an announcement plays or a timer rings: "
         "duck lowers the volume to 50 %%, pause pauses the music and resumes it afterwards (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--enable-sendspin-bridge",
+        type=int,
+        default=1,
+        choices=(0, 1),
+        help="1 controls a Sendspin player (sendspin-cli, e.g. the Music Assistant Local Audio add-on) through its control socket: "
+        "ducking, media player state, play/pause/stop, volume and mute. 0 turns it off (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--sendspin-control-dir",
+        default="/run/sendspin-cli",
+        help="Directory that holds control.sock, the control socket of the Sendspin player. Nothing is controlled through the socket while it does not exist " "(default: %(default)s)",
+    )
+    parser.add_argument(
+        "--sendspin-player-duck-mode",
+        default="pulse",
+        choices=("pulse", "stop", "duck"),
+        help="What happens to the Sendspin player while the assistant talks, an announcement plays or a timer rings: pulse lowers its sound stream "
+        "in PulseAudio/PipeWire to 50 %% (the Local Audio add-on passes this on to its Sendspin group), stop stops it and starts it again afterwards, duck lowers the volume of the whole "
+        "Sendspin group to 50 %% (default: %(default)s)",
     )
     parser.add_argument(
         "--list-output-devices",
@@ -509,10 +533,16 @@ async def main() -> None:
     if args.mic_noise_suppression > 0:
         preferences.mic_noise_suppression = args.mic_noise_suppression
 
+    stored_wake_word_ids = wake_word_ids_for_selections(preferences.active_wake_words, available_wake_words)
+    active_wake_word_ids = replace_hidden_wake_words(stored_wake_word_ids, available_wake_words)
+    if active_wake_word_ids != stored_wake_word_ids:
+        preferences.active_wake_words = wake_word_selections_for_ids(active_wake_word_ids, available_wake_words)
+        preferences.save(preferences_path)
+
     # Load wake/stop models
     wake_models, wake_word_slots, fallback_used = load_wake_models(
         available_wake_words,
-        [word for word in wake_word_ids_for_selections(preferences.active_wake_words, available_wake_words) if word is not None],
+        [word for word in active_wake_word_ids if word is not None],
         first_default_wake_word_id=args.wake_model,
         second_default_wake_word_id=args.wake_model_2,
     )
@@ -520,6 +550,8 @@ async def main() -> None:
     # TODO: allow openWakeWord for "stop"
     stop_model = load_stop_model(list(reversed(wake_word_dirs)), args.stop_model)
     assert stop_model is not None
+
+    sendspin_player, sendspin_stream_ducker = create_sendspin_player(args.enable_sendspin_bridge == 1, args.sendspin_control_dir, args.sendspin_player_duck_mode, preferences)
 
     state = ServerState(
         name=device_name,
@@ -536,6 +568,7 @@ async def main() -> None:
         stop_word=stop_model,
         music_player=MpvMediaPlayer(device=args.music_output_device or args.audio_output_device, name="music", duck_mode=args.mpv_player_duck_mode),
         tts_player=MpvMediaPlayer(device=args.audio_output_device, name="tts"),
+        sendspin_player=sendspin_player,
         wakeup_sound=args.wakeup_sound,
         start_listening_sound=args.start_listening_sound,
         timer_finished_sound=args.timer_finished_sound,
@@ -549,6 +582,7 @@ async def main() -> None:
         button_long_press_sound=args.button_long_press_sound,
         preferences=preferences,
         preferences_path=preferences_path,
+        timers=TimerList.from_dicts(preferences.timers),
         refractory_seconds=args.refractory_seconds,
         continue_conversation_delay=args.continue_conversation_delay,
         output_only=args.output_only,
@@ -693,6 +727,9 @@ async def main() -> None:
             )
             await asyncio.sleep(args.peripheral_startup_wait)
 
+    countdown = loop.create_task(state.timer_alarm.run_countdown())
+    sendspin_stream_ducking = start_sendspin_bridge(state, sendspin_stream_ducker)
+
     endpoint = EsphomeEndpoint(
         state=state,
         bound_ip=host_ip_address,
@@ -715,6 +752,9 @@ async def main() -> None:
     except KeyboardInterrupt:
         pass
     finally:
+        countdown.cancel()
+        if sendspin_stream_ducking is not None:
+            sendspin_stream_ducking.cancel()
         await endpoint.close()
         process_audio_thread.join()
         if peripheral_api is not None:
@@ -824,7 +864,9 @@ def process_audio(state: ServerState, mic, block_size: int):
                     if not audio_chunk:
                         continue
 
-                if state.satellite is None or not hasattr(state.satellite, "_is_streaming_audio"):
+                satellite = state.satellite if hasattr(state.satellite, "_is_streaming_audio") else None
+                # Without Home Assistant only the stop word of a ringing timer is listened for
+                if satellite is None and not state.timer_alarm.ringing:
                     continue
 
                 # WAKE WORD
@@ -889,14 +931,15 @@ def process_audio(state: ServerState, mic, block_size: int):
                 try:
                     # data=ch0 (after WebRTC gain/noise suppression), data2=ch0 before any WebRTC processing
                     audio_chunk_2 = audio_chunk_unprocessed
-                    state.satellite.handle_audio(audio_chunk, audio_chunk_2)
+                    if satellite is not None:
+                        satellite.handle_audio(audio_chunk, audio_chunk_2)
 
                     assert micro_features is not None
                     micro_inputs.clear()
                     micro_inputs.extend(micro_features.process_streaming(audio_chunk))
 
-                    wake_word_running = gate_wake_words(wake_words, oww_features, state.satellite.pipeline_active, wake_word_running)
-                    if wake_word_running:
+                    wake_word_running = gate_wake_words(wake_words, oww_features, satellite is None or satellite.pipeline_active, wake_word_running)
+                    if wake_word_running and satellite is not None:
                         if has_oww:
                             assert oww_features is not None
                             oww_inputs.clear()
@@ -905,13 +948,16 @@ def process_audio(state: ServerState, mic, block_size: int):
                         now = time.monotonic()
                         detections, last_active = process_wake_words(state, wake_words, micro_inputs, oww_inputs, last_active, now)
                         for wake_word, detection in detections:
-                            state.satellite.wakeup(wake_word, detection)
+                            satellite.wakeup(wake_word, detection)
 
                     stopped, stop_word_running = process_stop_word(state, micro_inputs, stop_word_running)
 
                     if stopped and (state.stop_word.id in state.active_wake_words) and not state.muted:
                         _LOGGER.debug("Stop word detected")
-                        state.satellite.stop()
+                        if satellite is not None:
+                            satellite.stop()
+                        else:
+                            state.timer_alarm.stop_ringing()
                 except Exception:  # pylint: disable=broad-except
                     _LOGGER.exception("Unexpected error handling audio")
     except Exception:  # pylint: disable=broad-except

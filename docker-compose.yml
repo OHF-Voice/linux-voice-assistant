@@ -23,7 +23,6 @@ services:
 
   # Linux Voice Assistant
   linux-voice-assistant:
-    container_name: linux-voice-assistant
     image: "${LVA_IMAGE:-ghcr.io/ohf-voice/linux-voice-assistant}:${LVA_IMAGE_TAG:-latest}"
     restart: unless-stopped
     network_mode: "host"
@@ -51,6 +50,9 @@ services:
       # Pulseaudio
       # /run/user/1000:/run/user/1000
       - ${LVA_XDG_RUNTIME_DIR:-/run/user/1000}:${LVA_XDG_RUNTIME_DIR:-/run/user/1000}
+      # Control socket of a Sendspin player, see SENDSPIN_CONTROL_DIR in .env. The directory is mounted at the same path, not the
+      # socket, so that the player can create the socket again when it restarts.
+      - ${SENDSPIN_CONTROL_DIR:-/run/sendspin-cli}:${SENDSPIN_CONTROL_DIR:-/run/sendspin-cli}
     depends_on:
       - fix-permissions
     # Health check for process

@@ -20,7 +20,7 @@ async def test_ringing_timer_ducks_music_and_stop_word_restores_it(lva: LvaProce
     await asyncio.sleep(1.0)
     normal = speaker.recent_amplitude(FIRST_MUSIC_TONE_HZ)
 
-    ha.timer_event(VoiceAssistantTimerEventType.VOICE_ASSISTANT_TIMER_FINISHED, "t1", 60, 0)
+    ha.timer_event(VoiceAssistantTimerEventType.VOICE_ASSISTANT_TIMER_FINISHED, "t2", 60, 0)
     await lva.wait_for_log_line("Timer event: type=VOICE_ASSISTANT_TIMER_FINISHED", log)
     await asyncio.sleep(1.5)
     ducked = speaker.recent_amplitude(FIRST_MUSIC_TONE_HZ)
@@ -40,7 +40,7 @@ async def test_ringing_timer_ducks_music_and_stop_word_restores_it(lva: LvaProce
 async def test_wake_word_silences_ringing_timer_and_starts_pipeline(lva: LvaProcess, ha: FakeHomeAssistant, speaker: SpeakerRecorder) -> None:
     """Saying the wake word while a timer rings silences the timer and starts a normal voice request."""
     log = lva.log_mark()
-    ha.timer_event(VoiceAssistantTimerEventType.VOICE_ASSISTANT_TIMER_FINISHED, "t1", 60, 0)
+    ha.timer_event(VoiceAssistantTimerEventType.VOICE_ASSISTANT_TIMER_FINISHED, "t3", 60, 0)
     assert await speaker.wait_for_sound(speaker.mark(), timeout=5)
 
     await play_into_mic(FIXTURES_DIR / "okay_nabu.wav")

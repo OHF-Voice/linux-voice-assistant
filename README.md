@@ -34,7 +34,7 @@ News about this software: [Discussion #495](https://github.com/OHF-Voice/linux-v
   - Music is ducked or paused while the assistant talks (`--mpv-player-duck-mode`)
   - Mic volume, gain and noise suppression (WebRTC), adjustable at runtime
 - **Peripherals**
-  - [WebSocket API](./docs/development/peripheral_api.md) for buttons, LEDs and other hardware (API version 1)
+  - [WebSocket API](./docs/peripheral_api/readme.md) for buttons, LEDs and other hardware (API versions 1 and 2)
   - Single, double, triple and long press events are sent to Home Assistant, double, triple and long press with their own sounds
   - Button lock switch, LED light entity and remote mute (`--enable-remote-unmute`)
   - Software mute: with `--enable-remote-unmute 0`, only a peripheral (e.g. a physical mute switch) can unmute the microphone, Home Assistant cannot (see [Mute](./docs/configuration.md#mute-switch)). This is independent of a hardware mute of the microphone.
@@ -80,7 +80,7 @@ All command line parameters, their defaults and the matching environment variabl
 
 ### Feature Guides
 
-Setup guides for individual features are in [features](docs/features.md): [echo cancellation](docs/features.md#acoustic-echo-cancellation), [listening during the wake sound](docs/features.md#feature-listen-during-wake-sound), [API encryption](docs/features.md#feature-api-encryption), [own sound files](docs/features.md#use-own-soundfiles), [wake words](docs/features.md#wake-word) (including [custom wake words](docs/features.md#custom-wake-word)) and the [stop word](docs/features.md#stop-word).
+Setup guides for individual features are in [features](docs/features.md): [echo cancellation](docs/features.md#acoustic-echo-cancellation), [listening during the wake sound](docs/features.md#feature-listen-during-wake-sound), [API encryption](docs/features.md#feature-api-encryption), [own sound files](docs/features.md#use-own-soundfiles), [wake words](docs/features.md#wake-word) (including [custom wake words](docs/features.md#custom-wake-word)) and the [stop word](docs/features.md#stop-word). Running LVA together with the Music Assistant Local Audio (Sendspin) player is described in [docs/docker](docs/docker/README.md).
 
 ### Debugging
 

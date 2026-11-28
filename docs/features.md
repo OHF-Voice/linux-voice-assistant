@@ -192,11 +192,22 @@ wakewords/
 
 `downloaded` and `custom` are created at startup. In Docker they are volumes (`wakeword_downloaded` and `wakeword_custom`), `internal` is part of the image. The engine of a model is taken from the `type` in its `.json` file, the engine directory is only for keeping things tidy.
 
-Every wake word has a name made of origin, engine and the phrase from its `.json` file, for example `Internal - MWW - Hey Jarvis` or `Custom - OWW - Hey Jarvis`. The same model in two directories is two separate wake words that you can choose from in Home Assistant. `WAKE_MODEL` and `WAKE_MODEL_2` accept the file name (`hey_jarvis`) or this name. If the file name exists in more than one origin, the directories are searched in the order `internal`, `downloaded`, `custom` and the last one is used, so a model in `custom` is chosen before a bundled one. The same applies to the stop word. The name is also the phrase LVA sends to Home Assistant with a voice request.
+Every wake word has an id made of origin, engine and the phrase from its `.json` file, for example `Internal - MWW - Hey Jarvis` or `Custom - OWW - Hey Jarvis`. `WAKE_MODEL` and `WAKE_MODEL_2` accept the file name (`hey_jarvis`) or this id. If the file name exists in more than one origin, the directories are searched in the order `internal`, `downloaded`, `custom` and the last one is used, so a model in `custom` is chosen before a bundled one. The same applies to the stop word.
 
-In the wake word selection in Home Assistant, the name of a wake word shows where it comes from and which engine it uses, for example `Internal - MWW - Hey Jarvis`, `Download - OWW - Hey Jarvis` or `Custom - MWW - Hey Jarvis` (MWW = microWakeWord, OWW = openWakeWord). The phrase that is sent to Home Assistant when the wake word is detected is the plain phrase from the `.json` file, for example `Hey Jarvis`.
+In the wake word selection in Home Assistant, microWakeWord models are named by their plain phrase (`Hey Jarvis`) and openWakeWord models by their phrase with ` (OWW)` (`Hey Jarvis (OWW)`). This name is also the phrase LVA sends to Home Assistant on a detection, so the Voice support app can verify the standard microWakeWord phrases. Home Assistant shows only one option per name, so if one engine has the same phrase in several directories, only one is offered: `custom` before `downloaded` before `internal`. To use your own model instead of a bundled one, give it the same phrase and put it into `custom`.
 
 </details>
+
+## Wake words from Home Assistant
+
+Home Assistant can hand microWakeWord models to the satellite, so you can keep your own wake words in one place:
+
+1. Put the model and its config into the folder `custom_wake_words` of your Home Assistant configuration (next to `configuration.yaml`), for example `custom_wake_words/hey_test.json` and `custom_wake_words/hey_test.tflite`. The `.json` file needs `"type": "micro"` and a `"wake_word"`; openWakeWord models are not supported here.
+2. **Restart Home Assistant.** Home Assistant reads this folder only once and keeps the result until it restarts, so a model added or changed later is not offered before that.
+3. The wake word now appears in the wake word selection of the satellite as `Download from HA - <phrase>`. When you choose it, LVA downloads it into `downloaded/microwakeword` in the background and activates it as soon as the download has finished. Until then the previous wake words stay active.
+4. After the download the wake word is named by its plain phrase. LVA makes Home Assistant reconnect so it shows the new name (music keeps playing). With two active wake words, choose the second one again afterwards.
+
+With `--debug`, LVA logs every wake word Home Assistant offers (`External wake word from Home Assistant: …`) and why it is offered or not, and each download step. A failed download is logged as a warning.
 
 # Custom Wake Word
 

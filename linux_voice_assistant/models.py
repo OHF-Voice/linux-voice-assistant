@@ -9,6 +9,11 @@ from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Union
 
+from .home_assistant_timers import TimerSync
+from .timer_alarm import TimerAlarm
+from .timers import TimerList
+from .wake_word_reload import WakeWordListReload
+
 if TYPE_CHECKING:
     from google.protobuf import message
     from pymicro_wakeword import MicroWakeWord
@@ -29,6 +34,7 @@ if TYPE_CHECKING:
     )
     from .mpv_player import MpvMediaPlayer
     from .satellite import VoiceSatelliteProtocol
+    from .sendspin_player import SendspinPlayer
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -121,6 +127,15 @@ class Preferences:
     mic_noise_suppression: int = 0
     mic_volume: int = 100  # 0–100, default maximum
     applied_migrations: List[int] = field(default_factory=list)  # numbers of the one-time migrations that already ran
+    # Set when the names of the wake words in Home Assistant changed and its selection still has to be restored, see wake_word_reload.py.
+    wake_word_names_changed: bool = False
+    timers: List[Dict[str, Any]] = field(default_factory=list)  # the timer list, see timers.py
+    # Group volume of a Sendspin player before and after ducking (``duck`` mode). Set only while ducked, so that a restart can restore it.
+    sendspin_ducked_from: Optional[int] = None
+    sendspin_ducked_to: Optional[int] = None
+    # Volume of the Sendspin stream in the sound server before and after ducking (``pulse`` mode), 1.0 is 100 %. Set until it is restored.
+    sendspin_stream_ducked_from: Optional[float] = None
+    sendspin_stream_ducked_to: Optional[float] = None
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "Preferences":
@@ -182,12 +197,18 @@ class ServerState:
     continue_conversation_delay: float = 0.5  # seconds to wait after TTS before opening mic
     # ESPHome API encryption key (32 bytes); None serves plaintext only.
     noise_psk: Optional[bytes] = None
+    # Sendspin player controlled through its control socket, None if the Sendspin bridge is off.
+    sendspin_player: "Optional[SendspinPlayer]" = None
 
     media_player_entity: "Optional[MediaPlayerEntity]" = None
     satellite: "Optional[VoiceSatelliteProtocol]" = None
     connections: "List[VoiceSatelliteProtocol]" = field(default_factory=list)
     client_disconnected: asyncio.Event = field(default_factory=asyncio.Event)
     mute_switch_entity: "Optional[MuteSwitchEntity]" = None
+    # Hardware mute of the microphone, as a version 2 peripheral reported it. None until it has said so. LVA only keeps these for its
+    # own processing: its own mute (``muted``) is not changed by them, and nothing is passed on to Home Assistant.
+    hardware_muted: Optional[bool] = None
+    hardware_mute_type: Optional[str] = None  # none, changeable or read_only
     thinking_sound_entity: "Optional[ThinkingSoundEntity]" = None
     button_event_sensor_entity: "Optional[ButtonEventSensorEntity]" = None
 
@@ -243,7 +264,25 @@ class ServerState:
     mic_volume: int = 100  # 0–100, default maximum
     audio_input_channels: int = 1  # number of mic channels to capture
     timer_max_ring_seconds: float = 900.0
+    # The timer list. It outlives the connection to Home Assistant and is stored in the preferences.
+    timers: TimerList = field(default_factory=TimerList)
+    # Rings the timers of the list. Created with the state, see __post_init__.
+    timer_alarm: TimerAlarm = field(init=False, repr=False)
+    # Seconds the clock of Home Assistant is ahead of the own clock, see home_assistant_time.py. Not stored.
+    home_assistant_time_offset: float = 0.0
+    # Requests for the timer list of Home Assistant, see home_assistant_timers.py.
+    timer_sync: TimerSync = field(default_factory=TimerSync)
     listen_during_wake_sound: bool = False
+    # Download of wake words chosen in Home Assistant, see wake_word_download.py. A newer selection cancels it, also from a new connection.
+    wake_word_download: "Optional[asyncio.Task]" = None
+
+    # Step of making Home Assistant read the wake word list again, see wake_word_reload.py. Not stored; starts from the preferences.
+    wake_word_list_reload: WakeWordListReload = WakeWordListReload.NONE
+
+    def __post_init__(self) -> None:
+        self.timer_alarm = TimerAlarm(self)
+        if self.preferences.wake_word_names_changed:
+            self.wake_word_list_reload = WakeWordListReload.NAMES_CHANGED
 
     def broadcast(self, msgs: "Iterable[message.Message]") -> None:
         """Send messages to every connected API client.
@@ -259,6 +298,24 @@ class ServerState:
             return
         for connection in list(self.connections):
             connection.send_messages(messages)
+
+    def duck_music(self, owner: str) -> None:
+        """
+        Duck the music: LVA's own music player and a Sendspin player. It stays ducked until every owner has called :meth:`unduck_music`.
+        :param owner: ``conversation``, ``timer`` (ringing) or ``announce`` (voice announcements).
+        """
+        self.music_player.duck(owner=owner)
+        if self.sendspin_player is not None:
+            self.sendspin_player.duck(owner=owner)
+
+    def unduck_music(self, owner: str) -> None:
+        """
+        End the ducking of an owner. The music returns when no owner is left.
+        :param owner: The owner that called :meth:`duck_music`.
+        """
+        self.music_player.unduck(owner=owner)
+        if self.sendspin_player is not None:
+            self.sendspin_player.unduck(owner=owner)
 
     def persist_volume(self, volume: float) -> None:
         """Persist the normalized media volume (0.0 - 1.0)."""
@@ -321,6 +378,11 @@ class ServerState:
         self.mic_volume = volume_int
         self.preferences.mic_volume = volume_int
         _LOGGER.info("Saving mic_volume %s to %s", volume_int, self.preferences_path)
+        self.preferences.save(self.preferences_path)
+
+    def persist_timers(self) -> None:
+        """Store the timer list in the preferences file."""
+        self.preferences.timers = self.timers.to_dicts()
         self.preferences.save(self.preferences_path)
 
 

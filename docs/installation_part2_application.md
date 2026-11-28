@@ -97,6 +97,8 @@ Download the latest image:
 docker-compose pull
 ```
 
+💡 **Music Assistant Local Audio player:** LVA can duck and control a Sendspin player such as the Local Audio add-on that runs next to it. [docs/docker](docker/README.md) has a Compose project for the player and explains how the two are connected.
+
 </details>
 
 ## B) Bare Metal:
@@ -191,6 +193,9 @@ Environment=PREFERENCES_FILE="/home/pi/linux-voice-assistant/preferences.json"
 # Environment=AUDIO_OUTPUT_DEVICE="pulse"
 # Environment=MUSIC_OUTPUT_DEVICE="pulse"
 # Environment=MPV_PLAYER_DUCK_MODE="duck"
+# Environment=ENABLE_SENDSPIN_BRIDGE="1"
+# Environment=SENDSPIN_CONTROL_DIR="/run/sendspin-cli"
+# Environment=SENDSPIN_PLAYER_DUCK_MODE="pulse"
 # Environment=MIC_VOLUME="100"
 # Environment=MIC_AUTO_GAIN="0"
 # Environment=MIC_NOISE_SUPPRESSION="0"

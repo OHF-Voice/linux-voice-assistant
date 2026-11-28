@@ -14,6 +14,7 @@ These tests start a real LVA process and drive it the way a user and Home Assist
 | Virtual audio | `audio.py` | Creates the null sinks, plays wav files into the microphone, records the speaker and detects tones and sound |
 | LVA process | `lva.py` | Starts `python -m linux_voice_assistant --debug` with the virtual devices, collects the log. Tests wait for its debug log lines (`Detected wake word`, `Playing TTS response`, `TTS response finished`, `Stopping timer finished sound`, ...) to follow what LVA does |
 | Fake Home Assistant | `fake_ha.py` | ESPHome API client (`aioesphomeapi`) that subscribes to the voice assistant, receives microphone audio, answers requests with the pipeline events and serves TTS/media URLs over HTTP |
+| Fake Sendspin player | `fake_sendspin.py` | Control socket (`control.sock`) that answers `status-kv` like `sendspin-cli` with a playing player and records the commands LVA sends. It plays no audio |
 
 One LVA instance runs for the whole session. Every test opens a fresh fake Home Assistant connection and waits for the wake word refractory period, so tests do not influence each other as long as each one ends with LVA idle.
 
@@ -44,7 +45,9 @@ No real microphone, speaker or Home Assistant is involved. The tests show that L
 
 ## Peripheral API tests
 
-`peripheral_api/` tests the peripheral WebSocket API the way a peripheral uses it, modelled on `examples/Peripheral web console`: the same registrations (light, button, button lock), the same commands and the events the console reacts to. They run against a second LVA instance (`peripheral_lva`), because registering entities adds them to the device and makes LVA reconnect Home Assistant once, which would change the entity list the other tests check. Run them alone with `./script/e2e tests/e2e/peripheral_api`, they have their own job `LVA-Peripheral-API-V1` in `e2e-tests.yml`.
+`peripheral_api/` tests the peripheral WebSocket API the way a peripheral uses it, modelled on `examples/Peripheral web console`: the same registrations (light, button, button lock), the same commands and the events the console reacts to. They run against a second LVA instance (`peripheral_lva`), because registering entities adds them to the device and makes LVA reconnect Home Assistant once, which would change the entity list the other tests check. One test needs a ringing timer that stops after 3 s (`--timer-max-ring-seconds 3`), so it runs against a third instance (`auto_stop_lva`). Run them alone with `./script/e2e tests/e2e/peripheral_api`, they have their own job `LVA-Peripheral-API-V1` in `e2e-tests.yml`.
+
+`test_sendspin.py` checks how each `--sendspin-player-duck-mode` ducks a Sendspin player while the assistant listens. Each mode runs against its own LVA instance (`sendspin_stop`, `sendspin_duck`) with a fake Sendspin player. The test of `pulse` (the default) is skipped: it needs a sound stream named `sendspin-cli` in the test environment, see #639.
 
 ## Fixtures
 

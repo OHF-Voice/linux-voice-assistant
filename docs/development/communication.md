@@ -26,7 +26,7 @@ flowchart LR
 |-----------|-----------|---------|--------|---------|
 | ESPHome native API (TCP `6053`) | Home Assistant ⇄ LVA | Voice pipeline, entities, timers, announcements, media player, wake word configuration | `--port` | below |
 | mDNS (`_esphomelib._tcp`) | LVA → network | Lets Home Assistant discover the device | `--name`, `--network-interface` | below |
-| Peripheral WebSocket API (TCP `6055`) | Peripheral ⇄ LVA | Visual state for LEDs/displays, button and volume input, extra entities | `--peripheral-host`, `--peripheral-port`, `--disable-peripheral-api` | [peripheral_api.md](peripheral_api.md) |
+| Peripheral WebSocket API (TCP `6055`) | Peripheral ⇄ LVA | Visual state for LEDs/displays, button and volume input, extra entities | `--peripheral-host`, `--peripheral-port`, `--disable-peripheral-api` | [peripheral_api/readme.md](peripheral_api/readme.md) |
 | Microphone capture | Sound server → LVA | Audio for wake word detection and speech to text | `--audio-input-device` | [audio_pipeline.md](audio_pipeline.md) |
 | Media URLs over HTTP | Home Assistant server → LVA | TTS replies, music and announcement audio. LVA plays the URL, Home Assistant does not push audio data | | below |
 
@@ -81,7 +81,7 @@ LVA pretends to be an ESPHome device. Home Assistant connects **to** LVA (LVA is
 4. Home Assistant asks for `DeviceInfoRequest`, `ListEntitiesRequest` and `SubscribeStatesRequest` / `SubscribeHomeAssistantStatesRequest`. Every entity answers for itself (see [configuration.md](../configuration.md)), and the current states are replayed.
 5. Home Assistant sends `VoiceAssistantConfigurationRequest` and LVA answers with the available and active wake words (at most 2 active). Home Assistant changes the selection with `VoiceAssistantSetConfiguration`. The result is stored in the preferences file.
 
-Each Home Assistant connection gets its own protocol instance, but the settings, entities and players live in one shared state and survive reconnects. When the **last** connection closes, playback is stopped. See [behavior.md](../behavior.md#connection-to-home-assistant).
+Each Home Assistant connection gets its own protocol instance, but the settings, entities and players live in one shared state and survive reconnects. When the **last** connection closes, playback is stopped, except a ringing timer. See [behavior.md](../behavior.md#connection-to-home-assistant).
 
 ### Messages LVA receives and sends
 
@@ -92,7 +92,9 @@ Each Home Assistant connection gets its own protocol instance, but the settings,
 | `VoiceAssistantEventResponse` | HA → LVA | Progress of the run: `RUN_START`, `STT_*`, `INTENT_*`, `TTS_*`, `RUN_END`, `ERROR` |
 | `VoiceAssistantAnnounceRequest` | HA → LVA | Play an announcement, optionally with a pre-announce sound and a follow-up conversation |
 | `VoiceAssistantAnnounceFinished` | LVA → HA | Playback of a reply or announcement has ended |
-| `VoiceAssistantTimerEventResponse` | HA → LVA | Timer started, updated, cancelled or finished |
+| `VoiceAssistantTimerEventResponse` | HA → LVA | Timer started, updated, cancelled or finished. Applied to the timer list of LVA, see [behavior.md](../behavior.md#timers) |
+| `HomeassistantActionRequest` (`timer_list.get_timers`, `wants_response`) / `HomeassistantActionResponse` | LVA → HA / HA → LVA | After `SubscribeHomeassistantServicesRequest` of a connection, LVA asks for its timer list and merges the answer ([`home_assistant_timers.py`](../../linux_voice_assistant/home_assistant_timers.py)). Home Assistant answers with the timers of this device only. Needs the ESPHome option *Allow the device to perform Home Assistant actions* |
+| `GetTimeRequest` / `GetTimeResponse` | LVA → HA / HA → LVA | LVA asks for the time of Home Assistant after connecting and every 30 s, and compares its timers on it ([`home_assistant_time.py`](../../linux_voice_assistant/home_assistant_time.py)) |
 | `MediaPlayerCommandRequest` | HA → LVA | Play, pause, stop, volume, mute and URL for music or announcements |
 | `Switch`/`Number`/`Select`/`LightCommandRequest` | HA → LVA | Changes of the device page entities |
 | state responses | LVA → HA | New entity state, sent to all connected clients |
@@ -105,14 +107,14 @@ LVA identifies a wake word in two ways, and Home Assistant uses them for differe
 
 | Name | Source | Sent where | Used for |
 |------|--------|------------|----------|
-| `id` | Name of the wake word: origin, engine and phrase (for example `Internal - MWW - Okay Nabu`) | `VoiceAssistantConfigurationResponse` (`available_wake_words`, `active_wake_words`), `VoiceAssistantSetConfiguration` | Choosing which model is active in which slot |
-| `wake_word` (the phrase) | The name of the wake word, the same text as the `id` | `VoiceAssistantConfigurationResponse` (`available_wake_words`) and `VoiceAssistantRequest(wake_word_phrase)` | Naming the word that started a run |
+| `id` | Id of the wake word: origin, engine and phrase (for example `Internal - MWW - Okay Nabu`). A wake word Home Assistant offers for download keeps the id it gets after the download | `VoiceAssistantConfigurationResponse` (`available_wake_words`, `active_wake_words`), `VoiceAssistantSetConfiguration` | Choosing which model is active in which slot |
+| `wake_word` (the phrase) | Name in Home Assistant: the phrase for microWakeWord (`Okay Nabu`), the phrase with ` (OWW)` for openWakeWord, `Download from HA - <phrase>` for a download | `VoiceAssistantConfigurationResponse` (`available_wake_words`) and `VoiceAssistantRequest(wake_word_phrase)` | Naming the word that started a run |
 
-- **Only the phrase starts a run.** LVA sends `wake_word_phrase` in `VoiceAssistantRequest`. It is the name of the wake word, for example `Internal - MWW - Okay Nabu`, the same text as in the wake word select. LVA does not send the optional `wake_word_audio` field.
+- **Only the phrase starts a run.** LVA sends `wake_word_phrase` in `VoiceAssistantRequest`. It is the name of the wake word, for example `Okay Nabu`, the same text as in the wake word select. LVA does not send the optional `wake_word_audio` field.
 - **Devices that send `wake_word_audio` instead (for example Voice PE).** They report only a model `id`. Home Assistant looks it up in `available_wake_words` and uses its `wake_word` field as the phrase, with the raw `id` as fallback. This path is not used by LVA.
 - **Pipeline selection.** Home Assistant compares the phrase with the state of each wake word select entity of the satellite and runs the pipeline of the first match. An empty phrase (button press, announcement) runs the first pipeline. A follow-up conversation sends the phrase of the original wake word again.
-- **Wake word verification by an app.** For a run with a phrase, Home Assistant passes it as `wake_word_phrase` in the `run-start` message to the Voice Support app. The app compares it with its own wake word ids after normalising both (lower case, `-` and spaces become `_`, other special characters are dropped). Its comparison is exact, so it does not recognise a name with origin and engine in front of the phrase, unless the app is changed to accept text around the wake word.
-- **Why the phrase is the name.** Home Assistant builds the wake word select from the `wake_word` field and chooses the pipeline by comparing the phrase with the select, so both have to be the same text. A plain phrase in the select would show the same entry for the microWakeWord and the openWakeWord model of one phrase, and Home Assistant offers only one of them.
+- **Wake word verification by an app.** For a run with a phrase, Home Assistant passes it as `wake_word_phrase` in the `run-start` message to the Voice Support app. The app compares it with its own wake word ids after normalising both (lower case, `-` and spaces become `_`, other special characters are dropped). Its comparison is exact, so it recognises the plain microWakeWord phrases, but not an openWakeWord name with ` (OWW)`.
+- **Why the phrase is the name.** Home Assistant builds the wake word select from the `wake_word` field and chooses the pipeline by comparing the phrase with the select, so both have to be the same text, and it keeps only one option per name. So microWakeWord gets the plain phrase, openWakeWord the suffix ` (OWW)`, and within one engine only one wake word per phrase is offered (custom, downloaded, internal). Home Assistant reads the list only on connect, so after a rename LVA closes the connection (see [behavior.md](../behavior.md), *Reloading the wake word list in Home Assistant*).
 
 This description comes from reading the source of the Home Assistant `esphome` and `voice_support` integrations and of the Voice Support app. It was not tested against a running Voice Support app.
 
@@ -177,7 +179,7 @@ LVA is the WebSocket **server** on port `6055`, a peripheral connects as a clien
 
 Because registered entities are announced to Home Assistant over the ESPHome API, LVA waits `--peripheral-startup-wait` seconds at startup before it serves port `6053`. Peripherals that register later still work, but LVA then closes the Home Assistant connection once so Home Assistant re-reads the entity list.
 
-The full protocol, all event and command names and examples are in [peripheral_api.md](peripheral_api.md).
+The full protocol, all event and command names and examples are in [peripheral_api/readme.md](../peripheral_api/readme.md).
 
 ## Startup order
 
@@ -206,5 +208,5 @@ Messages from other threads are handed to the event loop, so the socket is only 
 | [audio_pipeline.md](audio_pipeline.md) | Microphone to Home Assistant, in detail |
 | [behavior.md](../behavior.md) | What the user experiences in each situation |
 | [configuration.md](../configuration.md) | Entities on the Home Assistant device page |
-| [peripheral_api.md](peripheral_api.md) | WebSocket protocol for peripheral authors |
+| [peripheral_api/readme.md](../peripheral_api/readme.md) | WebSocket protocol for peripheral authors |
 | [debugging.md](../debugging.md) | Troubleshooting audio and container sockets |

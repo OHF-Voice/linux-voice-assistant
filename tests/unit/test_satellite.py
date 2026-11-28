@@ -1,10 +1,11 @@
 """Unit tests for VoiceSatelliteProtocol logic."""
 
 import json
+import logging
 from unittest.mock import MagicMock, call, patch
 
 import pytest
-from aioesphomeapi.api_pb2 import VoiceAssistantAnnounceRequest  # type: ignore[attr-defined]  # pylint: disable=no-name-in-module
+from aioesphomeapi.api_pb2 import MediaPlayerCommandRequest, VoiceAssistantAnnounceRequest  # type: ignore[attr-defined]  # pylint: disable=no-name-in-module
 
 from linux_voice_assistant.models import DetectionResult, Preferences
 from linux_voice_assistant.peripheral_api import LVAEvent
@@ -316,6 +317,51 @@ class TestPlayTts:
 # ---------------------------------------------------------------------------
 
 
+class TestPeripheralStatusProperties:
+    def test_timer_ringing_follows_the_timer_alarm(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        assert sat.timer_ringing is False
+        _ring(sat)
+        assert sat.timer_ringing is True
+
+    def test_announcing_follows_the_announcement_flag(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        assert sat.announcing is False
+        sat._announce_ducking = True
+        assert sat.announcing is True
+
+
+class TestTimerEventsGoToTheTimerList:
+    def test_event_is_applied_to_the_timer_list(self, tmp_path):
+        from aioesphomeapi.model import VoiceAssistantTimerEventType
+
+        sat = make_satellite(tmp_path)
+        sat.handle_timer_event(VoiceAssistantTimerEventType.VOICE_ASSISTANT_TIMER_STARTED, _timer_msg(seconds_left=60))
+        timer = sat.state.timers.timers["t1"]
+        assert timer.name == "pasta"
+        assert timer.total_seconds == 300
+
+    def test_timer_keeps_ringing_when_home_assistant_disconnects(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        sat.state.connections.append(sat)
+        _ring(sat)
+        sat.connection_lost(None)
+
+        assert sat.state.timer_alarm.ringing
+        assert sat.state.stop_word.id in sat.state.active_wake_words
+        sat.state.tts_player.stop.assert_not_called()
+        assert call.unduck(owner="timer") not in sat.state.music_player.mock_calls
+        assert call.unduck(owner="conversation") in sat.state.music_player.mock_calls
+
+    def test_disconnect_without_ringing_timer_stops_playback(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        sat.state.connections.append(sat)
+        sat.connection_lost(None)
+
+        sat.state.tts_player.stop.assert_called_once()
+        assert call.unduck(owner="timer") in sat.state.music_player.mock_calls
+
+
 class TestStop:
     def test_stop_clears_pipeline_active(self, tmp_path):
         sat = make_satellite(tmp_path)
@@ -331,7 +377,6 @@ class TestStop:
 
     def test_stop_calls_tts_player_stop(self, tmp_path):
         sat = make_satellite(tmp_path)
-        sat._timer_finished = False
         sat.stop()
         sat.state.tts_player.stop.assert_called()
 
@@ -491,6 +536,25 @@ class TestDuckUnduck:
         sat.state.music_player.unduck.assert_called_once_with(owner="timer")
 
 
+class TestEmitMediaPlaying:
+    def test_sent_by_the_status_poll_not_for_a_sendspin_url(self, tmp_path):
+        sat = make_satellite(tmp_path)
+        sat._emit = MagicMock()
+        list(sat.handle_message(MediaPlayerCommandRequest(key=999, has_media_url=True, media_url="sendspin://current")))
+        sat._emit.assert_not_called()
+        sat.emit_media_playing()
+        sat._emit.assert_called_once_with(LVAEvent.MEDIA_PLAYER_PLAYING)
+
+    def test_skipped_during_a_conversation(self, tmp_path, caplog):
+        sat = make_satellite(tmp_path)
+        sat._emit = MagicMock()
+        sat._pipeline_active = True
+        with caplog.at_level(logging.DEBUG, logger="linux_voice_assistant.satellite"):
+            sat.emit_media_playing()
+        sat._emit.assert_not_called()
+        assert "Not sending media_player_playing for Sendspin, a conversation is running" in caplog.text
+
+
 class TestDuckOwnersInSatellite:
     def test_timer_finished_ducks_for_timer(self, tmp_path):
         from aioesphomeapi.model import VoiceAssistantTimerEventType
@@ -502,14 +566,13 @@ class TestDuckOwnersInSatellite:
 
     def test_stop_while_ringing_unducks_timer_only(self, tmp_path):
         sat = make_satellite(tmp_path)
-        sat._timer_finished = True
+        _ring(sat)
         sat.stop()
         sat.state.music_player.unduck.assert_called_once_with(owner="timer")
 
     def test_wakeup_while_ringing_hands_ducking_to_conversation(self, tmp_path):
         sat = make_satellite(tmp_path)
-        sat._timer_finished = True
-        sat.state.music_player.reset_mock()
+        _ring(sat)
         sat.wakeup(MagicMock(wake_word="Hey Jarvis"))
 
         assert sat.state.music_player.mock_calls == [call.duck(owner="conversation"), call.unduck(owner="timer")]
@@ -518,8 +581,7 @@ class TestDuckOwnersInSatellite:
         sat = make_satellite(tmp_path)
         sat.state.wake_words = {"okay_nabu": MagicMock()}
         sat.state.active_wake_words = {"okay_nabu"}
-        sat._timer_finished = True
-        sat.state.music_player.reset_mock()
+        _ring(sat)
         sat.start_listening()
 
         assert sat.state.music_player.mock_calls == [call.duck(owner="conversation"), call.unduck(owner="timer")]
@@ -644,6 +706,14 @@ class TestPipelineEndedSound:
         sat.state.tts_player.play.assert_called_once()
         assert sat.state.tts_player.play.call_args.args[0] == sat.state.pipeline_ended_sound
 
+    def test_speech_detected_by_home_assistant_is_emitted(self, tmp_path):
+        from aioesphomeapi import VoiceAssistantEventType
+
+        sat = make_satellite(tmp_path)
+        sat._emit = MagicMock()
+        sat.handle_voice_event(VoiceAssistantEventType.VOICE_ASSISTANT_STT_VAD_START, {})
+        sat._emit.assert_called_once_with(LVAEvent.SPEECH_DETECTED)
+
     def test_run_ending_after_stt_does_not_play_sound(self, tmp_path):
         # HA ends the run after speech recognition when an automation handles the answer (ask_question).
         from aioesphomeapi import VoiceAssistantEventType
@@ -742,7 +812,17 @@ def _timer_msg(seconds_left=60, total_seconds=300, timer_id="t1", name="pasta"):
     msg.name = name
     msg.total_seconds = total_seconds
     msg.seconds_left = seconds_left
+    msg.is_active = True
     return msg
+
+
+def _ring(sat):
+    """Let a timer ring through the event of Home Assistant, then forget the calls that made it ring."""
+    from aioesphomeapi.model import VoiceAssistantTimerEventType
+
+    sat.handle_timer_event(VoiceAssistantTimerEventType.VOICE_ASSISTANT_TIMER_FINISHED, _timer_msg(seconds_left=0, timer_id="ringing"))
+    sat.state.music_player.reset_mock()
+    sat.state.tts_player.reset_mock()
 
 
 class TestHandleTimerEvent:
@@ -798,49 +878,12 @@ class TestHandleTimerEvent:
 
 
 # ---------------------------------------------------------------------------
-# _download_external_wake_word
-# ---------------------------------------------------------------------------
-
-
-class TestDownloadExternalWakeWord:
-    def test_skips_download_when_size_and_hash_match(self, tmp_path):
-        import hashlib
-
-        from aioesphomeapi.model import VoiceAssistantExternalWakeWord
-
-        sat = make_satellite(tmp_path)
-        model_bytes = b"tflite-model"
-        eww_dir = sat.state.wake_word_root / "downloaded" / "microwakeword"
-        eww_dir.mkdir(parents=True)
-        (eww_dir / "custom.json").write_text("{}")
-        (eww_dir / "custom.tflite").write_bytes(model_bytes)
-
-        external = VoiceAssistantExternalWakeWord(
-            id="custom",
-            wake_word="Custom",
-            trained_languages=["en"],
-            model_type="micro",
-            model_size=len(model_bytes),
-            model_hash=hashlib.sha256(model_bytes).hexdigest(),
-            url="http://example.com/custom.json",
-        )
-
-        with patch("linux_voice_assistant.satellite.urlopen") as mock_urlopen:
-            result = sat._download_external_wake_word(external)
-
-        mock_urlopen.assert_not_called()
-        assert result is not None
-        assert result.id == "Download - MWW - Custom"
-        assert result.file_id == "custom"
-
-
-# ---------------------------------------------------------------------------
 # VoiceAssistantSetConfiguration
 # ---------------------------------------------------------------------------
 
 
 class TestConfigurationRequest:
-    def test_wake_word_names_contain_origin_and_engine(self, tmp_path):
+    def test_wake_words_are_offered_by_their_name(self, tmp_path):
         from aioesphomeapi.api_pb2 import VoiceAssistantConfigurationRequest, VoiceAssistantConfigurationResponse
 
         from linux_voice_assistant.models import AvailableWakeWord, WakeWordType
@@ -855,8 +898,8 @@ class TestConfigurationRequest:
 
         response = next(msg for msg in responses if isinstance(msg, VoiceAssistantConfigurationResponse))
         assert {ww.id: ww.wake_word for ww in response.available_wake_words} == {
-            "Internal - OWW - Hey Jarvis": "Internal - OWW - Hey Jarvis",
-            "Custom - MWW - Okay Nabu": "Custom - MWW - Okay Nabu",
+            "Internal - OWW - Hey Jarvis": "Hey Jarvis (OWW)",
+            "Custom - MWW - Okay Nabu": "Okay Nabu",
         }
 
 

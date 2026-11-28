@@ -8,7 +8,7 @@
 <summary><b>Usage (<code>--help</code>)</b></summary>
 
 ```sh
-usage: __main__.py [-h] [--name NAME] [--audio-input-device AUDIO_INPUT_DEVICE] [--list-input-devices] [--audio-input-block-size AUDIO_INPUT_BLOCK_SIZE] [--audio-output-device AUDIO_OUTPUT_DEVICE] [--music-output-device MUSIC_OUTPUT_DEVICE] [--mpv-player-duck-mode {duck,pause}] [--list-output-devices] [--wake-word-root-dir WAKE_WORD_ROOT_DIR]  [--mic-auto-gain] [--mic-noise-suppression]
+usage: __main__.py [-h] [--name NAME] [--audio-input-device AUDIO_INPUT_DEVICE] [--list-input-devices] [--audio-input-block-size AUDIO_INPUT_BLOCK_SIZE] [--audio-output-device AUDIO_OUTPUT_DEVICE] [--music-output-device MUSIC_OUTPUT_DEVICE] [--mpv-player-duck-mode {duck,pause}] [--enable-sendspin-bridge {0,1}] [--sendspin-control-dir SENDSPIN_CONTROL_DIR] [--sendspin-player-duck-mode {pulse,stop,duck}] [--list-output-devices] [--wake-word-root-dir WAKE_WORD_ROOT_DIR]  [--mic-auto-gain] [--mic-noise-suppression]
                    [--wake-model WAKE_MODEL] [--wake-model-2 WAKE_MODEL_2] [--stop-model STOP_MODEL] [--refractory-seconds REFRACTORY_SECONDS] [--wakeup-sound WAKEUP_SOUND] [--timer-finished-sound TIMER_FINISHED_SOUND] [--processing-sound PROCESSING_SOUND]
                    [--mute-sound MUTE_SOUND] [--unmute-sound UNMUTE_SOUND] [--preferences-file PREFERENCES_FILE] [--host HOST] [--network-interface NETWORK_INTERFACE] [--mac-address MAC_ADDRESS] [--port PORT] [--enable-encryption] [--encryption-key-file ENCRYPTION_KEY_FILE] [--enable-thinking-sound] [--enable-zeroconf {0,1}] [--listen-during-wake-sound] [--debug]
 ```
@@ -43,6 +43,9 @@ usage: __main__.py [-h] [--name NAME] [--audio-input-device AUDIO_INPUT_DEVICE] 
 | `--audio-output-device` | `AUDIO_OUTPUT_DEVICE` | Audio output device name, use a `pulse/...` name from the device list (`--list-output-devices`, `LIST_DEVICES`) | `pulse` |
 | `--music-output-device` | `MUSIC_OUTPUT_DEVICE` | Music/media output device name (defaults to the voice output device) | `--audio-output-device` |
 | `--mpv-player-duck-mode` | `MPV_PLAYER_DUCK_MODE` | What the music of LVA does while the assistant talks, an announcement plays or a timer rings: `duck` lowers the volume to 50 %, `pause` pauses the music and resumes it afterwards. Does not change the voice player | `duck` |
+| `--enable-sendspin-bridge` | `ENABLE_SENDSPIN_BRIDGE` | `1` controls a Sendspin player (`sendspin-cli`, for example the Music Assistant Local Audio add-on) through its control socket: ducking, the state of the media player, play/pause/stop, volume and mute, see [behavior.md](behavior.md#sendspin-player). `0` turns it off, LVA then leaves the player alone | 1 |
+| `--sendspin-control-dir` | `SENDSPIN_CONTROL_DIR` | Directory that holds `control.sock`, the control socket of the Sendspin player. Nothing is controlled through the socket while it does not exist. The socket has mode `0600`, so the player has to run as the user of LVA. In Docker the directory is mounted at the same path | `/run/sendspin-cli` |
+| `--sendspin-player-duck-mode` | `SENDSPIN_PLAYER_DUCK_MODE` | What happens to the Sendspin player while the assistant talks, an announcement plays or a timer rings: `pulse` lowers its sound stream in PulseAudio/PipeWire to 50 % (only while it plays; the Local Audio add-on passes the change on to its Sendspin group, so the other players are ducked too, needs the control socket to see that; without the sound server or a stream of the player nothing is ducked), `stop` stops it and starts it again afterwards, `duck` lowers the volume of the whole Sendspin group to 50 % | `pulse` |
 | `--mic-volume` | `MIC_VOLUME` | Microphone volume 0 to 100, overrides the stored Mic Volume on every start. Leave it unset or empty to keep the stored value | stored value, else 100 |
 | `--mic-auto-gain` | `MIC_AUTO_GAIN` | Add WebRTC Gain to Mic | 0 |
 | `--mic-noise-suppression` | `MIC_NOISE_SUPPRESSION` | Add WebRTC Noise Suppression to Mic | 0 |
@@ -152,14 +155,14 @@ The device page shows one or two wake word selects (**Wake Word 1**, **Wake Word
 
 <img src="./images/wake_word.png" alt="Wake word select" width="289">
 
-Each name in the dropdown shows where the wake word comes from (`Internal`, `Download` or `Custom`) and its engine, for example `Internal - OWW - Hey Jarvis`. **OWW** is [openWakeWord](https://github.com/dscripka/openWakeWord) and **MWW** is [microWakeWord](https://github.com/kahrendt/microWakeWord). You can mix both engines:
+The dropdown shows microWakeWord models by their phrase (`Hey Jarvis`) and openWakeWord models with ` (OWW)` (`Hey Jarvis (OWW)`). If one engine has the same phrase in several places, only one is listed (custom before downloaded before internal). Wake words that Home Assistant offers for download are listed as `Download from HA - <phrase>` until they are downloaded. [openWakeWord](https://github.com/dscripka/openWakeWord) and [microWakeWord](https://github.com/kahrendt/microWakeWord) can be mixed:
 
 - **microWakeWord** models are lighter and run on lower-end devices. They are in the `wakewords/<origin>/microwakeword` directories.
 - **openWakeWord** models are more accurate. They are in the `wakewords/<origin>/openwakeword` directories.
 
 **No wake word.** If you set both selects to *No wake word*, no wake word starts the assistant, and a button cannot start listening either. After a restart LVA uses the default wake words again, because none are stored.
 
-**After updating from an older version.** Home Assistant remembers the text of each select itself, and the names of the wake words changed (for example `Hey Jarvis` is now `Internal - MWW - Hey Jarvis`). LVA keeps your stored wake words, but a select with an old name shows *No wake word*, or one select shows a wake word and the other none, although LVA has both active. LVA cannot change what Home Assistant remembers. Choose the wake word again in each select. If a select keeps showing the old name, set it to *No wake word* once and then choose the wake word.
+**After updating from an older version.** Home Assistant remembers the text of each select itself, and the names of the wake words changed (for example `Internal - MWW - Hey Jarvis` is now `Hey Jarvis`). LVA keeps your stored wake words and makes Home Assistant reconnect twice after the update, so the first select shows the wake word again. With two active wake words, the second select shows *No wake word*: choose the wake word again there. If a select keeps showing an old name, set it to *No wake word* once and then choose the wake word.
 
 The [Wake Word section](features.md#wake-word) of the installation guide lists all bundled models and explains how to add custom ones.
 
