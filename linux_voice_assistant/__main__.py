@@ -102,7 +102,7 @@ async def main() -> None:
     )
     parser.add_argument(
         "--sendspin-control-dir",
-        default="/run/sendspin-cli/socket",
+        default="/run/sendspin-cli",
         help="Directory that holds control.sock, the control socket of the Sendspin player. Nothing is controlled through the socket while it does not exist " "(default: %(default)s)",
     )
     parser.add_argument(
