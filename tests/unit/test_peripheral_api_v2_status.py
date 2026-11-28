@@ -26,6 +26,7 @@ class TestPipelineStateAfter:
             ("tts_finished", "idle"),
             ("idle", "idle"),
             ("pipeline_error", "pipeline_error"),
+            ("wake_word_rejected", "wake_word_rejected"),
         ],
     )
     def test_events_move_the_pipeline(self, event, expected):

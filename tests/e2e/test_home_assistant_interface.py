@@ -20,6 +20,7 @@ EXPECTED_ENTITIES = [
     "Mic Auto Gain",
     "Mic Noise Suppression",
     "Mic Volume",
+    "Wake word verification",
 ]
 
 

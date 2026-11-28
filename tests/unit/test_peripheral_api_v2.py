@@ -177,6 +177,16 @@ class TestEmitEvent:
         assert ws.sent() == [{"event": "state", "data": {"state": "pipeline_error"}}, {"event": "state", "data": {"state": "idle"}}]
 
     @pytest.mark.asyncio
+    async def test_wake_word_rejected_is_sent_and_ends_in_idle(self, tmp_path):
+        server = make_server(tmp_path)
+        await server.emit_event(LVAEvent.LISTENING)
+        ws = connect(server)
+
+        await server.emit_event(LVAEvent.WAKE_WORD_REJECTED)
+
+        assert ws.sent() == [{"event": "state", "data": {"state": "wake_word_rejected"}}, {"event": "state", "data": {"state": "idle"}}]
+
+    @pytest.mark.asyncio
     async def test_pipeline_error_is_not_an_event_of_its_own(self, tmp_path):
         server = make_server(tmp_path)
         ws = connect(server)
