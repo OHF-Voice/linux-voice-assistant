@@ -1,16 +1,24 @@
 import logging
 import threading
+import time
 from typing import Callable, Optional
 
 import mpv
 
 from linux_voice_assistant.player.base import AudioPlayer
+from linux_voice_assistant.player.playout import (
+    PLAYOUT_MARGIN_SECONDS,
+    playout_delay_seconds,
+)
 from linux_voice_assistant.player.state import PlayerState
 
 _AUDIO_BUFFER_SECS = 0.8
-# mpv reports eof once the last samples are handed to the audio output, so the
-# end of the file is audible about this long after the event arrives.
-_EOF_DRAIN_DELAY_SECS = _AUDIO_BUFFER_SECS + 0.1
+# mpv reports eof once the last samples are handed to the audio output. The rest of
+# the file is worked out from its duration and the played position (see playout.py).
+# These two bound that wait: the fallback when the duration is unknown, and the most
+# audio the output can still hold (PulseAudio may buffer a bit more than requested).
+_EOF_DRAIN_DELAY_SECS = _AUDIO_BUFFER_SECS + PLAYOUT_MARGIN_SECONDS
+_MAX_PLAYOUT_SECS = 2 * _AUDIO_BUFFER_SECS
 
 
 class LibMpvPlayer(AudioPlayer):
@@ -72,8 +80,13 @@ class LibMpvPlayer(AudioPlayer):
         # Callback Handling
         self._done_callback: Optional[Callable[[], None]] = None
         self._eof_timer: Optional[threading.Timer] = None
+        self._duration: Optional[float] = None
+        self._position: Optional[float] = None
+        self._position_reported_at = 0.0
         self._mpv.event_callback("end-file")(self._on_end_file)
         self._mpv.event_callback("start-file")(self._on_start_file)
+        self._mpv.observe_property("duration", self._on_duration)
+        self._mpv.observe_property("playback-time", self._on_position)
 
     # -------- Playback control --------
 
@@ -210,7 +223,11 @@ class LibMpvPlayer(AudioPlayer):
                 self._log.warning("_on_end_file: playback ended with error; invoking done_callback")
 
             self._cancel_eof_timer()
-            timer = threading.Timer(0 if is_error else _EOF_DRAIN_DELAY_SECS, self._finish_playback)
+            delay = 0.0
+            if not is_error:
+                position_age = time.monotonic() - self._position_reported_at
+                delay = playout_delay_seconds(self._duration, self._position, position_age=position_age, fallback_seconds=_EOF_DRAIN_DELAY_SECS, max_seconds=_MAX_PLAYOUT_SECS)
+            timer = threading.Timer(delay, self._finish_playback)
             timer.daemon = True
             self._eof_timer = timer
             timer.start()
@@ -238,7 +255,22 @@ class LibMpvPlayer(AudioPlayer):
         self._log.debug("_on_start_file() called")
         with self._state_lock:
             self._log.debug("_on_start_file: state=%s", self._state)
+            self._duration = None
+            self._position = None
             self._set_state(PlayerState.PLAYING)
+
+    def _on_duration(self, _name: str, value: Optional[float]) -> None:
+        """Remember the duration of the current file. mpv reports None once the file is unloaded, which is ignored."""
+        if value is not None:
+            with self._state_lock:
+                self._duration = value
+
+    def _on_position(self, _name: str, value: Optional[float]) -> None:
+        """Remember the played position of the current file. mpv reports None once the file is unloaded, which is ignored."""
+        if value is not None:
+            with self._state_lock:
+                self._position = value
+                self._position_reported_at = time.monotonic()
 
     def _on_mpv_log(self, level: str, prefix: str, text: str) -> None:
         """

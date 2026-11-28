@@ -119,6 +119,48 @@ class TestOnEndFile:
         cb.assert_not_called()
         assert player._done_callback is cb
 
+    def test_eof_waits_for_the_rest_of_the_file(self, player):
+        player._on_start_file(None)
+        player._on_duration("duration", 0.3)
+        with patch("linux_voice_assistant.player.libmpv.time.monotonic", return_value=99.8):
+            player._on_position("playback-time", 0.0)
+
+        with patch("linux_voice_assistant.player.libmpv.threading.Timer") as timer, patch("linux_voice_assistant.player.libmpv.time.monotonic", return_value=100.0):
+            player._on_end_file(_end_file_event(0))
+
+        assert timer.call_args.args[0] == pytest.approx(0.2)
+
+    def test_eof_without_duration_uses_the_fallback_delay(self, player):
+        player._on_start_file(None)
+
+        with patch("linux_voice_assistant.player.libmpv.threading.Timer") as timer, patch("linux_voice_assistant.player.libmpv.time.monotonic", return_value=100.0):
+            player._on_end_file(_end_file_event(0))
+
+        assert timer.call_args.args[0] == pytest.approx(0.9)
+
+    def test_unloaded_file_keeps_the_last_duration_and_position(self, player):
+        player._on_start_file(None)
+        player._on_duration("duration", 3.0)
+        with patch("linux_voice_assistant.player.libmpv.time.monotonic", return_value=100.0):
+            player._on_position("playback-time", 2.0)
+        player._on_duration("duration", None)
+        player._on_position("playback-time", None)
+
+        with patch("linux_voice_assistant.player.libmpv.threading.Timer") as timer, patch("linux_voice_assistant.player.libmpv.time.monotonic", return_value=100.0):
+            player._on_end_file(_end_file_event(0))
+
+        assert timer.call_args.args[0] == pytest.approx(1.1)
+
+    def test_start_file_forgets_the_previous_file(self, player):
+        player._on_start_file(None)
+        player._on_duration("duration", 3.0)
+        player._on_position("playback-time", 2.0)
+
+        player._on_start_file(None)
+
+        assert player._duration is None
+        assert player._position is None
+
     def test_eof_with_no_callback_sets_idle(self, player):
         player._done_callback = None
         player._set_state(PlayerState.PLAYING)
