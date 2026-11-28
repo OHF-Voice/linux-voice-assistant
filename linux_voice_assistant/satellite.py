@@ -6,7 +6,7 @@ import threading
 import time
 from collections.abc import Iterable
 from functools import partial
-from typing import Any, Dict, List, Optional, Set, Union
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 # pylint: disable=no-name-in-module
 from aioesphomeapi.api_pb2 import (  # type: ignore[attr-defined]
@@ -24,6 +24,7 @@ from aioesphomeapi.api_pb2 import (  # type: ignore[attr-defined]
     SubscribeHomeassistantServicesRequest,
     SubscribeHomeAssistantStatesRequest,
     SubscribeStatesRequest,
+    SubscribeVoiceAssistantRequest,
     SwitchCommandRequest,
     VoiceAssistantAnnounceFinished,
     VoiceAssistantAnnounceRequest,
@@ -60,6 +61,7 @@ from .entity import (
     ThinkingSoundEntity,
     WakeWord1SensitivityNumberEntity,
     WakeWord2SensitivityNumberEntity,
+    WakeWordVerificationEntity,
 )
 from .home_assistant_time import check_clock_offset, clock_offset, request_time_periodically
 from .home_assistant_timers import GET_TIMERS_TIMEOUT_SECONDS, get_timers_request
@@ -67,6 +69,17 @@ from .models import DetectionResult, ServerState
 from .peripheral_api import LVAEvent
 from .timers import TimerEvent
 from .wake_word import find_matching_wake_word_id, wake_word_ids_for_selections, wake_word_selections_for_ids
+from .wake_word_audio import (
+    ERROR_SHOWN_SECONDS,
+    VERDICT_TIMEOUT_SECONDS,
+    VERIFICATION_TIMEOUT_CODE,
+    AudioChunk,
+    WakeWordAudio,
+    audio_messages,
+    is_wake_word_audio_requested,
+    start_request,
+    take_wake_word_audio,
+)
 from .wake_word_detection import has_active_wake_word
 from .wake_word_download import describe_external_wake_word, download_external_wake_word, external_wake_word_id, is_supported, wake_words_to_download
 from .wake_word_names import name_for_wake_word_id, offered_wake_words
@@ -103,6 +116,8 @@ class VoiceSatelliteProtocol(APIServer):
             )
             # data2 carries the microphone before any LVA processing (WebRTC gain / noise suppression).
             self.supported_features |= VoiceAssistantFeature.MULTI_CHANNEL_AUDIO  # pylint: disable=no-member
+            # The audio before a wake word, sent while Home Assistant asks for it, see wake_word_audio.py.
+            self.supported_features |= VoiceAssistantFeature.WAKE_WORD_AUDIO  # pylint: disable=no-member
 
         existing_mute_switches = [entity for entity in self.state.entities if isinstance(entity, MuteSwitchEntity)]
         existing_media_players = [entity for entity in self.state.entities if isinstance(entity, MediaPlayerEntity)]
@@ -335,6 +350,27 @@ class VoiceSatelliteProtocol(APIServer):
         self.state.mic_volume_entity.update_get_value(lambda: float(self.state.mic_volume))
         self.state.mic_volume_entity.update_set_value(lambda val: self.state.persist_mic_volume(float(val)))
 
+        # Add/update wake word verification switch
+        verification_switch = self.state.wake_word_verification_entity
+        if verification_switch is None:
+            verification_switch = WakeWordVerificationEntity(
+                server=self,
+                key=len(state.entities),
+                name="Wake word verification",
+                object_id="wake_word_verification",
+                get_enabled=lambda: self.state.wake_word_verification_enabled,
+                set_enabled=self._set_wake_word_verification_enabled,
+            )
+            self.state.entities.append(verification_switch)
+            self.state.wake_word_verification_entity = verification_switch
+        elif verification_switch not in self.state.entities:
+            self.state.entities.append(verification_switch)
+
+        verification_switch.server = self
+        verification_switch.update_get_enabled(lambda: self.state.wake_word_verification_enabled)
+        verification_switch.update_set_enabled(self._set_wake_word_verification_enabled)
+        verification_switch.sync_with_state()
+
         # NOTE: ButtonEventSensorEntity is NOT created here unconditionally.
         # It is only materialised when a peripheral sends the register_button
         # command (see register_pending_button below), mirroring the same
@@ -374,6 +410,12 @@ class VoiceSatelliteProtocol(APIServer):
         self._keep_music_on_disconnect = False
         self._disconnect_event = asyncio.Event()
         self._time_requests: Optional[asyncio.Task] = None
+        # Flags of this connection's SubscribeVoiceAssistantRequest, None while it is not subscribed.
+        self._voice_subscription_flags: Optional[int] = None
+        # Runs while LVA waits for Home Assistant to accept or reject a wake word.
+        self._verdict_timer: Optional[threading.Timer] = None
+        # Home Assistant rejected the wake word or LVA gave up waiting. The rest of the run ends quietly.
+        self._verification_ended = False
 
     # ------------------------------------------------------------------
     # Peripheral API helper
@@ -538,6 +580,12 @@ class VoiceSatelliteProtocol(APIServer):
             pass
         self.state.preferences.save(self.state.preferences_path)
 
+    def _set_wake_word_verification_enabled(self, new_state: bool) -> None:
+        self.state.wake_word_verification_enabled = bool(new_state)
+        self.state.preferences.wake_word_verification = 1 if self.state.wake_word_verification_enabled else 0
+        self.state.preferences.save(self.state.preferences_path)
+        _LOGGER.debug("Wake word verification %s", "enabled" if self.state.wake_word_verification_enabled else "disabled")
+
     def _set_button_controls_locked(self, new_state: bool) -> None:
         self.state.button_controls_locked = bool(new_state)
         self.state.preferences.button_controls_locked = 1 if self.state.button_controls_locked else 0
@@ -590,6 +638,7 @@ class VoiceSatelliteProtocol(APIServer):
             # voice_assistant.stop behavior
             _LOGGER.debug("Muting voice assistant (voice_assistant.stop)")
             self._is_streaming_audio = False
+            self._stop_waiting_for_verdict("muted")
             self.state.tts_player.stop()
             # Stop any ongoing voice processing
             self.state.stop_word.is_active = False  # type: ignore[attr-defined]
@@ -614,7 +663,22 @@ class VoiceSatelliteProtocol(APIServer):
             self._intent_started = False
             self._stt_text_received = False
             self._continue_conversation = False
+            self._verification_ended = False
             self._pipeline_active = True
+
+        elif event_type == VoiceAssistantEventType.VOICE_ASSISTANT_WAKE_WORD_END:
+            if self._stop_waiting_for_verdict("accepted"):
+                # As on the Voice PE, media is ducked once the wake word is accepted, not on the detection
+                self.duck()
+
+        elif event_type == VoiceAssistantEventType.VOICE_ASSISTANT_WAKE_WORD_REJECTED:  # pylint: disable=no-member
+            if not self._stop_waiting_for_verdict("rejected"):
+                _LOGGER.debug("Ignoring wake word rejection, LVA is not waiting for a verdict")
+                return
+            self._end_unverified_run()
+            self._pipeline_active = False
+            self._emit(LVAEvent.WAKE_WORD_REJECTED)
+            self._emit(LVAEvent.IDLE)
 
         elif event_type == VoiceAssistantEventType.VOICE_ASSISTANT_STT_VAD_START:
             self._emit(LVAEvent.SPEECH_DETECTED)
@@ -665,7 +729,12 @@ class VoiceSatelliteProtocol(APIServer):
 
         elif event_type == VoiceAssistantEventType.VOICE_ASSISTANT_RUN_END:
             self._is_streaming_audio = False
-            if not self._tts_played:
+            self._stop_waiting_for_verdict("run ended")
+            if self._verification_ended:
+                # The wake word was rejected or not verified in time, LVA is idle already
+                _LOGGER.debug("Run ended after the wake word was not verified, nothing to do")
+                self._verification_ended = False
+            elif not self._tts_played:
                 self._pipeline_active = False
                 # The pipeline ended sound is for the user's own run, not one another satellite answers
                 # and not one that stopped after speech recognition (the transcript is handled elsewhere).
@@ -681,6 +750,10 @@ class VoiceSatelliteProtocol(APIServer):
             self._stt_text_received = False
 
         elif event_type == VoiceAssistantEventType.VOICE_ASSISTANT_ERROR:
+            self._stop_waiting_for_verdict("error")
+            if self._verification_ended:
+                _LOGGER.debug("Ignoring error %s, the wake word was not verified", data.get("code"))
+                return
             self._emit(LVAEvent.PIPELINE_ERROR)
             if data.get("code") == _DUPLICATE_WAKE_UP_CODE:
                 self._run_taken_by_other = True
@@ -731,6 +804,15 @@ class VoiceSatelliteProtocol(APIServer):
 
         elif isinstance(msg, VoiceAssistantTimerEventResponse):
             self.handle_timer_event(VoiceAssistantTimerEventType(msg.event_type), msg)
+
+        elif isinstance(msg, SubscribeVoiceAssistantRequest):
+            self._voice_subscription_flags = msg.flags if msg.subscribe else None
+            _LOGGER.debug(
+                "Home Assistant %s the voice assistant (flags %s, wake word audio %s)",
+                "subscribed to" if msg.subscribe else "unsubscribed from",
+                msg.flags,
+                "requested" if is_wake_word_audio_requested(self._voice_subscription_flags) else "not requested",
+            )
 
         elif isinstance(msg, SubscribeHomeassistantServicesRequest):
             # Home Assistant accepts actions from now on, so the timer list it kept while LVA was away can be read
@@ -847,11 +929,25 @@ class VoiceSatelliteProtocol(APIServer):
         """Whether a voice pipeline is running, in which case wake words are ignored."""
         return self._pipeline_active
 
-    def wakeup(self, wake_word: Union[MicroWakeWord, OpenWakeWord], detection: Optional[DetectionResult] = None) -> None:
+    @property
+    def wake_word_audio_active(self) -> bool:
+        """Whether a detection sends the audio before the wake word, because Home Assistant asks for it and the switch is on."""
+        return not self.state.output_only and self.state.wake_word_verification_enabled and is_wake_word_audio_requested(self._voice_subscription_flags)
+
+    def wakeup(
+        self,
+        wake_word: Union[MicroWakeWord, OpenWakeWord],
+        detection: Optional[DetectionResult] = None,
+        wake_word_audio_buffer: Tuple[AudioChunk, ...] = (),
+    ) -> None:
         """
         Start the voice pipeline after a wake word detection.
         :param wake_word: The detected wake word model.
-        :param detection: Slot and score of the detection, forwarded to peripherals.
+        :param detection: Slot, score and threshold of the detection, forwarded to peripherals and to Home Assistant.
+        :param wake_word_audio_buffer: The microphone audio up to and including the detection, empty while the mode is off.
+
+        While Home Assistant verifies wake words, the run starts at once, without wake sound and without ducking, see
+        ``wake_word_audio.py``.
         """
 
         if self.state.muted:
@@ -869,6 +965,13 @@ class VoiceSatelliteProtocol(APIServer):
 
         self._pipeline_active = True
         self._emit(LVAEvent.WAKE_WORD_DETECTED, self._detection_event_data(detection))
+        if detection is not None and wake_word_audio_buffer and self.wake_word_audio_active:
+            wake_word_audio = take_wake_word_audio(wake_word_audio_buffer, detection.wake_word_id)
+            if wake_word_audio is not None:
+                self.state.timer_alarm.stop_ringing(report_idle=False)
+                self._start_verified_run(wake_word_phrase, detection, wake_word_audio)
+                return
+
         self.duck()
         self.state.timer_alarm.stop_ringing(report_idle=False)
         if self.state.listen_during_wake_sound:
@@ -880,6 +983,66 @@ class VoiceSatelliteProtocol(APIServer):
                 self.state.wakeup_sound,
                 done_callback=lambda: self._on_wakeup_sound_finished(wake_word_phrase),
             )
+
+    def _start_verified_run(self, wake_word_phrase: str, detection: DetectionResult, wake_word_audio: WakeWordAudio) -> None:
+        """
+        Send the start request with the audio before the wake word, then that audio, and stream the live audio right after it.
+        :param wake_word_phrase: Name of the wake word in Home Assistant.
+        :param detection: The detection.
+        :param wake_word_audio: The audio before the detection.
+        """
+        _LOGGER.debug(
+            "Sending VoiceAssistantRequest with wake word audio for verification (phrase '%s', probability %.3f, threshold %.3f)",
+            wake_word_phrase,
+            detection.score or 0.0,
+            detection.threshold or 0.0,
+        )
+        self._verification_ended = False
+        # Waiting for the answer would let the live audio pile up behind the buffered audio
+        self.send_messages([start_request(wake_word_phrase, detection, wake_word_audio), *audio_messages(wake_word_audio)])
+        self._is_streaming_audio = True
+        self._emit(LVAEvent.LISTENING)
+
+        timer = threading.Timer(VERDICT_TIMEOUT_SECONDS, lambda: self._on_verdict_timeout(timer))
+        timer.daemon = True
+        self._verdict_timer = timer
+        timer.start()
+
+    def _stop_waiting_for_verdict(self, reason: str) -> bool:
+        """
+        Stop the timeout of a wake word verification.
+        :param reason: Why, for the log.
+        :return: True if LVA was waiting for Home Assistant to accept or reject the wake word.
+        """
+        timer, self._verdict_timer = self._verdict_timer, None
+        if timer is None:
+            return False
+        timer.cancel()
+        _LOGGER.debug("Wake word verification ended: %s", reason)
+        return True
+
+    def _on_verdict_timeout(self, timer: threading.Timer) -> None:
+        """Give up a run whose wake word Home Assistant neither accepted nor rejected in time: stop it, show the error, then go idle."""
+        if self._verdict_timer is not timer:
+            return
+        self._verdict_timer = None
+        _LOGGER.warning("Home Assistant neither accepted nor rejected the wake word within %.1f s (%s)", VERDICT_TIMEOUT_SECONDS, VERIFICATION_TIMEOUT_CODE)
+        self._end_unverified_run()
+        self.send_messages([VoiceAssistantRequest(start=False)])
+        self._emit(LVAEvent.PIPELINE_ERROR)
+
+        def _go_idle() -> None:
+            self._pipeline_active = False
+            self._emit(LVAEvent.IDLE)
+
+        idle_timer = threading.Timer(ERROR_SHOWN_SECONDS, _go_idle)
+        idle_timer.daemon = True
+        idle_timer.start()
+
+    def _end_unverified_run(self) -> None:
+        """Stop streaming a run whose wake word was not verified. Its remaining events from Home Assistant change nothing."""
+        self._is_streaming_audio = False
+        self._verification_ended = True
 
     @staticmethod
     def _detection_event_data(detection: Optional[DetectionResult]) -> Optional[Dict[str, Any]]:
@@ -943,6 +1106,7 @@ class VoiceSatelliteProtocol(APIServer):
         self._emit(LVAEvent.LISTENING)
 
     def stop(self) -> None:
+        self._stop_waiting_for_verdict("stopped")
         self.state.active_wake_words.discard(self.state.stop_word.id)
         self._pipeline_active = False
 
@@ -1065,6 +1229,9 @@ class VoiceSatelliteProtocol(APIServer):
         self._continue_conversation = False
         self._announce_ducking = False
         self._pipeline_active = False
+        self._voice_subscription_flags = None
+        self._stop_waiting_for_verdict("disconnected")
+        self._verification_ended = False
 
         # Deregister this connection.
         if self in self.state.connections:

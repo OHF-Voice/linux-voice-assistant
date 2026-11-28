@@ -604,6 +604,57 @@ class ThinkingSoundEntity(ESPHomeEntity):
             yield SwitchStateResponse(key=self.key, state=self._switch_state)
 
 
+class WakeWordVerificationEntity(ESPHomeEntity):
+    """Switch "Wake word verification": whether LVA sends the audio before a wake word when Home Assistant asks for it."""
+
+    def __init__(
+        self,
+        server: APIServer,
+        key: int,
+        name: str,
+        object_id: str,
+        get_enabled: Callable[[], bool],
+        set_enabled: Callable[[bool], None],
+    ) -> None:
+        ESPHomeEntity.__init__(self, server)
+
+        self.key = key
+        self.name = name
+        self.object_id = object_id
+        self._get_enabled = get_enabled
+        self._set_enabled = set_enabled
+        self._switch_state = self._get_enabled()
+
+    def update_get_enabled(self, get_enabled: Callable[[], bool]) -> None:
+        """Replace the callback that reads the setting, after a reconnect."""
+        self._get_enabled = get_enabled
+
+    def update_set_enabled(self, set_enabled: Callable[[bool], None]) -> None:
+        """Replace the callback that changes the setting, after a reconnect."""
+        self._set_enabled = set_enabled
+
+    def sync_with_state(self) -> None:
+        """Take the switch state from the setting."""
+        self._switch_state = self._get_enabled()
+
+    def handle_message(self, msg: message.Message) -> Iterable[message.Message]:
+        if isinstance(msg, SwitchCommandRequest) and (msg.key == self.key):
+            self._switch_state = bool(msg.state)
+            self._set_enabled(self._switch_state)
+            yield SwitchStateResponse(key=self.key, state=self._switch_state)
+        elif isinstance(msg, ListEntitiesRequest):
+            yield ListEntitiesSwitchResponse(
+                object_id=self.object_id,
+                key=self.key,
+                name=self.name,
+                entity_category=EntityCategory.CONFIG,
+                icon="mdi:account-voice",
+            )
+        elif isinstance(msg, SubscribeHomeAssistantStatesRequest):
+            self.sync_with_state()
+            yield SwitchStateResponse(key=self.key, state=self._switch_state)
+
+
 class MicSettingEntity(ESPHomeEntity):
     def __init__(
         self,
@@ -1087,6 +1138,7 @@ __all__ = [
     "MediaPlayerEntity",
     "MuteSwitchEntity",
     "ThinkingSoundEntity",
+    "WakeWordVerificationEntity",
     "LEDLightEntity",
     "ButtonEventSensorEntity",
     "ButtonLockEntity",

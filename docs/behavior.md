@@ -10,6 +10,7 @@ For the list of Home Assistant entities see [configuration.md](configuration.md)
 
 - [Basics: two audio channels](#basics-two-audio-channels)
 - [Talking to the assistant](#talking-to-the-assistant)
+  - [Wake word verification by Home Assistant](#wake-word-verification-by-home-assistant)
 - [Music and media playback](#music-and-media-playback)
   - [Sendspin player](#sendspin-player)
 - [Announcements](#announcements)
@@ -44,7 +45,7 @@ Two rules apply everywhere:
 
 ## Talking to the assistant
 
-A normal voice interaction runs through these phases:
+A normal voice interaction runs through these phases. While Home Assistant verifies wake words, phases 1 and 2 differ, see [Wake word verification by Home Assistant](#wake-word-verification-by-home-assistant).
 
 | # | Phase | What you hear / what happens | Music |
 |---|-------|------------------------------|-------|
@@ -62,7 +63,7 @@ Details:
 - **Early speech.** If Home Assistant streams the reply (the response starts before it is complete), playback starts as soon as the first part is available.
 - **No spoken reply.** If the pipeline finishes without any speech (for example no speech was detected, an error, or a command with no reply), the pipeline ended sound (`--pipeline-ended-sound`) plays. Afterwards the assistant goes back to idle and music is restored. The sound is not played after announcements, when the reply is stopped with the stop word, when another satellite heard the same wake word and Home Assistant gave the run to it (`duplicate_wake_up_detected`), or when Home Assistant ends the run right after speech recognition because something else handles the transcript (for example the answer to a question asked by an automation).
 - **Continued conversation.** If Home Assistant asks a follow-up question, the assistant listens again after the reply, without a wake word. It waits `--continue-conversation-delay` (default 0.5 s) after the reply so the microphone does not record the tail of its own voice. Music stays ducked through the whole conversation and is restored only when the conversation ends. The follow-up runs on the same pipeline as the wake word that started the conversation. After a button press or an announcement from Home Assistant there is no wake word, so the first pipeline is used. If you mute the assistant during that delay, the follow-up is skipped and music is restored.
-- **Wake word while a timer rings.** Saying the wake word silences the ringing timer and starts a normal interaction.
+- **Wake word while a timer rings.** Saying the wake word silences the ringing timer and starts a normal interaction. While Home Assistant verifies wake words, the timer is silenced on the detection, before Home Assistant has decided; a rejected wake word does not make it ring again.
 - **Starting by button.** A peripheral button can start listening without a wake word. Instead of the wake sound, the start-listening sound (`--start-listening-sound`) plays; everything else is identical. This also silences a ringing timer. It does nothing while no wake word is active, see below.
 - **Errors.** If the pipeline reports an error, version 1 peripherals receive a `pipeline_error` event, version 2 peripherals the state `pipeline_error`. See [peripheral_api/readme.md](peripheral_api/readme.md).
 - **Two wake words.** Home Assistant can activate up to two wake words at once. Each has its own sensitivity setting (*Wake Word 1/2 Sensitivity*). A word keeps its slot while the other one changes, and always uses the sensitivity of its own slot, also when it is the only active word.
@@ -75,6 +76,20 @@ Details:
 - **Stored wake words.** `preferences.json` stores each active wake word with its origin, engine and file name, for example `{"origin": "internal", "engine": "mww", "file_id": "hey_jarvis"}`. Once after the update that introduced this, wake words stored under a former id (`hey_jarvis`) or a name (`Hey Jarvis`, `Hey Jarvis (OWW)` or `Internal - MWW - Hey Jarvis`) are replaced by such an entry and a message is logged. A plain phrase means the microWakeWord model. Values that match nothing are kept and then skipped at startup with a warning. A former id that Home Assistant still sends is resolved to the wake word as well. The numbers of the migrations that ran are stored in `applied_migrations`.
 - **No wake word active.** When both wake word selects in Home Assistant are set to *No wake word*, no wake word starts the assistant, and LVA keeps running without any load. A button cannot start listening either, as it does not while muted. The stored wake words are then empty, so after a restart the default wake words (`--wake-model`) are active again.
 - **Default wake words.** `--wake-model` fills the first slot and `--wake-model-2` the second one, but only while no wake words are stored yet (first start, or after the preferences file was removed). Once the active wake words are stored, the choice made in Home Assistant is kept and both options are ignored. Without `--wake-model-2` (the default), only one wake word is active. If it is unknown, fails to load or is the same as the first wake word, it is skipped with a log message and the assistant starts with one wake word.
+
+### Wake word verification by Home Assistant
+
+Home Assistant can check a detected wake word itself (with the Voice support app) and reject false detections. For that LVA sends the audio from before the detection along with the start of the run.
+
+- **When it is active.** Only while Home Assistant asks for it and the switch *Wake word verification* is on (default). Home Assistant asks for it only if it can verify **every** active wake word. If one active wake word is unknown to it, nothing is verified, also not the other one. Today the Voice support app knows `Okay Nabu`, `Hey Jarvis` and `Hey Mycroft` as microWakeWord names. openWakeWord names end with ` (OWW)` and are not recognized, so an active openWakeWord turns verification off. This is decided by Home Assistant. With `--output-only` there is no verification.
+- **Detection.** LVA starts the run at once and sends the last 1.5 s of audio before the detection, then the live audio. **No wake sound plays**, so the command can follow the wake word directly, and `--listen-during-wake-sound` has no effect. Music is **not** ducked yet. Peripherals get `wake_word_detected` and `listening` at once.
+- **Accepted.** Music is ducked to 50 %, and the run continues as usual (phases 2 to 5).
+- **Rejected.** LVA stops streaming and goes back to idle. Nothing is played, also not the pipeline ended sound. Version 2 peripherals get the state `wake_word_rejected`, immediately followed by `idle`; version 1 peripherals only get `idle`.
+- **No answer within 2 s.** LVA stops the run itself, logs a warning (`wake-word-verification-timeout`), sends `pipeline_error` to peripherals and goes idle 1 s later. Nothing is played. Wake words are not detected in that second.
+- **No audible feedback.** Without LEDs or other peripherals you hear nothing on a detection while verification is active, also not when the wake word is accepted, as on the Voice PE: a sound would play into the command. Turn *Wake word verification* off to keep the wake sound; LVA then starts runs as before.
+- **Audio before the detection.** LVA keeps it only while it may be needed: not while muted and not while a conversation runs. It starts empty afterwards, so a wake word said within 1.5 s after a conversation or after unmuting is sent with less audio before it. Each detection logs the size and the level (peak and RMS in dBFS) of the audio of both channels at debug level.
+- **Thresholds.** The sensitivity settings stay as they are. LVA does not lower them while verification is active (the Voice PE does).
+- **Unchanged.** A button press, a follow-up question and an announcement that starts a conversation start runs as before, without audio from before.
 
 ---
 
@@ -327,7 +342,7 @@ The peripheral API is versioned. Choosing a version and what LVA does in each ve
 
 | Situation | Music |
 |-----------|-------|
-| Wake word detected / button starts listening | Ducked to 50 % |
+| Wake word detected / button starts listening | Ducked to 50 %. While Home Assistant verifies wake words: only once it accepts the wake word, not at all if it rejects it |
 | Listening, thinking, speaking | Stays ducked |
 | Conversation finished | Restored to 100 % of the set volume |
 | Follow-up question (continued conversation) | Stays ducked until the conversation ends |

@@ -9,7 +9,7 @@ import sys
 import threading
 import time
 from pathlib import Path
-from typing import Any, List, Optional
+from typing import Any, List, Optional, Tuple
 
 import numpy as np
 import soundcard as sc
@@ -36,6 +36,7 @@ from .util import (
     warn_about_removed_options,
 )
 from .wake_word import find_available_wake_words, load_stop_model, load_wake_models, wake_word_ids_for_selections, wake_word_selections_for_ids
+from .wake_word_audio import AudioChunk, buffer_wake_word_audio
 from .wake_word_detection import ActiveWakeWord, apply_sensitivities, gate_wake_words, process_wake_words, select_active_wake_words, wake_words_need_refresh
 from .wake_word_names import replace_hidden_wake_words
 from .webrtc import WebRTCProcessor
@@ -591,6 +592,7 @@ async def main() -> None:
         stop_word_threshold=initial_threshold,
         button_controls_locked=initial_button_controls_locked,
         muted=initial_muted,
+        wake_word_verification_enabled=preferences.wake_word_verification != 0,
         remote_unmute_enabled=args.enable_remote_unmute == 1,
         mic_volume=preferences.mic_volume,
         mic_auto_gain=preferences.mic_auto_gain,
@@ -831,6 +833,7 @@ def process_audio(state: ServerState, mic, block_size: int):
     webrtc: Optional[WebRTCProcessor] = None
     stop_word_running = False
     wake_word_running = False
+    wake_word_audio: Tuple[AudioChunk, ...] = ()
 
     try:
         _LOGGER.debug("Opening audio input device: %s", mic.name)
@@ -934,6 +937,9 @@ def process_audio(state: ServerState, mic, block_size: int):
                     if satellite is not None:
                         satellite.handle_audio(audio_chunk, audio_chunk_2)
 
+                    buffering = satellite is not None and satellite.wake_word_audio_active and not state.muted and not satellite.pipeline_active
+                    wake_word_audio = buffer_wake_word_audio(wake_word_audio, AudioChunk(audio_chunk, audio_chunk_2), buffering)
+
                     assert micro_features is not None
                     micro_inputs.clear()
                     micro_inputs.extend(micro_features.process_streaming(audio_chunk))
@@ -948,7 +954,7 @@ def process_audio(state: ServerState, mic, block_size: int):
                         now = time.monotonic()
                         detections, last_active = process_wake_words(state, wake_words, micro_inputs, oww_inputs, last_active, now)
                         for wake_word, detection in detections:
-                            satellite.wakeup(wake_word, detection)
+                            satellite.wakeup(wake_word, detection, wake_word_audio)
 
                     stopped, stop_word_running = process_stop_word(state, micro_inputs, stop_word_running)
 
