@@ -31,6 +31,7 @@ if TYPE_CHECKING:
         ThinkingSoundEntity,
         WakeWord1SensitivityNumberEntity,
         WakeWord2SensitivityNumberEntity,
+        WakeWordVerificationEntity,
     )
     from .mpv_player import MpvMediaPlayer
     from .satellite import VoiceSatelliteProtocol
@@ -46,11 +47,12 @@ class WakeWordType(str, Enum):
 
 @dataclass(frozen=True)
 class DetectionResult:
-    """Outcome of one wake word detection, common to both engines."""
+    """Outcome of one wake word detection, common to both engines: the score and the threshold it crossed."""
 
     wake_word_id: str
     slot: int
     score: Optional[float] = None
+    threshold: Optional[float] = None
 
 
 @dataclass(frozen=True)
@@ -119,6 +121,7 @@ class Preferences:
     thinking_sound: int = 0  # 0 = disabled, 1 = enabled
     button_controls_locked: int = 0  # 0 = buttons enabled (default), 1 = buttons locked
     muted: int = 0  # 0 = microphone active (default), 1 = muted
+    wake_word_verification: int = 1  # 1 = send wake word audio when Home Assistant asks for it (default), 0 = never
     wake_word_1_sensitivity: Optional[float] = None
     wake_word_2_sensitivity: Optional[float] = None
     stop_word_sensitivity: Optional[float] = None
@@ -210,6 +213,7 @@ class ServerState:
     hardware_muted: Optional[bool] = None
     hardware_mute_type: Optional[str] = None  # none, changeable or read_only
     thinking_sound_entity: "Optional[ThinkingSoundEntity]" = None
+    wake_word_verification_entity: "Optional[WakeWordVerificationEntity]" = None
     button_event_sensor_entity: "Optional[ButtonEventSensorEntity]" = None
 
     # Lights declared by peripherals via register_light. Survives HA
@@ -246,6 +250,8 @@ class ServerState:
     wake_words_changed: bool = False
     refractory_seconds: float = 0.0
     thinking_sound_enabled: bool = False
+    # Switch "Wake word verification": send wake word audio when Home Assistant asks for it, see wake_word_audio.py
+    wake_word_verification_enabled: bool = True
     button_controls_locked: bool = False
     output_only: bool = False
     muted: bool = False
